@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff, Mail, Lock, User, Smartphone, CheckCircle } from "lucide-react";
 
-import RegisterWithOtp from "../components/RegisterWithOtp"; // updated path
+import RegisterWithOtp from "./RegisterWithOtp"; // updated path
 
 const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/+$/, "");
 function buildUrl(path) {
