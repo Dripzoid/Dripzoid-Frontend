@@ -1,6 +1,6 @@
 // src/components/RegisterWithOTP.jsx
 import React, { useEffect, useState, useRef } from "react";
-import { useNavigate, useLocation } from "react-router-dom"; // make sure react-router is installed
+import { useNavigate, useLocation } from "react-router-dom"; // must be called at top level
 
 const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/+$/, "");
 const WIDGET_ID = process.env.REACT_APP_MSG91_WIDGET_ID;
@@ -8,19 +8,9 @@ const TOKEN = process.env.REACT_APP_MSG91_TOKEN;
 const CAPTCHA_RENDER_ID = "msg91-captcha";
 
 export default function RegisterWithOTP({ onVerified } = {}) {
-  const navigate = (() => {
-    try {
-      return useNavigate();
-    } catch {
-      return null;
-    }
-  })();
-  let location = null;
-  try {
-    location = useLocation();
-  } catch {
-    // fallback if react-router isn't available
-  }
+  // ✅ hooks must be top-level
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const [identifier, setIdentifier] = useState("");
   const [otpSent, setOtpSent] = useState(false);
@@ -33,8 +23,6 @@ export default function RegisterWithOTP({ onVerified } = {}) {
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState("");
   const mountedRef = useRef(true);
-
-  // queue auto-send if route indicates so
   const autoSendRef = useRef(false);
 
   useEffect(() => {
@@ -46,28 +34,16 @@ export default function RegisterWithOTP({ onVerified } = {}) {
 
   // parse query params (prefill or auto-send)
   useEffect(() => {
-    try {
-      const search = (location && location.search) || (typeof window !== "undefined" ? window.location.search : "");
-      const params = new URLSearchParams(search);
-      const emailParam = params.get("email");
-      const sendParam = params.get("send"); // e.g. send=1 to auto-send
-      const otpView = params.get("otp"); // optional otp=1 to show OTP view
+    const search = location?.search || window.location.search || "";
+    const params = new URLSearchParams(search);
+    const emailParam = params.get("email");
+    const sendParam = params.get("send"); // e.g. send=1 to auto-send
+    const otpView = params.get("otp"); // optional otp=1 to show OTP view
 
-      if (emailParam) {
-        setIdentifier(emailParam);
-      }
-      if (otpView === "1" || sendParam === "1") {
-        // show OTP view
-        setOtpSent(true);
-      }
-      if (sendParam === "1") {
-        autoSendRef.current = true;
-      }
-    } catch (e) {
-      // ignore parsing errors
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once
+    if (emailParam) setIdentifier(emailParam);
+    if (otpView === "1" || sendParam === "1") setOtpSent(true);
+    if (sendParam === "1") autoSendRef.current = true;
+  }, [location]);
 
   const apiUrl = (path) => {
     if (!path.startsWith("/")) path = `/${path}`;
@@ -100,9 +76,7 @@ export default function RegisterWithOTP({ onVerified } = {}) {
 
     if (window.__MSG91_INITIALIZED) {
       setSdkReady(typeof window.sendOtp === "function" && typeof window.verifyOtp === "function");
-      // If auto-send was requested and SDK already ready, trigger
       if (autoSendRef.current && typeof window.sendOtp === "function") {
-        // call send after small tick
         setTimeout(() => {
           if (mountedRef.current) sendOtp();
         }, 100);
@@ -142,7 +116,6 @@ export default function RegisterWithOTP({ onVerified } = {}) {
         if (mountedRef.current) setLoadingSdk(false);
       }
 
-      // If auto-send was queued while loading SDK, send now
       if (autoSendRef.current && typeof window.sendOtp === "function") {
         setTimeout(() => {
           if (mountedRef.current) sendOtp();
@@ -160,8 +133,7 @@ export default function RegisterWithOTP({ onVerified } = {}) {
     };
 
     document.body.appendChild(script);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once
+  }, []);
 
   // POST JSON helper
   const callBackend = async (path, body) => {
@@ -179,14 +151,12 @@ export default function RegisterWithOTP({ onVerified } = {}) {
     }
   };
 
-  // Check if email already exists
   const checkEmailExists = async (email) => {
     if (!email || !isEmail(email)) return false;
     const { ok, json } = await callBackend("/api/check-email", { email });
     return ok && json?.exists;
   };
 
-  // SEND OTP (SDK only)
   const sendOtp = async () => {
     setError("");
     const id = (identifier || "").trim();
@@ -223,7 +193,6 @@ export default function RegisterWithOTP({ onVerified } = {}) {
     }
   };
 
-  // VERIFY OTP (SDK only)
   const verifyOtp = async () => {
     setError("");
     const id = (identifier || "").trim();
@@ -237,7 +206,6 @@ export default function RegisterWithOTP({ onVerified } = {}) {
           otp,
           async (data) => {
             console.log("SDK verify success:", data);
-            // Confirm with backend access-token if present
             if (data?.token) {
               const { ok, json } = await callBackend("/api/verify-access-token", { token: data.token });
               if (ok && json?.success) {
@@ -267,7 +235,6 @@ export default function RegisterWithOTP({ onVerified } = {}) {
     }
   };
 
-  // When user clicks "Continue" on the first form: navigate to OTP page and request send
   const continueToOtpPage = async () => {
     setError("");
     const id = (identifier || "").trim();
@@ -278,47 +245,22 @@ export default function RegisterWithOTP({ onVerified } = {}) {
       if (exists) return setError("Email already registered.");
     }
 
-    // Build URL: /register/otp?email=...&send=1
     const targetPath = `/register/otp?email=${encodeURIComponent(id)}&send=1&otp=1`;
-
-    // If react-router is present, use navigate; otherwise use window.location
-    try {
-      if (navigate) {
-        navigate(targetPath);
-      } else {
-        // fallback
-        window.location.href = targetPath;
-      }
-    } catch (e) {
-      // fallback
-      window.location.href = targetPath;
-    }
+    navigate(targetPath);
   };
 
-  // If component instance sees send=1 query param and SDK is ready, we auto-send in useEffect
   useEffect(() => {
-    const checkAutoSend = () => {
-      try {
-        const search = (location && location.search) || (typeof window !== "undefined" ? window.location.search : "");
-        const params = new URLSearchParams(search);
-        if (params.get("send") === "1") {
-          // If SDK is ready, send now. Otherwise leave autoSendRef true so loader will call it once ready.
-          if (sdkReady) {
-            sendOtp();
-            autoSendRef.current = false;
-          } else {
-            autoSendRef.current = true;
-          }
-        }
-      } catch {
-        // ignore
+    const search = location?.search || window.location.search || "";
+    const params = new URLSearchParams(search);
+    if (params.get("send") === "1") {
+      if (sdkReady) {
+        sendOtp();
+        autoSendRef.current = false;
+      } else {
+        autoSendRef.current = true;
       }
-    };
-
-    checkAutoSend();
-    // react to sdkReady changes (if sdk loads after mount)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sdkReady]);
+    }
+  }, [sdkReady, location]);
 
   const retryOtp = async () => {
     setError("");
@@ -330,7 +272,6 @@ export default function RegisterWithOTP({ onVerified } = {}) {
   const onIdentifierKey = (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      // prefer redirect-flow
       continueToOtpPage();
     }
   };
@@ -343,7 +284,6 @@ export default function RegisterWithOTP({ onVerified } = {}) {
 
   const inputClass =
     "w-full pl-4 pr-4 py-3 rounded-full bg-transparent border border-black/10 dark:border-white/10 text-black dark:text-white placeholder-black/40 dark:placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition";
-  const buttonPrimary = "w-full py-3 rounded-full bg-black text-white hover:shadow active:scale-[0.995] disabled:opacity-50";
 
   return (
     <div className="max-w-md mx-auto my-6 p-6">
@@ -364,9 +304,6 @@ export default function RegisterWithOTP({ onVerified } = {}) {
             <button onClick={continueToOtpPage} disabled={sending || loadingSdk} className="flex-1 py-3 rounded-full bg-black text-white disabled:opacity-50">
               Continue
             </button>
-            <button onClick={sendOtp} disabled className="py-3 px-4 rounded-full border dark:border-white/10 opacity-50" title="Deprecated">
-              (Direct Send)
-            </button>
           </div>
 
           <div className="text-sm text-gray-500 mt-2">
@@ -380,9 +317,7 @@ export default function RegisterWithOTP({ onVerified } = {}) {
       {otpSent && !verified && (
         <div>
           <h3 className="text-lg font-semibold mb-2">Enter OTP</h3>
-          <div className="text-sm text-gray-700 mb-3">
-            We sent an OTP to <strong>{maskIdentifier(identifier)}</strong>
-          </div>
+          <div className="text-sm text-gray-700 mb-3">We sent an OTP to <strong>{maskIdentifier(identifier)}</strong></div>
 
           <input
             aria-label="otp"
