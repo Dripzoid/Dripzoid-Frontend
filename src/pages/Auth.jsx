@@ -4,8 +4,7 @@ import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff, Mail, Lock, User, Smartphone, CheckCircle } from "lucide-react";
 
-// ✅ Import your new OTP component
-import RegisterWithOtp from "./RegisterWithOtp";
+import RegisterWithOtp from "../components/RegisterWithOtp"; // updated path
 
 const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/+$/, "");
 function buildUrl(path) {
@@ -18,8 +17,8 @@ export default function Auth({ onLoginSuccess }) {
 
   const [isLogin, setIsLogin] = useState(true);
 
-  // registration flow
-  const [regStep, setRegStep] = useState("enterEmail"); // enterEmail | otpSent | enterDetails
+  // registration flow: enterEmail | otpSent | enterDetails
+  const [regStep, setRegStep] = useState("enterEmail");
 
   // keep your form states
   const [formData, setFormData] = useState({
@@ -55,6 +54,7 @@ export default function Auth({ onLoginSuccess }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: formData.email?.trim(), password: formData.password }),
+        credentials: "include",
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.token) {
@@ -62,6 +62,7 @@ export default function Auth({ onLoginSuccess }) {
         navigate("/account");
       } else {
         if (res.status === 404) {
+          // user not found -> switch to register flow
           setIsLogin(false);
           setRegStep("enterEmail");
         } else {
@@ -74,7 +75,7 @@ export default function Auth({ onLoginSuccess }) {
     }
   };
 
-  // ------------------- REG: CONTINUE -------------------
+  // ------------------- REG: CONTINUE -> moves to OTP step -------------------
   const proceedToOtpStep = async (e) => {
     e?.preventDefault?.();
     const email = (formData.email || "").trim().toLowerCase();
@@ -97,38 +98,49 @@ export default function Auth({ onLoginSuccess }) {
       return alert("Server error");
     }
 
-    setRegStep("otpSent"); // now handled by RegisterWithOtp component
+    setRegStep("otpSent");
   };
 
   // ------------------- REG: COMPLETE -------------------
+  // POST /api/register (server expected to return token/sessionId/user)
   const handleCompleteRegistration = async (e) => {
     e.preventDefault();
     if (formData.password !== formData.confirmPassword) {
       return alert("Passwords do not match.");
     }
 
+    const payload = {
+      name: formData.name,
+      email: formData.email?.trim().toLowerCase(),
+      phone: formData.mobile || null,
+      password: formData.password,
+    };
+
     try {
-      const res = await fetch(buildUrl("/api/complete-registration"), {
+      const res = await fetch(buildUrl("/api/register"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: formData.name,
-          email: formData.email?.trim().toLowerCase(),
-          password: formData.password,
-          mobile: formData.mobile,
-        }),
+        body: JSON.stringify(payload),
+        credentials: "include",
       });
       const json = await res.json().catch(() => ({}));
+
       if (res.ok) {
-        alert("Registration successful — please login.");
-        setIsLogin(true);
-        setRegStep("enterEmail");
-        setFormData({ name: "", email: "", password: "", confirmPassword: "", mobile: "" });
+        // if server returned token + user, consider logged in
+        if (json?.token) {
+          if (typeof onLoginSuccess === "function") onLoginSuccess(json.user || null, json.token);
+          navigate("/account");
+        } else {
+          alert(json.message || "Registration successful — please login.");
+          setIsLogin(true);
+          setRegStep("enterEmail");
+          setFormData({ name: "", email: "", password: "", confirmPassword: "", mobile: "" });
+        }
       } else {
         alert(json.message || "Registration failed");
       }
     } catch (err) {
-      console.error("complete-registration error:", err);
+      console.error("register error:", err);
       alert("Server error");
     }
   };
@@ -152,12 +164,8 @@ export default function Auth({ onLoginSuccess }) {
             <CheckCircle size={22} />
           </div>
           <div>
-            <h2 className="text-lg md:text-xl font-semibold">
-              {isLogin ? "Welcome back" : "Create your account"}
-            </h2>
-            <p className="text-sm text-gray-600">
-              {isLogin ? "Sign in to continue" : "Register with email OTP"}
-            </p>
+            <h2 className="text-lg md:text-xl font-semibold">{isLogin ? "Welcome back" : "Create your account"}</h2>
+            <p className="text-sm text-gray-600">{isLogin ? "Sign in to continue" : "Register with email OTP"}</p>
           </div>
         </div>
 
@@ -187,45 +195,25 @@ export default function Auth({ onLoginSuccess }) {
 
         {/* Forms */}
         {isLogin ? (
-          // ✅ LOGIN FORM
+          // LOGIN FORM
           <form key="login" onSubmit={handleLoginSubmit} className="flex flex-col gap-4">
-            {/* email */}
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                 <Mail size={16} />
               </span>
-              <input
-                id="email"
-                type="email"
-                value={formData.email}
-                onChange={handleChange}
-                placeholder="you@example.com"
-                required
-                className={inputClass}
-              />
+              <input id="email" type="email" value={formData.email} onChange={handleChange} placeholder="you@example.com" required className={inputClass} />
             </div>
-            {/* password */}
+
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                 <Lock size={16} />
               </span>
-              <input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                value={formData.password}
-                onChange={handleChange}
-                placeholder="Enter password"
-                required
-                className={inputClass}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((s) => !s)}
-                className="absolute right-3 top-1/2 -translate-y-1/2"
-              >
+              <input id="password" type={showPassword ? "text" : "password"} value={formData.password} onChange={handleChange} placeholder="Enter password" required className={inputClass} />
+              <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2">
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
+
             <button type="submit" className={buttonPrimary}>Login</button>
           </form>
         ) : (
@@ -237,21 +225,13 @@ export default function Auth({ onLoginSuccess }) {
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                     <Mail size={16} />
                   </span>
-                  <input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    placeholder="you@example.com"
-                    required
-                    className={inputClass}
-                  />
+                  <input id="email" type="email" value={formData.email} onChange={handleChange} placeholder="you@example.com" required className={inputClass} />
                 </div>
                 <button type="submit" className={buttonPrimary}>Continue</button>
               </form>
             )}
 
-            {/* STEP 2: OTP Page (delegated) */}
+            {/* STEP 2: OTP Page (component) */}
             {regStep === "otpSent" && (
               <RegisterWithOtp
                 email={formData.email}
@@ -263,79 +243,40 @@ export default function Auth({ onLoginSuccess }) {
             {/* STEP 3: Enter Details */}
             {regStep === "enterDetails" && (
               <form key="reg-details" onSubmit={handleCompleteRegistration} className="flex flex-col gap-4">
-                {/* name */}
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                     <User size={16} />
                   </span>
-                  <input
-                    id="name"
-                    type="text"
-                    value={formData.name}
-                    onChange={handleChange}
-                    placeholder="Full name"
-                    required
-                    className={inputClass}
-                  />
+                  <input id="name" type="text" value={formData.name} onChange={handleChange} placeholder="Full name" required className={inputClass} />
                 </div>
-                {/* mobile */}
+
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                     <Smartphone size={16} />
                   </span>
-                  <input
-                    id="mobile"
-                    type="tel"
-                    value={formData.mobile}
-                    onChange={handleChange}
-                    placeholder="9876543210"
-                    className={inputClass}
-                  />
+                  <input id="mobile" type="tel" value={formData.mobile} onChange={handleChange} placeholder="9876543210" className={inputClass} />
                 </div>
-                {/* password */}
+
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                     <Lock size={16} />
                   </span>
-                  <input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    value={formData.password}
-                    onChange={handleChange}
-                    placeholder="Enter password"
-                    required
-                    className={inputClass}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((s) => !s)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2"
-                  >
+                  <input id="password" type={showPassword ? "text" : "password"} value={formData.password} onChange={handleChange} placeholder="Enter password" required className={inputClass} />
+                  <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2">
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
-                {/* confirm password */}
+
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                     <Lock size={16} />
                   </span>
-                  <input
-                    id="confirmPassword"
-                    type={showConfirmPassword ? "text" : "password"}
-                    value={formData.confirmPassword}
-                    onChange={handleChange}
-                    placeholder="Confirm password"
-                    required
-                    className={inputClass}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword((s) => !s)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2"
-                  >
+                  <input id="confirmPassword" type={showConfirmPassword ? "text" : "password"} value={formData.confirmPassword} onChange={handleChange} placeholder="Confirm password" required className={inputClass} />
+                  <button type="button" onClick={() => setShowConfirmPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2">
                     {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
+
                 <button type="submit" className={buttonPrimary}>Create account</button>
               </form>
             )}
