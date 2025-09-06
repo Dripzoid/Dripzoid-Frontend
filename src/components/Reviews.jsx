@@ -1,0 +1,978 @@
+// src/components/Reviews.jsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Avatar, Card, CardContent, Typography } from "@mui/material";
+import { ThumbsUp, ThumbsDown, Send, Trash2, Paperclip } from "lucide-react";
+import { FaStar, FaStarHalfAlt, FaRegStar } from "react-icons/fa";
+import useUploader from "../hooks/useUploader"; // <-- ensure path is correct
+
+const DEFAULT_API_BASE = process.env.REACT_APP_API_BASE;
+const CLOUDINARY_CLOUD_NAME = process.env.REACT_APP_CLOUDINARY_CLOUD_NAME;
+const CLOUDINARY_UPLOAD_PRESET = process.env.REACT_APP_CLOUDINARY_UPLOAD_PRESET;
+const READ_MORE_LIMIT = 280;
+const MAX_FILES = 6;
+const MAX_FILE_SIZE_BYTES = 12 * 1024 * 1024; // 12MB
+
+const BUTTON_CLASS =
+  "shadow-[inset_0_0_0_2px_#616467] text-black px-4 py-2 rounded text-sm flex items-center gap-2 bg-transparent hover:bg-[#616467] hover:text-white dark:text-neutral-200 transition duration-200";
+
+function ReadMore({ text }) {
+  const [open, setOpen] = useState(false);
+  if (!text) return null;
+  if (text.length <= READ_MORE_LIMIT) return <div className="text-black dark:text-white">{text}</div>;
+  return (
+    <div className="text-sm leading-relaxed">
+      <div className="text-black dark:text-white">{open ? text : text.slice(0, READ_MORE_LIMIT) + "..."}</div>
+      <button
+        onClick={() => setOpen((s) => !s)}
+        className="mt-2 text-xs underline decoration-black/50 dark:decoration-white/50"
+        type="button"
+      >
+        {open ? "Read less" : "Read more"}
+      </button>
+    </div>
+  );
+}
+
+function Lightbox({ item, onClose }) {
+  if (!item) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose} role="dialog">
+      <div onClick={(e) => e.stopPropagation()} className="max-w-[95vw] max-h-[95vh]">
+        {item.type === "image" ? (
+          // eslint-disable-next-line
+          <img src={item.url} alt={item.name} className="max-w-full max-h-full object-contain rounded" />
+        ) : (
+          <video src={item.url} controls className="max-w-full max-h-full rounded" />
+        )}
+      </div>
+      <button onClick={onClose} className="absolute top-6 right-6 text-white text-xl" type="button">
+        ✕
+      </button>
+    </div>
+  );
+}
+
+function StarDisplay({ value = 0, size = 16 }) {
+  const stars = [];
+  for (let i = 1; i <= 5; i++) {
+    if (value >= i) stars.push(<FaStar key={i} size={size} />);
+    else if (value >= i - 0.5) stars.push(<FaStarHalfAlt key={i} size={size} />);
+    else stars.push(<FaRegStar key={i} size={size} />);
+  }
+  return <div className="flex items-center gap-1">{stars}</div>;
+}
+
+function StarSelector({ value = 5, onChange, size = 20 }) {
+  function handleClick(e, starIndex) {
+    onChange?.(starIndex);
+  }
+
+  const stars = [];
+  for (let i = 1; i <= 5; i++) {
+    const key = `star-${i}`;
+    const el = value >= i ? <FaStar key={key} size={size} /> : <FaRegStar key={key} size={size} />;
+    stars.push(
+      <button key={key} onClick={(e) => handleClick(e, i)} type="button" className="p-1 bg-transparent" aria-label={`Set rating to ${i}`}>
+        {el}
+      </button>
+    );
+  }
+  return <div className="flex items-center gap-1">{stars}</div>;
+}
+
+// deterministic HSL color generator for avatar backgrounds
+function stringToHslColor(str = "", s = 65, l = 45) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    hash = hash & hash;
+  }
+  const h = Math.abs(hash) % 360;
+  return `hsl(${h} ${s}% ${l}%)`;
+}
+
+// format relative time in minute/hour/day chunks (shows "0m ago" for <1min)
+function formatRelativeTime(isoOrDate) {
+  if (!isoOrDate) return "";
+  const date = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
+  if (Number.isNaN(date.getTime())) return String(isoOrDate);
+  const now = new Date();
+  const diffSeconds = Math.floor((now - date) / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`; // 0m, 1m, 59m
+  }
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 30) {
+    return `${diffDays}d ago`;
+  }
+  // older -> show localized IST date/time for clarity
+  try {
+    return date.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+  } catch {
+    return date.toLocaleString();
+  }
+}
+
+export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, currentUser = null, showToast = () => {} }) {
+  const [reviews, setReviews] = useState([]);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewTitle, setReviewTitle] = useState("");
+  const [reviewText, setReviewText] = useState("");
+  const [reviewFiles, setReviewFiles] = useState([]);
+  const [reviewPreviews, setReviewPreviews] = useState([]);
+  const previewsRef = useRef([]);
+  const [fileWarning, setFileWarning] = useState("");
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const [canReviewFlag, setCanReviewFlag] = useState(null);
+  const [voteCache, setVoteCache] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("vote_cache_v1") || "{}");
+    } catch {
+      return {};
+    }
+  });
+  const [lightboxItem, setLightboxItem] = useState(null);
+  const [userCanReview, setUserCanReview] = useState(false);
+  const [userHasReviewed, setUserHasReviewed] = useState(false);
+  const toastTimerRef = useRef(null);
+
+  function internalToast(msg, ttl = 4000) {
+    showToast(msg);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => showToast(null), ttl);
+  }
+
+  // use uploader hook
+  const { upload, isUploading: isUploadingFiles, error: uploadError } = useUploader(apiBase, {
+    cloudName: CLOUDINARY_CLOUD_NAME,
+    uploadPreset: CLOUDINARY_UPLOAD_PRESET,
+  });
+
+  function normalizeReviewsPayload(payload) {
+    if (!payload) return [];
+    let arr = [];
+    if (Array.isArray(payload)) arr = payload;
+    else if (Array.isArray(payload.data)) arr = payload.data;
+    else if (Array.isArray(payload.reviews)) arr = payload.reviews;
+    else {
+      try {
+        const vals = Object.values(payload).filter((v) => v && typeof v === "object" && ("id" in v || "productId" in v));
+        if (vals.length) arr = vals;
+      } catch {
+        arr = [];
+      }
+    }
+
+    return arr.map((r) => {
+      const clone = { ...r };
+      clone.userName = clone.userName || clone.user_name || clone.username || clone.name || clone.fullName || clone.full_name || null;
+
+      const imagesField = clone.imageUrls || clone.images || clone.media || clone.imageUrl || clone.image || null;
+      let mediaArr = [];
+      if (Array.isArray(imagesField)) mediaArr = imagesField;
+      else if (typeof imagesField === "string" && imagesField.trim()) {
+        try {
+          const parsed = JSON.parse(imagesField);
+          if (Array.isArray(parsed)) mediaArr = parsed;
+          else if (typeof parsed === "string") mediaArr = [parsed];
+          else mediaArr = [];
+        } catch {
+          mediaArr = imagesField.split(",").map((s) => s.trim()).filter(Boolean);
+        }
+      } else if (imagesField && typeof imagesField === "object" && imagesField.url) {
+        mediaArr = [imagesField.url];
+      }
+
+      clone.media = (mediaArr || []).map((m) => {
+        if (!m) return null;
+        const url = (typeof m === "object" && m.url) ? m.url : String(m);
+        const lower = url.split("?")[0].toLowerCase();
+        const isVideo = /\.(mp4|webm|ogg|mov|m4v)$/i.test(lower) || lower.includes("video") || lower.includes("/video/");
+        return { url, type: isVideo ? "video" : "image", name: url.split("/").pop() };
+      }).filter(Boolean);
+
+      // keep imageUrl for backward compatibility but not used for avatar
+      if (!clone.imageUrl && clone.media && clone.media.length > 0) clone.imageUrl = clone.media[0].url;
+
+      // ensure likes/dislikes exist (fallback 0)
+      clone.likes = typeof clone.likes === "number" ? clone.likes : (typeof clone.like === "number" ? clone.like : 0);
+      clone.dislikes = typeof clone.dislikes === "number" ? clone.dislikes : (typeof clone.dislike === "number" ? clone.dislike : 0);
+
+      return clone;
+    });
+  }
+
+  // fetch reviews then attempt to fetch votes for them
+  async function fetchReviews() {
+    try {
+      const r = await fetch(`${apiBase}/api/reviews/product/${productId}`);
+      if (r.ok) {
+        const rjson = await r.json();
+        const normalized = normalizeReviewsPayload(rjson);
+        setReviews(normalized);
+        // fetch votes (likes/dislikes) for these reviews (batch or per-review fallback)
+        await fetchVotesForReviews(normalized);
+        return normalized;
+      }
+    } catch (err) {
+      console.warn("fetchReviews failed", err);
+    }
+    return reviews;
+  }
+
+  // Try batch votes endpoint, fallback to per-review
+  async function fetchVotesForReviews(revs = []) {
+    if (!Array.isArray(revs) || revs.length === 0) return;
+    const ids = revs.map((r) => r.id).filter(Boolean);
+    if (ids.length === 0) return;
+
+    // 1) try batch endpoint: /api/votes?entityType=review&entityIds=id1,id2
+    try {
+      const q = `${apiBase}/api/votes?entityType=review&entityIds=${ids.join(",")}`;
+      const res = await fetch(q);
+      if (res.ok) {
+        const json = await res.json();
+
+        // The API can respond in different shapes:
+        //  - { success: true, votes: { "9": { like: 1 }, "11": { dislike: 1 } } }
+        //  - or { "9": { like: 1 }, "11": { dislike: 1 } }
+        //  - or [ { entityId: 9, like: 1, dislike: 0 }, ... ]
+        // Normalize into a map: { "<id>": { likes: X, dislikes: Y }, ... }
+        const map = {};
+        let votesNode = null;
+
+        if (json && typeof json === "object") {
+          // if response contains a top-level "votes" object prefer it
+          if (json.votes && typeof json.votes === "object") votesNode = json.votes;
+          else votesNode = json;
+        } else {
+          votesNode = json;
+        }
+
+        if (Array.isArray(votesNode)) {
+          // array of objects with entityId or id
+          votesNode.forEach((it) => {
+            const id = String(it.entityId ?? it.id ?? it._id);
+            if (!id) return;
+            const likes = Number(it.like ?? it.likes ?? it.countLikes ?? it.likesCount ?? 0);
+            const dislikes = Number(it.dislike ?? it.dislikes ?? it.countDislikes ?? it.dislikesCount ?? 0);
+            map[id] = { likes, dislikes };
+          });
+        } else if (votesNode && typeof votesNode === "object") {
+          // object keyed by id: { "9": { like: 1 }, "11": { dislike: 1 } }
+          Object.keys(votesNode).forEach((k) => {
+            // skip keys that are not numeric ids (like "success")
+            if (!/^\d+$/.test(String(k))) return;
+            const it = votesNode[k] || {};
+            const likes = Number(it.like ?? it.likes ?? it.countLikes ?? it.likesCount ?? 0);
+            const dislikes = Number(it.dislike ?? it.dislikes ?? it.countDislikes ?? it.dislikesCount ?? 0);
+            map[String(k)] = { likes, dislikes };
+          });
+        }
+
+        if (Object.keys(map).length > 0) {
+          setReviews((prev) =>
+            (Array.isArray(prev) ? prev : []).map((r) => {
+              const m = map[String(r.id)];
+              if (!m) return r;
+              return { ...r, likes: m.likes, dislikes: m.dislikes };
+            })
+          );
+          return;
+        }
+      }
+    } catch (err) {
+      // ignore and try per-review fallback
+      console.warn("Batch votes fetch failed, falling back to per-review", err);
+    }
+
+    // 2) fallback: fetch per review (robust to different shapes)
+    for (const r of revs) {
+      try {
+        const url = `${apiBase}/api/votes/review/${r.id}`;
+        const res2 = await fetch(url);
+        if (!res2.ok) continue;
+        const j = await res2.json();
+        // j might be { success: true, votes: { like: 1 } } or { like: 1 } or { likes: 1, dislikes: 0 }
+        const votesObj = (j && typeof j === "object" && (j.votes || j.data)) ? (j.votes || j.data) : j;
+        const likes = Number(votesObj?.like ?? votesObj?.likes ?? votesObj?.countLikes ?? votesObj?.likesCount ?? 0);
+        const dislikes = Number(votesObj?.dislike ?? votesObj?.dislikes ?? votesObj?.countDislikes ?? votesObj?.dislikesCount ?? 0);
+        setReviews((prev) => (Array.isArray(prev) ? prev.map((x) => (String(x.id) === String(r.id) ? { ...x, likes, dislikes } : x)) : prev));
+      } catch (err) {
+        // ignore each error
+      }
+    }
+  }
+
+  useEffect(() => {
+    fetchReviews();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productId]);
+
+  useEffect(() => {
+    async function checkEligibility() {
+      const actingUser = currentUser || (() => {
+        try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
+      })();
+      if (!actingUser) {
+        setUserCanReview(false);
+        setUserHasReviewed(false);
+        return;
+      }
+
+      try {
+        const purchased = await userHasPurchased(productId, actingUser);
+        setUserCanReview(Boolean(purchased));
+      } catch {
+        setUserCanReview(false);
+      }
+
+      const has = (reviews || []).some((r) => String(r.userId) === String(actingUser.id));
+      setUserHasReviewed(Boolean(has));
+    }
+    checkEligibility();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productId, currentUser, reviews.length]);
+
+  useEffect(() => {
+    async function enrich() {
+      const need = reviews.filter((r) => (!r.userName || r.userName === null) && (r.userId || r.user_id));
+      if (!need.length) return;
+      for (const r of need) {
+        const uid = r.userId || r.user_id;
+        try {
+          const res = await fetch(`${apiBase}/api/users/${uid}`);
+          if (!res.ok) continue;
+          const j = await res.json();
+          const uname = j?.name || j?.fullName || j?.username || j?.email || null;
+          if (uname) {
+            setReviews((prev) => (prev || []).map((x) => (String(x.id) === String(r.id) ? { ...x, userName: uname } : x)));
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+    enrich();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviews.length]);
+
+  // cleanup blob urls on component unmount
+  useEffect(() => {
+    return () => {
+      try {
+        (previewsRef.current || []).forEach((p) => {
+          if (p && p.url && p.url.startsWith("blob:")) URL.revokeObjectURL(p.url);
+        });
+      } catch {}
+    };
+  }, []);
+
+  function onFilesSelected(e) {
+    const files = Array.from(e.target.files || []);
+    if (!files || files.length === 0) return;
+    const nextFiles = [...reviewFiles];
+    const nextPreviews = [...reviewPreviews];
+    for (const file of files) {
+      if (nextFiles.length >= MAX_FILES) {
+        setFileWarning(`Maximum ${MAX_FILES} attachments allowed`);
+        break;
+      }
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        setFileWarning(`Each file must be <= ${Math.round(MAX_FILE_SIZE_BYTES / (1024 * 1024))} MB`);
+        continue;
+      }
+      if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+        setFileWarning("Only image and video files are allowed");
+        continue;
+      }
+      nextFiles.push(file);
+      const url = URL.createObjectURL(file);
+      nextPreviews.push({ url, type: file.type.startsWith("video/") ? "video" : "image", name: file.name || `${Date.now()}` });
+    }
+    setReviewFiles(nextFiles);
+    setReviewPreviews(nextPreviews);
+    previewsRef.current = nextPreviews;
+    e.target.value = "";
+  }
+
+  function removeAttachment(index) {
+    setReviewFiles((prev) => {
+      const arr = Array.isArray(prev) ? prev.slice() : [];
+      arr.splice(index, 1);
+      return arr;
+    });
+    setReviewPreviews((prev) => {
+      const arr = Array.isArray(prev) ? prev.slice() : [];
+      const removed = arr.splice(index, 1);
+      if (removed && removed[0] && removed[0].url && removed[0].url.startsWith("blob:")) {
+        try { URL.revokeObjectURL(removed[0].url); } catch {}
+      }
+      previewsRef.current = arr;
+      return arr;
+    });
+  }
+
+  function displayNameForUser(user) {
+    if (!user) return null;
+    return user.name || user.fullName || user.full_name || user.firstName || user.first_name || user.email || null;
+  }
+
+  async function userHasPurchased(productIdToCheck, user) {
+    if (!user || !user.id) return false;
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${apiBase}/api/user/orders/verify?userId=${user.id}&productId=${productIdToCheck}`, {
+        method: "GET",
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (typeof json === "boolean") return json;
+        if (typeof json?.canReview === "boolean") return json.canReview;
+        if (typeof json?.purchased === "boolean") return json.purchased;
+        if (Array.isArray(json) && json.length > 0) return true;
+        if (json && (json.found || json.count > 0)) return true;
+      }
+    } catch { /* ignore */ }
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${apiBase}/api/user/orders/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ userId: user.id, productId: productIdToCheck }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (typeof json === "boolean") return json;
+        if (typeof json?.canReview === "boolean") return json.canReview;
+        if (typeof json?.purchased === "boolean") return json.purchased;
+        if (Array.isArray(json) && json.length > 0) return true;
+        if (json && (json.found || json.count > 0)) return true;
+      }
+    } catch { /* ignore */ }
+    try {
+      const orders = JSON.parse(localStorage.getItem("orders_v1") || "[]");
+      return orders.some((o) => String(o.productId) === String(productIdToCheck) && String(o.userId) === String(user.id));
+    } catch {
+      return false;
+    }
+  }
+
+  async function handleSubmitReview() {
+    const actingUser = currentUser || (() => {
+      try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
+    })();
+
+    if (!actingUser) {
+      internalToast("Please sign in to submit a review.");
+      return;
+    }
+    if (!reviewText.trim() && !reviewRating && reviewFiles.length === 0) {
+      setFileWarning("Please provide a rating, text, or attach a photo/video.");
+      return;
+    }
+
+    setIsSubmittingReview(true);
+
+    if (canReviewFlag === false) {
+      setIsSubmittingReview(false);
+      alert("You did not buy this product — only verified buyers can leave reviews.");
+      return;
+    }
+
+    const purchased = await userHasPurchased(productId, actingUser);
+    if (!purchased) {
+      setIsSubmittingReview(false);
+      alert("You did not buy this product — only verified buyers can leave reviews.");
+      setCanReviewFlag(false);
+      return;
+    }
+
+    const tempId = -Date.now();
+    const tempReview = {
+      id: tempId,
+      userId: actingUser.id,
+      name: displayNameForUser(actingUser) || actingUser.email || "Anonymous",
+      title: reviewTitle || null,
+      rating: reviewRating,
+      text: reviewText || "",
+      likes: 0,
+      dislikes: 0,
+      created_at: new Date().toISOString(),
+      pending: true,
+      media: reviewPreviews.map((p) => ({ url: p.url, type: p.type, name: p.name })),
+      imageUrl: reviewPreviews[0]?.url || null,
+    };
+
+    setReviews((prev) => [tempReview, ...(Array.isArray(prev) ? prev : [])]);
+    setShowReviewForm(true);
+    setReviewSubmitted(false);
+
+    try {
+      // Upload attachments (if any) using the useUploader hook
+      let uploaded = [];
+      if (reviewFiles && reviewFiles.length > 0) {
+        try {
+          uploaded = await upload(reviewFiles);
+          if (!Array.isArray(uploaded) || uploaded.length === 0) {
+            throw new Error("Upload returned no urls");
+          }
+        } catch (upErr) {
+          console.error("Upload failed:", upErr);
+          internalToast("Attachment upload failed. Please try again.");
+          // abort submission — do not submit blob: preview URLs
+          setIsSubmittingReview(false);
+          // remove optimistic temp review
+          setReviews((prev) => (Array.isArray(prev) ? prev.filter((r) => String(r.id) !== String(tempId)) : []));
+          return;
+        }
+      }
+
+      // Build payload strictly from uploaded URLs (no blob fallback)
+      const payload = {
+        productId,
+        userId: actingUser.id,
+        userName: tempReview.name,
+        title: tempReview.title,
+        rating: tempReview.rating,
+        text: tempReview.text,
+        imageUrls: uploaded.map((u) => u.url),
+        images: uploaded.map((u) => u.url),
+        imageUrl: uploaded.length ? uploaded[0].url : "",
+      };
+
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${apiBase}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        let errText = "";
+        try { errText = await res.text(); } catch {}
+        throw new Error(`Review POST failed (${res.status}) ${errText}`);
+      }
+
+      const created = await res.json();
+
+      // normalize created review
+      const createdNormalized = {
+        ...created,
+        id: created?.id || created?._id || tempId,
+        userId: created?.userId || created?.user_id || tempReview.userId,
+        userName: created?.userName || created?.name || created?.username || tempReview.name,
+        title: created?.title ?? tempReview.title,
+        rating: created?.rating ?? tempReview.rating,
+        text: created?.text ?? tempReview.text,
+        pending: false,
+        media: (() => {
+          const inputArr =
+            created.imageUrls || created.images || created.media ||
+            (typeof created.imageUrl === "string" && created.imageUrl ? created.imageUrl.split(",") : []);
+          const arr = Array.isArray(inputArr) ? inputArr : [];
+          const urls = arr.length ? arr : uploaded.map((u) => u.url || String(u));
+          return urls.map((m) => {
+            const url = typeof m === "object" && m.url ? m.url : String(m || "");
+            const lower = url.split("?")[0].toLowerCase();
+            const isVideo = /\.(mp4|webm|ogg|mov|m4v)$/i.test(lower) || lower.includes("video") || lower.includes("/video/");
+            return { url, type: isVideo ? "video" : "image", name: url.split("/").pop() };
+          });
+        })(),
+      };
+
+      setReviews((prev) => (Array.isArray(prev) ? prev.map((r) => (String(r.id) === String(tempId) ? createdNormalized : r)) : [createdNormalized]));
+      await fetchReviews();
+
+      setUserHasReviewed(true);
+
+      // cleanup previews & form
+      setReviewRating(5);
+      setReviewTitle("");
+      setReviewText("");
+      setReviewFiles([]);
+      reviewPreviews.forEach((p) => { if (p.url && p.url.startsWith("blob:")) URL.revokeObjectURL(p.url); });
+      setReviewPreviews([]);
+      previewsRef.current = [];
+      setFileWarning("");
+      setReviewSubmitted(true);
+      internalToast("Review submitted — thanks!");
+    } catch (err) {
+      console.error("Review POST failed:", err);
+      internalToast("Review could not be uploaded.");
+      await fetchReviews();
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  }
+
+  async function deleteReview(reviewId) {
+    if (!reviewId) return;
+    const actingUser = currentUser || (() => {
+      try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
+    })();
+
+    setReviews((prev) => (Array.isArray(prev) ? prev.filter((r) => String(r.id) !== String(reviewId)) : []));
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${apiBase}/api/reviews/${reviewId}`, {
+        method: "DELETE",
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      if (!res.ok) {
+        await fetchReviews();
+        internalToast("Could not delete on server; refreshed reviews.");
+      } else {
+        internalToast("Review deleted");
+        await fetchReviews();
+        setUserHasReviewed(false);
+      }
+    } catch (err) {
+      console.error("Delete failed:", err);
+      internalToast("Delete failed; try again.");
+      await fetchReviews();
+    }
+  }
+
+  async function toggleVote(entityId, voteType) {
+    const key = `review_${entityId}`;
+    const existing = voteCache[key];
+    const newVote = existing === voteType ? "none" : voteType;
+
+    setReviews((prev) =>
+      (prev || []).map((r) => {
+        if (String(r.id) !== String(entityId)) return r;
+        let nl = r.likes || 0;
+        let nd = r.dislikes || 0;
+        if (existing === "like") nl = Math.max(0, nl - 1);
+        if (existing === "dislike") nd = Math.max(0, nd - 1);
+        if (newVote === "like") nl = nl + 1;
+        if (newVote === "dislike") nd = nd + 1;
+        return { ...r, likes: nl, dislikes: nd };
+      })
+    );
+
+    setVoteCache((prev) => {
+      const clone = { ...(prev || {}) };
+      if (newVote === "none") delete clone[key];
+      else clone[key] = newVote;
+      try { localStorage.setItem("vote_cache_v1", JSON.stringify(clone)); } catch {}
+      return clone;
+    });
+
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${apiBase}/api/votes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ entityType: "review", entityId, vote: newVote, userId: currentUser?.id || "anonymous" }),
+      });
+      if (!res.ok) throw new Error("vote failed");
+    } catch (err) {
+      console.error("Vote API failed:", err);
+    }
+  }
+
+  const overall = useMemo(() => {
+    const arr = Array.isArray(reviews) ? reviews : [];
+    const ratingsCount = arr.length;
+    const sum = arr.reduce((s, r) => s + (Number(r.rating) || 0), 0);
+    const avg = ratingsCount ? +(sum / ratingsCount).toFixed(2) : 0;
+    const hist = [5, 4, 3, 2, 1].map((star) => arr.filter((r) => Number(r.rating) === star).length);
+    const total = hist.reduce((a, b) => a + b, 0) || 0;
+    const pct = hist.map((c) => (total ? Math.round((c / total) * 100) : 0));
+    return { avg, ratingsCount, hist, pct };
+  }, [reviews]);
+
+  const displayedReviews = useMemo(() => {
+    const arr = Array.isArray(reviews) ? reviews : [];
+    return arr.filter((r) => {
+      const hasText = r.text && String(r.text).trim().length > 0;
+      const hasMedia = Array.isArray(r.media) && r.media.length > 0;
+      return hasText || hasMedia;
+    });
+  }, [reviews]);
+
+  return (
+    <section id="reviews-section" className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 border border-gray-200/60 dark:border-gray-700/60">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-9">
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-black dark:text-white">Rate & review</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Share your experience with the product</p>
+            </div>
+            <div className="text-sm text-gray-500">Guidelines apply</div>
+          </div>
+
+          <div className="mt-4 p-6 rounded-md bg-gray-50 dark:bg-gray-800/40 border">
+            <div className="flex items-center justify-between gap-6">
+              <div className="flex items-center gap-6">
+                <div className="text-4xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
+                <div>
+                  <StarDisplay value={overall.avg} size={22} />
+                  <div className="text-sm text-gray-500">{overall.ratingsCount} review{overall.ratingsCount !== 1 ? "s" : ""}</div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-6">
+                <div className="w-64">
+                  {[5, 4, 3, 2, 1].map((s, i) => (
+                    <div key={`hist-${s}`} className="flex items-center gap-3 text-sm mb-2">
+                      <div className="w-8">{s}★</div>
+                      <div className="flex-1 h-3 bg-gray-200 rounded overflow-hidden">
+                        <div style={{ width: `${overall.pct[i] || 0}%` }} className="h-full bg-[#616467]" />
+                      </div>
+                      <div className="w-10 text-right">{overall.pct[i] || 0}%</div>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={async () => {
+                    const actingUser = currentUser || (() => {
+                      try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
+                    })();
+                    if (!actingUser) {
+                      internalToast("Please sign in to rate.");
+                      return;
+                    }
+                    if (!userCanReview) {
+                      alert("You did not buy this product — only verified buyers can write reviews.");
+                      setCanReviewFlag(false);
+                      return;
+                    }
+                    if (userHasReviewed) {
+                      internalToast("You already left a review. Delete it to submit a new one.");
+                      return;
+                    }
+                    setShowReviewForm(true);
+                  }}
+                  disabled={!userCanReview || userHasReviewed}
+                  className={` ${BUTTON_CLASS} min-w-[160px] px-5 py-3 ${(!userCanReview || userHasReviewed) ? "opacity-50 cursor-not-allowed" : ""}`}
+                  type="button"
+                >
+                  Rate product
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {!showReviewForm ? (
+            <div className="mt-4 p-4 rounded-md bg-gray-50 dark:bg-gray-800/40 border">
+              <div className="text-sm text-gray-600 dark:text-gray-300">
+                Only verified buyers can leave reviews. Click{" "}
+                <button
+                  onClick={async () => {
+                    const actingUser = currentUser || (() => {
+                      try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
+                    })();
+                    if (!actingUser) {
+                      internalToast("Please sign in to rate.");
+                      return;
+                    }
+                    if (!userCanReview) {
+                      alert("You did not buy this product — only verified buyers can write reviews.");
+                      setCanReviewFlag(false);
+                      return;
+                    }
+                    if (userHasReviewed) {
+                      internalToast("You already left a review. Delete it to submit a new one.");
+                      return;
+                    }
+                    setShowReviewForm(true);
+                  }}
+                  disabled={!userCanReview || userHasReviewed}
+                  className={`${(!userCanReview || userHasReviewed) ? "underline opacity-50 cursor-not-allowed" : "underline"}`}
+                  type="button"
+                >
+                  Rate product
+                </button>{" "}
+                to start writing.
+              </div>
+            </div>
+          ) : reviewSubmitted || userHasReviewed ? (
+            <div className="mt-4 p-4 rounded-md bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+              <div className="text-sm text-green-800 dark:text-green-200">{userHasReviewed ? "You have already submitted a review for this product." : "Review submitted successfully. Thank you!"}</div>
+            </div>
+          ) : (
+            <div className="mt-4">
+              <div className="flex items-center gap-2 mb-3 text-black dark:text-white">
+                <StarSelector value={reviewRating} onChange={(v) => setReviewRating(v)} size={22} />
+              </div>
+
+              <div className="mb-3">
+                <label htmlFor="review-title" className="font-semibold text-sm text-black dark:text-white">Title</label>
+                <input id="review-title" value={reviewTitle} onChange={(e) => setReviewTitle(e.target.value)} placeholder="Review title (optional)" className="w-full p-3 border rounded-lg bg-white dark:bg-gray-900 text-black dark:text-white mt-1" />
+              </div>
+
+              <div className="mb-3">
+                <label htmlFor="review-text" className="font-semibold text-sm text-black dark:text-white">Review</label>
+                <textarea id="review-text" placeholder="Write your review..." rows={6} value={reviewText} onChange={(e) => setReviewText(e.target.value)} className="w-full p-3 border rounded-lg bg-white dark:bg-gray-900 text-black dark:text-white mt-1 resize-y" />
+              </div>
+
+              <div className="mb-3">
+                <label className="font-semibold text-sm text-black dark:text-white">Photos & videos (optional)</label>
+                <div className="mt-2 flex gap-2 items-center">
+                  <label className={`${BUTTON_CLASS} px-4 py-2 cursor-pointer bg-white dark:bg-gray-800`}>
+                    <Paperclip size={14} /> Attach
+                    <input type="file" accept="image/*,video/*" multiple onChange={onFilesSelected} className="hidden" />
+                  </label>
+                  <div className="text-sm text-gray-500">Up to {MAX_FILES} files, max {Math.round(MAX_FILE_SIZE_BYTES / (1024 * 1024))} MB each</div>
+                </div>
+
+                {fileWarning && <div className="text-sm text-red-600 mt-2">{fileWarning}</div>}
+
+                {reviewPreviews.length > 0 && (
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    {reviewPreviews.map((p, idx) => (
+                      <div key={`${p.name || idx}-${idx}`} className="relative border rounded overflow-hidden bg-gray-50 flex items-center justify-center">
+                        {p.type === "image" ? (
+                          // eslint-disable-next-line
+                          <img
+                            src={p.url}
+                            alt={p.name}
+                            className="w-full h-32 object-contain cursor-pointer bg-gray-100"
+                            onClick={() => setLightboxItem({ url: p.url, type: "image", name: p.name })}
+                          />
+                        ) : (
+                          <video
+                            src={p.url}
+                            className="w-full h-32 object-contain cursor-pointer bg-gray-100"
+                            onClick={() => setLightboxItem({ url: p.url, type: "video", name: p.name })}
+                            muted
+                            playsInline
+                          />
+                        )}
+                        <button onClick={() => removeAttachment(idx)} type="button" className={`${BUTTON_CLASS} absolute top-1 right-1 bg-white/90 rounded-full p-1`}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="lg:col-span-3 flex flex-col items-end justify-between gap-4">
+          <div className="text-sm text-gray-500">Reviews that follow guidelines help everyone.</div>
+          <div className="w-full">
+            {showReviewForm && !reviewSubmitted && !userHasReviewed && (
+              <>
+                <button onClick={handleSubmitReview} disabled={isSubmittingReview || canReviewFlag === false || isUploadingFiles} className={`${BUTTON_CLASS} justify-center w-full`} type="button">
+                  {isSubmittingReview || isUploadingFiles ? (<><Send size={16} /> Submitting...</>) : (<><Send size={16} /> Submit</>)}
+                </button>
+                <button onClick={() => { setReviewText(""); setReviewTitle(""); setReviewFiles([]); reviewPreviews.forEach((p) => { if (p.url && p.url.startsWith("blob:")) URL.revokeObjectURL(p.url); }); setReviewPreviews([]); previewsRef.current = []; }} className={`${BUTTON_CLASS} justify-center w-full mt-3`} type="button"><Trash2 size={16} /> Reset</button>
+                {uploadError && <div className="text-xs text-red-600 mt-2">Upload error: {String(uploadError)}</div>}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+        {displayedReviews.length === 0 && <div className="text-gray-500">No reviews yet — be the first to review.</div>}
+        {displayedReviews.map((r) => {
+          const authorName = r.userName || r.user_name || r.name || "Anonymous";
+          const createdAt = r.created_at || r.createdAt || new Date().toISOString();
+          const avatarSrc = r.avatar || r.userAvatar || null; // do NOT use imageUrl or media as avatar
+          const initials = (authorName || "A").split(" ").map((p) => p?.[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "A";
+
+          return (
+            <Card key={r.id} className="w-full bg-white dark:bg-gray-900">
+              <div className="mx-0 flex items-center gap-4 pb-4 pt-4 px-4">
+                <Avatar
+                  variant="rounded"
+                  alt={authorName || "user"}
+                  src={avatarSrc || undefined}
+                  sx={{
+                    width: 56,
+                    height: 56,
+                    bgcolor: avatarSrc ? undefined : stringToHslColor(authorName || initials),
+                    color: "#fff",
+                    fontWeight: 600,
+                  }}
+                >
+                  {!avatarSrc ? initials : null}
+                </Avatar>
+
+                <div className="flex w-full flex-col gap-0.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Typography variant="subtitle2" className="!text-sm font-semibold text-black dark:text-white">
+                        {authorName}
+                      </Typography>
+                      <div className="text-xs text-gray-500">{formatRelativeTime(createdAt)}</div>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-black dark:text-white">
+                      <StarDisplay value={Number(r.rating) || 0} />
+                      <div className="text-xs font-medium">{r.rating}★</div>
+
+                      {(currentUser && (String(currentUser.id) === String(r.userId) || currentUser.role === "admin" || currentUser.isAdmin)) && (
+                        <button onClick={() => deleteReview(r.id)} className={`${BUTTON_CLASS} ml-3`} type="button"><Trash2 size={12} /> Delete</button>
+                      )}
+                    </div>
+                  </div>
+                  {r.title && <Typography className="text-sm font-medium mt-2 text-black dark:text-white">{r.title}</Typography>}
+                </div>
+              </div>
+
+              <CardContent className="p-4 pt-0 bg-white dark:bg-gray-900">
+                <Typography className="text-black dark:text-white text-sm">
+                  <ReadMore text={r.text} />
+                </Typography>
+
+                {Array.isArray(r.media) && r.media.length > 0 && (
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    {r.media.map((m, mi) => (
+                      <div key={`${String(r.id)}-media-${mi}`} className="relative border rounded overflow-hidden bg-gray-50 flex items-center justify-center">
+                        {m.type === "image" ? (
+                          // eslint-disable-next-line
+                          <img
+                            src={m.url}
+                            alt={m.name || "media"}
+                            className="w-full h-28 object-contain cursor-pointer bg-gray-100"
+                            onClick={() => setLightboxItem({ url: m.url, type: "image", name: m.name })}
+                            style={{ maxHeight: 112 }}
+                          />
+                        ) : (
+                          <video
+                            src={m.url}
+                            className="w-full h-28 object-contain cursor-pointer bg-gray-100"
+                            onClick={() => setLightboxItem({ url: m.url, type: "video", name: m.name })}
+                            muted
+                            playsInline
+                            style={{ maxHeight: 112 }}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3 mt-3">
+                  <button onClick={() => toggleVote(r.id, "like")} className={`${BUTTON_CLASS}`} type="button"><ThumbsUp size={14} /> {r.likes || 0}</button>
+                  <button onClick={() => toggleVote(r.id, "dislike")} className={`${BUTTON_CLASS}`} type="button"><ThumbsDown size={14} /> {r.dislikes || 0}</button>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      <Lightbox item={lightboxItem} onClose={() => setLightboxItem(null)} />
+    </section>
+  );
+}
