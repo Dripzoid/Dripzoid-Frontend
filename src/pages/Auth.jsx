@@ -154,9 +154,7 @@ export default function Auth({ onLoginSuccess }) {
   const inputClass =
     "w-full pl-12 pr-4 py-3 rounded-full bg-white dark:bg-black border border-black dark:border-white text-black dark:text-white placeholder-black/50 dark:placeholder-white/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/white transition";
 
-  const primaryClasses = "w-full py-3 rounded-full font-semibold shadow-sm";
-  const loginBtnClass = "bg-black text-white hover:brightness-110 active:scale-[0.995] disabled:opacity-60";
-  const signupBtnClass = "bg-black text-white hover:brightness-110 active:scale-[0.995] disabled:opacity-60";
+  const primaryClasses = "w-full py-3 rounded-full font-semibold shadow-sm bg-black text-white hover:brightness-110 active:scale-[0.995] disabled:opacity-60";
   const googleBtnBase = "w-full flex items-center justify-center gap-3 py-2 px-3 rounded-full bg-white text-black border border-black shadow-sm hover:shadow-md transition dark:bg-black dark:text-white dark:border-white";
 
   const motionBtnProps = {
@@ -173,7 +171,6 @@ export default function Auth({ onLoginSuccess }) {
       aria-label={`${children}`}
       className={googleBtnBase}
     >
-      {/* monochrome Google G - rendered as a bold G in a small circle */}
       <svg className="w-5 h-5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden>
         <circle cx="12" cy="12" r="11" stroke="currentColor" strokeWidth="1.5" fill="none" />
         <text x="12" y="16" textAnchor="middle" fontSize="12" fontWeight="700" fill="currentColor" fontFamily="Arial, Helvetica, sans-serif">G</text>
@@ -235,7 +232,7 @@ export default function Auth({ onLoginSuccess }) {
               </button>
             </div>
 
-            <motion.button {...motionBtnProps} type="submit" className={`${primaryClasses} ${loginBtnClass}`} disabled={loading} aria-busy={loading}>
+            <motion.button {...motionBtnProps} type="submit" className={primaryClasses} disabled={loading} aria-busy={loading}>
               {loading ? 'Signing in...' : 'Login'}
             </motion.button>
 
@@ -258,7 +255,13 @@ export default function Auth({ onLoginSuccess }) {
                   <input id="email" name="email" type="email" value={formData.email} onChange={handleChange} placeholder="you@example.com" required autoComplete="email" className={inputClass} />
                 </div>
 
-                <motion.button {...motionBtnProps} type="submit" className={`${primaryClasses} ${signupBtnClass}`} disabled={loading}>
+                {/* Restyled Continue button */}
+                <motion.button
+                  {...motionBtnProps}
+                  type="submit"
+                  className={primaryClasses}
+                  disabled={loading}
+                >
                   {loading ? 'Please wait...' : 'Continue'}
                 </motion.button>
 
@@ -328,7 +331,9 @@ export default function Auth({ onLoginSuccess }) {
                   </button>
                 </div>
 
-                <motion.button {...motionBtnProps} type="submit" className={`${primaryClasses} ${signupBtnClass}`} disabled={loading}>{loading ? 'Creating...' : 'Create account'}</motion.button>
+                <motion.button {...motionBtnProps} type="submit" className={primaryClasses} disabled={loading}>
+                  {loading ? 'Creating...' : 'Create account'}
+                </motion.button>
 
                 <div className="flex items-center gap-3 my-2">
                   <div className="flex-1 h-px bg-black/10 dark:bg-white/10" />
