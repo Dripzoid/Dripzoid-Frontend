@@ -4,7 +4,8 @@ import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff, Mail, Lock, User, Smartphone, CheckCircle } from "lucide-react";
 
-import RegisterWithOtp from "./RegisterWithOtp"; // updated path
+// ✅ Import your new OTP component
+import  RegisterWithOtp from "./RegisterWithOtp";
 
 const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/+$/, "");
 function buildUrl(path) {
@@ -17,8 +18,8 @@ export default function Auth({ onLoginSuccess }) {
 
   const [isLogin, setIsLogin] = useState(true);
 
-  // registration flow: enterEmail | otpSent | enterDetails
-  const [regStep, setRegStep] = useState("enterEmail");
+  // registration flow
+  const [regStep, setRegStep] = useState("enterEmail"); // enterEmail | otpSent | enterDetails
 
   // keep your form states
   const [formData, setFormData] = useState({
@@ -27,6 +28,8 @@ export default function Auth({ onLoginSuccess }) {
     password: "",
     confirmPassword: "",
     mobile: "",
+    gender: "",
+    dob: "",
   });
 
   const [showPassword, setShowPassword] = useState(false);
@@ -54,7 +57,6 @@ export default function Auth({ onLoginSuccess }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: formData.email?.trim(), password: formData.password }),
-        credentials: "include",
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.token) {
@@ -62,7 +64,6 @@ export default function Auth({ onLoginSuccess }) {
         navigate("/account");
       } else {
         if (res.status === 404) {
-          // user not found -> switch to register flow
           setIsLogin(false);
           setRegStep("enterEmail");
         } else {
@@ -75,7 +76,7 @@ export default function Auth({ onLoginSuccess }) {
     }
   };
 
-  // ------------------- REG: CONTINUE -> moves to OTP step -------------------
+  // ------------------- REG: CONTINUE -------------------
   const proceedToOtpStep = async (e) => {
     e?.preventDefault?.();
     const email = (formData.email || "").trim().toLowerCase();
@@ -98,57 +99,67 @@ export default function Auth({ onLoginSuccess }) {
       return alert("Server error");
     }
 
-    setRegStep("otpSent");
+    setRegStep("otpSent"); // now handled by RegisterWithOtp component
   };
 
   // ------------------- REG: COMPLETE -------------------
-  // POST /api/register (server expected to return token/sessionId/user)
   const handleCompleteRegistration = async (e) => {
     e.preventDefault();
     if (formData.password !== formData.confirmPassword) {
       return alert("Passwords do not match.");
     }
 
-    const payload = {
-      name: formData.name,
-      email: formData.email?.trim().toLowerCase(),
-      phone: formData.mobile || null,
-      password: formData.password,
-    };
-
     try {
-      const res = await fetch(buildUrl("/api/register"), {
+      const res = await fetch(buildUrl("/api/complete-registration"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        credentials: "include",
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email?.trim().toLowerCase(),
+          password: formData.password,
+          mobile: formData.mobile,
+          gender: formData.gender,
+          dob: formData.dob,
+        }),
       });
       const json = await res.json().catch(() => ({}));
-
       if (res.ok) {
-        // if server returned token + user, consider logged in
-        if (json?.token) {
-          if (typeof onLoginSuccess === "function") onLoginSuccess(json.user || null, json.token);
-          navigate("/account");
-        } else {
-          alert(json.message || "Registration successful — please login.");
-          setIsLogin(true);
-          setRegStep("enterEmail");
-          setFormData({ name: "", email: "", password: "", confirmPassword: "", mobile: "" });
-        }
+        alert("Registration successful — please login.");
+        setIsLogin(true);
+        setRegStep("enterEmail");
+        setFormData({ name: "", email: "", password: "", confirmPassword: "", mobile: "", gender: "", dob: "" });
       } else {
         alert(json.message || "Registration failed");
       }
     } catch (err) {
-      console.error("register error:", err);
+      console.error("complete-registration error:", err);
       alert("Server error");
     }
+  };
+
+  const handleGoogleAuth = () => {
+    // Redirect to backend Google OAuth entry point
+    window.location.href = buildUrl("/api/auth/google");
   };
 
   const inputClass =
     "w-full pl-10 pr-4 py-3 rounded-full bg-transparent border border-black/10 dark:border-white/10 text-black dark:text-white placeholder-black/40 dark:placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition";
   const buttonPrimary =
     "w-full py-3 rounded-full bg-black text-white hover:shadow active:scale-[0.995] disabled:opacity-50";
+
+  const GoogleButton = ({ children, onClick }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full py-3 rounded-full border border-black/10 dark:border-white/10 flex items-center justify-center gap-3 hover:shadow"
+    >
+      {/* inline Google icon (simple) */}
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M21.35 11.1H12v2.8h5.35C16.9 16 14.8 17.5 12 17.5c-4 0-7.3-3.3-7.3-7.3S8 3 12 3c1.9 0 3.55.65 4.85 1.95l-2.2 2.15C13.9 6.9 13 6.5 12 6.5 9.24 6.5 7 8.74 7 11.5S9.24 16.5 12 16.5c3 0 4.7-1.9 4.7-4.2 0-.35-.05-.7-.1-1.2z" fill="currentColor" />
+      </svg>
+      <span className="text-sm font-medium">{children}</span>
+    </button>
+  );
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-white dark:bg-black p-6">
@@ -164,8 +175,12 @@ export default function Auth({ onLoginSuccess }) {
             <CheckCircle size={22} />
           </div>
           <div>
-            <h2 className="text-lg md:text-xl font-semibold">{isLogin ? "Welcome back" : "Create your account"}</h2>
-            <p className="text-sm text-gray-600">{isLogin ? "Sign in to continue" : "Register with email OTP"}</p>
+            <h2 className="text-lg md:text-xl font-semibold">
+              {isLogin ? "Welcome back" : "Create your account"}
+            </h2>
+            <p className="text-sm text-gray-600">
+              {isLogin ? "Sign in to continue" : "Register with email OTP or Google"}
+            </p>
           </div>
         </div>
 
@@ -195,26 +210,67 @@ export default function Auth({ onLoginSuccess }) {
 
         {/* Forms */}
         {isLogin ? (
-          // LOGIN FORM
+          // ✅ LOGIN FORM
           <form key="login" onSubmit={handleLoginSubmit} className="flex flex-col gap-4">
+            {/* email */}
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                 <Mail size={16} />
               </span>
-              <input id="email" type="email" value={formData.email} onChange={handleChange} placeholder="you@example.com" required className={inputClass} />
+              <input
+                id="email"
+                type="email"
+                value={formData.email}
+                onChange={handleChange}
+                placeholder="you@example.com"
+                required
+                className={inputClass}
+              />
             </div>
-
+            {/* password */}
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                 <Lock size={16} />
               </span>
-              <input id="password" type={showPassword ? "text" : "password"} value={formData.password} onChange={handleChange} placeholder="Enter password" required className={inputClass} />
-              <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                value={formData.password}
+                onChange={handleChange}
+                placeholder="Enter password"
+                required
+                className={inputClass}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((s) => !s)}
+                className="absolute right-3 top-1/2 -translate-y-1/2"
+              >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
 
+            <div className="flex items-center justify-between text-sm">
+              <label className="text-transparent">placeholder</label>
+              <button
+                type="button"
+                onClick={() => navigate('/forgot-password')}
+                className="text-sm underline underline-offset-2"
+              >
+                Forgot password?
+              </button>
+            </div>
+
             <button type="submit" className={buttonPrimary}>Login</button>
+
+            {/* OR separator */}
+            <div className="flex items-center gap-3 my-1">
+              <div className="flex-1 h-px bg-black/10" />
+              <div className="text-sm text-gray-500">or</div>
+              <div className="flex-1 h-px bg-black/10" />
+            </div>
+
+            <GoogleButton onClick={handleGoogleAuth}>Continue with Google</GoogleButton>
           </form>
         ) : (
           <>
@@ -225,13 +281,30 @@ export default function Auth({ onLoginSuccess }) {
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                     <Mail size={16} />
                   </span>
-                  <input id="email" type="email" value={formData.email} onChange={handleChange} placeholder="you@example.com" required className={inputClass} />
+                  <input
+                    id="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    placeholder="you@example.com"
+                    required
+                    className={inputClass}
+                  />
                 </div>
                 <button type="submit" className={buttonPrimary}>Continue</button>
+
+                {/* OR separator */}
+                <div className="flex items-center gap-3 my-1">
+                  <div className="flex-1 h-px bg-black/10" />
+                  <div className="text-sm text-gray-500">or</div>
+                  <div className="flex-1 h-px bg-black/10" />
+                </div>
+
+                <GoogleButton onClick={handleGoogleAuth}>Sign up with Google</GoogleButton>
               </form>
             )}
 
-            {/* STEP 2: OTP Page (component) */}
+            {/* STEP 2: OTP Page (delegated) */}
             {regStep === "otpSent" && (
               <RegisterWithOtp
                 email={formData.email}
@@ -243,41 +316,121 @@ export default function Auth({ onLoginSuccess }) {
             {/* STEP 3: Enter Details */}
             {regStep === "enterDetails" && (
               <form key="reg-details" onSubmit={handleCompleteRegistration} className="flex flex-col gap-4">
+                {/* name */}
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                     <User size={16} />
                   </span>
-                  <input id="name" type="text" value={formData.name} onChange={handleChange} placeholder="Full name" required className={inputClass} />
+                  <input
+                    id="name"
+                    type="text"
+                    value={formData.name}
+                    onChange={handleChange}
+                    placeholder="Full name"
+                    required
+                    className={inputClass}
+                  />
                 </div>
-
+                {/* mobile */}
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                     <Smartphone size={16} />
                   </span>
-                  <input id="mobile" type="tel" value={formData.mobile} onChange={handleChange} placeholder="9876543210" className={inputClass} />
+                  <input
+                    id="mobile"
+                    type="tel"
+                    value={formData.mobile}
+                    onChange={handleChange}
+                    placeholder="9876543210"
+                    className={inputClass}
+                  />
                 </div>
 
+                {/* gender */}
+                <div className="relative">
+                  <select
+                    id="gender"
+                    value={formData.gender}
+                    onChange={handleChange}
+                    className="w-full pl-10 pr-4 py-3 rounded-full bg-transparent border border-black/10 dark:border-white/10 text-black dark:text-white placeholder-black/40 dark:placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition"
+                  >
+                    <option value="">Select gender (optional)</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
+                    <User size={16} />
+                  </span>
+                </div>
+
+                {/* dob */}
+                <div className="relative">
+                  <input
+                    id="dob"
+                    type="date"
+                    value={formData.dob}
+                    onChange={handleChange}
+                    placeholder="Date of birth"
+                    className={inputClass}
+                  />
+                </div>
+
+                {/* password */}
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                     <Lock size={16} />
                   </span>
-                  <input id="password" type={showPassword ? "text" : "password"} value={formData.password} onChange={handleChange} placeholder="Enter password" required className={inputClass} />
-                  <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={formData.password}
+                    onChange={handleChange}
+                    placeholder="Enter password"
+                    required
+                    className={inputClass}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((s) => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2"
+                  >
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
-
+                {/* confirm password */}
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                     <Lock size={16} />
                   </span>
-                  <input id="confirmPassword" type={showConfirmPassword ? "text" : "password"} value={formData.confirmPassword} onChange={handleChange} placeholder="Confirm password" required className={inputClass} />
-                  <button type="button" onClick={() => setShowConfirmPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <input
+                    id="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    placeholder="Confirm password"
+                    required
+                    className={inputClass}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((s) => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2"
+                  >
                     {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
 
                 <button type="submit" className={buttonPrimary}>Create account</button>
+
+                {/* OR separator */}
+                <div className="flex items-center gap-3 my-1">
+                  <div className="flex-1 h-px bg-black/10" />
+                  <div className="text-sm text-gray-500">or</div>
+                  <div className="flex-1 h-px bg-black/10" />
+                </div>
+
+                <GoogleButton onClick={handleGoogleAuth}>Sign up with Google</GoogleButton>
               </form>
             )}
           </>
