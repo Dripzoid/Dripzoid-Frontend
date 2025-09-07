@@ -126,7 +126,7 @@ export default function Auth({ onLoginSuccess }) {
 
     setLoading(true);
     try {
-      const res = await fetch(buildUrl("/api/complete-registration"), {
+      const res = await fetch(buildUrl("/api/register"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
