@@ -237,47 +237,48 @@ export default function Auth() {
   };
 
   // ---------- GOOGLE OAUTH ----------
-  // Trigger full-page redirect to backend Google OAuth entrypoint
-  const handleGoogleAuth = () => {
-    // OAuth must be performed via full redirect so Google can do the auth handshake.
-    window.location.href = buildUrl("/api/auth/google");
-  };
+ // Trigger full-page redirect to backend Google OAuth entrypoint
+const handleGoogleAuth = () => {
+  // OAuth must be performed via full redirect so Google can do the auth handshake.
+  window.location.href = buildUrl("/api/auth/google");
+};
 
-  // ---------- Detect OAuth callback (backend redirects to CLIENT_URL/login?oauth=1) ----------
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("oauth") === "1") {
-      // Remove oauth param from url so it's clean
-      params.delete("oauth");
-      const clean = window.location.pathname + (params.toString() ? `?${params.toString()}` : "") + window.location.hash;
-      window.history.replaceState({}, document.title, clean);
+// ---------- Detect OAuth callback (backend redirects to CLIENT_URL/login?oauth=1) ----------
+useEffect(() => {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("oauth") === "1") {
+    // Clean URL: remove oauth param
+    params.delete("oauth");
+    const clean = window.location.pathname + (params.toString() ? `?${params.toString()}` : "") + window.location.hash;
+    window.history.replaceState({}, document.title, clean);
 
-      // We must wait for refresh() to complete (it will call /api/auth/me using HTTP-only cookie)
-      const handleOAuthLogin = async () => {
-        try {
-          setOauthLoading(true);
-          const refreshedUser = await refresh(); // refresh returns normalized user or null
-          if (refreshedUser) {
-            navigate("/account", { replace: true });
-          } else {
-            // refresh failed - fall back to login page
-            navigate("/login", { replace: true });
-          }
-        } catch (err) {
-          console.error("OAuth login failed", err);
-          navigate("/login", { replace: true });
-        } finally {
-          setOauthLoading(false);
+    const handleOAuthLogin = async () => {
+      try {
+        setOauthLoading(true);
+        // Call refresh from context; must return user object or null
+        const refreshedUser = await login(); // or refresh() if you have it in context
+        if (refreshedUser?.token) {
+          navigate("/account", { replace: true });
+        } else {
+          // Stay on current page and show error instead of redirecting
+          alert("Google login failed. Please try again.");
         }
-      };
+      } catch (err) {
+        console.error("OAuth login failed", err);
+        alert("Google login failed. Please try again.");
+      } finally {
+        setOauthLoading(false);
+      }
+    };
 
-      handleOAuthLogin();
-    }
-    // we only want to run this on mount; refresh is stable (useCallback in context)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigate]);
+    handleOAuthLogin();
+  }
+  // Run only once on mount; refresh/login is stable via context
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [navigate]);
 
-  if (oauthLoading) return <div className="flex items-center justify-center h-screen">Loading…</div>;
+if (oauthLoading)
+  return <div className="flex items-center justify-center h-screen">Loading…</div>;
 
   // ---------- Render ----------
   return (
