@@ -255,7 +255,7 @@ export default function Auth({ onLoginSuccess }) {
  const handleGoogleAuth = async () => {
     try {
       setLoading(true);
-      const res = await fetch(buildUrl("/api/auth/google"), { method: "POST", credentials: "include" });
+      const res = await fetch(buildUrl("/api/auth/google"), { method: "GET", credentials: "include" });
       const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.token && data.sessionId) {
