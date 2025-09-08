@@ -73,91 +73,60 @@ export function UserProvider({ children }) {
   const isAuthenticated = !!user && !!token;
 
   const refresh = useCallback(
-    async () => {
-      if (forceLoggedOut) {
-        console.debug("UserContext.refresh skipped (forceLoggedOut)");
-        return null;
-      }
-      if (!token) {
-        setLoading(false);
-        return null;
-      }
+  async () => {
+    if (forceLoggedOut) return null;
+    setLoading(true);
+    setLastError(null);
 
-      setLoading(true);
-      setLastError(null);
+    try {
+      const res = await fetch(buildUrl("/api/auth/me"), {
+        method: "GET",
+        credentials: "include", // important: send HTTP-only cookie
+      });
 
-      try {
-        const headers = {};
-        if (token) headers["Authorization"] = `Bearer ${token}`;
-
-        const res = await fetch(buildUrl("/api/auth/me"), {
-          method: "GET",
-          headers,
-          credentials: "include",
-        });
-
-        if (!res.ok) {
-          if (res.status === 401 || res.status === 403) {
-            setUser(null);
-            setToken(null);
-            setSessionId(null);
-            localStorage.removeItem("user");
-            localStorage.removeItem("token");
-            localStorage.removeItem("sessionId");
-          }
-          setLoading(false);
-          return null;
-        }
-
-        const data = await res.json().catch(() => ({}));
-        const normalized = normalizeUser(data?.user ?? null);
-
-        if (normalized) {
-          setUser(normalized);
-          localStorage.setItem("user", JSON.stringify(normalized));
-        } else {
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
           setUser(null);
+          setToken(null);
           localStorage.removeItem("user");
+          localStorage.removeItem("token");
         }
-
-        if (data?.token) {
-          setToken(data.token);
-          localStorage.setItem("token", data.token);
-        }
-
-        if (data?.sessionId != null) {
-          const s = String(data.sessionId);
-          setSessionId(s);
-          localStorage.setItem("sessionId", s);
-        }
-
-        setLoading(false);
-        return normalized;
-      } catch (err) {
-        console.error("UserContext.refresh error", err);
-        setLastError(err.message || String(err));
-        setUser(null);
-        setToken(null);
-        setSessionId(null);
-        localStorage.removeItem("user");
-        localStorage.removeItem("token");
-        localStorage.removeItem("sessionId");
         setLoading(false);
         return null;
       }
-    },
-    [token, forceLoggedOut]
-  );
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
+      const data = await res.json().catch(() => ({}));
+      const normalized = normalizeUser(data?.user ?? null);
 
-  useEffect(() => {
-    if (stripOAuthParam() && !forceLoggedOut) {
-      refresh().catch(() => {});
+      if (normalized) {
+        setUser(normalized);
+        localStorage.setItem("user", JSON.stringify(normalized));
+      } else {
+        setUser(null);
+        localStorage.removeItem("user");
+      }
+
+      // If backend returns JWT optionally
+      if (data?.token) {
+        setToken(data.token);
+        localStorage.setItem("token", data.token);
+      }
+
+      setLoading(false);
+      return normalized;
+    } catch (err) {
+      console.error("UserContext.refresh error", err);
+      setUser(null);
+      setToken(null);
+      localStorage.removeItem("user");
+      localStorage.removeItem("token");
+      setLoading(false);
+      return null;
     }
-  }, []); // once on mount
+  },
+  [forceLoggedOut]
+);
+ // once on mount
 
   const login = async (userData, jwtToken = null, newSessionId = null) => {
     const normalized = normalizeUser(userData);
