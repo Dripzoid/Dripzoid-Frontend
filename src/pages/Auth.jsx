@@ -36,6 +36,7 @@ export default function Auth() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(false);
 
   // Forgot flow
   const [forgotFlow, setForgotFlow] = useState(false);
@@ -238,7 +239,7 @@ export default function Auth() {
     window.location.href = buildUrl("/api/auth/google");
   };
 
-  // Detect OAuth callback
+  // ---------- Detect OAuth callback ----------
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("oauth") === "1") {
@@ -246,10 +247,29 @@ export default function Auth() {
       const clean = window.location.pathname + (params.toString() ? `?${params.toString()}` : "") + window.location.hash;
       window.history.replaceState({}, document.title, clean);
 
-      login().catch(() => {}); // UserContext refresh
-      navigate("/account");
+      // Async refresh and navigate only after user context is ready
+      const handleOAuthLogin = async () => {
+        try {
+          setOauthLoading(true);
+          const refreshedUser = await login(); // triggers UserContext.refresh internally
+          if (refreshedUser) {
+            navigate("/account", { replace: true });
+          } else {
+            navigate("/login", { replace: true }); // fallback
+          }
+        } catch (err) {
+          console.error("OAuth login failed", err);
+          navigate("/login", { replace: true });
+        } finally {
+          setOauthLoading(false);
+        }
+      };
+
+      handleOAuthLogin();
     }
   }, [login, navigate]);
+
+  if (oauthLoading) return <div className="flex items-center justify-center h-screen">Loading...</div>;
 
   // ---------- Render ----------
   return (
