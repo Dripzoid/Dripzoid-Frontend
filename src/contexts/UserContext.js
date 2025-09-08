@@ -6,9 +6,8 @@ export const UserContext = createContext();
 const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/+$/, "");
 
 function buildUrl(path) {
-  const base = API_BASE.replace(/\/+$/, "");
   if (!path.startsWith("/")) path = `/${path}`;
-  return base ? `${base}${path}` : `${path}`;
+  return `${API_BASE}${path}`;
 }
 
 const normalizeUser = (user) => {
@@ -20,25 +19,15 @@ const normalizeUser = (user) => {
   return { ...user, is_admin: Boolean(isAdmin) };
 };
 
-function stripOAuthParam() {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("oauth") === "1") {
-      params.delete("oauth");
-      const clean =
-        window.location.pathname +
-        (params.toString() ? `?${params.toString()}` : "") +
-        window.location.hash;
-      window.history.replaceState({}, document.title, clean);
-      return true;
-    }
-  } catch (err) {
-    console.warn("stripOAuthParam failed", err);
-  }
-  return false;
-}
-
 export function UserProvider({ children }) {
+  const [user, setUser] = useState(() => {
+    try {
+      const raw = localStorage.getItem("user");
+      return raw && raw !== "null" ? normalizeUser(JSON.parse(raw)) : null;
+    } catch {
+      return null;
+    }
+  });
   const [token, setToken] = useState(() => {
     try {
       const raw = localStorage.getItem("token");
@@ -47,7 +36,6 @@ export function UserProvider({ children }) {
       return null;
     }
   });
-
   const [sessionId, setSessionId] = useState(() => {
     try {
       const raw = localStorage.getItem("sessionId");
@@ -57,40 +45,26 @@ export function UserProvider({ children }) {
     }
   });
 
-  const [user, setUser] = useState(() => {
-    try {
-      const raw = localStorage.getItem("user");
-      return raw && raw !== "null" ? normalizeUser(JSON.parse(raw)) : null;
-    } catch {
-      return null;
-    }
-  });
-
   const [loading, setLoading] = useState(true);
-  const [lastError, setLastError] = useState(null);
   const [forceLoggedOut, setForceLoggedOut] = useState(false);
 
   const isAuthenticated = !!user && !!token;
 
-  const refresh = useCallback(
-  async () => {
+  const refresh = useCallback(async () => {
     if (forceLoggedOut) return null;
     setLoading(true);
-    setLastError(null);
 
     try {
       const res = await fetch(buildUrl("/api/auth/me"), {
         method: "GET",
-        credentials: "include", // important: send HTTP-only cookie
+        credentials: "include", // HTTP-only cookie
       });
 
       if (!res.ok) {
-        if (res.status === 401 || res.status === 403) {
-          setUser(null);
-          setToken(null);
-          localStorage.removeItem("user");
-          localStorage.removeItem("token");
-        }
+        setUser(null);
+        setToken(null);
+        localStorage.removeItem("user");
+        localStorage.removeItem("token");
         setLoading(false);
         return null;
       }
@@ -106,7 +80,6 @@ export function UserProvider({ children }) {
         localStorage.removeItem("user");
       }
 
-      // If backend returns JWT optionally
       if (data?.token) {
         setToken(data.token);
         localStorage.setItem("token", data.token);
@@ -123,57 +96,45 @@ export function UserProvider({ children }) {
       setLoading(false);
       return null;
     }
-  },
-  [forceLoggedOut]
-);
- // once on mount
+  }, [forceLoggedOut]);
 
-  const login = async (userData, jwtToken = null, newSessionId = null) => {
-    const normalized = normalizeUser(userData);
-    setUser(normalized);
-    if (normalized) {
-      localStorage.setItem("user", JSON.stringify(normalized));
-    }
+  // LOGIN
+  const login = async (userData = null, jwtToken = null, newSessionId = null) => {
+    if (userData || jwtToken) {
+      // Normal login flow
+      const normalized = normalizeUser(userData);
+      setUser(normalized);
+      if (normalized) localStorage.setItem("user", JSON.stringify(normalized));
 
-    if (jwtToken) {
-      setToken(jwtToken);
-      localStorage.setItem("token", jwtToken);
+      if (jwtToken) {
+        setToken(jwtToken);
+        localStorage.setItem("token", jwtToken);
+      }
+
+      if (newSessionId != null) {
+        setSessionId(String(newSessionId));
+        localStorage.setItem("sessionId", String(newSessionId));
+      }
     } else {
-      setTimeout(() => {
-        if (!forceLoggedOut) refresh().catch(() => {});
-      }, 50);
-    }
-
-    if (newSessionId != null) {
-      const s = String(newSessionId);
-      setSessionId(s);
-      localStorage.setItem("sessionId", s);
+      // OAuth / refresh login
+      await refresh();
     }
 
     setForceLoggedOut(false);
-    console.log("UserContext.login saved", { user: normalized });
   };
 
   const logout = async (skipServer = false) => {
     setForceLoggedOut(true);
 
-    const prevToken = token;
-    const prevSessionId = sessionId;
-
-    if (!skipServer && API_BASE) {
+    if (!skipServer) {
       try {
-        const headers = { "Content-Type": "application/json" };
-        if (prevToken) headers["Authorization"] = `Bearer ${prevToken}`;
-
         await fetch(buildUrl("/api/account/signout-session"), {
           method: "POST",
           credentials: "include",
-          headers,
-          body: JSON.stringify({ sessionId: prevSessionId ?? null }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: sessionId ?? null }),
         }).catch(() => {});
-      } catch (err) {
-        console.warn("UserContext.logout: server signout failed", err);
-      }
+      } catch {}
     }
 
     setUser(null);
@@ -182,40 +143,6 @@ export function UserProvider({ children }) {
     localStorage.removeItem("user");
     localStorage.removeItem("token");
     localStorage.removeItem("sessionId");
-
-    console.log("✅ UserContext: logout completed");
-  };
-
-  const updateUser = async (updatedData) => {
-    if (!user) throw new Error("User not authenticated");
-
-    const headers = { "Content-Type": "application/json" };
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-
-    const res = await fetch(buildUrl(`/api/users/${user.id}`), {
-      method: "PUT",
-      headers,
-      credentials: "include",
-      body: JSON.stringify(updatedData),
-    });
-
-    if (!res.ok) {
-      let errorData;
-      try {
-        errorData = await res.json();
-      } catch {
-        throw new Error("Failed to update user");
-      }
-      throw new Error(errorData.message || "Failed to update user");
-    }
-
-    const updatedUserRaw = await res.json();
-    const updatedUser = normalizeUser(updatedUserRaw);
-
-    setUser(updatedUser);
-    localStorage.setItem("user", JSON.stringify(updatedUser));
-
-    return updatedUser;
   };
 
   return (
@@ -225,12 +152,10 @@ export function UserProvider({ children }) {
         token,
         sessionId,
         loading,
-        lastError,
         isAuthenticated,
         login,
         logout,
         refresh,
-        updateUser,
         setUser,
         setToken,
         setSessionId,
