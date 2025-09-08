@@ -38,7 +38,6 @@ export default function Auth({ onLoginSuccess }) {
     if (saved && !formData.email) {
       setFormData((s) => ({ ...s, email: saved }));
     }
-    // placeholder for future side-effects
   }, []); // run once
 
   const handleChange = (e) => {
@@ -130,7 +129,9 @@ export default function Auth({ onLoginSuccess }) {
     }
 
     // Ensure we have an email (try state first, then localStorage fallback)
-    const email = (formData.email || "").trim().toLowerCase() || (localStorage.getItem("reg_email") || "").trim().toLowerCase();
+    const email =
+      (formData.email || "").trim().toLowerCase() ||
+      (localStorage.getItem("reg_email") || "").trim().toLowerCase();
     const name = (formData.name || "").trim();
     const password = formData.password;
 
@@ -150,9 +151,6 @@ export default function Auth({ onLoginSuccess }) {
       dob: formData.dob || "",
     };
 
-    // Debugging: show payload in console for troubleshooting (remove in production)
-    console.debug("Register payload:", payload);
-
     try {
       const res = await fetch(buildUrl("/api/register"), {
         method: "POST",
@@ -161,7 +159,6 @@ export default function Auth({ onLoginSuccess }) {
       });
 
       const json = await res.json().catch(() => ({}));
-      console.debug("Register response:", res.status, json);
 
       if (res.ok) {
         // If backend returns a token (our server issues token on register), auto-login
@@ -173,7 +170,15 @@ export default function Auth({ onLoginSuccess }) {
           }
           // cleanup
           localStorage.removeItem("reg_email");
-          setFormData({ name: "", email: "", password: "", confirmPassword: "", mobile: "", gender: "", dob: "" });
+          setFormData({
+            name: "",
+            email: "",
+            password: "",
+            confirmPassword: "",
+            mobile: "",
+            gender: "",
+            dob: "",
+          });
           navigate("/account");
           return;
         }
@@ -182,7 +187,15 @@ export default function Auth({ onLoginSuccess }) {
         alert("Registration successful — please login.");
         localStorage.removeItem("reg_email");
         switchToLogin();
-        setFormData({ name: "", email: "", password: "", confirmPassword: "", mobile: "", gender: "", dob: "" });
+        setFormData({
+          name: "",
+          email: "",
+          password: "",
+          confirmPassword: "",
+          mobile: "",
+          gender: "",
+          dob: "",
+        });
       } else {
         // show backend message if present
         alert(json.message || "Registration failed");
@@ -200,12 +213,21 @@ export default function Auth({ onLoginSuccess }) {
     window.location.href = buildUrl("/api/auth/google");
   };
 
-  // Theme: strict black & white styling
+  // ------------------- Styling (Black & White theme, inverted in dark mode) -------------------
+  // Inputs: white bg + black text in light, black bg + white text in dark
   const inputClass =
-    "w-full pl-12 pr-4 py-3 rounded-full bg-white dark:bg-black border border-black dark:border-white text-black dark:text-white placeholder-black/50 dark:placeholder-white/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black dark:focus-visible:ring-white transition";
+    "w-full pl-12 pr-4 py-3 rounded-full text-black bg-white border border-black placeholder-black/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black transition " +
+    "dark:text-white dark:bg-black dark:border-white dark:placeholder-white/50 dark:focus-visible:ring-white";
 
-  const primaryClasses = "w-full py-3 rounded-full font-semibold shadow-sm bg-black text-white hover:brightness-110 active:scale-[0.995] disabled:opacity-60";
-  const googleBtnBase = "w-full flex items-center justify-center gap-3 py-2 px-3 rounded-full bg-white text-black border border-black shadow-sm hover:shadow-md transition dark:bg-black dark:text-white dark:border-white";
+  // Primary button: black bg + white text in light, white bg + black text in dark (inverted)
+  const primaryClasses =
+    "w-full py-3 rounded-full font-semibold shadow-sm bg-black text-white hover:brightness-110 active:scale-[0.995] disabled:opacity-60 " +
+    "dark:bg-white dark:text-black dark:border dark:border-white";
+
+  // Google button base: white background in light, black background in dark (keeps G visible)
+  const googleBtnBase =
+    "w-full flex items-center justify-center gap-3 py-2 px-3 rounded-full border border-black shadow-sm transition " +
+    "bg-white text-black dark:bg-black dark:text-white dark:border-white";
 
   const motionBtnProps = {
     whileHover: { scale: 1.02 },
@@ -215,11 +237,30 @@ export default function Auth({ onLoginSuccess }) {
 
   const GoogleIcon = () => (
     // Multicolor Google "G" icon (inline SVG)
-    <svg width="18" height="18" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden focusable="false">
-      <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C34.7 33 30 36 24 36c-7.7 0-14-6.3-14-14s6.3-14 14-14c3.6 0 6.9 1.3 9.4 3.6l6.6-6.6C34.6 2.9 29.6 1 24 1 11.9 1 2 10.9 2 23s9.9 22 22 22c11 0 21-8 21-22 0-1.5-.2-2.6-.4-3z"/>
-      <path fill="#FF3D00" d="M6.3 14.7l7.3 5.3C15.3 16.1 19.2 13 24 13c3.6 0 6.9 1.3 9.4 3.6l6.6-6.6C34.6 2.9 29.6 1 24 1 16.1 1 9 6.8 6.3 14.7z"/>
-      <path fill="#4CAF50" d="M24 47c5.6 0 10.6-1.9 14.4-5.1l-6.7-5.4C30.9 37.7 27.8 39 24 39c-6 0-10.9-3.8-12.8-9.2l-7.4 5.7C7.9 41.8 15.3 47 24 47z"/>
-      <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1.1 3.1-3.1 5.6-5.7 7.3 0 0 9.9-7 13-13.8 0 0 .3-1.3.3-1.4z"/>
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 48 48"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      focusable="false"
+    >
+      <path
+        fill="#FFC107"
+        d="M43.6 20.5H42V20H24v8h11.3C34.7 33 30 36 24 36c-7.7 0-14-6.3-14-14s6.3-14 14-14c3.6 0 6.9 1.3 9.4 3.6l6.6-6.6C34.6 2.9 29.6 1 24 1 11.9 1 2 10.9 2 23s9.9 22 22 22c11 0 21-8 21-22 0-1.5-.2-2.6-.4-3z"
+      />
+      <path
+        fill="#FF3D00"
+        d="M6.3 14.7l7.3 5.3C15.3 16.1 19.2 13 24 13c3.6 0 6.9 1.3 9.4 3.6l6.6-6.6C34.6 2.9 29.6 1 24 1 16.1 1 9 6.8 6.3 14.7z"
+      />
+      <path
+        fill="#4CAF50"
+        d="M24 47c5.6 0 10.6-1.9 14.4-5.1l-6.7-5.4C30.9 37.7 27.8 39 24 39c-6 0-10.9-3.8-12.8-9.2l-7.4 5.7C7.9 41.8 15.3 47 24 47z"
+      />
+      <path
+        fill="#1976D2"
+        d="M43.6 20.5H42V20H24v8h11.3c-1.1 3.1-3.1 5.6-5.7 7.3 0 0 9.9-7 13-13.8 0 0 .3-1.3.3-1.4z"
+      />
     </svg>
   );
 
@@ -245,20 +286,40 @@ export default function Auth({ onLoginSuccess }) {
         className="w-full max-w-md p-8 md:p-10 rounded-2xl bg-white dark:bg-black border border-black/10 dark:border-white/10 shadow-2xl"
       >
         <div className="flex items-start gap-4 mb-6">
-          <div className="p-3 rounded-lg bg-black text-white">
+          <div className="p-3 rounded-lg bg-black dark:bg-white text-white dark:text-black">
             <CheckCircle size={20} />
           </div>
           <div>
-            <h2 className="text-xl font-semibold text-black dark:text-white">{isLogin ? "Welcome back" : "Create your account"}</h2>
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">{isLogin ? "Sign in to continue" : "Register with email OTP or Google"}</p>
+            <h2 className="text-xl font-semibold text-black dark:text-white">
+              {isLogin ? "Welcome back" : "Create your account"}
+            </h2>
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+              {isLogin ? "Sign in to continue" : "Register with email OTP or Google"}
+            </p>
           </div>
         </div>
 
         <div className="flex items-center justify-center gap-3 mb-6">
-          <button type="button" onClick={switchToLogin} className={isLogin ? "px-5 py-2 rounded-full bg-black text-white text-sm font-medium" : "px-5 py-2 rounded-full text-sm font-medium bg-transparent text-black dark:text-white"}>
+          <button
+            type="button"
+            onClick={switchToLogin}
+            className={
+              isLogin
+                ? "px-5 py-2 rounded-full bg-black text-white text-sm font-medium dark:bg-white dark:text-black"
+                : "px-5 py-2 rounded-full text-sm font-medium bg-transparent text-black dark:text-white"
+            }
+          >
             Login
           </button>
-          <button type="button" onClick={switchToRegister} className={!isLogin ? "px-5 py-2 rounded-full bg-black text-white text-sm font-medium" : "px-5 py-2 rounded-full text-sm font-medium bg-transparent text-black dark:text-white"}>
+          <button
+            type="button"
+            onClick={switchToRegister}
+            className={
+              !isLogin
+                ? "px-5 py-2 rounded-full bg-black text-white text-sm font-medium dark:bg-white dark:text-black"
+                : "px-5 py-2 rounded-full text-sm font-medium bg-transparent text-black dark:text-white"
+            }
+          >
             Register
           </button>
         </div>
@@ -269,28 +330,62 @@ export default function Auth({ onLoginSuccess }) {
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
                 <Mail size={16} />
               </span>
-              <input id="email" name="email" type="email" value={formData.email} onChange={handleChange} placeholder="you@example.com" required autoComplete="email" className={inputClass} />
+              <input
+                id="email"
+                name="email"
+                type="email"
+                value={formData.email}
+                onChange={handleChange}
+                placeholder="you@example.com"
+                required
+                autoComplete="email"
+                className={inputClass}
+              />
             </div>
 
             <div className="relative">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
                 <Lock size={16} />
               </span>
-              <input id="password" name="password" type={showPassword ? "text" : "password"} value={formData.password} onChange={handleChange} placeholder="Enter password" required autoComplete="current-password" className={inputClass} />
-              <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                value={formData.password}
+                onChange={handleChange}
+                placeholder="Enter password"
+                required
+                autoComplete="current-password"
+                className={inputClass}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((s) => !s)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50"
+              >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
 
             <div className="flex items-center justify-between text-sm">
               <div />
-              <button type="button" onClick={() => navigate('/forgot-password')} className="text-sm underline text-black/60 dark:text-white/60 underline-offset-2">
+              <button
+                type="button"
+                onClick={() => navigate("/forgot-password")}
+                className="text-sm underline text-black/60 dark:text-white/60 underline-offset-2"
+              >
                 Forgot password?
               </button>
             </div>
 
-            <motion.button {...motionBtnProps} type="submit" className={primaryClasses} disabled={loading} aria-busy={loading}>
-              {loading ? 'Signing in...' : 'Login'}
+            <motion.button
+              {...motionBtnProps}
+              type="submit"
+              className={primaryClasses}
+              disabled={loading}
+              aria-busy={loading}
+            >
+              {loading ? "Signing in..." : "Login"}
             </motion.button>
 
             <div className="flex items-center gap-3 my-2">
@@ -309,17 +404,21 @@ export default function Auth({ onLoginSuccess }) {
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
                     <Mail size={16} />
                   </span>
-                  <input id="email" name="email" type="email" value={formData.email} onChange={handleChange} placeholder="you@example.com" required autoComplete="email" className={inputClass} />
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    placeholder="you@example.com"
+                    required
+                    autoComplete="email"
+                    className={inputClass}
+                  />
                 </div>
 
-                {/* Restyled Continue button */}
-                <motion.button
-                  {...motionBtnProps}
-                  type="submit"
-                  className={primaryClasses}
-                  disabled={loading}
-                >
-                  {loading ? 'Please wait...' : 'Continue'}
+                <motion.button {...motionBtnProps} type="submit" className={primaryClasses} disabled={loading}>
+                  {loading ? "Please wait..." : "Continue"}
                 </motion.button>
 
                 <div className="flex items-center gap-3 my-2">
@@ -333,7 +432,11 @@ export default function Auth({ onLoginSuccess }) {
             )}
 
             {regStep === "otpSent" && (
-              <RegisterWithOtp email={formData.email} onVerified={() => setRegStep("enterDetails")} onBack={() => setRegStep("enterEmail")} />
+              <RegisterWithOtp
+                email={formData.email}
+                onVerified={() => setRegStep("enterDetails")}
+                onBack={() => setRegStep("enterEmail")}
+              />
             )}
 
             {regStep === "enterDetails" && (
@@ -342,14 +445,33 @@ export default function Auth({ onLoginSuccess }) {
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
                     <User size={16} />
                   </span>
-                  <input id="name" name="name" type="text" value={formData.name} onChange={handleChange} placeholder="Full name" required autoComplete="name" className={inputClass} />
+                  <input
+                    id="name"
+                    name="name"
+                    type="text"
+                    value={formData.name}
+                    onChange={handleChange}
+                    placeholder="Full name"
+                    required
+                    autoComplete="name"
+                    className={inputClass}
+                  />
                 </div>
 
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
                     <Smartphone size={16} />
                   </span>
-                  <input id="mobile" name="mobile" type="tel" value={formData.mobile} onChange={handleChange} placeholder="9876543210" autoComplete="tel" className={inputClass} />
+                  <input
+                    id="mobile"
+                    name="mobile"
+                    type="tel"
+                    value={formData.mobile}
+                    onChange={handleChange}
+                    placeholder="9876543210"
+                    autoComplete="tel"
+                    className={inputClass}
+                  />
                 </div>
 
                 <div className="relative">
@@ -372,7 +494,17 @@ export default function Auth({ onLoginSuccess }) {
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
                     <Lock size={16} />
                   </span>
-                  <input id="password" name="password" type={showPassword ? "text" : "password"} value={formData.password} onChange={handleChange} placeholder="Enter password" required autoComplete="new-password" className={inputClass} />
+                  <input
+                    id="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    value={formData.password}
+                    onChange={handleChange}
+                    placeholder="Enter password"
+                    required
+                    autoComplete="new-password"
+                    className={inputClass}
+                  />
                   <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -382,14 +514,23 @@ export default function Auth({ onLoginSuccess }) {
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
                     <Lock size={16} />
                   </span>
-                  <input id="confirmPassword" name="confirmPassword" type={showConfirmPassword ? "text" : "password"} value={formData.confirmPassword} onChange={handleChange} placeholder="Confirm password" required className={inputClass} />
+                  <input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    placeholder="Confirm password"
+                    required
+                    className={inputClass}
+                  />
                   <button type="button" onClick={() => setShowConfirmPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                     {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
 
                 <motion.button {...motionBtnProps} type="submit" className={primaryClasses} disabled={loading}>
-                  {loading ? 'Creating...' : 'Create account'}
+                  {loading ? "Creating..." : "Create account"}
                 </motion.button>
 
                 <div className="flex items-center gap-3 my-2">
