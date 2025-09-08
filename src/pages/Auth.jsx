@@ -35,14 +35,13 @@ export default function Auth({ onLoginSuccess }) {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Forgot flow (inline within login)
+  // Forgot flow (replaces login form when active)
   const [forgotFlow, setForgotFlow] = useState(false);
   const [forgotOtpVerified, setForgotOtpVerified] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("reg_email");
     if (saved && !formData.email) setFormData((s) => ({ ...s, email: saved }));
-    // only on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -126,7 +125,7 @@ export default function Auth({ onLoginSuccess }) {
     }
   };
 
-  // ---------- FORGOT (inline) ----------
+  // ---------- FORGOT (replaces login UI) ----------
   // Start forgot flow: show RegisterWithOtp which will send OTP to email
   const openForgotFlow = () => {
     setForgotFlow(true);
@@ -159,6 +158,7 @@ export default function Auth({ onLoginSuccess }) {
       const json = await res.json().catch(() => ({}));
       if (res.ok) {
         alert("Password reset successful. Please login.");
+        // return to login UI and clear forgot state
         setForgotFlow(false);
         setForgotOtpVerified(false);
         setFormData((s) => ({ ...s, password: "", confirmPassword: "" }));
@@ -282,22 +282,22 @@ export default function Auth({ onLoginSuccess }) {
         <div className="flex items-center justify-center gap-3 mb-6">
           <button
             type="button"
-            onClick={() => { setIsLogin(true); setRegStep("enterEmail"); }}
+            onClick={() => { setIsLogin(true); setRegStep("enterEmail"); setForgotFlow(false); setForgotOtpVerified(false); }}
             className={isLogin ? "px-5 py-2 rounded-full bg-black text-white text-sm font-medium dark:bg-white dark:text-black" : "px-5 py-2 rounded-full text-sm font-medium bg-transparent text-black dark:text-white"}
           >
             Login
           </button>
           <button
             type="button"
-            onClick={() => { setIsLogin(false); setRegStep("enterEmail"); }}
+            onClick={() => { setIsLogin(false); setRegStep("enterEmail"); setForgotFlow(false); setForgotOtpVerified(false); }}
             className={!isLogin ? "px-5 py-2 rounded-full bg-black text-white text-sm font-medium dark:bg-white dark:text-black" : "px-5 py-2 rounded-full text-sm font-medium bg-transparent text-black dark:text-white"}
           >
             Register
           </button>
         </div>
 
-        {/* LOGIN */}
-        {isLogin && (
+        {/* LOGIN (or replaced by forgot flow) */}
+        {!forgotFlow && isLogin && (
           <div>
             <form onSubmit={handleLoginSubmit} className="flex flex-col gap-4">
               <div className="relative">
@@ -360,68 +360,76 @@ export default function Auth({ onLoginSuccess }) {
 
               <GoogleButton onClick={handleGoogleAuth}>Login with Google</GoogleButton>
             </form>
+          </div>
+        )}
 
-            {/* Inline forgot flow panel (under login form) */}
-            {forgotFlow && (
-              <div className="mt-6 bg-white/5 dark:bg-black/10 p-4 rounded-lg border border-black/10 dark:border-white/10">
-                {!forgotOtpVerified ? (
-                  <RegisterWithOtp
-                    email={formData.email}
-                    onVerified={(d) => onForgotOtpVerified(d)}
-                    onBack={() => { setForgotFlow(false); setForgotOtpVerified(false); }}
+        {/* FORGOT FLOW replaces the login form area entirely */}
+        {forgotFlow && (
+          <div>
+            {!forgotOtpVerified ? (
+              // Show OTP UI (RegisterWithOtp) in place of login form.
+              <RegisterWithOtp
+                email={formData.email}
+                onVerified={(d) => {
+                  onForgotOtpVerified(d);
+                }}
+                onBack={() => {
+                  // Cancel forgot flow -> back to login form
+                  setForgotFlow(false);
+                  setForgotOtpVerified(false);
+                }}
+              />
+            ) : (
+              // OTP verified -> show reset-password form
+              <div className="mt-2">
+                <div className="text-sm text-gray-600 dark:text-gray-300 mb-3">Reset password for <strong>{formData.email}</strong></div>
+
+                <div className="relative mb-3">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
+                    <Lock size={16} />
+                  </span>
+                  <input
+                    id="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    value={formData.password}
+                    onChange={handleChange}
+                    placeholder="New password"
+                    className={inputClass}
+                    required
                   />
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    <div className="text-sm text-gray-600 dark:text-gray-300">Enter a new password for <strong>{formData.email}</strong></div>
+                  <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
 
-                    <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
-                        <Lock size={16} />
-                      </span>
-                      <input
-                        id="password"
-                        name="password"
-                        type={showPassword ? "text" : "password"}
-                        value={formData.password}
-                        onChange={handleChange}
-                        placeholder="New password"
-                        className={inputClass}
-                        required
-                      />
-                      <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
-                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
-                    </div>
+                <div className="relative mb-3">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
+                    <Lock size={16} />
+                  </span>
+                  <input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    placeholder="Confirm new password"
+                    className={inputClass}
+                    required
+                  />
+                  <button type="button" onClick={() => setShowConfirmPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
+                    {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
 
-                    <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
-                        <Lock size={16} />
-                      </span>
-                      <input
-                        id="confirmPassword"
-                        name="confirmPassword"
-                        type={showConfirmPassword ? "text" : "password"}
-                        value={formData.confirmPassword}
-                        onChange={handleChange}
-                        placeholder="Confirm new password"
-                        className={inputClass}
-                        required
-                      />
-                      <button type="button" onClick={() => setShowConfirmPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
-                        {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <button onClick={handleResetPassword} disabled={loading} className="flex-1 py-2 rounded-full bg-black text-white dark:bg-white dark:text-black font-semibold">
-                        {loading ? "Resetting..." : "Reset password"}
-                      </button>
-                      <button onClick={() => { setForgotFlow(false); setForgotOtpVerified(false); }} className="py-2 px-4 rounded-full border">
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <div className="flex items-center gap-3">
+                  <button onClick={handleResetPassword} disabled={loading} className="flex-1 py-2 rounded-full bg-black text-white dark:bg-white dark:text-black font-semibold">
+                    {loading ? "Resetting..." : "Reset password"}
+                  </button>
+                  <button onClick={() => { setForgotFlow(false); setForgotOtpVerified(false); }} className="py-2 px-4 rounded-full border">
+                    Cancel
+                  </button>
+                </div>
               </div>
             )}
           </div>
