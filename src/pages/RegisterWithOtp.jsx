@@ -53,6 +53,7 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
     }
   };
 
+  // ---- send OTP without any email check ----
   const sendOtp = async () => {
     setError("");
     const id = (identifier || "").trim();
@@ -151,7 +152,7 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
       {!otpSent && !verified && (
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-semibold text-black dark:text-white">Enter email or mobile</h3>
+            <h3 className="text-lg font-semibold text-black dark:text-white">Register — enter email or mobile</h3>
             {typeof onBack === "function" && (
               <button onClick={onBack} className="text-sm underline text-black/60 dark:text-white/60 underline-offset-2">
                 Back
