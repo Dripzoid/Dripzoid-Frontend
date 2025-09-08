@@ -249,23 +249,30 @@ useEffect(() => {
   if (params.get("oauth") === "1") {
     // Clean URL: remove oauth param
     params.delete("oauth");
-    const clean = window.location.pathname + (params.toString() ? `?${params.toString()}` : "") + window.location.hash;
+    const clean =
+      window.location.pathname +
+      (params.toString() ? `?${params.toString()}` : "") +
+      window.location.hash;
     window.history.replaceState({}, document.title, clean);
 
     const handleOAuthLogin = async () => {
       try {
         setOauthLoading(true);
-        // Call refresh from context; must return user object or null
-        const refreshedUser = await login(); // or refresh() if you have it in context
-        if (refreshedUser?.token) {
+
+        // Ensure your refresh/login function sends credentials
+        const refreshedUser = await refresh({
+          // If using fetch inside refresh, make sure credentials are included:
+          // credentials: "include"
+        });
+
+        if (refreshedUser?.user) {
+          // Successful login → redirect
           navigate("/account", { replace: true });
         } else {
-          // Stay on current page and show error instead of redirecting
-          alert("Google login failed. Please try again.");
+          console.error("OAuth login failed: no user returned");
         }
       } catch (err) {
         console.error("OAuth login failed", err);
-        alert("Google login failed. Please try again.");
       } finally {
         setOauthLoading(false);
       }
@@ -273,12 +280,17 @@ useEffect(() => {
 
     handleOAuthLogin();
   }
-  // Run only once on mount; refresh/login is stable via context
+  // Only run on mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [navigate]);
 
 if (oauthLoading)
-  return <div className="flex items-center justify-center h-screen">Loading…</div>;
+  return (
+    <div className="flex items-center justify-center h-screen">
+      Loading…
+    </div>
+  );
+
 
   // ---------- Render ----------
   return (
