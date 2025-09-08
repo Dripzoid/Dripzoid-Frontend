@@ -14,23 +14,21 @@ export default function BulkUpload({ onUploadComplete }) {
     const formData = new FormData();
     formData.append("file", file);
 
-    try {
-      // use api.formPost which handles FormData and auth flag
-      const res = await api.formPost("/api/admin/products/bulk-upload", formData, true);
-      // If API returns products in response, pass them
-      if (res && res.products) {
-        onUploadComplete && onUploadComplete(res.products);
-      } else {
-        onUploadComplete && onUploadComplete();
-      }
-      alert("✅ Bulk upload complete!");
-      setFile(null);
-    } catch (err) {
-      console.error(err);
-      alert("❌ Upload failed: " + (err.message || JSON.stringify(err)));
-    } finally {
-      setUploading(false);
-    }
+   try {
+  const res = await api.formPost("/api/admin/products/bulk-upload", formData, true);
+  
+  // Always call callback (if parent wants to refresh list)
+  onUploadComplete && onUploadComplete();
+
+  alert(res.message || "✅ Bulk upload complete!");
+  setFile(null);
+} catch (err) {
+  console.error(err);
+  alert("❌ Upload failed: " + (err.message || JSON.stringify(err)));
+} finally {
+  setUploading(false);
+}
+
   };
 
   return (
