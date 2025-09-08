@@ -15,7 +15,7 @@ function buildUrl(path) {
 
 export default function Auth() {
   const navigate = useNavigate();
-  const { login } = useContext(UserContext);
+  const { login, refresh } = useContext(UserContext);
 
   // Login vs Register
   const [isLogin, setIsLogin] = useState(true);
@@ -46,6 +46,7 @@ export default function Auth() {
   useEffect(() => {
     const saved = localStorage.getItem("reg_email");
     if (saved && !formData.email) setFormData((s) => ({ ...s, email: saved }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const inputClass =
@@ -98,7 +99,8 @@ export default function Auth() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.token) {
-        await login(data.user, data.token, data.sessionId); // UserContext
+        // store known data immediately via UserContext
+        await login(data.user, data.token, data.sessionId);
         navigate("/account");
       } else if (res.status === 404) {
         alert("Email not found. Please register.");
@@ -235,27 +237,31 @@ export default function Auth() {
   };
 
   // ---------- GOOGLE OAUTH ----------
+  // Trigger full-page redirect to backend Google OAuth entrypoint
   const handleGoogleAuth = () => {
+    // OAuth must be performed via full redirect so Google can do the auth handshake.
     window.location.href = buildUrl("/api/auth/google");
   };
 
-  // ---------- Detect OAuth callback ----------
+  // ---------- Detect OAuth callback (backend redirects to CLIENT_URL/login?oauth=1) ----------
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("oauth") === "1") {
+      // Remove oauth param from url so it's clean
       params.delete("oauth");
       const clean = window.location.pathname + (params.toString() ? `?${params.toString()}` : "") + window.location.hash;
       window.history.replaceState({}, document.title, clean);
 
-      // Async refresh and navigate only after user context is ready
+      // We must wait for refresh() to complete (it will call /api/auth/me using HTTP-only cookie)
       const handleOAuthLogin = async () => {
         try {
           setOauthLoading(true);
-          const refreshedUser = await login(); // triggers UserContext.refresh internally
+          const refreshedUser = await refresh(); // refresh returns normalized user or null
           if (refreshedUser) {
             navigate("/account", { replace: true });
           } else {
-            navigate("/login", { replace: true }); // fallback
+            // refresh failed - fall back to login page
+            navigate("/login", { replace: true });
           }
         } catch (err) {
           console.error("OAuth login failed", err);
@@ -267,9 +273,11 @@ export default function Auth() {
 
       handleOAuthLogin();
     }
-  }, [login, navigate]);
+    // we only want to run this on mount; refresh is stable (useCallback in context)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigate]);
 
-  if (oauthLoading) return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  if (oauthLoading) return <div className="flex items-center justify-center h-screen">Loading…</div>;
 
   // ---------- Render ----------
   return (
@@ -343,74 +351,35 @@ export default function Auth() {
           </div>
         )}
 
-       
-
-        {/* FORGOT FLOW replaces the login form area entirely */}
+        {/* FORGOT FLOW */}
         {forgotFlow && (
           <div>
             {!forgotOtpVerified ? (
-              // Show OTP UI (RegisterWithOtp) in place of login form.
               <RegisterWithOtp
                 email={formData.email}
-                onVerified={(d) => {
-                  onForgotOtpVerified(d);
-                }}
-                onBack={() => {
-                  // Cancel forgot flow -> back to login form
-                  setForgotFlow(false);
-                  setForgotOtpVerified(false);
-                }}
+                onVerified={(d) => { onForgotOtpVerified(d); }}
+                onBack={() => { setForgotFlow(false); setForgotOtpVerified(false); }}
               />
             ) : (
-              // OTP verified -> show reset-password form
               <div className="mt-2">
                 <div className="text-sm text-gray-600 dark:text-gray-300 mb-3">Reset password for <strong>{formData.email}</strong></div>
-
                 <div className="relative mb-3">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
-                    <Lock size={16} />
-                  </span>
-                  <input
-                    id="password"
-                    name="password"
-                    type={showPassword ? "text" : "password"}
-                    value={formData.password}
-                    onChange={handleChange}
-                    placeholder="New password"
-                    className={inputClass}
-                    required
-                  />
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40"><Lock size={16} /></span>
+                  <input id="password" name="password" type={showPassword ? "text" : "password"} value={formData.password} onChange={handleChange} placeholder="New password" className={inputClass} required />
                   <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
-
                 <div className="relative mb-3">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
-                    <Lock size={16} />
-                  </span>
-                  <input
-                    id="confirmPassword"
-                    name="confirmPassword"
-                    type={showConfirmPassword ? "text" : "password"}
-                    value={formData.confirmPassword}
-                    onChange={handleChange}
-                    placeholder="Confirm new password"
-                    className={inputClass}
-                    required
-                  />
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40"><Lock size={16} /></span>
+                  <input id="confirmPassword" name="confirmPassword" type={showConfirmPassword ? "text" : "password"} value={formData.confirmPassword} onChange={handleChange} placeholder="Confirm new password" className={inputClass} required />
                   <button type="button" onClick={() => setShowConfirmPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                     {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
-
                 <div className="flex items-center gap-3">
-                  <button onClick={handleResetPassword} disabled={loading} className="flex-1 py-2 rounded-full bg-black text-white dark:bg-white dark:text-black font-semibold">
-                    {loading ? "Resetting..." : "Reset password"}
-                  </button>
-                  <button onClick={() => { setForgotFlow(false); setForgotOtpVerified(false); }} className="py-2 px-4 rounded-full border">
-                    Cancel
-                  </button>
+                  <button onClick={handleResetPassword} disabled={loading} className="flex-1 py-2 rounded-full bg-black text-white dark:bg-white dark:text-black font-semibold">{loading ? "Resetting..." : "Reset password"}</button>
+                  <button onClick={() => { setForgotFlow(false); setForgotOtpVerified(false); }} className="py-2 px-4 rounded-full border">Cancel</button>
                 </div>
               </div>
             )}
@@ -423,78 +392,33 @@ export default function Auth() {
             {regStep === "enterEmail" && (
               <form onSubmit={(e) => { e.preventDefault(); handleContinueToOtp(); }} className="flex flex-col gap-4">
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
-                    <Mail size={16} />
-                  </span>
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    placeholder="you@example.com"
-                    required
-                    autoComplete="email"
-                    className={inputClass}
-                  />
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40"><Mail size={16} /></span>
+                  <input id="email" name="email" type="email" value={formData.email} onChange={handleChange} placeholder="you@example.com" required autoComplete="email" className={inputClass} />
                 </div>
-
-                <motion.button {...motionBtnProps} type="submit" className={primaryClasses} disabled={loading}>
-                  {loading ? "Please wait..." : "Continue"}
-                </motion.button>
-
+                <motion.button {...motionBtnProps} type="submit" className={primaryClasses} disabled={loading}>{loading ? "Please wait..." : "Continue"}</motion.button>
                 <div className="flex items-center gap-3 my-2">
                   <div className="flex-1 h-px bg-black/10 dark:bg-white/10" />
                   <div className="text-sm text-black/50 dark:text-white/50">or</div>
                   <div className="flex-1 h-px bg-black/10 dark:bg-white/10" />
                 </div>
-
                 <GoogleButton onClick={handleGoogleAuth}>Sign up with Google</GoogleButton>
               </form>
             )}
 
             {regStep === "otpSent" && (
-              <RegisterWithOtp
-                email={formData.email}
-                onVerified={() => setRegStep("enterDetails")}
-                onBack={() => setRegStep("enterEmail")}
-              />
+              <RegisterWithOtp email={formData.email} onVerified={() => setRegStep("enterDetails")} onBack={() => setRegStep("enterEmail")} />
             )}
 
             {regStep === "enterDetails" && (
               <form onSubmit={handleCompleteRegistration} className="flex flex-col gap-4">
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
-                    <User size={16} />
-                  </span>
-                  <input
-                    id="name"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleChange}
-                    placeholder="Full name"
-                    required
-                    autoComplete="name"
-                    className={inputClass}
-                  />
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40"><User size={16} /></span>
+                  <input id="name" name="name" value={formData.name} onChange={handleChange} placeholder="Full name" required autoComplete="name" className={inputClass} />
                 </div>
-
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
-                    <Smartphone size={16} />
-                  </span>
-                  <input
-                    id="mobile"
-                    name="mobile"
-                    type="tel"
-                    value={formData.mobile}
-                    onChange={handleChange}
-                    placeholder="9876543210"
-                    autoComplete="tel"
-                    className={inputClass}
-                  />
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40"><Smartphone size={16} /></span>
+                  <input id="mobile" name="mobile" type="tel" value={formData.mobile} onChange={handleChange} placeholder="9876543210" autoComplete="tel" className={inputClass} />
                 </div>
-
                 <div className="relative">
                   <select id="gender" name="gender" value={formData.gender} onChange={handleChange} className={inputClass}>
                     <option value="">Select Gender</option>
@@ -502,64 +426,27 @@ export default function Auth() {
                     <option value="Female">Female</option>
                     <option value="Other">Other</option>
                   </select>
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
-                    <User size={16} />
-                  </span>
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40"><User size={16} /></span>
                 </div>
-
                 <div className="relative">
                   <input id="dob" name="dob" type="date" value={formData.dob} onChange={handleChange} className={inputClass} />
                 </div>
-
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
-                    <Lock size={16} />
-                  </span>
-                  <input
-                    id="password"
-                    name="password"
-                    type={showPassword ? "text" : "password"}
-                    value={formData.password}
-                    onChange={handleChange}
-                    placeholder="Enter password"
-                    required
-                    autoComplete="new-password"
-                    className={inputClass}
-                  />
-                  <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40"><Lock size={16} /></span>
+                  <input id="password" name="password" type={showPassword ? "text" : "password"} value={formData.password} onChange={handleChange} placeholder="Enter password" required autoComplete="new-password" className={inputClass} />
+                  <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button>
                 </div>
-
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
-                    <Lock size={16} />
-                  </span>
-                  <input
-                    id="confirmPassword"
-                    name="confirmPassword"
-                    type={showConfirmPassword ? "text" : "password"}
-                    value={formData.confirmPassword}
-                    onChange={handleChange}
-                    placeholder="Confirm password"
-                    required
-                    className={inputClass}
-                  />
-                  <button type="button" onClick={() => setShowConfirmPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
-                    {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40"><Lock size={16} /></span>
+                  <input id="confirmPassword" name="confirmPassword" type={showConfirmPassword ? "text" : "password"} value={formData.confirmPassword} onChange={handleChange} placeholder="Confirm password" required className={inputClass} />
+                  <button type="button" onClick={() => setShowConfirmPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">{showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button>
                 </div>
-
-                <motion.button {...motionBtnProps} type="submit" className={primaryClasses} disabled={loading}>
-                  {loading ? "Creating..." : "Create account"}
-                </motion.button>
-
+                <motion.button {...motionBtnProps} type="submit" className={primaryClasses} disabled={loading}>{loading ? "Creating..." : "Create account"}</motion.button>
                 <div className="flex items-center gap-3 my-2">
                   <div className="flex-1 h-px bg-black/10 dark:bg-white/10" />
                   <div className="text-sm text-black/50 dark:text-white/50">or</div>
                   <div className="flex-1 h-px bg-black/10 dark:bg-white/10" />
                 </div>
-
                 <GoogleButton onClick={handleGoogleAuth}>Sign up with Google</GoogleButton>
               </form>
             )}
