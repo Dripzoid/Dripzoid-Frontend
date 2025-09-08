@@ -252,10 +252,30 @@ export default function Auth({ onLoginSuccess }) {
     }
   };
 
-  const handleGoogleAuth = () => {
-    window.location.href = buildUrl("/api/auth/google");
-  };
+ const handleGoogleAuth = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(buildUrl("/api/auth/google"), { method: "POST", credentials: "include" });
+      const data = await res.json().catch(() => ({}));
 
+      if (res.ok && data.token && data.sessionId) {
+        // Store session + user in localStorage
+        localStorage.setItem("auth_token", data.token);
+        localStorage.setItem("session_id", data.sessionId);
+        localStorage.setItem("user", JSON.stringify(data.user || {}));
+
+        if (typeof onLoginSuccess === "function") onLoginSuccess(data.user, data.token);
+        navigate("/account");
+      } else {
+        alert(data.message || "Google login failed");
+      }
+    } catch (err) {
+      console.error("Google auth error:", err);
+      alert("Google login error");
+    } finally {
+      setLoading(false);
+    }
+  };
   // ---------- Render ----------
   return (
     <div className="min-h-screen flex items-center justify-center bg-white dark:bg-black p-6">
