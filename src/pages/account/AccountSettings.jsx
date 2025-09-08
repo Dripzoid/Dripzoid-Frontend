@@ -1,7 +1,7 @@
 // src/pages/account/AccountSettings.jsx
 import React, { useEffect, useRef, useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
-import { Lock, Bell, Shield, Settings, ShieldCheck, Activity,Eye,EyeOff } from "lucide-react";
+import { Lock, Bell, Shield, Settings, ShieldCheck, Activity, Eye, EyeOff } from "lucide-react";
 import { UserContext } from "../../contexts/UserContext";
 
 /**
@@ -12,16 +12,15 @@ import { UserContext } from "../../contexts/UserContext";
 const RAW_BASE = process.env.REACT_APP_API_BASE || "";
 const BASE = RAW_BASE.replace(/\/+$/, "");
 const ACCOUNT_BASE = `${BASE}/api/account`;
+const API_BASE = `${BASE}/api`; // top-level API (sessions, logout, etc.)
 
-/**
- * buildUrl:
- *  - buildUrl() or buildUrl("") -> /api/account
- *  - buildUrl("activity") -> /api/account/activity
- *  - buildUrl("/activity") -> /api/account/activity
- */
-function buildUrl(path = "") {
+function buildAccountUrl(path = "") {
   if (!path || path === "/") return ACCOUNT_BASE;
   return `${ACCOUNT_BASE}/${String(path).replace(/^\/+/, "")}`;
+}
+function buildApiUrl(path = "") {
+  if (!path || path === "/") return API_BASE;
+  return `${API_BASE}/${String(path).replace(/^\/+/, "")}`;
 }
 
 // utility: convert various timestamp formats to localized IST string
@@ -48,7 +47,6 @@ function formatToIST(timestamp) {
     second: "2-digit",
   });
 }
-
 
 // helper: turn multiple representations into boolean
 function toBool(v) {
@@ -78,6 +76,7 @@ export default function AccountSettings() {
   // server-backed state
   const [user, setUser] = useState(null);
   const [passwords, setPasswords] = useState({ current: "", newpw: "", confirm: "" });
+  const [showPasswords, setShowPasswords] = useState(false);
   const [twoFA, setTwoFA] = useState(false);
   const [backupCodes, setBackupCodes] = useState([]);
   const [notifications, setNotifications] = useState({
@@ -94,23 +93,50 @@ export default function AccountSettings() {
   useEffect(() => () => { isMounted.current = false; }, []);
 
   // Use only context token to avoid accidentally sending stale Authorization headers.
-  // If you intentionally want localStorage fallback, re-enable explicitly.
   const getToken = () => ctxToken || null;
 
-  // central api fetch helper
-  async function apiFetch(path = "", opts = {}, { expectJson = true } = {}) {
+  // central fetch helpers
+  async function apiFetchAccount(path = "", opts = {}, { expectJson = true } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
 
     const t = getToken();
     const headers = { ...(opts.headers || {}) };
 
-    // set content-type only if body provided and not FormData
     if (opts.body && !headers["Content-Type"] && !(opts.body instanceof FormData)) headers["Content-Type"] = "application/json";
     if (t) headers["Authorization"] = `Bearer ${t}`;
 
     try {
-      const res = await fetch(buildUrl(path), {
+      const res = await fetch(buildAccountUrl(path), {
+        ...opts,
+        headers,
+        credentials: "include",
+        signal: controller.signal,
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        try { ctxLogout?.(); } catch { }
+        return { ok: false, status: res.status, body: { error: "Unauthorized" } };
+      }
+
+      const body = expectJson ? await res.json().catch(() => ({})) : await res.blob();
+      return { ok: res.ok, status: res.status, body };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function apiFetchApi(path = "", opts = {}, { expectJson = true } = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+
+    const t = getToken();
+    const headers = { ...(opts.headers || {}) };
+    if (opts.body && !headers["Content-Type"] && !(opts.body instanceof FormData)) headers["Content-Type"] = "application/json";
+    if (t) headers["Authorization"] = `Bearer ${t}`;
+
+    try {
+      const res = await fetch(buildApiUrl(path), {
         ...opts,
         headers,
         credentials: "include",
@@ -132,7 +158,6 @@ export default function AccountSettings() {
   // normalize notifications returned by backend
   function normalizeNotifications(raw = {}) {
     const safe = typeof raw === "object" && raw !== null ? raw : {};
-    // prefer common keys and handle snake_case / camelCase
     return {
       email: toBool(safe.email ?? safe.email_enabled ?? safe.email_notifications ?? 0),
       sms: toBool(safe.sms ?? safe.sms_enabled ?? safe.sms_notifications ?? 0),
@@ -145,27 +170,25 @@ export default function AccountSettings() {
   // apply server response to local state (defensive)
   function applyAccountResponse(body = {}) {
     if (!isMounted.current) return;
-
     try {
       setUser(body.user ?? null);
 
       const sec = body.security ?? {};
       setTwoFA(toBool(sec.two_fa_enabled ?? sec.twoFA ?? 0));
 
+      let codes = [];
       try {
-        const codesRaw = sec.backup_codes ?? sec.backupCodes ?? [];
-        let codes = [];
-        if (Array.isArray(codesRaw)) codes = codesRaw;
-        else if (typeof codesRaw === "string") codes = JSON.parse(codesRaw || "[]");
-        else if (codesRaw) codes = [codesRaw];
-        setBackupCodes(Array.isArray(codes) ? codes.map(String) : []);
+        const rawCodes = sec.backup_codes ?? sec.backupCodes ?? [];
+        if (Array.isArray(rawCodes)) codes = rawCodes;
+        else if (typeof rawCodes === "string") codes = JSON.parse(rawCodes || "[]");
+        else if (rawCodes) codes = [rawCodes];
       } catch (err) {
-        console.warn("AccountSettings: failed parsing backup codes", err);
-        setBackupCodes([]);
+        codes = [];
       }
+      setBackupCodes(Array.isArray(codes) ? codes.map(String) : []);
 
       setNotifications((prev) => ({ ...prev, ...normalizeNotifications(body.notifications ?? body.notification_settings ?? {}) }));
-      setSessions(Array.isArray(body.sessions) ? body.sessions : []);
+      setSessions(Array.isArray(body.sessions) ? body.sessions : []); // keep if account route includes sessions
       setActivity(Array.isArray(body.activity) ? body.activity : []);
     } catch (err) {
       console.error("AccountSettings.applyAccountResponse error:", err);
@@ -173,26 +196,17 @@ export default function AccountSettings() {
     }
   }
 
-  // load account (used on mount and manual refresh)
-  // load account (used on mount and manual refresh)
+  // load account data
   const loadAccount = async () => {
     setLoading(true);
     setError(null);
-
     try {
-      const resp = await apiFetch("", { method: "GET" });
-
+      const resp = await apiFetchAccount("", { method: "GET" });
       if (!resp.ok) {
         setError(resp.body?.error || `Failed to fetch account (${resp.status})`);
         return;
       }
-
-      try {
-        applyAccountResponse(resp.body);
-      } catch (applyErr) {
-        console.error("AccountSettings: applyAccountResponse failed:", applyErr);
-        setError(applyErr.message || "Failed to process account response");
-      }
+      applyAccountResponse(resp.body);
     } catch (err) {
       console.error("AccountSettings: loadAccount error:", err);
       setError(err.message || "Failed to fetch account");
@@ -201,36 +215,45 @@ export default function AccountSettings() {
     }
   };
 
-  // safely parse backup codes
-  function applyAccountResponse(body = {}) {
-    setUser(body.user ?? null);
-
-    const sec = body.security ?? {};
-    setTwoFA(toBool(sec.two_fa_enabled ?? sec.twoFA ?? 0));
-
-    let codes = [];
+  // load sessions from top-level API /api/sessions
+  const loadSessions = async () => {
     try {
-      const rawCodes = sec.backup_codes ?? sec.backupCodes ?? [];
-      if (Array.isArray(rawCodes)) codes = rawCodes;
-      else if (typeof rawCodes === "string") codes = JSON.parse(rawCodes || "[]");
-      else if (rawCodes) codes = [rawCodes];
-    } catch {
-      codes = [];
+      const resp = await apiFetchApi("sessions", { method: "GET" });
+      if (!resp.ok) {
+        console.warn("Failed to load sessions:", resp.status, resp.body);
+        // If account route returned sessions earlier, keep them; otherwise clear
+        if (!Array.isArray(sessions)) setSessions([]);
+        return;
+      }
+      // server returns { sessions: [...] }
+      const payload = resp.body || {};
+      const s = Array.isArray(payload.sessions) ? payload.sessions : (Array.isArray(payload) ? payload : []);
+      if (isMounted.current) setSessions(s);
+    } catch (err) {
+      console.error("loadSessions error:", err);
     }
-    setBackupCodes(codes.map(String));
+  };
 
-    setNotifications((prev) => ({ ...prev, ...normalizeNotifications(body.notifications ?? body.notification_settings ?? {}) }));
-    setSessions(Array.isArray(body.sessions) ? body.sessions : []);
-    setActivity(Array.isArray(body.activity) ? body.activity : []);
-  }
+  // refresh activity list only
+  const refreshActivity = async () => {
+    try {
+      const resp = await apiFetchAccount("activity", { method: "GET" });
+      if (resp.ok && isMounted.current) setActivity(Array.isArray(resp.body) ? resp.body : (resp.body?.activity ?? []));
+    } catch (err) {
+      console.warn("Failed to refresh activity:", err?.message || err);
+    }
+  };
 
   // initial load once
   useEffect(() => {
     loadAccount();
+    loadSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------- Handlers ----------
+
+  // Change password
   async function handleChangePassword(e) {
     e.preventDefault();
     setSaving(true);
@@ -247,7 +270,7 @@ export default function AccountSettings() {
     }
 
     try {
-      const { ok, body } = await apiFetch("change-password", {
+      const { ok, body } = await apiFetchAccount("change-password", {
         method: "POST",
         body: JSON.stringify({
           current: passwords.current,
@@ -269,11 +292,12 @@ export default function AccountSettings() {
     }
   }
 
+  // Toggle 2FA
   async function handleToggle2FA() {
     setSaving(true);
     setError(null);
     try {
-      const { ok, body } = await apiFetch("toggle-2fa", { method: "POST" });
+      const { ok, body } = await apiFetchAccount("toggle-2fa", { method: "POST" });
       if (!ok) {
         alert(body?.error || body?.message || "Failed to toggle 2FA");
         return;
@@ -288,6 +312,7 @@ export default function AccountSettings() {
     }
   }
 
+  // Update notifications
   async function handleUpdateNotifications() {
     setSaving(true);
     setError(null);
@@ -297,9 +322,9 @@ export default function AccountSettings() {
         sms: notifications.sms ? 1 : 0,
         push: notifications.push ? 1 : 0,
         marketing: notifications.marketing ? 1 : 0,
-        order_updates: notifications.orderUpdates ? 1 : 0, // commonly expected server-side key
+        order_updates: notifications.orderUpdates ? 1 : 0,
       };
-      const { ok, body } = await apiFetch("notifications", {
+      const { ok, body } = await apiFetchAccount("notifications", {
         method: "POST",
         body: JSON.stringify(payload),
       });
@@ -316,44 +341,58 @@ export default function AccountSettings() {
     }
   }
 
-  async function refreshActivity() {
-    try {
-      const { ok, body } = await apiFetch("activity", { method: "GET" });
-      if (ok && isMounted.current) setActivity(body || []);
-    } catch (err) {
-      console.warn("Failed to refresh activity:", err?.message || err);
-    }
-  }
-
+  // Logout a session by id (revoke)
   async function handleLogoutSession(sessionId) {
     if (!window.confirm("Log out this session?")) return;
     setSaving(true);
     setError(null);
 
     try {
-      const { ok, body } = await apiFetch("signout-session", {
-        method: "POST",
-        body: JSON.stringify({ sessionId }),
-      });
-      if (!ok) {
-        alert(body?.error || body?.message || "Failed to logout session");
+      // server route: DELETE /api/sessions/:id
+      const resp = await apiFetchApi(`sessions/${sessionId}`, { method: "DELETE" });
+      if (!resp.ok) {
+        alert(resp.body?.error || resp.body?.message || "Failed to logout session");
         return;
       }
 
+      // reload sessions and activity
+      await loadSessions();
+      await refreshActivity();
+
+      // if it's current session, clear local token and redirect
       const currentSessionId = typeof localStorage !== "undefined" ? localStorage.getItem("sessionId") : null;
       const isCurrent = currentSessionId && String(currentSessionId) === String(sessionId);
 
-      setSessions((s) => s.filter((x) => x.id !== sessionId));
-      await refreshActivity();
-
       if (isCurrent) {
-        try { localStorage.removeItem("token"); localStorage.removeItem("sessionId"); } catch { }
+        try { localStorage.removeItem("token"); localStorage.removeItem("sessionId"); } catch {}
         ctxLogout?.();
-        alert("Logged out. Redirecting to login.");
+        alert("You were logged out from this session.");
         navigate("/login");
       } else {
         alert("Session logged out.");
       }
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Logout current session (POST /api/logout)
+  async function handleLogoutCurrent() {
+    if (!window.confirm("Log out from this device?")) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const resp = await apiFetchApi("logout", { method: "POST" });
+      if (!resp.ok) {
+        alert(resp.body?.error || resp.body?.message || "Failed to logout");
+        return;
+      }
+      try { localStorage.removeItem("token"); localStorage.removeItem("sessionId"); } catch {}
+      ctxLogout?.();
+      alert("Logged out. Redirecting to login.");
+      navigate("/login");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -361,13 +400,36 @@ export default function AccountSettings() {
     }
   }
 
+  // Logout all sessions (POST /api/logout-all)
+  async function handleLogoutAll() {
+    if (!window.confirm("Log out from all devices?")) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const resp = await apiFetchApi("logout-all", { method: "POST" });
+      if (!resp.ok) {
+        alert(resp.body?.error || resp.body?.message || "Failed to logout all sessions");
+        return;
+      }
+      try { localStorage.removeItem("token"); localStorage.removeItem("sessionId"); } catch {}
+      ctxLogout?.();
+      alert("All sessions cleared. Redirecting to login.");
+      navigate("/login");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Export data
   async function handleExportData() {
     setSaving(true);
     setError(null);
     try {
       const t = getToken();
       const headers = t ? { Authorization: `Bearer ${t}` } : {};
-      const res = await fetch(buildUrl("export"), {
+      const res = await fetch(buildAccountUrl("export"), {
         method: "GET",
         headers,
         credentials: "include",
@@ -396,17 +458,18 @@ export default function AccountSettings() {
     }
   }
 
+  // Delete account
   async function handleDeleteAccount() {
     if (!window.confirm("Permanently delete your account? This cannot be undone.")) return;
     setSaving(true);
     setError(null);
     try {
-      const { ok, body } = await apiFetch("delete", { method: "DELETE" });
+      const { ok, body } = await apiFetchAccount("delete", { method: "DELETE" });
       if (!ok) {
         alert(body?.error || body?.message || "Failed to delete account");
         return;
       }
-      try { localStorage.removeItem("token"); localStorage.removeItem("sessionId"); } catch { }
+      try { localStorage.removeItem("token"); localStorage.removeItem("sessionId"); } catch {}
       ctxLogout?.();
       alert("Account deleted.");
       navigate("/login");
@@ -478,111 +541,106 @@ export default function AccountSettings() {
 
           <div className="mt-6 space-y-6">
             {/* SECURITY */}
-{active === "security" && (
-  <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-    {/* Change password */}
-    <div className="bg-white/10 dark:bg-black/30 p-6 rounded-xl shadow-md">
-      <h3 className="font-semibold mb-4 text-lg">Change password</h3>
-      <form onSubmit={handleChangePassword} className="grid gap-4">
-        {["current", "newpw", "confirm"].map((field, idx) => (
-          <div key={idx} className="relative">
-            <input
-              type={passwords.show ? "text" : "password"}
-              placeholder={
-                field === "current"
-                  ? "Current password"
-                  : field === "newpw"
-                  ? "New password"
-                  : "Confirm new password"
-              }
-              value={passwords[field]}
-              onChange={(e) =>
-                setPasswords((p) => ({ ...p, [field]: e.target.value }))
-              }
-              className="w-full px-4 py-3 rounded-full bg-black/10 dark:bg-white/10 border border-black/20 dark:border-white/20 focus:ring-2 focus:ring-black dark:focus:ring-white outline-none"
-            />
-            <button
-              type="button"
-              onClick={() =>
-                setPasswords((p) => ({ ...p, show: !p.show }))
-              }
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white"
-            >
-              {passwords.show ? (
-                <EyeOff className="w-5 h-5" />
-              ) : (
-                <Eye className="w-5 h-5" />
-              )}
-            </button>
-          </div>
-        ))}
+            {active === "security" && (
+              <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Change password */}
+                <div className="bg-white/10 dark:bg-black/30 p-6 rounded-xl shadow-md">
+                  <h3 className="font-semibold mb-4 text-lg">Change password</h3>
+                  <form onSubmit={handleChangePassword} className="grid gap-4">
+                    {["current", "newpw", "confirm"].map((field, idx) => (
+                      <div key={idx} className="relative">
+                        <input
+                          type={showPasswords ? "text" : "password"}
+                          placeholder={
+                            field === "current"
+                              ? "Current password"
+                              : field === "newpw"
+                              ? "New password"
+                              : "Confirm new password"
+                          }
+                          value={passwords[field]}
+                          onChange={(e) =>
+                            setPasswords((p) => ({ ...p, [field]: e.target.value }))
+                          }
+                          className="w-full px-4 py-3 rounded-full bg-black/10 dark:bg-white/10 border border-black/20 dark:border-white/20 focus:ring-2 focus:ring-black dark:focus:ring-white outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPasswords((s) => !s)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white"
+                        >
+                          {showPasswords ? (
+                            <EyeOff className="w-5 h-5" />
+                          ) : (
+                            <Eye className="w-5 h-5" />
+                          )}
+                        </button>
+                      </div>
+                    ))}
 
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-5 py-2.5 rounded-full bg-black text-white dark:bg-white dark:text-black font-semibold shadow hover:scale-105 transition-transform"
-          >
-            {saving ? "Saving..." : "Update password"}
-          </button>
-        </div>
-      </form>
-    </div>
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={saving}
+                        className="px-5 py-2.5 rounded-full bg-black text-white dark:bg-white dark:text-black font-semibold shadow hover:scale-105 transition-transform"
+                      >
+                        {saving ? "Saving..." : "Update password"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
 
-    {/* Two-factor authentication */}
-    <div className="bg-white/10 dark:bg-black/30 p-6 rounded-xl shadow-md">
-      <h3 className="font-semibold mb-4 text-lg">Two-factor authentication</h3>
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="font-medium">{twoFA ? "Enabled" : "Disabled"}</div>
-          <div className="text-xs text-gray-500 dark:text-gray-300">
-            App-based TOTP and WebAuthn recommended.
-          </div>
-        </div>
-        <label className="relative inline-flex items-center cursor-pointer">
-          <input
-            type="checkbox"
-            checked={twoFA}
-            onChange={handleToggle2FA}
-            className="sr-only"
-          />
-          <div
-            className={`w-12 h-7 rounded-full transition-colors ${
-              twoFA
-                ? "bg-black dark:bg-white"
-                : "bg-black/10 dark:bg-white/10"
-            }`}
-          >
-            <div
-              className={`bg-white dark:bg-black w-6 h-6 rounded-full mt-0.5 ml-0.5 transform transition-transform ${
-                twoFA ? "translate-x-5" : "translate-x-0"
-              }`}
-            />
-          </div>
-        </label>
-      </div>
+                {/* Two-factor authentication */}
+                <div className="bg-white/10 dark:bg-black/30 p-6 rounded-xl shadow-md">
+                  <h3 className="font-semibold mb-4 text-lg">Two-factor authentication</h3>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium">{twoFA ? "Enabled" : "Disabled"}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-300">
+                        App-based TOTP and WebAuthn recommended.
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={twoFA}
+                        onChange={handleToggle2FA}
+                        className="sr-only"
+                      />
+                      <div
+                        className={`w-12 h-7 rounded-full transition-colors ${
+                          twoFA ? "bg-black dark:bg-white" : "bg-black/10 dark:bg-white/10"
+                        }`}
+                      >
+                        <div
+                          className={`bg-white dark:bg-black w-6 h-6 rounded-full mt-0.5 ml-0.5 transform transition-transform ${
+                            twoFA ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </div>
+                    </label>
+                  </div>
 
-      {backupCodes.length > 0 && (
-        <div className="mt-4 bg-black/10 dark:bg-white/10 p-4 rounded-lg">
-          <div className="text-xs text-gray-500 dark:text-gray-300 mb-2">
-            Backup codes (store securely):
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {backupCodes.map((c, i) => (
-              <div
-                key={`${String(c)}-${i}`}
-                className="text-sm p-2 bg-black/20 dark:bg-white/20 rounded-lg break-all"
-              >
-                {c}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  </section>
-)}
-
+                  {backupCodes.length > 0 && (
+                    <div className="mt-4 bg-black/10 dark:bg-white/10 p-4 rounded-lg">
+                      <div className="text-xs text-gray-500 dark:text-gray-300 mb-2">
+                        Backup codes (store securely):
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {backupCodes.map((c, i) => (
+                          <div
+                            key={`${String(c)}-${i}`}
+                            className="text-sm p-2 bg-black/20 dark:bg-white/20 rounded-lg break-all"
+                          >
+                            {c}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
 
             {/* NOTIFICATIONS */}
             {active === "notifications" && (
@@ -670,7 +728,11 @@ export default function AccountSettings() {
                 <div className="bg-white/10 dark:bg-black/30 p-4 rounded-lg">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="font-semibold">Sessions & devices</h3>
-                    <button onClick={() => loadAccount()} className="text-sm px-2 py-1 rounded bg-black/10 dark:bg-white/10">Refresh</button>
+                    <div className="flex gap-2">
+                      <button onClick={loadSessions} className="text-sm px-2 py-1 rounded bg-black/10 dark:bg-white/10">Refresh</button>
+                      <button onClick={handleLogoutCurrent} className="text-sm px-2 py-1 rounded bg-black/10 dark:bg-white/10">Logout this device</button>
+                      <button onClick={handleLogoutAll} className="text-sm px-2 py-1 rounded bg-black/10 dark:bg-white/10">Logout all</button>
+                    </div>
                   </div>
                   <div className="grid gap-2">
                     {sessions.length === 0 ? (
