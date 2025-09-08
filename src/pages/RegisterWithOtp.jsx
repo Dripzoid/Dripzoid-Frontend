@@ -29,10 +29,9 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
     return API_BASE ? `${API_BASE}${path}` : path;
   };
 
-  const isEmail = (s) => /\S+@\S+\.\S+/.test(String(s || ""));
   const maskIdentifier = (s) => {
     if (!s) return "";
-    if (isEmail(s)) {
+    if (/\S+@\S+\.\S+/.test(String(s || ""))) {
       const [u, d] = s.split("@");
       return `${u.charAt(0)}***@${d}`;
     }
@@ -54,21 +53,10 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
     }
   };
 
-  const checkEmailExists = async (emailToCheck) => {
-    if (!emailToCheck || !isEmail(emailToCheck)) return false;
-    const { ok, json } = await callBackend("/api/check-email", { email: emailToCheck });
-    return ok && !!json?.exists;
-  };
-
   const sendOtp = async () => {
     setError("");
     const id = (identifier || "").trim();
     if (!id) return setError("Please enter email or mobile first.");
-
-    if (isEmail(id)) {
-      const exists = await checkEmailExists(id);
-      if (exists) return setError("Email already registered.");
-    }
 
     setSending(true);
     try {
@@ -138,7 +126,6 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
     }
   };
 
-  // Tailwind classes for theme-friendly inputs/buttons
   const inputClass = `
     w-full pl-4 pr-4 py-3 rounded-full border 
     border-black bg-white text-black placeholder-black/50
@@ -164,7 +151,7 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
       {!otpSent && !verified && (
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-semibold text-black dark:text-white">Register — enter email or mobile</h3>
+            <h3 className="text-lg font-semibold text-black dark:text-white">Enter email or mobile</h3>
             {typeof onBack === "function" && (
               <button onClick={onBack} className="text-sm underline text-black/60 dark:text-white/60 underline-offset-2">
                 Back
