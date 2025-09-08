@@ -68,14 +68,18 @@ export function UserProvider({ children }) {
 
   const [loading, setLoading] = useState(true);
   const [lastError, setLastError] = useState(null);
-
-  // 🚫 hard block refresh after logout
   const [forceLoggedOut, setForceLoggedOut] = useState(false);
+
+  const isAuthenticated = !!user && !!token;
 
   const refresh = useCallback(
     async () => {
       if (forceLoggedOut) {
         console.debug("UserContext.refresh skipped (forceLoggedOut)");
+        return null;
+      }
+      if (!token) {
+        setLoading(false);
         return null;
       }
 
@@ -177,12 +181,12 @@ export function UserProvider({ children }) {
       localStorage.setItem("sessionId", s);
     }
 
-    setForceLoggedOut(false); // re-enable refresh after login
+    setForceLoggedOut(false);
     console.log("UserContext.login saved", { user: normalized });
   };
 
   const logout = async (skipServer = false) => {
-    setForceLoggedOut(true); // 🚫 stop any refresh
+    setForceLoggedOut(true);
 
     const prevToken = token;
     const prevSessionId = sessionId;
@@ -253,6 +257,7 @@ export function UserProvider({ children }) {
         sessionId,
         loading,
         lastError,
+        isAuthenticated,
         login,
         logout,
         refresh,
