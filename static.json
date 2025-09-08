@@ -1,7 +1,6 @@
 {
-  "routes": [
-    { "handle": "filesystem" },
-    { "src": "/api/.*", "dest": "https://dripzoid-backend.onrender.com/$0" },
-    { "src": "/.*", "dest": "/index.html" }
-  ]
+  "root": "build/",
+  "routes": {
+    "/*": "index.html"
+  }
 }
