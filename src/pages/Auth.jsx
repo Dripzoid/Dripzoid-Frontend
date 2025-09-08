@@ -33,12 +33,18 @@ export default function Auth({ onLoginSuccess }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // If user refreshes while in register details step, prefer preserved email from localStorage
+    const saved = localStorage.getItem("reg_email");
+    if (saved && !formData.email) {
+      setFormData((s) => ({ ...s, email: saved }));
+    }
     // placeholder for future side-effects
-  }, []);
+  }, []); // run once
 
   const handleChange = (e) => {
     const { id, value, type, checked } = e.target;
     const val = type === "checkbox" ? checked : value;
+    if (!id) return; // defensive
     setFormData((s) => ({ ...s, [id]: val }));
   };
 
@@ -101,9 +107,12 @@ export default function Auth({ onLoginSuccess }) {
         switchToLogin();
         return;
       }
+      // persist the email so it doesn't get lost between steps/components
+      localStorage.setItem("reg_email", email);
+      setFormData((s) => ({ ...s, email }));
     } catch (err) {
       console.error("check-email error:", err);
-      return alert("Server error");
+      return alert("Server error while checking email");
     } finally {
       setLoading(false);
     }
@@ -114,33 +123,59 @@ export default function Auth({ onLoginSuccess }) {
   // ------------------- REG: COMPLETE -------------------
   const handleCompleteRegistration = async (e) => {
     e.preventDefault();
-    if (formData.password !== formData.confirmPassword) return alert("Passwords do not match.");
+
+    // Basic client-side checks
+    if (formData.password !== formData.confirmPassword) {
+      return alert("Passwords do not match.");
+    }
+
+    // Ensure we have an email (try state first, then localStorage fallback)
+    const email = (formData.email || "").trim().toLowerCase() || (localStorage.getItem("reg_email") || "").trim().toLowerCase();
+    const name = (formData.name || "").trim();
+    const password = formData.password;
+
+    if (!name || !email || !password) {
+      return alert("Please fill the required fields: name, email and password.");
+    }
 
     setLoading(true);
+
+    // Build payload with trimmed values
+    const payload = {
+      name,
+      email,
+      password,
+      mobile: (formData.mobile || "").trim(),
+      gender: formData.gender || "",
+      dob: formData.dob || "",
+    };
+
+    // Debugging: show payload in console for troubleshooting (remove in production)
+    console.debug("Register payload:", payload);
+
     try {
       const res = await fetch(buildUrl("/api/register"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: formData.name,
-          email: formData.email?.trim().toLowerCase(),
-          password: formData.password,
-          mobile: formData.mobile,
-          gender: formData.gender,
-          dob: formData.dob,
-        }),
+        body: JSON.stringify(payload),
       });
+
       const json = await res.json().catch(() => ({}));
+      console.debug("Register response:", res.status, json);
+
       if (res.ok) {
         alert("Registration successful — please login.");
+        // cleanup
+        localStorage.removeItem("reg_email");
         switchToLogin();
         setFormData({ name: "", email: "", password: "", confirmPassword: "", mobile: "", gender: "", dob: "" });
       } else {
+        // show backend message if present
         alert(json.message || "Registration failed");
       }
     } catch (err) {
       console.error("complete-registration error:", err);
-      alert("Server error");
+      alert("Server error while registering");
     } finally {
       setLoading(false);
     }
@@ -152,7 +187,7 @@ export default function Auth({ onLoginSuccess }) {
 
   // Theme: strict black & white styling
   const inputClass =
-    "w-full pl-12 pr-4 py-3 rounded-full bg-white dark:bg-black border border-black dark:border-white text-black dark:text-white placeholder-black/50 dark:placeholder-white/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black/white transition";
+    "w-full pl-12 pr-4 py-3 rounded-full bg-white dark:bg-black border border-black dark:border-white text-black dark:text-white placeholder-black/50 dark:placeholder-white/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 transition";
 
   const primaryClasses = "w-full py-3 rounded-full font-semibold shadow-sm bg-black text-white hover:brightness-110 active:scale-[0.995] disabled:opacity-60";
   const googleBtnBase = "w-full flex items-center justify-center gap-3 py-2 px-3 rounded-full bg-white text-black border border-black shadow-sm hover:shadow-md transition dark:bg-black dark:text-white dark:border-white";
