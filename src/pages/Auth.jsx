@@ -67,7 +67,7 @@ export default function Auth({ onLoginSuccess }) {
       const res = await fetch(buildUrl("/api/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: formData.email?.trim(), password: formData.password }),
+        body: JSON.stringify({ email: (formData.email || "").trim(), password: formData.password }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.token) {
@@ -164,8 +164,22 @@ export default function Auth({ onLoginSuccess }) {
       console.debug("Register response:", res.status, json);
 
       if (res.ok) {
+        // If backend returns a token (our server issues token on register), auto-login
+        if (json.token) {
+          try {
+            if (typeof onLoginSuccess === "function") onLoginSuccess(json.user, json.token);
+          } catch (err) {
+            console.warn("onLoginSuccess handler threw:", err);
+          }
+          // cleanup
+          localStorage.removeItem("reg_email");
+          setFormData({ name: "", email: "", password: "", confirmPassword: "", mobile: "", gender: "", dob: "" });
+          navigate("/account");
+          return;
+        }
+
+        // fallback: if no token but success, notify user and switch to login
         alert("Registration successful — please login.");
-        // cleanup
         localStorage.removeItem("reg_email");
         switchToLogin();
         setFormData({ name: "", email: "", password: "", confirmPassword: "", mobile: "", gender: "", dob: "" });
@@ -182,12 +196,13 @@ export default function Auth({ onLoginSuccess }) {
   };
 
   const handleGoogleAuth = () => {
+    // redirect to backend Google OAuth entrypoint
     window.location.href = buildUrl("/api/auth/google");
   };
 
   // Theme: strict black & white styling
   const inputClass =
-    "w-full pl-12 pr-4 py-3 rounded-full bg-white dark:bg-black border border-black dark:border-white text-black dark:text-white placeholder-black/50 dark:placeholder-white/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 transition";
+    "w-full pl-12 pr-4 py-3 rounded-full bg-white dark:bg-black border border-black dark:border-white text-black dark:text-white placeholder-black/50 dark:placeholder-white/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black dark:focus-visible:ring-white transition";
 
   const primaryClasses = "w-full py-3 rounded-full font-semibold shadow-sm bg-black text-white hover:brightness-110 active:scale-[0.995] disabled:opacity-60";
   const googleBtnBase = "w-full flex items-center justify-center gap-3 py-2 px-3 rounded-full bg-white text-black border border-black shadow-sm hover:shadow-md transition dark:bg-black dark:text-white dark:border-white";
@@ -198,6 +213,16 @@ export default function Auth({ onLoginSuccess }) {
     transition: { type: "spring", stiffness: 400, damping: 28 },
   };
 
+  const GoogleIcon = () => (
+    // Multicolor Google "G" icon (inline SVG)
+    <svg width="18" height="18" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden focusable="false">
+      <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C34.7 33 30 36 24 36c-7.7 0-14-6.3-14-14s6.3-14 14-14c3.6 0 6.9 1.3 9.4 3.6l6.6-6.6C34.6 2.9 29.6 1 24 1 11.9 1 2 10.9 2 23s9.9 22 22 22c11 0 21-8 21-22 0-1.5-.2-2.6-.4-3z"/>
+      <path fill="#FF3D00" d="M6.3 14.7l7.3 5.3C15.3 16.1 19.2 13 24 13c3.6 0 6.9 1.3 9.4 3.6l6.6-6.6C34.6 2.9 29.6 1 24 1 16.1 1 9 6.8 6.3 14.7z"/>
+      <path fill="#4CAF50" d="M24 47c5.6 0 10.6-1.9 14.4-5.1l-6.7-5.4C30.9 37.7 27.8 39 24 39c-6 0-10.9-3.8-12.8-9.2l-7.4 5.7C7.9 41.8 15.3 47 24 47z"/>
+      <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1.1 3.1-3.1 5.6-5.7 7.3 0 0 9.9-7 13-13.8 0 0 .3-1.3.3-1.4z"/>
+    </svg>
+  );
+
   const GoogleButton = ({ children, onClick }) => (
     <motion.button
       {...motionBtnProps}
@@ -206,10 +231,7 @@ export default function Auth({ onLoginSuccess }) {
       aria-label={`${children}`}
       className={googleBtnBase}
     >
-      <svg className="w-5 h-5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-        <circle cx="12" cy="12" r="11" stroke="currentColor" strokeWidth="1.5" fill="none" />
-        <text x="12" y="16" textAnchor="middle" fontSize="12" fontWeight="700" fill="currentColor" fontFamily="Arial, Helvetica, sans-serif">G</text>
-      </svg>
+      <GoogleIcon />
       <span className="text-sm font-medium">{children}</span>
     </motion.button>
   );
@@ -332,7 +354,7 @@ export default function Auth({ onLoginSuccess }) {
 
                 <div className="relative">
                   <select id="gender" name="gender" value={formData.gender} onChange={handleChange} className={inputClass}>
-                    <option value="">Select gender (optional)</option>
+                    <option value="">Select Gender</option>
                     <option value="Male">Male</option>
                     <option value="Female">Female</option>
                     <option value="Other">Other</option>
