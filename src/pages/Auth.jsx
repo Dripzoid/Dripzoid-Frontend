@@ -259,14 +259,11 @@ useEffect(() => {
       try {
         setOauthLoading(true);
 
-        // Ensure your refresh/login function sends credentials
-        const refreshedUser = await refresh({
-          // If using fetch inside refresh, make sure credentials are included:
-          // credentials: "include"
-        });
+        // Call refresh; make sure it includes cookies
+        const refreshedUser = await refresh({ credentials: "include" });
 
         if (refreshedUser?.user) {
-          // Successful login → redirect
+          // User exists → redirect to account
           navigate("/account", { replace: true });
         } else {
           console.error("OAuth login failed: no user returned");
@@ -280,7 +277,7 @@ useEffect(() => {
 
     handleOAuthLogin();
   }
-  // Only run on mount
+  // Run only once on mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [navigate]);
 
@@ -290,6 +287,7 @@ if (oauthLoading)
       Loading…
     </div>
   );
+
 
 
   // ---------- Render ----------
