@@ -22,8 +22,7 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
 
   useEffect(() => {
     if (email && email !== identifier) setIdentifier(email);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [email]);
+  }, [email, identifier]);
 
   const apiUrl = (path) => {
     if (!path.startsWith("/")) path = `/${path}`;
@@ -40,7 +39,6 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
     return `***${String(s).slice(-4)}`;
   };
 
-  // Helper: POST JSON
   const callBackend = async (path, body) => {
     try {
       const res = await fetch(apiUrl(path), {
@@ -56,14 +54,12 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
     }
   };
 
-  // Check if email exists using backend endpoint
   const checkEmailExists = async (emailToCheck) => {
     if (!emailToCheck || !isEmail(emailToCheck)) return false;
     const { ok, json } = await callBackend("/api/check-email", { email: emailToCheck });
     return ok && !!json?.exists;
   };
 
-  // Send OTP via backend
   const sendOtp = async () => {
     setError("");
     const id = (identifier || "").trim();
@@ -90,7 +86,6 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
     }
   };
 
-  // Verify OTP via backend
   const verifyOtp = async () => {
     setError("");
     const id = (identifier || "").trim();
@@ -116,13 +111,11 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
     }
   };
 
-  // Auto-send OTP if email prop provided
   useEffect(() => {
     if (!email) return;
     if (autoSentRef.current) return;
     autoSentRef.current = true;
     sendOtp();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email]);
 
   const retryOtp = async () => {
@@ -145,14 +138,35 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
     }
   };
 
+  // Tailwind classes for theme-friendly inputs/buttons
+  const inputClass = `
+    w-full pl-4 pr-4 py-3 rounded-full border 
+    border-black bg-white text-black placeholder-black/50
+    dark:border-white dark:bg-black dark:text-white dark:placeholder-white/50
+    focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black dark:focus:ring-white
+    transition
+  `;
+  const primaryBtnClass = `
+    flex-1 py-3 rounded-full font-semibold
+    bg-black text-white hover:brightness-110 active:scale-[0.98] disabled:opacity-50
+    dark:bg-white dark:text-black dark:hover:brightness-125
+    transition
+  `;
+  const secondaryBtnClass = `
+    py-3 px-4 rounded-full border border-black text-black
+    dark:border-white dark:text-white
+    hover:brightness-105 active:scale-[0.98] transition
+  `;
+  const errorClass = "mt-3 text-sm text-red-500";
+
   return (
-    <div className="max-w-md mx-auto my-6 p-6">
+    <div className="max-w-md mx-auto my-6 p-6 bg-white dark:bg-black rounded-2xl border border-black/10 dark:border-white/10 shadow-lg">
       {!otpSent && !verified && (
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-semibold">Register — enter email or mobile</h3>
+            <h3 className="text-lg font-semibold text-black dark:text-white">Register — enter email or mobile</h3>
             {typeof onBack === "function" && (
-              <button onClick={onBack} className="text-sm text-gray-600 underline">
+              <button onClick={onBack} className="text-sm underline text-black/60 dark:text-white/60 underline-offset-2">
                 Back
               </button>
             )}
@@ -164,34 +178,34 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
             onChange={(e) => setIdentifier(e.target.value)}
             onKeyDown={onIdentifierKey}
             placeholder="you@example.com or 919876543210"
-            className="w-full pl-4 pr-4 py-3 rounded-full border"
+            className={inputClass}
             autoComplete="email"
           />
 
           <div className="flex gap-3 mt-4">
-            <button onClick={sendOtp} disabled={sending} className="flex-1 py-3 rounded-full bg-black text-white disabled:opacity-50">
+            <button onClick={sendOtp} disabled={sending} className={primaryBtnClass}>
               {sending ? "Sending…" : "Send OTP"}
             </button>
-            <button onClick={retryOtp} className="py-3 px-4 rounded-full border">
+            <button onClick={retryOtp} className={secondaryBtnClass}>
               Retry
             </button>
           </div>
 
-          {error && <div className="mt-3 text-sm text-red-500">{error}</div>}
+          {error && <div className={errorClass}>{error}</div>}
         </div>
       )}
 
       {otpSent && !verified && (
         <div>
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-lg font-semibold">Enter OTP</h3>
+            <h3 className="text-lg font-semibold text-black dark:text-white">Enter OTP</h3>
             {typeof onBack === "function" && (
-              <button onClick={onBack} className="text-sm text-gray-600 underline">
+              <button onClick={onBack} className="text-sm underline text-black/60 dark:text-white/60 underline-offset-2">
                 Back
               </button>
             )}
           </div>
-          <div className="text-sm text-gray-700 mb-3">
+          <div className="text-sm text-black/70 dark:text-white/70 mb-3">
             We sent an OTP to <strong>{maskIdentifier(identifier)}</strong>
           </div>
 
@@ -201,29 +215,31 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
             onChange={(e) => setOtpValue(e.target.value.replace(/\D/g, "").slice(0, 8))}
             onKeyDown={onOtpKey}
             placeholder="Enter OTP"
-            className="w-full pl-4 pr-4 py-3 rounded-full border"
+            className={inputClass}
             inputMode="numeric"
             maxLength={8}
             autoFocus
           />
 
           <div className="flex gap-3 mt-4">
-            <button onClick={verifyOtp} disabled={verifying} className="flex-1 py-3 rounded-full bg-black text-white disabled:opacity-50">
+            <button onClick={verifyOtp} disabled={verifying} className={primaryBtnClass}>
               {verifying ? "Verifying…" : "Verify OTP"}
             </button>
-            <button onClick={retryOtp} className="py-3 px-4 rounded-full border">
+            <button onClick={retryOtp} className={secondaryBtnClass}>
               Resend
             </button>
           </div>
 
-          {error && <div className="mt-3 text-sm text-red-500">{error}</div>}
+          {error && <div className={errorClass}>{error}</div>}
         </div>
       )}
 
       {verified && (
         <div>
-          <h3 className="text-lg font-semibold mb-2">Verified ✅</h3>
-          <p className="text-sm text-gray-700">You can now complete registration (enter personal details & password).</p>
+          <h3 className="text-lg font-semibold text-black dark:text-white mb-2">Verified ✅</h3>
+          <p className="text-sm text-black/70 dark:text-white/70">
+            You can now complete registration (enter personal details & password).
+          </p>
         </div>
       )}
     </div>
