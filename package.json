@@ -55,7 +55,8 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "init-db": "node server/database.js"
+    "init-db": "node server/database.js",
+    "postbuild": "cp static.json build/"
   },
   "eslintConfig": {
     "extends": [
