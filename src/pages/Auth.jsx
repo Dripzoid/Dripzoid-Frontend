@@ -1,10 +1,11 @@
 // src/pages/Auth.jsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useContext } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff, Mail, Lock, User, Smartphone, CheckCircle } from "lucide-react";
 
 import RegisterWithOtp from "./RegisterWithOtp";
+import { UserContext } from "../contexts/UserContext";
 
 const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/+$/, "");
 function buildUrl(path) {
@@ -12,8 +13,9 @@ function buildUrl(path) {
   return `${API_BASE}${path}`;
 }
 
-export default function Auth({ onLoginSuccess }) {
+export default function Auth() {
   const navigate = useNavigate();
+  const { login } = useContext(UserContext);
 
   // Login vs Register
   const [isLogin, setIsLogin] = useState(true);
@@ -35,28 +37,24 @@ export default function Auth({ onLoginSuccess }) {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Forgot flow (replaces login form when active)
+  // Forgot flow
   const [forgotFlow, setForgotFlow] = useState(false);
   const [forgotOtpVerified, setForgotOtpVerified] = useState(false);
 
+  // Load saved email
   useEffect(() => {
     const saved = localStorage.getItem("reg_email");
     if (saved && !formData.email) setFormData((s) => ({ ...s, email: saved }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Theme-friendly classes
   const inputClass =
-    "w-full pl-12 pr-4 py-3 rounded-full text-black bg-white border border-black placeholder-black/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black transition " +
-    "dark:text-white dark:bg-black dark:border-white dark:placeholder-white/50 dark:focus-visible:ring-white";
+    "w-full pl-12 pr-4 py-3 rounded-full text-black bg-white border border-black placeholder-black/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-black transition dark:text-white dark:bg-black dark:border-white dark:placeholder-white/50 dark:focus-visible:ring-white";
 
   const primaryClasses =
-    "w-full py-3 rounded-full font-semibold shadow-sm bg-black text-white hover:brightness-110 active:scale-[0.995] disabled:opacity-60 " +
-    "dark:bg-white dark:text-black dark:border dark:border-white";
+    "w-full py-3 rounded-full font-semibold shadow-sm bg-black text-white hover:brightness-110 active:scale-[0.995] disabled:opacity-60 dark:bg-white dark:text-black dark:border dark:border-white";
 
   const googleBtnBase =
-    "w-full flex items-center justify-center gap-3 py-2 px-3 rounded-full border border-black shadow-sm transition " +
-    "bg-white text-black dark:bg-black dark:text-white dark:border-white";
+    "w-full flex items-center justify-center gap-3 py-2 px-3 rounded-full border border-black shadow-sm transition bg-white text-black dark:bg-black dark:text-white dark:border-white";
 
   const motionBtnProps = {
     whileHover: { scale: 1.02 },
@@ -65,15 +63,7 @@ export default function Auth({ onLoginSuccess }) {
   };
 
   const GoogleIcon = ({ className = "" }) => (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 48 48"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden
-      focusable="false"
-      className={className}
-    >
+    <svg width="18" height="18" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden focusable="false" className={className}>
       <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C34.7 33 30 36 24 36c-7.7 0-14-6.3-14-14s6.3-14 14-14c3.6 0 6.9 1.3 9.4 3.6l6.6-6.6C34.6 2.9 29.6 1 24 1 11.9 1 2 10.9 2 23s9.9 22 22 22c11 0 21-8 21-22 0-1.5-.2-2.6-.4-3z"/>
       <path fill="#FF3D00" d="M6.3 14.7l7.3 5.3C15.3 16.1 19.2 13 24 13c3.6 0 6.9 1.3 9.4 3.6l6.6-6.6C34.6 2.9 29.6 1 24 1 16.1 1 9 6.8 6.3 14.7z"/>
       <path fill="#4CAF50" d="M24 47c5.6 0 10.6-1.9 14.4-5.1l-6.7-5.4C30.9 37.7 27.8 39 24 39c-6 0-10.9-3.8-12.8-9.2l-7.4 5.7C7.9 41.8 15.3 47 24 47z"/>
@@ -88,7 +78,6 @@ export default function Auth({ onLoginSuccess }) {
     </motion.button>
   );
 
-  // Input change
   const handleChange = (e) => {
     const { id, value, type, checked } = e.target;
     const val = type === "checkbox" ? checked : value;
@@ -108,7 +97,7 @@ export default function Auth({ onLoginSuccess }) {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.token) {
-        if (typeof onLoginSuccess === "function") onLoginSuccess(data.user, data.token);
+        await login(data.user, data.token, data.sessionId); // UserContext
         navigate("/account");
       } else if (res.status === 404) {
         alert("Email not found. Please register.");
@@ -125,16 +114,13 @@ export default function Auth({ onLoginSuccess }) {
     }
   };
 
-  // ---------- FORGOT (replaces login UI) ----------
-  // Start forgot flow: show RegisterWithOtp which will send OTP to email
+  // ---------- FORGOT FLOW ----------
   const openForgotFlow = () => {
     setForgotFlow(true);
     setForgotOtpVerified(false);
-    // preserve email if present
     if (formData.email) localStorage.setItem("forgot_email", formData.email);
   };
 
-  // Called after OTP verified by RegisterWithOtp
   const onForgotOtpVerified = ({ email } = {}) => {
     setForgotOtpVerified(true);
     if (email) setFormData((s) => ({ ...s, email }));
@@ -158,7 +144,6 @@ export default function Auth({ onLoginSuccess }) {
       const json = await res.json().catch(() => ({}));
       if (res.ok) {
         alert("Password reset successful. Please login.");
-        // return to login UI and clear forgot state
         setForgotFlow(false);
         setForgotOtpVerified(false);
         setFormData((s) => ({ ...s, password: "", confirmPassword: "" }));
@@ -226,12 +211,8 @@ export default function Auth({ onLoginSuccess }) {
       });
       const json = await res.json().catch(() => ({}));
       if (res.ok) {
-        // If server returns token on register (your server does), use it to auto-login
-        if (json.token && typeof onLoginSuccess === "function") {
-          onLoginSuccess(json.user, json.token);
-        }
-        // navigate to account if token present, otherwise switch to login
         if (json.token) {
+          await login(json.user, json.token, json.sessionId);
           localStorage.removeItem("reg_email");
           navigate("/account");
           return;
@@ -252,30 +233,24 @@ export default function Auth({ onLoginSuccess }) {
     }
   };
 
- const handleGoogleAuth = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(buildUrl("/api/auth/google"), { method: "GET", credentials: "include" });
-      const data = await res.json().catch(() => ({}));
-
-      if (res.ok && data.token && data.sessionId) {
-        // Store session + user in localStorage
-        localStorage.setItem("auth_token", data.token);
-        localStorage.setItem("session_id", data.sessionId);
-        localStorage.setItem("user", JSON.stringify(data.user || {}));
-
-        if (typeof onLoginSuccess === "function") onLoginSuccess(data.user, data.token);
-        navigate("/account");
-      } else {
-        alert(data.message || "Google login failed");
-      }
-    } catch (err) {
-      console.error("Google auth error:", err);
-      alert("Google login error");
-    } finally {
-      setLoading(false);
-    }
+  // ---------- GOOGLE OAUTH ----------
+  const handleGoogleAuth = () => {
+    window.location.href = buildUrl("/api/auth/google");
   };
+
+  // Detect OAuth callback
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("oauth") === "1") {
+      params.delete("oauth");
+      const clean = window.location.pathname + (params.toString() ? `?${params.toString()}` : "") + window.location.hash;
+      window.history.replaceState({}, document.title, clean);
+
+      login().catch(() => {}); // UserContext refresh
+      navigate("/account");
+    }
+  }, [login, navigate]);
+
   // ---------- Render ----------
   return (
     <div className="min-h-screen flex items-center justify-center bg-white dark:bg-black p-6">
@@ -285,6 +260,7 @@ export default function Auth({ onLoginSuccess }) {
         transition={{ duration: 0.32, ease: "easeOut" }}
         className="w-full max-w-md p-8 md:p-10 rounded-2xl bg-white dark:bg-black border border-black/10 dark:border-white/10 shadow-2xl"
       >
+        {/* Header */}
         <div className="flex items-start gap-4 mb-6">
           <div className="p-3 rounded-lg bg-black dark:bg-white text-white dark:text-black">
             <CheckCircle size={20} />
@@ -299,6 +275,7 @@ export default function Auth({ onLoginSuccess }) {
           </div>
         </div>
 
+        {/* Tabs */}
         <div className="flex items-center justify-center gap-3 mb-6">
           <button
             type="button"
@@ -316,72 +293,37 @@ export default function Auth({ onLoginSuccess }) {
           </button>
         </div>
 
-        {/* LOGIN (or replaced by forgot flow) */}
+        {/* LOGIN */}
         {!forgotFlow && isLogin && (
           <div>
             <form onSubmit={handleLoginSubmit} className="flex flex-col gap-4">
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
-                  <Mail size={16} />
-                </span>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  placeholder="you@example.com"
-                  required
-                  autoComplete="email"
-                  className={inputClass}
-                />
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40"><Mail size={16} /></span>
+                <input id="email" name="email" type="email" value={formData.email} onChange={handleChange} placeholder="you@example.com" required autoComplete="email" className={inputClass} />
               </div>
-
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40">
-                  <Lock size={16} />
-                </span>
-                <input
-                  id="password"
-                  name="password"
-                  type={showPassword ? "text" : "password"}
-                  value={formData.password}
-                  onChange={handleChange}
-                  placeholder="Enter password"
-                  required
-                  autoComplete="current-password"
-                  className={inputClass}
-                />
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-black/40 dark:text-white/40"><Lock size={16} /></span>
+                <input id="password" name="password" type={showPassword ? "text" : "password"} value={formData.password} onChange={handleChange} placeholder="Enter password" required autoComplete="current-password" className={inputClass} />
                 <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 dark:text-white/50">
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
-
               <div className="flex items-center justify-between text-sm">
                 <div />
-                <button
-                  type="button"
-                  onClick={openForgotFlow}
-                  className="text-sm underline text-black/60 dark:text-white/60 underline-offset-2"
-                >
-                  Forgot password?
-                </button>
+                <button type="button" onClick={openForgotFlow} className="text-sm underline text-black/60 dark:text-white/60 underline-offset-2">Forgot password?</button>
               </div>
-
-              <motion.button {...motionBtnProps} type="submit" className={primaryClasses} disabled={loading}>
-                {loading ? "Signing in..." : "Login"}
-              </motion.button>
-
+              <motion.button {...motionBtnProps} type="submit" className={primaryClasses} disabled={loading}>{loading ? "Signing in..." : "Login"}</motion.button>
               <div className="flex items-center gap-3 my-2">
                 <div className="flex-1 h-px bg-black/10 dark:bg-white/10" />
                 <div className="text-sm text-black/50 dark:text-white/50">or</div>
                 <div className="flex-1 h-px bg-black/10 dark:bg-white/10" />
               </div>
-
               <GoogleButton onClick={handleGoogleAuth}>Login with Google</GoogleButton>
             </form>
           </div>
         )}
+
+       
 
         {/* FORGOT FLOW replaces the login form area entirely */}
         {forgotFlow && (
