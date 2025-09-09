@@ -16,7 +16,15 @@ const normalizeUser = (user) => {
     user.is_admin === true ||
     user.is_admin === "true" ||
     Number(user.is_admin) === 1;
-  return { ...user, is_admin: Boolean(isAdmin) };
+
+  // Ensure we always have a friendly name: prefer name, then displayName, then local-part of email
+  const nameFromBackend = user.name || user.displayName || user.display_name || null;
+  let displayName = nameFromBackend;
+  if (!displayName && user.email) {
+    displayName = String(user.email).split("@")[0];
+  }
+
+  return { ...user, is_admin: Boolean(isAdmin), name: displayName };
 };
 
 export function UserProvider({ children }) {
@@ -28,6 +36,7 @@ export function UserProvider({ children }) {
       return null;
     }
   });
+
   const [token, setToken] = useState(() => {
     try {
       const raw = localStorage.getItem("token");
@@ -36,6 +45,7 @@ export function UserProvider({ children }) {
       return null;
     }
   });
+
   const [sessionId, setSessionId] = useState(() => {
     try {
       const raw = localStorage.getItem("sessionId");
@@ -58,13 +68,17 @@ export function UserProvider({ children }) {
       const res = await fetch(buildUrl("/api/auth/me"), {
         method: "GET",
         credentials: "include", // HTTP-only cookie
+        headers: { "Content-Type": "application/json" },
       });
 
       if (!res.ok) {
+        // not authenticated
         setUser(null);
         setToken(null);
+        setSessionId(null);
         localStorage.removeItem("user");
         localStorage.removeItem("token");
+        localStorage.removeItem("sessionId");
         setLoading(false);
         return null;
       }
@@ -80,9 +94,17 @@ export function UserProvider({ children }) {
         localStorage.removeItem("user");
       }
 
+      // token in response body (API should include it if you need it on client)
       if (data?.token) {
         setToken(data.token);
         localStorage.setItem("token", data.token);
+      }
+
+      // sessionId: support both camelCase and snake_case keys from server
+      const sid = data?.sessionId ?? data?.session_id ?? null;
+      if (sid != null) {
+        setSessionId(String(sid));
+        localStorage.setItem("sessionId", String(sid));
       }
 
       setLoading(false);
@@ -91,8 +113,10 @@ export function UserProvider({ children }) {
       console.error("UserContext.refresh error", err);
       setUser(null);
       setToken(null);
+      setSessionId(null);
       localStorage.removeItem("user");
       localStorage.removeItem("token");
+      localStorage.removeItem("sessionId");
       setLoading(false);
       return null;
     }
@@ -116,7 +140,7 @@ export function UserProvider({ children }) {
         localStorage.setItem("sessionId", String(newSessionId));
       }
     } else {
-      // OAuth / refresh login
+      // OAuth / refresh login (server-set cookies)
       await refresh();
     }
 
@@ -144,6 +168,38 @@ export function UserProvider({ children }) {
     localStorage.removeItem("token");
     localStorage.removeItem("sessionId");
   };
+
+  // On mount: auto-refresh auth state. Also handle ?oauth=1 redirect from backend:
+  useEffect(() => {
+    let mounted = true;
+
+    const run = async () => {
+      // If we were redirected from OAuth flow, URL will likely contain ?oauth=1
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const isOauth = params.get("oauth") === "1";
+
+        // Always attempt to refresh (if there's a valid cookie session server-side this will pick it up)
+        await refresh();
+
+        // If oauth param was present, remove it from the URL to keep things clean
+        if (isOauth && mounted) {
+          params.delete("oauth");
+          const newSearch = params.toString();
+          const newUrl = `${window.location.pathname}${newSearch ? `?${newSearch}` : ""}${window.location.hash || ""}`;
+          window.history.replaceState(null, "", newUrl);
+        }
+      } catch (err) {
+        console.error("UserProvider init error", err);
+      }
+    };
+
+    run();
+
+    return () => {
+      mounted = false;
+    };
+  }, [refresh]);
 
   return (
     <UserContext.Provider
