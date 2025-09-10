@@ -146,8 +146,8 @@ const formatShippingAddressForDisplay = (o) => {
   if (!o) return "-";
 
   // 1) Prefer shipping_address (already human-readable string)
-  if (o.shipping_address && typeof o.shipping_address === "string" && o.shipping_address.trim()) {
-    return o.shipping_address.trim();
+  if (o.shipping_address_full && typeof o.shipping_address_full === "string" && o.shipping_address_full.trim()) {
+    return o.shipping_address_full.trim();
   }
 
   // 2) Try shipping_json
