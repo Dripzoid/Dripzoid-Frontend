@@ -7,6 +7,7 @@ import {
   PackageSearch,
   ClipboardList,
   Calendar,
+  Download,   // ✅ added
 } from "lucide-react";
 import { motion } from "framer-motion";
 import api from "../utils/api";
@@ -20,9 +21,9 @@ export default function Dashboard() {
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [range, setRange] = useState("overall"); // overall | monthly | weekly | daywise
-  const [date, setDate] = useState(""); // for daywise selection
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+  const [range, setRange] = useState("overall");
+  const [date, setDate] = useState("");
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [week, setWeek] = useState(() => {
     try {
       const d = new Date();
@@ -38,8 +39,8 @@ export default function Dashboard() {
     }
   });
 
-  // date input fix: force white background + black text so native calendar icon is visible in dark mode
-  const dateInputClass = "pl-3 pr-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white text-black";
+  const dateInputClass =
+    "pl-3 pr-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white text-black";
 
   const btnSecondaryBase = "px-4 py-2 rounded-xl border hover:opacity-90";
   const btnSecondaryLight = "bg-white text-black border-gray-300";
@@ -50,7 +51,6 @@ export default function Dashboard() {
     setError(null);
     try {
       let params = {};
-
       switch (range) {
         case "overall":
           params = { range: "overall" };
@@ -62,13 +62,11 @@ export default function Dashboard() {
           params = { range: "weekly", week };
           break;
         case "daywise":
-          if (date) params = { range: "daywise", date };
-          else params = { range: "daywise" };
+          params = date ? { range: "daywise", date } : { range: "daywise" };
           break;
         default:
           params = { range: "overall" };
       }
-
       const data = await api.get("/api/admin/stats", { params }, true);
       setStats(data || {});
     } catch (err) {
@@ -79,13 +77,30 @@ export default function Dashboard() {
     }
   };
 
-
   useEffect(() => {
     fetchStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range, date, month, week]);
 
-  // stat cards (kept minimal per your request)
+  const handleExportData = async () => {
+    try {
+      const res = await api.get("/api/admin/data-export", {}, true, { responseType: "blob" });
+      const blob = new Blob([res], { type: "application/octet-stream" });
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `dripzoid-backup-${new Date().toISOString().split("T")[0]}.db`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export data failed:", err);
+      alert("Failed to export database file");
+    }
+  };
+
   const statCards = [
     { label: "Total Users", value: stats.totalUsers || 0, icon: Users, color: "bg-blue-500" },
     { label: "Total Orders", value: stats.totalOrders || 0, icon: ClipboardList, color: "bg-green-500" },
@@ -108,15 +123,11 @@ export default function Dashboard() {
               key={t.key}
               onClick={() => {
                 setRange(t.key);
-
                 if (t.key === "daywise") {
-                  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-                  setDate(today);
+                  setDate(new Date().toISOString().split("T")[0]);
                 } else if (t.key === "monthly") {
-                  const thisMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-                  setMonth(thisMonth);
+                  setMonth(new Date().toISOString().slice(0, 7));
                 } else if (t.key === "weekly") {
-                  // calculate ISO week string: YYYY-Wxx
                   const d = new Date();
                   const target = new Date(d.valueOf());
                   const dayNr = (d.getDay() + 6) % 7;
@@ -126,63 +137,46 @@ export default function Dashboard() {
                   const wk = 1 + Math.round(diff / 7);
                   setWeek(`${target.getFullYear()}-W${String(wk).padStart(2, "0")}`);
                 } else {
-                  // reset date if not needed
                   setDate("");
                 }
               }}
-              className={`flex items-center gap-2 ${range === t.key
+              className={`flex items-center gap-2 ${
+                range === t.key
                   ? "px-4 py-2 rounded-xl bg-black text-white border border-black dark:bg-white dark:text-black dark:border-white"
                   : `${btnSecondaryBase} ${btnSecondaryLight} ${btnSecondaryDark} text-gray-700 dark:text-gray-200`
-                }`}
+              }`}
             >
               {t.icon}
               <span>{t.label}</span>
             </button>
-
           ))}
 
           <div className="ml-auto flex items-center gap-3">
-            {/* Month/Week/Day inputs — use native inputs and force white background for icon visibility */}
             {range === "monthly" && (
-              <input
-                type="month"
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
-                className={dateInputClass}
-                style={{ WebkitAppearance: "textfield", MozAppearance: "textfield", appearance: "auto" }}
-              />
+              <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className={dateInputClass} />
             )}
-
             {range === "weekly" && (
-              <input
-                type="week"
-                value={week}
-                onChange={(e) => setWeek(e.target.value)}
-                className={dateInputClass}
-                style={{ WebkitAppearance: "textfield", MozAppearance: "textfield", appearance: "auto" }}
-              />
+              <input type="week" value={week} onChange={(e) => setWeek(e.target.value)} className={dateInputClass} />
             )}
-
             {range === "daywise" && (
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className={dateInputClass}
-                style={{ WebkitAppearance: "textfield", MozAppearance: "textfield", appearance: "auto" }}
-              />
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={dateInputClass} />
             )}
 
-            <button
-              onClick={() => fetchStats()}
-              className={`${btnSecondaryBase} ${btnSecondaryLight} ${btnSecondaryDark}`}
-            >
+            <button onClick={fetchStats} className={`${btnSecondaryBase} ${btnSecondaryLight} ${btnSecondaryDark}`}>
               Refresh
+            </button>
+
+            {/* ✅ Export Data Button */}
+            <button
+              onClick={handleExportData}
+              className={`${btnSecondaryBase} ${btnSecondaryLight} ${btnSecondaryDark} flex items-center gap-2`}
+            >
+              <Download className="w-4 h-4" />
+              Export Data
             </button>
           </div>
         </div>
 
-        {/* Stat Cards — same styling as OrderManagement */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {statCards.map((s, i) => (
             <motion.div
@@ -195,7 +189,9 @@ export default function Dashboard() {
               <div>
                 <div className="text-sm text-gray-700 dark:text-gray-300">{s.label}</div>
                 <div className="mt-2 text-3xl font-extrabold text-black dark:text-white">
-                  {s.label === "Total Sales" ? formatCurrency(Number(s.value ?? stats.totalSales ?? 0)) : s.value}
+                  {s.label === "Total Sales"
+                    ? formatCurrency(Number(s.value ?? stats.totalSales ?? 0))
+                    : s.value}
                 </div>
               </div>
               <div className={`p-3 rounded-full ${s.color} text-white`}>
