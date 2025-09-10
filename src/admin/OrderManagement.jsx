@@ -641,7 +641,79 @@ export default function OrderManagement() {
   // -----------------------------
   // actions
   // -----------------------------
-  const viewOrder = (o) => setSelectedOrder(o);
+
+  // show order and fetch full items if missing
+  const viewOrder = async (o) => {
+    if (!o) return setSelectedOrder(null);
+
+    // show quick info immediately
+    setSelectedOrder(o);
+
+    // if we already have item details, nothing to do
+    if (Array.isArray(o.items) && o.items.length) return;
+
+    // try fetching full order details from the API (tries multiple endpoints via tryGetMany style)
+    const candidate = [`/api/admin/orders/${o.id}`, `/api/orders/${o.id}`, `/orders/${o.id}`];
+    for (const url of candidate) {
+      try {
+        const res = await api.get(url, {}, true);
+        if (!res) continue;
+        const body = normalize(res);
+
+        // multiple shapes: body.items / body.order_items / body.line_items / body.data.items / body
+        const items =
+          Array.isArray(body?.items) ? body.items
+            : Array.isArray(body?.order_items) ? body.order_items
+            : Array.isArray(body?.line_items) ? body.line_items
+            : Array.isArray(body?.data?.items) ? body.data.items
+            : Array.isArray(body) ? body
+            : null;
+
+        const items_count = (items && Array.isArray(items)) ? items.length : Number(body?.items_count ?? body?.item_count ?? o.items_count ?? 0);
+
+        if (items && items.length) {
+          // set selected order with items (preserve other fields)
+          setSelectedOrder(prev => ({ ...(prev || {}), items, items_count }));
+          return;
+        } else {
+          // sometimes the order endpoint returns single object with line items nested under different keys
+          // attempt to derive items if available as an object
+          if (body && (body.order_items || body.line_items || body.items)) {
+            const derived = body.order_items ?? body.line_items ?? body.items;
+            if (Array.isArray(derived) && derived.length) {
+              setSelectedOrder(prev => ({ ...(prev || {}), items: derived, items_count: derived.length }));
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        if (DEBUG) console.debug("viewOrder fetch failed for", url, err);
+        // try next endpoint
+      }
+    }
+
+    // fallback: try the generic list endpoints to fetch single order (sometimes list returns order with items)
+    try {
+      const res = await tryGetMany([`/api/admin/orders`, `/api/orders`, `/orders`], { orderId: o.id, page: 1, limit: 1 });
+      const body = normalize(res);
+      let items = null;
+      if (body) {
+        const candidateItems = body?.items ?? body?.order_items ?? body?.line_items ?? body?.data?.items ?? null;
+        if (Array.isArray(candidateItems)) items = candidateItems;
+        else if (Array.isArray(body)) {
+          const found = body.find(b => String(b.id) === String(o.id));
+          if (found) items = found.items ?? found.order_items ?? found.line_items ?? null;
+        } else if (body && body.id && String(body.id) === String(o.id)) {
+          items = body.items ?? body.order_items ?? body.line_items ?? null;
+        }
+      }
+      if (Array.isArray(items) && items.length) {
+        setSelectedOrder(prev => ({ ...(prev || {}), items, items_count: items.length }));
+      }
+    } catch (err) {
+      if (DEBUG) console.debug("viewOrder fallback fetch failed", err);
+    }
+  };
 
   const copyOrderId = async (id) => {
     try {
@@ -1014,11 +1086,12 @@ export default function OrderManagement() {
 
           {selectedOrder && (
             <div className="fixed inset-0 bg-black/40 z-40 flex items-end sm:items-center sm:justify-center">
-              <div className="bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl p-6 shadow-xl">
+              <div className="bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-3xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
                 <div className="flex items-center justify-between">
                   <div className="text-xl font-semibold">Order #{selectedOrder.id}</div>
                   <div className="flex gap-2">
                     <button onClick={() => copyOrderId(selectedOrder.id)} className={`${btnSecondaryBase} ${btnSecondaryLight} ${btnSecondaryDark}`}><Copy className="w-4 h-4 inline mr-1" />Copy ID</button>
+                    <button onClick={() => setSelectedOrder(null)} className={`${btnSecondaryBase} ${btnSecondaryLight} ${btnSecondaryDark}`}>Close</button>
                   </div>
                 </div>
 
@@ -1026,22 +1099,81 @@ export default function OrderManagement() {
                   <div>
                     <div className="font-medium">User</div>
                     <div className="flex items-center gap-2 mt-1"><User2 className="w-4 h-4" /> {userNameFrom(selectedOrder) || `User ${userIdFrom(selectedOrder)}`}</div>
+
                     <div className="mt-3 font-medium">Delivery Date</div>
                     <div>{deliveryDateFrom(selectedOrder) || "-"}</div>
+
                     <div className="mt-3 font-medium">Status</div>
                     <div>{selectedOrder.status}</div>
-                  </div>
-                  <div>
-                    <div className="font-medium">Items</div>
-                    <div>{Array.isArray(selectedOrder.items) ? selectedOrder.items.length : ((Number(selectedOrder.items_count ?? selectedOrder.item_count ?? 0)) || (selectedOrder.items ?? 0))}</div>
-                    <div className="mt-3 font-medium">Amount</div>
-                    <div>{formatCurrency(Number(selectedOrder.total_amount ?? selectedOrder.amount ?? 0))}</div>
+
+                    <div className="mt-3 font-medium">Address</div>
+                    <div>{getShippingAddress(selectedOrder)}</div>
+
                     <div className="mt-3 font-medium">Instructions</div>
                     <div>{selectedOrder.instructions ?? selectedOrder.shipping_instructions ?? "-"}</div>
                   </div>
+
+                  <div>
+                    <div className="font-medium">Summary</div>
+                    <div className="mt-1">
+                      <div>Items: <b>{Array.isArray(selectedOrder.items) ? selectedOrder.items.length : ((Number(selectedOrder.items_count ?? selectedOrder.item_count ?? 0)) || safeItemsCount(selectedOrder))}</b></div>
+                      <div className="mt-1">Amount: <b>{formatCurrency(Number(selectedOrder.total_amount ?? selectedOrder.amount ?? 0))}</b></div>
+                    </div>
+
+                    <div className="mt-4 font-medium">Payment / Tracking</div>
+                    <div className="mt-1">
+                      <div>Payment ID: {selectedOrder.razorpay_payment_id ?? selectedOrder.payment_id ?? "-"}</div>
+                      <div>Razorpay Order: {selectedOrder.razorpay_order_id ?? "-"}</div>
+                      <div>Tracking: {selectedOrder.tracking_number ?? selectedOrder.tracking ?? "-"}</div>
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-4 flex justify-end">
-                  <button onClick={() => setSelectedOrder(null)} className={btnPrimary}>Close</button>
+
+                <hr className="my-4" />
+
+                <div className="font-medium mb-2">Products</div>
+
+                {Array.isArray(selectedOrder.items) && selectedOrder.items.length ? (
+                  <div className="space-y-4">
+                    {selectedOrder.items.map((it, idx) => {
+                      // attempt to derive fields safely
+                      const productName = it.name ?? it.title ?? it.product_name ?? it.product_title ?? it.description ?? it.title_text ?? `Product ${it.product_id ?? it.id ?? idx}`;
+                      const qty = Number(it.quantity ?? it.qty ?? it.count ?? it.qty_ordered ?? 1);
+                      const unit = Number(it.unit_price ?? it.price_per_unit ?? it.price ?? it.unitPrice ?? it.rate ?? 0);
+                      // some APIs send "price" as line total
+                      const lineTotal = Number(it.price ?? it.line_total ?? it.total ?? (unit * qty));
+                      // image field detection
+                      let img = null;
+                      if (it.image) img = it.image;
+                      else if (it.images && Array.isArray(it.images) && it.images.length) img = it.images[0];
+                      else if (it.product && (it.product.image || it.product.images)) {
+                        img = it.product.image ?? (Array.isArray(it.product.images) ? it.product.images[0] : null);
+                      } else if (it.thumbnail) img = it.thumbnail;
+                      return (
+                        <div key={idx} className="flex gap-4 items-center p-3 border rounded-lg bg-gray-50 dark:bg-gray-800">
+                          <div className="w-16 h-16 flex-shrink-0 rounded-md overflow-hidden bg-white border">
+                            {img ? <img src={img} alt={productName} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">No Image</div>}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium truncate">{productName}</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-300 mt-1">SKU: {it.sku ?? it.product_sku ?? it.product_id ?? "-"}</div>
+                            {it.variant && <div className="text-sm text-gray-600 dark:text-gray-300 mt-1">Variant: {typeof it.variant === "string" ? it.variant : JSON.stringify(it.variant)}</div>}
+                          </div>
+                          <div className="text-right min-w-[140px]">
+                            <div className="text-sm">Qty: <b>{qty}</b></div>
+                            <div className="text-sm">Unit: <b>{formatCurrency(unit)}</b></div>
+                            <div className="text-sm mt-1">Line: <b>{formatCurrency(lineTotal)}</b></div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-4 text-sm text-gray-600">No product details available for this order.</div>
+                )}
+
+                <div className="mt-4 flex justify-end gap-2">
+                  <button onClick={() => setSelectedOrder(null)} className={btnSecondaryBase + " " + btnSecondaryLight + " " + btnSecondaryDark}>Close</button>
                 </div>
               </div>
             </div>
