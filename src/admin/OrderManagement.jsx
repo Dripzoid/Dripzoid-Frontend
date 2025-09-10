@@ -1191,7 +1191,6 @@ export default function OrderManagement() {
                   <div className="text-xl font-semibold">Order #{selectedOrder.id}</div>
                   <div className="flex gap-2">
                     <button onClick={() => copyOrderId(selectedOrder.id)} className={`${btnSecondaryBase} ${btnSecondaryLight} ${btnSecondaryDark}`}><Copy className="w-4 h-4 inline mr-1" />Copy ID</button>
-                    <button onClick={() => setSelectedOrder(null)} className={`${btnSecondaryBase} ${btnSecondaryLight} ${btnSecondaryDark}`}>Close</button>
                   </div>
                 </div>
 
