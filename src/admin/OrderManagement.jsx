@@ -248,6 +248,28 @@ const extractImageUrl = (it) => {
   return null;
 };
 
+// ---- Helper functions ----
+
+// Safely run a function that returns many items, or return a fallback if it fails
+const tryGetMany = (fn, fallback = []) => {
+  try {
+    return fn() || fallback;
+  } catch (err) {
+    console.error("tryGetMany error:", err);
+    return fallback;
+  }
+};
+
+// Sort orders client-side by created_at (newest first)
+const sortOrdersClient = (orders = []) => {
+  return [...orders].sort((a, b) => {
+    const dateA = new Date(a.created_at || a.createdAt || 0);
+    const dateB = new Date(b.created_at || b.createdAt || 0);
+    return dateB - dateA;
+  });
+};
+
+
 // -----------------------------
 // Component
 // -----------------------------
