@@ -16,17 +16,20 @@ export const CartProvider = ({ children }) => {
   const API_BASE = process.env.REACT_APP_API_BASE;
 
   const normalizeRow = (row = {}) => {
-    // support multiple possible field namings from backend
     const cart_id = row.cart_id ?? row.id ?? row.cartId ?? null;
-    const product_id = row.product_id ?? row.productId ?? row.product_id ?? null;
+    const product_id =
+      row.product_id ?? row.productId ?? row.product_id ?? null;
 
     const quantity = Number(row.quantity ?? row.qty ?? 1);
-    const size = row.size ?? null;
-    const colors = row.colors ?? row.color ?? null; // ✅ fixed: colors
+    const selectedSize =
+      row.selectedSize ?? row.size ?? row.variant_size ?? null;
+    const selectedColor =
+      row.selectedColor ?? row.color ?? row.colors ?? row.variant_color ?? null;
+    const variantId = row.variantId ?? row.variant_id ?? null;
 
     const productName = row.name ?? row.product_name ?? row.title ?? "";
     const productPrice = Number(row.price ?? row.unit_price ?? 0);
-    const productImages = row.images ?? row.product_images ?? "";
+    const productImages = row.images ?? row.product_images ?? [];
     const productStock = row.stock ?? null;
 
     const product = {
@@ -43,8 +46,9 @@ export const CartProvider = ({ children }) => {
       product_id,
       product,
       quantity,
-      size,
-      colors, // ✅ fixed: colors
+      selectedSize,
+      selectedColor,
+      variantId,
 
       name: productName,
       price: productPrice,
@@ -71,7 +75,10 @@ export const CartProvider = ({ children }) => {
       }
       const data = await res.json();
       if (!Array.isArray(data)) {
-        console.warn("Cart fetch: unexpected response shape, expected array:", data);
+        console.warn(
+          "Cart fetch: unexpected response shape, expected array:",
+          data
+        );
         setCart([]);
         return;
       }
@@ -86,11 +93,45 @@ export const CartProvider = ({ children }) => {
     }
   };
 
-  const addToCart = async (product, quantity = 1, size = null, colors = null) => {
+  /**
+   * Add to cart
+   * Supports two signatures:
+   *   1. addToCart(itemForCartObject)
+   *   2. addToCart(product, quantity, size, color, variantInfo)
+   */
+  const addToCart = async (...args) => {
     if (!user || !token) {
       alert("Please log in to add items to cart");
       throw new Error("Not authenticated");
     }
+
+    let payload = {};
+
+    if (args.length === 1 && typeof args[0] === "object") {
+      // ✅ New API: object payload
+      const item = args[0];
+      payload = {
+        product_id: item.product_id ?? item.product?.id ?? null,
+        quantity: Number(item.quantity ?? 1),
+        selectedSize: item.selectedSize ?? null,
+        selectedColor: item.selectedColor ?? null,
+        variantId: item.variantId ?? null,
+        price: item.price ?? null,
+        images: item.images ?? [],
+      };
+    } else {
+      // ✅ Legacy API
+      const [product, quantity = 1, size = null, color = null, variantInfo = {}] =
+        args;
+      payload = {
+        product_id: product?.id ?? product?._id ?? null,
+        quantity: Number(quantity ?? 1),
+        selectedSize: size,
+        selectedColor: color,
+        variantId: variantInfo?.variantId ?? null,
+      };
+    }
+
     try {
       const res = await fetch(`${API_BASE}/api/cart`, {
         method: "POST",
@@ -98,12 +139,7 @@ export const CartProvider = ({ children }) => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          product_id: product.id,
-          quantity,
-          size,
-          colors, // ✅ fixed: colors
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const txt = await res.text();
@@ -158,9 +194,14 @@ export const CartProvider = ({ children }) => {
     }
   };
 
-  // Buy Now handler - store product snapshot (not persisted)
-  const buyNow = (product, quantity = 1, size = null, colors = null) => {
-    setBuyNowItem({ product, quantity, size, colors }); // ✅ fixed: colors
+  const buyNow = (product, quantity = 1, size = null, color = null, variantInfo = {}) => {
+    setBuyNowItem({
+      product,
+      quantity,
+      selectedSize: size,
+      selectedColor: color,
+      variantId: variantInfo?.variantId ?? null,
+    });
   };
 
   useEffect(() => {
