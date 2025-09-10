@@ -110,16 +110,26 @@ export default function DashboardLayout() {
   }, [checkingAuth, user, navigate, location.pathname]);
 
   const handleLogout = async () => {
-    try {
-      await fetch(`${ACCOUNT_BASE}/signout-session`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-      });
-    } catch { }
-    logout();
-    navigate("/login");
-  };
+  try {
+    const token = localStorage.getItem("token"); // 🔑 get token from localStorage
+
+    await fetch(`${ACCOUNT_BASE}/signout-session`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: token ? `Bearer ${token}` : "", // ✅ attach token
+      },
+      credentials: "include", // keep cookies in sync
+    });
+  } catch (err) {
+    console.error("Logout error:", err);
+  }
+
+  // Clear frontend state regardless of backend response
+  logout();
+  navigate("/login");
+};
+
 
   const links = [
     { to: "/account/profile", label: "Profile Overview", icon: <UserIcon size={18} /> },
