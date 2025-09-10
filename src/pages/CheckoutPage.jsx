@@ -6,7 +6,7 @@ import { useCart } from "../contexts/CartContext";
 import { Check, CreditCard, ShoppingCart } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import { UserContext } from "../contexts/UserContext";  
+import { UserContext } from "../contexts/UserContext";
 
 /**
  * Razorpay integration notes (frontend):
@@ -103,6 +103,7 @@ export default function CheckoutPage() {
   }, [token]);
 
   // --- NORMALIZATION ---
+  // Ensure selectedColor/selectedSize/variantId are available at top-level of each checkout item
   const checkoutItems = useMemo(() => {
     const incoming = Array.isArray(location.state?.items) ? location.state.items : cart;
     return (Array.isArray(incoming) ? incoming : []).map((it, idx) => {
@@ -114,7 +115,26 @@ export default function CheckoutPage() {
       const price = Number(prod.price ?? it.price ?? 0);
       const quantity = Number(it.quantity ?? it.qty ?? 1);
       const images = Array.isArray(prod.images) ? prod.images.join(",") : prod.images ?? it.images ?? it.image ?? "";
-      return { cart_id: cartRowId, product_id: productId, id: uniqueId, name, price, quantity, images, original: prod };
+
+      // Resolve selected color/size from several possible shapes (top-level item, product snapshot or variant)
+      const selectedColor =
+        (it.selectedColor ?? it.selected_color ?? it.color) ||
+        (prod.selectedColor ?? prod.selected_color ?? prod.color) ||
+        (it.variant && (it.variant.color || it.variant.colour)) ||
+        null;
+
+      const selectedSize =
+        (it.selectedSize ?? it.selected_size ?? it.size) ||
+        (prod.selectedSize ?? prod.selected_size ?? prod.size) ||
+        (it.variant && (it.variant.size || it.variant.variantSize)) ||
+        null;
+
+      const variantId =
+        it.variantId ?? it.variant_id ?? prod.variantId ?? prod.variant_id ?? (it.variant && (it.variant.id || it.variant._id)) ?? null;
+
+      const original = prod;
+
+      return { cart_id: cartRowId, product_id: productId, id: uniqueId, name, price, quantity, images, original, selectedColor, selectedSize, variantId };
     });
   }, [location.state, cart]);
 
@@ -271,24 +291,28 @@ export default function CheckoutPage() {
 
     setLoading(true);
 
-    // Build payload similar to previous logic (cart vs buyNow)
+    // Build a robust items payload that includes selectedColor/selectedSize/variantId for each item
     try {
-      let orderPayload = null;
+      const itemsPayload = checkoutItems.map((it) => {
+        return {
+          cart_id: it.cart_id ?? null,
+          product_id: it.product_id ?? it.original?.id ?? null,
+          quantity: Number(it.quantity || 1),
+          price: Number(it.price || 0),
+          selectedColor: it.selectedColor ?? null,
+          selectedSize: it.selectedSize ?? null,
+          variantId: it.variantId ?? null,
+          product_snapshot: it.original ?? null,
+        };
+      }).filter(Boolean);
 
-      if (!fromCart) {
-        const buyNowItems = checkoutItems.map((item) => ({ product_snapshot: item.original ?? null, product_id: item.product_id ?? item.original?.id ?? item.original?._id ?? null, price: Number(item.price || 0), quantity: Number(item.quantity || 1) }));
-        orderPayload = { buyNow: true, items: buyNowItems, totalAmount: grandTotal, paymentMethod: paymentType || 'razorpay', shippingAddress: shipping };
-      } else {
-        const cartItemsPayload = checkoutItems.map((item) => {
-          if (item.cart_id !== null && item.cart_id !== undefined) { const maybeNum = Number(item.cart_id); return { id: Number.isFinite(maybeNum) ? maybeNum : item.cart_id, quantity: Number(item.quantity || 1) }; }
-          const pidCandidate = item.product_id ?? item.original?.id ?? item.original?._id ?? null;
-          if (pidCandidate === null || pidCandidate === undefined) return null;
-          const asNum = Number(pidCandidate);
-          if (Number.isFinite(asNum)) return { product_id: asNum, quantity: Number(item.quantity || 1) };
-          return { product_id: String(pidCandidate), quantity: Number(item.quantity || 1) };
-        }).filter(Boolean);
-        orderPayload = { cartItems: cartItemsPayload, totalAmount: grandTotal, paymentMethod: paymentType || 'razorpay', shippingAddress: shipping };
-      }
+      const orderPayload = {
+        fromCart: Boolean(fromCart),
+        items: itemsPayload,
+        totalAmount: Math.round(grandTotal),
+        paymentMethod: paymentType || "razorpay",
+        shippingAddress: shipping,
+      };
 
       // If COD, use existing place-order endpoint (server will mark payment as COD)
       if (paymentType === "cod") {
@@ -307,8 +331,7 @@ export default function CheckoutPage() {
       }
 
       // For Razorpay online flow
-      // 1) ask server to create an internal + Razorpay order
-      const serverResp = await createRazorpayOrderOnServer({ ...orderPayload, totalAmount: Math.round(grandTotal) });
+      const serverResp = await createRazorpayOrderOnServer(orderPayload);
       // expected serverResp: { razorpayOrderId, amount, currency, internalOrderId }
       const ok = await loadRazorpayScript();
       if (!ok) throw new Error("Failed to load Razorpay SDK");
@@ -322,7 +345,7 @@ export default function CheckoutPage() {
 
       const options = {
         key: RAZORPAY_KEY,
-        amount: amount * 100 || Math.round(grandTotal * 100), // ensure paise (server should already give paise but we guard)
+        amount: (amount * 100) || Math.round(grandTotal * 100), // ensure paise (server should already give paise but we guard)
         currency,
         name: "Your Store",
         description: "Order Payment",
@@ -349,6 +372,11 @@ export default function CheckoutPage() {
           },
         },
       };
+
+      if (!window || !window.Razorpay) {
+        // Fallback: try to create instance after script loads (but loadRazorpayScript should make it available)
+        throw new Error("Razorpay SDK not available");
+      }
 
       const rzp = new window.Razorpay(options);
       rzp.open();
@@ -402,46 +430,64 @@ export default function CheckoutPage() {
           <div>Your cart is empty</div>
         </div>
       ) : (
-        checkoutItems.map((it) => (
-          <div key={it.id} className="flex items-start gap-4">
-            <img
-              src={it.images?.split?.(",")?.[0] ?? "/placeholder.jpg"}
-              alt={it.name}
-              className="w-20 h-20 object-cover rounded-md"
-            />
-            <div className="flex-1">
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="font-medium text-gray-900 dark:text-white">
-                    {it.name}
-                  </div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                    {it.original?.category ?? ""}
-                  </div>
+        checkoutItems.map((it) => {
+          const colorName = it.selectedColor ?? it.original?.selectedColor ?? null;
+          const sizeName = it.selectedSize ?? it.original?.selectedSize ?? null;
 
-                  {/* NEW: Show selected color & size */}
-                  {(it.original?.selectedColor || it.original?.selectedSize) && (
-                    <div className="mt-1 text-xs text-gray-600 dark:text-gray-300">
-                      {it.original?.selectedColor && (
-                        <span>Color: {it.original.selectedColor}</span>
-                      )}
-                      {it.original?.selectedSize && (
-                        <span className="ml-2">Size: {it.original.selectedSize}</span>
-                      )}
+          // Quick CSS color validity check (browser)
+          let showColorDot = false;
+          if (colorName) {
+            try {
+              const s = new Option().style;
+              s.color = colorName;
+              showColorDot = s.color !== "";
+            } catch (e) {
+              showColorDot = false;
+            }
+          }
+
+          return (
+            <div key={it.id} className="flex items-start gap-4">
+              <img
+                src={it.images?.split?.(",")?.[0] ?? "/placeholder.jpg"}
+                alt={it.name}
+                className="w-20 h-20 object-cover rounded-md"
+              />
+              <div className="flex-1">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="font-medium text-gray-900 dark:text-white">
+                      {it.name}
                     </div>
-                  )}
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      {it.original?.category ?? ""}
+                    </div>
 
-                  <div className="mt-2 text-sm font-semibold">
-                    ₹{fmt(it.price)}
+                    {/* Show selected color & size (prefer normalized fields) */}
+                    {(colorName || sizeName) && (
+                      <div className="mt-1 text-xs text-gray-600 dark:text-gray-300 flex items-center gap-3">
+                        {colorName && (
+                          <span className="flex items-center gap-2">
+                            <span>Color: {colorName}</span>
+                            {showColorDot && <span className="w-3 h-3 rounded-full border" style={{ backgroundColor: colorName }} />}
+                          </span>
+                        )}
+                        {sizeName && <span>Size: {sizeName}</span>}
+                      </div>
+                    )}
+
+                    <div className="mt-2 text-sm font-semibold">
+                      ₹{fmt(it.price)}
+                    </div>
                   </div>
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-300">
-                  Qty {it.quantity}
+                  <div className="text-sm text-gray-600 dark:text-gray-300">
+                    Qty {it.quantity}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        ))
+          );
+        })
       )}
     </div>
 
@@ -559,9 +605,6 @@ export default function CheckoutPage() {
                   </motion.button>
                 )}
               </div>
-
-              <div className="mt-3 text-xs text-gray-500">Note: Server endpoints required: POST /api/payments/razorpay/create-order and POST /api/payments/razorpay/verify</div>
-            </div>
           </div>
         </aside>
       </div>
