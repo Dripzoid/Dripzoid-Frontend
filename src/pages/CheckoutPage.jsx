@@ -391,34 +391,59 @@ export default function CheckoutPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main content */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Step 1: Review */}
-          {step === 1 && (
-            <section className="bg-white dark:bg-gray-900 rounded-xl shadow p-6">
-              <h3 className="text-xl font-semibold mb-4">Order Summary</h3>
-              <div className="space-y-3">
-                {checkoutItems.length === 0 ? (
-                  <div className="text-center text-gray-500 py-8">
-                    <ShoppingCart className="mx-auto mb-3" />
-                    <div>Your cart is empty</div>
+    {/* Step 1: Review */}
+{step === 1 && (
+  <section className="bg-white dark:bg-gray-900 rounded-xl shadow p-6">
+    <h3 className="text-xl font-semibold mb-4">Order Summary</h3>
+    <div className="space-y-3">
+      {checkoutItems.length === 0 ? (
+        <div className="text-center text-gray-500 py-8">
+          <ShoppingCart className="mx-auto mb-3" />
+          <div>Your cart is empty</div>
+        </div>
+      ) : (
+        checkoutItems.map((it) => (
+          <div key={it.id} className="flex items-start gap-4">
+            <img
+              src={it.images?.split?.(",")?.[0] ?? "/placeholder.jpg"}
+              alt={it.name}
+              className="w-20 h-20 object-cover rounded-md"
+            />
+            <div className="flex-1">
+              <div className="flex justify-between items-start">
+                <div>
+                  <div className="font-medium text-gray-900 dark:text-white">
+                    {it.name}
                   </div>
-                ) : (
-                  checkoutItems.map((it) => (
-                    <div key={it.id} className="flex items-start gap-4">
-                      <img src={it.images?.split?.(",")?.[0] ?? "/placeholder.jpg"} alt={it.name} className="w-20 h-20 object-cover rounded-md" />
-                      <div className="flex-1">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <div className="font-medium text-gray-900 dark:text-white">{it.name}</div>
-                            <div className="text-sm text-gray-500 dark:text-gray-400">{it.original?.category ?? ""}</div>
-                            <div className="mt-2 text-sm font-semibold">₹{fmt(it.price)}</div>
-                          </div>
-                          <div className="text-sm text-gray-600 dark:text-gray-300">Qty {it.quantity}</div>
-                        </div>
-                      </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    {it.original?.category ?? ""}
+                  </div>
+
+                  {/* NEW: Show selected color & size */}
+                  {(it.original?.selectedColor || it.original?.selectedSize) && (
+                    <div className="mt-1 text-xs text-gray-600 dark:text-gray-300">
+                      {it.original?.selectedColor && (
+                        <span>Color: {it.original.selectedColor}</span>
+                      )}
+                      {it.original?.selectedSize && (
+                        <span className="ml-2">Size: {it.original.selectedSize}</span>
+                      )}
                     </div>
-                  ))
-                )}
+                  )}
+
+                  <div className="mt-2 text-sm font-semibold">
+                    ₹{fmt(it.price)}
+                  </div>
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-300">
+                  Qty {it.quantity}
+                </div>
               </div>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
 
               <div className="mt-6 border-t pt-4 space-y-3">
                 <div className="flex justify-between text-sm"><span>Items total</span><span>₹{fmt(itemsTotal)}</span></div>
