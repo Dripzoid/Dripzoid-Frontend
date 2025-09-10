@@ -60,57 +60,24 @@ export function UserProvider({ children }) {
 
   const isAuthenticated = !!user && !!token;
 
-  const refresh = useCallback(async () => {
-    if (forceLoggedOut) return null;
-    setLoading(true);
+const refresh = useCallback(async () => {
+  if (forceLoggedOut) return null;
+  setLoading(true);
 
-    try {
-      const res = await fetch(buildUrl("/api/auth/me"), {
-        method: "GET",
-        credentials: "include", // HTTP-only cookie
-        headers: { "Content-Type": "application/json" },
-      });
+  try {
+    const storedToken = localStorage.getItem("token");
 
-      if (!res.ok) {
-        // not authenticated
-        setUser(null);
-        setToken(null);
-        setSessionId(null);
-        localStorage.removeItem("user");
-        localStorage.removeItem("token");
-        localStorage.removeItem("sessionId");
-        setLoading(false);
-        return null;
-      }
+    const res = await fetch(buildUrl("/api/auth/me"), {
+      method: "GET",
+      credentials: "include", // keep cookie-based sessions working too
+      headers: {
+        "Content-Type": "application/json",
+        ...(storedToken ? { Authorization: `Bearer ${storedToken}` } : {}), // ✅ attach token if available
+      },
+    });
 
-      const data = await res.json().catch(() => ({}));
-      const normalized = normalizeUser(data?.user ?? null);
-
-      if (normalized) {
-        setUser(normalized);
-        localStorage.setItem("user", JSON.stringify(normalized));
-      } else {
-        setUser(null);
-        localStorage.removeItem("user");
-      }
-
-      // token in response body (API should include it if you need it on client)
-      if (data?.token) {
-        setToken(data.token);
-        localStorage.setItem("token", data.token);
-      }
-
-      // sessionId: support both camelCase and snake_case keys from server
-      const sid = data?.sessionId ?? data?.session_id ?? null;
-      if (sid != null) {
-        setSessionId(String(sid));
-        localStorage.setItem("sessionId", String(sid));
-      }
-
-      setLoading(false);
-      return normalized;
-    } catch (err) {
-      console.error("UserContext.refresh error", err);
+    if (!res.ok) {
+      // not authenticated
       setUser(null);
       setToken(null);
       setSessionId(null);
@@ -120,7 +87,46 @@ export function UserProvider({ children }) {
       setLoading(false);
       return null;
     }
-  }, [forceLoggedOut]);
+
+    const data = await res.json().catch(() => ({}));
+    const normalized = normalizeUser(data?.user ?? null);
+
+    if (normalized) {
+      setUser(normalized);
+      localStorage.setItem("user", JSON.stringify(normalized));
+    } else {
+      setUser(null);
+      localStorage.removeItem("user");
+    }
+
+    // token in response body (if API includes it)
+    if (data?.token) {
+      setToken(data.token);
+      localStorage.setItem("token", data.token);
+    }
+
+    // sessionId: support both camelCase and snake_case keys
+    const sid = data?.sessionId ?? data?.session_id ?? null;
+    if (sid != null) {
+      setSessionId(String(sid));
+      localStorage.setItem("sessionId", String(sid));
+    }
+
+    setLoading(false);
+    return normalized;
+  } catch (err) {
+    console.error("UserContext.refresh error", err);
+    setUser(null);
+    setToken(null);
+    setSessionId(null);
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
+    localStorage.removeItem("sessionId");
+    setLoading(false);
+    return null;
+  }
+}, [forceLoggedOut]);
+
 
   // LOGIN
   const login = async (userData = null, jwtToken = null, newSessionId = null) => {
