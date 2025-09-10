@@ -250,30 +250,64 @@ const extractImageUrl = (it) => {
 
 // ---- Helper functions ----
 
-// Safely run a function that returns many items, or return a fallback if it fails
-const tryGetMany = (fn, fallback = []) => {
-  try {
-    return fn() || fallback;
-  } catch (err) {
-    console.error("tryGetMany error:", err);
-    return fallback;
+// Reintroduce the async network helper expected by the component.
+// Tries multiple URLs with query params, returns first successful response object.
+async function tryGetMany(urls = [], params = {}) {
+  for (const u of urls) {
+    try {
+      const urlWithParams = buildUrlWithParams(u, params);
+      if (DEBUG) console.debug(`[tryGetMany] GET ${urlWithParams}`);
+      // Many api wrappers accept full URL as first arg. Provide empty params object as second to be safe.
+      const res = await api.get(urlWithParams, {}, true);
+      if (res) {
+        if (DEBUG) console.debug(`[tryGetMany] success ${urlWithParams}`);
+        return res;
+      }
+    } catch (err) {
+      if (DEBUG) console.debug(`[tryGetMany] failed ${u} with params ${serializeParamsForLog(params)}`, err);
+      // try next
+    }
   }
-};
+  return null;
+}
 
-// Sort orders client-side by created_at (newest first)
-const sortOrdersClient = (orders = []) => {
-  return [...orders].sort((a, b) => {
-    const dateA = new Date(a.created_at || a.createdAt || 0);
-    const dateB = new Date(b.created_at || b.createdAt || 0);
-    return dateB - dateA;
-  });
+// client-side sorting fallback (supports same sort keys as UI)
+const sortOrdersClient = (list = [], sort = "newest") => {
+  if (!Array.isArray(list)) return list;
+  const copy = [...list];
+  const getAmount = (o) => Number(o.total_amount ?? o.amount ?? 0);
+  const getDate = (o) => (deliveryDateFrom(o) || o.created_at || "").toString();
+  const getStatus = (o) => (o.status || "").toString().toLowerCase();
+  const getUser = (o) => (userNameFrom(o) || "").toString().toLowerCase();
+  const getItems = (o) => safeItemsCount(o);
+  switch (sort) {
+    case "newest": copy.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || "")); break;
+    case "oldest": copy.sort((a, b) => (a.created_at || "").localeCompare(b.created_at || "")); break;
+    case "amount_asc": copy.sort((a, b) => getAmount(a) - getAmount(b)); break;
+    case "amount_desc": copy.sort((a, b) => getAmount(b) - getAmount(a)); break;
+    case "status_asc": copy.sort((a, b) => getStatus(a).localeCompare(getStatus(b))); break;
+    case "status_desc": copy.sort((a, b) => getStatus(b).localeCompare(getStatus(a))); break;
+    case "items_asc": copy.sort((a, b) => getItems(a) - getItems(b)); break;
+    case "items_desc": copy.sort((a, b) => getItems(b) - getItems(a)); break;
+    case "user_asc": copy.sort((a, b) => getUser(a).localeCompare(getUser(b))); break;
+    case "user_desc": copy.sort((a, b) => getUser(b).localeCompare(getUser(a))); break;
+    case "delivery_asc": copy.sort((a, b) => getDate(a).localeCompare(getDate(b))); break;
+    case "delivery_desc": copy.sort((a, b) => getDate(b).localeCompare(getDate(a))); break;
+    default: break;
+  }
+  return copy;
 };
-
 
 // -----------------------------
 // Component
 // -----------------------------
 export default function OrderManagement() {
+  // ... the rest of your component remains unchanged (I kept your original logic).
+  // For brevity here I will reuse your original component implementation below
+  // (unchanged) — the only functional changes are the two helpers above.
+  // The rest of the file is identical to the code you provided, so it will
+  // make real backend calls via tryGetMany and sort the results.
+
   // tabs
   const [activeTab, setActiveTab] = useState("browse");
 
