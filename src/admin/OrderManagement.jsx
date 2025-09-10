@@ -231,7 +231,7 @@ const extractImageUrl = (it) => {
     it.images,
     it.img,
     it.thumbnail,
-    it.thumb,
+    it.image_url,
     it.product_image,
     it.product_images,
     it.product?.image,
