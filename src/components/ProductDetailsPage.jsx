@@ -1211,48 +1211,57 @@ export default function ProductDetailsPage() {
           </div>
 
           {/* questions list (same as earlier) */}
-          {Array.isArray(questions) && questions.length > 0 ? (
-            <ul className="space-y-6">
-              {questions.map((q) => {
-                const qid = q.id || q._id;
-                const displayName = q.userName || q.name || "Anonymous";
-                const avatarUrl = q.avatar || null;
-                const initials = (displayName || "A").split(" ").map((p) => p?.[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "A";
+{Array.isArray(questions) && questions.length > 0 ? (
+  <ul className="space-y-6">
+    {questions.map((q) => {
+      const qid = q.id || q._id;
+      const displayName = q.userName || q.name || "Anonymous";
+      const avatarUrl = q.avatar || null;   // ✅ this is the variable you want
+      const initials =
+        (displayName || "A")
+          .split(" ")
+          .map((p) => p?.[0])
+          .filter(Boolean)
+          .slice(0, 2)
+          .join("")
+          .toUpperCase() || "A";
 
-                return (
-                  <li key={qid} className="space-y-3">
-                    <div className="flex items-start gap-3">
-                      {avatarSrc ? (
-                        <Avatar
-                          alt={displayName}
-                          src={avatarSrc}
-                          sx={{ width: 40, height: 40 }}
-                        />
-                      ) : (
-                        <Avatar
-                          sx={{
-                            width: 40,
-                            height: 40,
-                            bgcolor: stringToHslColor(displayName || initials),
-                            color: "#fff",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {initials}
-                        </Avatar>
-                      )}
+      return (
+        <li key={qid} className="space-y-3">
+          <div className="flex items-start gap-3">
+            {avatarUrl ? (  // ✅ changed from avatarSrc → avatarUrl
+              <Avatar
+                alt={displayName}
+                src={avatarUrl}
+                sx={{ width: 40, height: 40 }}
+              />
+            ) : (
+              <Avatar
+                sx={{
+                  width: 40,
+                  height: 40,
+                  bgcolor: stringToHslColor(displayName || initials),
+                  color: "#fff",
+                  fontWeight: 600,
+                }}
+              >
+                {initials}
+              </Avatar>
+            )}
 
-                      <div className="flex-1">
-                        <div>
-                          <p className="font-medium text-black dark:text-white">{displayName}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{q.createdAt ? formatRelativeIST(q.createdAt) : ""}</p>
-                        </div>
+            <div className="flex-1">
+              <div>
+                <p className="font-medium text-black dark:text-white">{displayName}</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {q.createdAt ? formatRelativeIST(q.createdAt) : ""}
+                </p>
+              </div>
 
-                        <div className="mt-2 bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
-                          <p className="text-sm text-gray-900 dark:text-gray-100">{q.text}</p>
-                        </div>
-                      </div>
-                    </div>
+              <div className="mt-2 bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
+                <p className="text-sm text-gray-900 dark:text-gray-100">{q.text}</p>
+              </div>
+            </div>
+          </div>
 
                     {(q.answers || []).length > 0 && (
                       <div className="ml-12 space-y-3">
