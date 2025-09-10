@@ -20,11 +20,9 @@ export default function CartPage() {
       name: item.product?.name || item.name,
       price: Number(item.product?.price || item.price) || 0,
       quantity: item.quantity,
-      // pick first image if multiple
-      image:
-        (item.product?.images || item.images || "")
-          .split(",")[0]
-          .trim(),
+      color : item.selectedColor || null,
+      size: item.selectedSize || null,
+      image: (item.product?.images || item.images || "").split(",")[0].trim(),
     }));
 
     const totalAmount = itemsData.reduce(
@@ -46,7 +44,7 @@ export default function CartPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-3xl font-bold mb-8 flex items-center gap-2">
         <ShoppingBag className="w-7 h-7" /> Shopping Cart
       </h1>
@@ -60,51 +58,65 @@ export default function CartPage() {
         </div>
       ) : (
         <>
-          <div className="space-y-4">
+          <div className="space-y-6">
             {cart.map((item) => {
               const price = Number(item.product?.price || item.price || 0);
               const name = item.product?.name || item.name;
               const productId = item.product?.id || item.id;
 
               // Pick first image if multiple URLs
-              const image =
-                (item.product?.images || item.images || "")
-                  .split(",")[0]
-                  .trim();
+              const image = (item.product?.images || item.images || "")
+                .split(",")[0]
+                .trim();
 
               return (
                 <motion.div
                   key={item.id}
                   layout
                   whileHover={{ scale: 1.01 }}
-                  className="flex items-center gap-4 p-4 bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 cursor-pointer"
+                  className="flex items-center gap-6 p-6 bg-white dark:bg-gray-900 rounded-2xl shadow-md border border-gray-200 dark:border-gray-800 cursor-pointer"
                   onClick={() => handleNavigate(productId)}
                 >
                   <img
                     src={image}
                     alt={name}
-                    className="w-20 h-20 object-cover rounded-lg"
+                    className="w-28 h-28 object-cover rounded-xl"
                   />
 
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 dark:text-white truncate">
+                    <h3 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
                       {name}
                     </h3>
                     <p className="text-sm text-gray-500">
                       ₹{price.toLocaleString()}
                     </p>
 
-                    <div className="flex items-center gap-2 mt-2">
+                    {/* Color & Size */}
+                    <div className="flex gap-4 mt-2 text-sm text-gray-600 dark:text-gray-300">
+                      {item.color && (
+                        <p>
+                          <span className="font-medium">Color:</span>{" "}
+                          {item.color}
+                        </p>
+                      )}
+                      {item.size && (
+                        <p>
+                          <span className="font-medium">Size:</span> {item.size}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 mt-3">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           updateQuantity(item.id, Math.max(1, item.quantity - 1));
                         }}
-                        className="p-1 rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
+                        className="p-2 rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
                       >
                         <Minus size={14} />
                       </button>
-                      <span className="px-2 min-w-[24px] text-center">
+                      <span className="px-3 min-w-[28px] text-center font-medium">
                         {item.quantity}
                       </span>
                       <button
@@ -112,7 +124,7 @@ export default function CartPage() {
                           e.stopPropagation();
                           updateQuantity(item.id, item.quantity + 1);
                         }}
-                        className="p-1 rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
+                        className="p-2 rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
                       >
                         <Plus size={14} />
                       </button>
@@ -120,7 +132,7 @@ export default function CartPage() {
                   </div>
 
                   <div className="text-right">
-                    <p className="font-bold text-gray-900 dark:text-white">
+                    <p className="font-bold text-lg text-gray-900 dark:text-white">
                       ₹{(price * item.quantity).toLocaleString()}
                     </p>
                     <button
@@ -128,9 +140,9 @@ export default function CartPage() {
                         e.stopPropagation();
                         removeFromCart(item.id);
                       }}
-                      className="text-red-500 hover:text-red-600 mt-2"
+                      className="text-red-500 hover:text-red-600 mt-3"
                     >
-                      <Trash2 size={16} />
+                      <Trash2 size={18} />
                     </button>
                   </div>
                 </motion.div>
@@ -138,8 +150,8 @@ export default function CartPage() {
             })}
           </div>
 
-          <div className="mt-8 flex flex-col sm:flex-row justify-between items-center gap-4">
-            <span className="text-xl font-bold">
+          <div className="mt-10 flex flex-col sm:flex-row justify-between items-center gap-6">
+            <span className="text-2xl font-bold">
               Total: ₹{total.toLocaleString()}
             </span>
 
@@ -147,7 +159,7 @@ export default function CartPage() {
               onClick={handleCheckout}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              className="cssbuttons-io shadow-neon-black px-6 py-3 rounded-full flex items-center justify-center gap-2"
+              className="cssbuttons-io shadow-neon-black px-8 py-4 rounded-full flex items-center justify-center gap-3 text-lg"
             >
               Proceed to Checkout
             </motion.button>
