@@ -82,82 +82,59 @@ const userNameFrom = (o) =>
 const userIdFrom = (o) => (o?.user_id ?? (o.user && o.user.id) ?? "-");
 
 const deliveryDateFrom = (o) =>
-  o?.delivery_date ?? o?.expected_delivery ?? o?.delivers_on ?? o?.created_at ?? "";
-
-// attempt multiple GET endpoints (returns first successful response)
-// IMPORTANT: builds full URL with query params to ensure api.get receives them
-async function tryGetMany(urls = [], params = {}) {
-  for (const u of urls) {
-    try {
-      const urlWithParams = buildUrlWithParams(u, params);
-      if (DEBUG) console.debug(`[tryGetMany] GET ${urlWithParams}`);
-      // Many api wrappers accept full URL as first arg. Provide empty params object as second to be safe.
-      const res = await api.get(urlWithParams, {}, true);
-      if (res) {
-        if (DEBUG) console.debug(`[tryGetMany] success ${urlWithParams}`);
-        return res;
-      }
-    } catch (err) {
-      if (DEBUG) console.debug(`[tryGetMany] failed ${u} with params ${serializeParamsForLog(params)}`, err);
-      // try next
-    }
-  }
-  return null;
-}
-
-// client-side sorting fallback
-const sortOrdersClient = (list = [], sort = "newest") => {
-  if (!Array.isArray(list)) return list;
-  const copy = [...list];
-  const getAmount = (o) => Number(o.total_amount ?? o.amount ?? 0);
-  const getDate = (o) => (deliveryDateFrom(o) || o.created_at || "").toString();
-  const getStatus = (o) => (o.status || "").toString().toLowerCase();
-  const getUser = (o) => (userNameFrom(o) || "").toString().toLowerCase();
-  const getItems = (o) => safeItemsCount(o);
-  switch (sort) {
-    case "newest": copy.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || "")); break;
-    case "oldest": copy.sort((a, b) => (a.created_at || "").localeCompare(b.created_at || "")); break;
-    case "amount_asc": copy.sort((a, b) => getAmount(a) - getAmount(b)); break;
-    case "amount_desc": copy.sort((a, b) => getAmount(b) - getAmount(a)); break;
-    case "status_asc": copy.sort((a, b) => getStatus(a).localeCompare(getStatus(b))); break;
-    case "status_desc": copy.sort((a, b) => getStatus(b).localeCompare(getStatus(a))); break;
-    case "items_asc": copy.sort((a, b) => getItems(a) - getItems(b)); break;
-    case "items_desc": copy.sort((a, b) => getItems(b) - getItems(a)); break;
-    case "user_asc": copy.sort((a, b) => getUser(a).localeCompare(getUser(b))); break;
-    case "user_desc": copy.sort((a, b) => getUser(b).localeCompare(getUser(a))); break;
-    case "delivery_asc": copy.sort((a, b) => getDate(a).localeCompare(getDate(b))); break;
-    case "delivery_desc": copy.sort((a, b) => getDate(b).localeCompare(getDate(a))); break;
-    default: break;
-  }
-  return copy;
-};
+  o?.deliver_date ?? o?.expected_delivery_from ?? o?.expected_delivery_to ?? o?.created_at ?? "";
 
 /**
- * Address formatting helpers (handles strings, objects and arrays)
+ * Format shipping address helpers
+ *
+ * The server stores either `shipping_address` (string) or `shipping_json` (stringified JSON).
+ * `shipping_json` commonly looks like { name, address, city, state, pincode, country, phone } or similar.
  */
+const tryParseJson = (s) => {
+  if (!s || typeof s !== "string") return null;
+  const trimmed = s.trim();
+  if (!trimmed) return null;
+  // quick heuristic: JSON starts with { or [
+  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+};
+
 const formatShippingAddressParts = (addr) => {
   if (!addr) return null;
 
-  // plain string
-  if (typeof addr === "string" && addr.trim()) return { lines: [addr.trim()] };
-
-  // array of addresses -> take first element
-  if (Array.isArray(addr) && addr.length) {
-    const first = addr[0];
-    if (typeof first === "string" && first.trim()) return { lines: [first.trim()] };
-    addr = first;
+  // If addr is a JSON string, try parse
+  if (typeof addr === "string") {
+    const parsed = tryParseJson(addr);
+    if (parsed) addr = parsed;
   }
 
+  // If plain string (already formatted)
+  if (typeof addr === "string" && addr.trim()) return { lines: [addr.trim()] };
+
+  // If it's an array: take first element and recurse
+  if (Array.isArray(addr) && addr.length) {
+    const first = addr[0];
+    return formatShippingAddressParts(first);
+  }
+
+  // If it's an object, pick the common address fields
   if (typeof addr === "object") {
     const lines = [];
-    if (addr.name) lines.push(String(addr.name).trim());
-    if (addr.address) lines.push(String(addr.address).trim());
+    // common keys we might see
+    const name = addr.name ?? addr.full_name ?? addr.recipient ?? addr.contact_name;
+    const addrLine = addr.address ?? addr.address_line1 ?? addr.addr ?? addr.street;
+    if (name) lines.push(String(name).trim());
+    if (addrLine) lines.push(String(addrLine).trim());
     const cityState = [addr.city, addr.state].filter(Boolean).join(", ");
     if (cityState) lines.push(cityState);
-    const pin = addr.pincode ?? addr.postal ?? addr.zip;
+    const pin = addr.pincode ?? addr.postal ?? addr.zip ?? addr.postcode;
     if (pin) lines.push(String(pin).trim());
     if (addr.country) lines.push(String(addr.country).trim());
-    const phone = addr.phone ?? addr.mobile;
+    const phone = addr.phone ?? addr.mobile ?? addr.phone_number;
     if (phone) lines.push("Phone: " + String(phone).trim());
     if (lines.length) return { lines };
   }
@@ -167,29 +144,109 @@ const formatShippingAddressParts = (addr) => {
 
 const formatShippingAddressForDisplay = (o) => {
   if (!o) return "-";
-  const full = o.shipping_address_full ?? o.shipping_address;
-  if (typeof full === "string" && full.trim()) return full.trim();
 
+  // 1) Prefer shipping_address (already human-readable string)
+  if (o.shipping_address && typeof o.shipping_address === "string" && o.shipping_address.trim()) {
+    return o.shipping_address.trim();
+  }
+
+  // 2) Try shipping_json
+  if (o.shipping_json && typeof o.shipping_json === "string") {
+    const parsed = tryParseJson(o.shipping_json);
+    const parts = formatShippingAddressParts(parsed ?? o.shipping_json);
+    if (parts?.lines?.length) return parts.lines.join(", ");
+  }
+
+  // 3) Try generic shipping / address props (some endpoints may return these)
   const parts =
-    formatShippingAddressParts(full) ||
     formatShippingAddressParts(o.shipping) ||
     formatShippingAddressParts(o.address) ||
     formatShippingAddressParts(o.shipping_address);
 
   if (parts?.lines?.length) return parts.lines.join(", ");
 
-  const manual = [o.address_line1, o.address_line2, o.city, o.state, o.pincode, o.country]
-    .filter(Boolean)
-    .map(s => String(s).trim());
-  if (manual.length) return manual.join(", ");
-
-  const altParts = [o.ship_addr_1, o.ship_addr_2, o.ship_city, o.ship_state, o.ship_pincode].filter(Boolean);
-  if (altParts.length) return altParts.join(", ");
-
   return "-";
 };
 
 const getShippingAddress = (o) => formatShippingAddressForDisplay(o);
+
+/**
+ * Extract first usable image URL from a product/item object.
+ * Handles:
+ *  - it.images as JSON string or array of strings
+ *  - it.images as comma-separated string
+ *  - it.image or it.thumbnail
+ *  - nested it.product.images or it.product.image
+ *  - array of objects with url/src fields
+ */
+const extractImageUrl = (it) => {
+  if (!it) return null;
+
+  const tryExtractFromValue = (val) => {
+    if (!val) return null;
+    // array
+    if (Array.isArray(val) && val.length) {
+      const first = val[0];
+      if (typeof first === "string") return first;
+      if (first && typeof first === "object") return first.url ?? first.src ?? first.path ?? null;
+      return null;
+    }
+
+    if (typeof val === "string") {
+      const s = val.trim();
+      if (!s) return null;
+
+      // JSON array/object string?
+      const parsed = tryParseJson(s);
+      if (parsed) {
+        return tryExtractFromValue(parsed);
+      }
+
+      // comma separated urls
+      if (s.includes(",") && (s.match(/https?:\/\//) || s.split(",").length > 1)) {
+        const parts = s.split(",").map(p => p.trim()).filter(Boolean);
+        const candidate = parts.find(p => p.startsWith("http")) || parts[0];
+        return candidate || null;
+      }
+
+      // plain string (maybe a url or path)
+      if (s.startsWith("http") || s.startsWith("/")) return s;
+      // maybe a data URI
+      if (s.startsWith("data:")) return s;
+
+      // fallback: might be a filename, return as-is (caller may prefix)
+      return s;
+    }
+
+    if (typeof val === "object") {
+      return val.url ?? val.src ?? val.path ?? null;
+    }
+
+    return null;
+  };
+
+  // common fields in item
+  const fieldsToTry = [
+    it.image,
+    it.images,
+    it.img,
+    it.thumbnail,
+    it.thumb,
+    it.product_image,
+    it.product_images,
+    it.product?.image,
+    it.product?.images,
+    it.images_json,
+    it.p_images,
+  ];
+
+  for (const f of fieldsToTry) {
+    const url = tryExtractFromValue(f);
+    if (url) return url;
+  }
+
+  return null;
+};
 
 // -----------------------------
 // Component
@@ -202,7 +259,6 @@ export default function OrderManagement() {
   const [statsTab, setStatsTab] = useState("overall"); // overall, monthly, weekly, day
   const todayIso = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-  // week input default (most browsers supply format 'YYYY-Www'), compute current week if possible:
   const getCurrentWeekValue = () => {
     try {
       const d = new Date();
@@ -351,7 +407,6 @@ export default function OrderManagement() {
     }
   };
 
-  // Helper: build params for search. If query is numeric, prefer orderId param (exact)
   const buildSearchParams = (page, limit, search, sort) => {
     const params = { page: Number(page || 1) };
 
@@ -673,17 +728,14 @@ export default function OrderManagement() {
 
         if (items && items.length) {
           // set selected order with items (preserve other fields)
-          setSelectedOrder(prev => ({ ...(prev || {}), items, items_count }));
+          setSelectedOrder(prev => ({ ...(prev || {}), ...body, items, items_count }));
           return;
         } else {
           // sometimes the order endpoint returns single object with line items nested under different keys
-          // attempt to derive items if available as an object
-          if (body && (body.order_items || body.line_items || body.items)) {
-            const derived = body.order_items ?? body.line_items ?? body.items;
-            if (Array.isArray(derived) && derived.length) {
-              setSelectedOrder(prev => ({ ...(prev || {}), items: derived, items_count: derived.length }));
-              return;
-            }
+          const derived = body.order_items ?? body.line_items ?? body.items;
+          if (Array.isArray(derived) && derived.length) {
+            setSelectedOrder(prev => ({ ...(prev || {}), ...body, items: derived, items_count: derived.length }));
+            return;
           }
         }
       } catch (err) {
@@ -871,9 +923,7 @@ export default function OrderManagement() {
     { label: "Cancelled", value: stats.cancelledOrders, icon: XCircle, color: "bg-red-500" },
   ];
 
-  // NOTE: date inputs intentionally force white background + dark text so the native calendar icon is visible in dark mode.
   const dateInputClass = "pl-3 pr-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white text-black";
-
   const lightInput = "w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-black text-black dark:text-white";
   const lightSelect = "px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-black text-black dark:text-white";
   const btnPrimary = "px-3 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black border border-black dark:border-white hover:opacity-90";
@@ -881,7 +931,6 @@ export default function OrderManagement() {
   const btnSecondaryLight = "bg-white text-black border-gray-300";
   const btnSecondaryDark = "dark:bg-black dark:text-white dark:border-gray-700";
 
-  // Helper render for pagination controls (browse/update share same UI pattern)
   const PaginationControls = ({ page, totalPages, hasMore, onPrev, onNext, onFirst, onLast, setPage }) => {
     return (
       <div className="flex items-center justify-center gap-3 pt-2">
@@ -909,7 +958,6 @@ export default function OrderManagement() {
       {/* Stats Tabs */}
       <div className="rounded-2xl p-4 border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
         <div className="flex gap-3 items-center mb-4">
-          {/* Active tab: black background in light mode, white background in dark mode */}
           <button
             onClick={() => setStatsTab("overall")}
             className={`flex items-center gap-2 ${statsTab === "overall"
@@ -943,20 +991,16 @@ export default function OrderManagement() {
               ? "px-4 py-2 rounded-xl bg-black text-white border border-black dark:bg-white dark:text-black dark:border-white"
               : `${btnSecondaryBase} ${btnSecondaryLight} ${btnSecondaryDark} text-gray-700 dark:text-gray-200`}`}
           >
-            {/* Day wise uses Calendar icon now */}
             <Calendar className="w-4 h-4 inline" /> <span>Day Wise</span>
           </button>
 
           <div className="ml-auto flex gap-3 items-center">
-            {/* Date selectors — removed custom calendar icon to rely on native browser icon.
-                Force white background + dark text for these inputs so the native calendar icon is visible in dark mode. */}
             {statsTab === "monthly" && (
               <input
                 type="month"
                 value={statsMonth}
                 onChange={(e) => setStatsMonth(e.target.value)}
                 className={`${dateInputClass}`}
-                // ensure native appearance where supported (helps icon visibility in some browsers)
                 style={{ WebkitAppearance: "textfield", MozAppearance: "textfield", appearance: "auto" }}
               />
             )}
@@ -1137,18 +1181,17 @@ export default function OrderManagement() {
                   <div className="space-y-4">
                     {selectedOrder.items.map((it, idx) => {
                       // attempt to derive fields safely
-                      const productName = it.name ?? it.title ?? it.product_name ?? it.product_title ?? it.description ?? it.title_text ?? `Product ${it.product_id ?? it.id ?? idx}`;
+                      const productName = it.name ?? it.title ?? it.product_name ?? it.product_title ?? it.description ?? `Product ${it.product_id ?? it.id ?? idx}`;
                       const qty = Number(it.quantity ?? it.qty ?? it.count ?? it.qty_ordered ?? 1);
-                      const unit = Number(it.unit_price ?? it.price_per_unit ?? it.price ?? it.unitPrice ?? it.rate ?? 0);
-                      // some APIs send "price" as line total
-                      const lineTotal = Number(it.price ?? it.line_total ?? it.total ?? (unit * qty));
-                      // image field detection
-                      let img = null;
-                      if (it.image) img = it.image;
-                      else if (it.images && Array.isArray(it.images) && it.images.length) img = it.images[0];
-                      else if (it.product && (it.product.image || it.product.images)) {
-                        img = it.product.image ?? (Array.isArray(it.product.images) ? it.product.images[0] : null);
-                      } else if (it.thumbnail) img = it.thumbnail;
+                      const unitRaw = Number(it.unit_price ?? it.price_per_unit ?? it.unitPrice ?? it.rate ?? it.price ?? 0);
+                      // lineTotal may be provided
+                      const lineTotalRaw = Number(it.line_total ?? it.total ?? it.price ?? 0);
+                      // derive unit price: if unitRaw > 0 use it; else if lineTotalRaw and qty>0 compute
+                      const unit = (unitRaw > 0) ? unitRaw : (qty > 0 && lineTotalRaw > 0 ? (lineTotalRaw / qty) : 0);
+                      const lineTotal = (lineTotalRaw > 0) ? lineTotalRaw : (unit * qty);
+
+                      const img = extractImageUrl(it);
+
                       return (
                         <div key={idx} className="flex gap-4 items-center p-3 border rounded-lg bg-gray-50 dark:bg-gray-800">
                           <div className="w-16 h-16 flex-shrink-0 rounded-md overflow-hidden bg-white border">
