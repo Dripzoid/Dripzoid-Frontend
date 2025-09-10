@@ -605,6 +605,7 @@ export default function CheckoutPage() {
                   </motion.button>
                 )}
               </div>
+            </div>
           </div>
         </aside>
       </div>
