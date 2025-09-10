@@ -78,7 +78,7 @@ const handlePostAnswer = async (questionId, text) => {
     const data = await res.json();
     console.log("Answer posted:", data);
   } catch (err) {
-    console.error("Post answer failed:", err);
+    console.error("Post answer failed", err);
   }
 };
 
@@ -603,11 +603,36 @@ export default function ProductDetailsPage() {
         ? { variantId: selectedVariant.id || selectedVariant._id, selectedColor, selectedSize }
         : { selectedColor, selectedSize };
 
-      await addToCart(product, quantity, selectedSize, selectedColor, variantInfo);
+      // Build a clear, explicit cart item payload so the cart context or API gets all needed data
+      const prodKey = String(product.id ?? product._id ?? product.productId ?? product.product_id ?? "");
+      const itemForCart = {
+        product_id: prodKey || null,
+        product: product,
+        quantity: Number(quantity || 1),
+        selectedColor: selectedColor || null,
+        selectedSize: selectedSize || null,
+        variantId: variantInfo.variantId || null,
+        price: product?.price ?? product?.cost ?? 0,
+        images: Array.isArray(product?.images) ? product.images : product?.images ? [product.images] : [],
+      };
+
+      // Try to call addToCart provided by context. Many contexts accept either (product, qty, size, color, variantInfo)
+      // or a single payload object — try payload first, fallback to legacy signature if it throws.
+      if (typeof addToCart === "function") {
+        try {
+          // Prefer new object-style API
+          await addToCart(itemForCart);
+        } catch (err) {
+          // Fallback to legacy call signature for backward compatibility
+          await addToCart(product, Number(quantity || 1), selectedSize, selectedColor, variantInfo);
+        }
+      }
+
       setAddedToCart(true);
       try {
-        const prodKey = String(product.id ?? product._id ?? product.productId ?? product.product_id ?? "");
-        if (prodKey) localStorage.setItem(`cart_added_${prodKey}`, "1");
+        // store a key that includes variant + color + size to avoid clobbering different variants
+        const localKey = `cart_added_${prodKey}_${variantInfo.variantId || ""}_${String(selectedColor || "").replace(/\s+/g, "_")}_${String(selectedSize || "").replace(/\s+/g, "_")}`;
+        if (prodKey) localStorage.setItem(localKey, "1");
       } catch { }
       showToast("Added to cart");
     } catch (err) {
@@ -643,6 +668,9 @@ export default function ProductDetailsPage() {
       product_id: product?.id ?? product?._id ?? null,
       price: product?.price ?? product?.cost ?? 0,
       images: Array.isArray(product?.images) ? product.images.join(",") : product?.images ?? product?.image ?? "",
+      selectedColor: selectedColor || null,
+      selectedSize: selectedSize || null,
+      variantId: selectedVariant?.id || selectedVariant?._id || null,
     };
 
     navigate("/checkout", {
@@ -1190,7 +1218,6 @@ export default function ProductDetailsPage() {
                 const displayName = q.userName || q.name || "Anonymous";
                 const avatarUrl = q.avatar || null;
                 const initials = (displayName || "A").split(" ").map((p) => p?.[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "A";
-                const avatarSrc = avatarUrl || undefined;
 
                 return (
                   <li key={qid} className="space-y-3">
