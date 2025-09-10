@@ -16,12 +16,12 @@ export default function CartPage() {
 
   const handleCheckout = () => {
     const itemsData = cart.map((item) => ({
-      id: item.product?.id || item.id,
+      id: item.product?.id || item.product_id || item.id,
       name: item.product?.name || item.name,
       price: Number(item.product?.price || item.price) || 0,
       quantity: item.quantity,
-      color : item.colors || item.selectedColor || null,
-      size: item.selectedSize || null,
+      color: item.selectedColor || item.colors || null,  // ✅ fixed
+      size: item.selectedSize || item.size || null,      // ✅ fixed
       image: (item.product?.images || item.images || "").split(",")[0].trim(),
     }));
 
@@ -62,16 +62,15 @@ export default function CartPage() {
             {cart.map((item) => {
               const price = Number(item.product?.price || item.price || 0);
               const name = item.product?.name || item.name;
-              const productId = item.product?.id || item.id;
+              const productId = item.product?.id || item.product_id || item.id;
 
-              // Pick first image if multiple URLs
               const image = (item.product?.images || item.images || "")
                 .split(",")[0]
                 .trim();
 
               return (
                 <motion.div
-                  key={item.id}
+                  key={item.cart_id || item.id}
                   layout
                   whileHover={{ scale: 1.01 }}
                   className="flex items-center gap-6 p-6 bg-white dark:bg-gray-900 rounded-2xl shadow-md border border-gray-200 dark:border-gray-800 cursor-pointer"
@@ -91,17 +90,18 @@ export default function CartPage() {
                       ₹{price.toLocaleString()}
                     </p>
 
-                    {/* Color & Size */}
+                    {/* ✅ Fixed: Render selected color & size */}
                     <div className="flex gap-4 mt-2 text-sm text-gray-600 dark:text-gray-300">
-                      {item.color && (
+                      {item.selectedColor && (
                         <p>
                           <span className="font-medium">Color:</span>{" "}
-                          {item.color}
+                          {item.selectedColor}
                         </p>
                       )}
-                      {item.size && (
+                      {item.selectedSize && (
                         <p>
-                          <span className="font-medium">Size:</span> {item.size}
+                          <span className="font-medium">Size:</span>{" "}
+                          {item.selectedSize}
                         </p>
                       )}
                     </div>
@@ -110,7 +110,7 @@ export default function CartPage() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          updateQuantity(item.id, Math.max(1, item.quantity - 1));
+                          updateQuantity(item.cart_id || item.id, Math.max(1, item.quantity - 1));
                         }}
                         className="p-2 rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
                       >
@@ -122,7 +122,7 @@ export default function CartPage() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          updateQuantity(item.id, item.quantity + 1);
+                          updateQuantity(item.cart_id || item.id, item.quantity + 1);
                         }}
                         className="p-2 rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
                       >
@@ -138,7 +138,7 @@ export default function CartPage() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        removeFromCart(item.id);
+                        removeFromCart(item.cart_id || item.id);
                       }}
                       className="text-red-500 hover:text-red-600 mt-3"
                     >
