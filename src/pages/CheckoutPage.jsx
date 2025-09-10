@@ -6,7 +6,7 @@ import { useCart } from "../contexts/CartContext";
 import { Check, CreditCard, ShoppingCart } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import { UserContext } from "../contexts/UserContext";
+import { UserContext } from "../contexts/UserContext";  
 
 /**
  * Razorpay integration notes (frontend):
