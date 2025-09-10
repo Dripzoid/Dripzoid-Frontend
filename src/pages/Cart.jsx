@@ -20,7 +20,7 @@ export default function CartPage() {
       name: item.product?.name || item.name,
       price: Number(item.product?.price || item.price) || 0,
       quantity: item.quantity,
-      color : item.selectedColor || null,
+      color : item.colors || item.selectedColor || null,
       size: item.selectedSize || null,
       image: (item.product?.images || item.images || "").split(",")[0].trim(),
     }));
