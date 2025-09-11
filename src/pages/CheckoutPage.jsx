@@ -315,20 +315,56 @@ export default function CheckoutPage() {
       };
 
       // If COD, use existing place-order endpoint (server will mark payment as COD)
-      if (paymentType === "cod") {
-        const res = await fetch(`${API_BASE}/api/orders/place-order`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ ...orderPayload, paymentDetails: { cod: true } }),
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok) { alert((data && (data.error || data.message)) || `Failed to place order (status ${res.status})`); setLoading(false); return; }
+     if (paymentType === "cod") {
+  const res = await fetch(`${API_BASE}/api/orders/place-order`, {
+    method: "POST",
+    headers: { 
+      "Content-Type": "application/json", 
+      Authorization: `Bearer ${token}` 
+    },
+    body: JSON.stringify({ 
+      buyNow: true,   // 🔥 important for backend
+      items: checkoutItems.map(it => ({
+        product_id: it.product_id ?? it.id,   // safe mapping
+        quantity: Number(it.quantity) || 1,
+        price: Number(it.price) || 0,
+        selectedColor: it.selectedColor ?? null,
+        selectedSize: it.selectedSize ?? null
+      })),
+      shippingAddress: shipping,
+      paymentMethod: "cod",
+      paymentDetails: { cod: true },
+      totalAmount: Math.round(grandTotal)
+    }),
+  });
 
-        const order = { orderId: data?.orderId ?? data?.order?.id ?? null, items: checkoutItems, total: grandTotal, paymentMethod: 'cod', customerName: shipping.name || user?.name || 'Guest', shipping, orderDate: new Date().toISOString() };
-        try { localStorage.setItem("lastOrder", JSON.stringify(order)); if (fromCart && typeof fetchCart === "function") await fetchCart(); } catch (e) { console.warn("Local storage save failed", e); }
-        navigate("/order-confirmation", { state: { order } });
-        return;
-      }
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    alert((data && (data.error || data.message)) || `Failed to place order (status ${res.status})`);
+    setLoading(false);
+    return;
+  }
+
+  // Save order locally
+  const order = { 
+    orderId: data?.orderId ?? data?.order?.id ?? null, 
+    items: checkoutItems, 
+    total: grandTotal, 
+    paymentMethod: "cod", 
+    customerName: shipping.name || user?.name || "Guest", 
+    shipping, 
+    orderDate: new Date().toISOString() 
+  };
+  try { 
+    localStorage.setItem("lastOrder", JSON.stringify(order)); 
+    if (fromCart && typeof fetchCart === "function") await fetchCart(); 
+  } catch (e) { 
+    console.warn("Local storage save failed", e); 
+  }
+  navigate("/order-confirmation", { state: { order } });
+  return;
+}
+
 
       // For Razorpay online flow
       const serverResp = await createRazorpayOrderOnServer(orderPayload);
