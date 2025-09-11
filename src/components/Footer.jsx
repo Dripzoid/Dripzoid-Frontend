@@ -25,7 +25,7 @@ const Footer = () => {
           <h2 className="font-semibold text-lg mb-4">Shop</h2>
           <ul className="space-y-2 text-sm text-gray-400">
             <li><a href="/shop" className="hover:text-white">All Products</a></li>
-            <li><a href="/new" className="hover:text-white">New Arrivals</a></li>
+            <li><a href="/new" className="hover:text-white">Featured Products</a></li>
             <li><a href="/trending" className="hover:text-white">Trending</a></li>
             <li><a href="/sale" className="hover:text-white">On Sale</a></li>
           </ul>
@@ -47,7 +47,7 @@ const Footer = () => {
           <h2 className="font-semibold text-lg mb-4">Follow Us</h2>
           <ul className="space-y-3 text-sm text-gray-400">
             <li className="flex items-center gap-2 hover:text-white">
-              <FaInstagram /> <a href="#">Instagram</a>
+              <FaInstagram /> <a href="dripzoid.co">Instagram</a>
             </li>
             <li className="flex items-center gap-2 hover:text-white">
               <FaTwitter /> <a href="#">Twitter</a>
