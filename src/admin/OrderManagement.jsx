@@ -1184,6 +1184,8 @@ export default function OrderManagement() {
             />
           )}
 
+          </div>  
+
           {selectedOrder && (
   <div className="fixed inset-0 bg-black/40 z-40 flex items-end sm:items-center sm:justify-center">
     <div className="bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-3xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
