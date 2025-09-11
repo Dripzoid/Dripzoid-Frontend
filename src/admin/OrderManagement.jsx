@@ -1185,99 +1185,146 @@ export default function OrderManagement() {
           )}
 
           {selectedOrder && (
-            <div className="fixed inset-0 bg-black/40 z-40 flex items-end sm:items-center sm:justify-center">
-              <div className="bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-3xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-                <div className="flex items-center justify-between">
-                  <div className="text-xl font-semibold">Order #{selectedOrder.id}</div>
-                  <div className="flex gap-2">
-                    <button onClick={() => copyOrderId(selectedOrder.id)} className={`${btnSecondaryBase} ${btnSecondaryLight} ${btnSecondaryDark}`}><Copy className="w-4 h-4 inline mr-1" />Copy ID</button>
+  <div className="fixed inset-0 bg-black/40 z-40 flex items-end sm:items-center sm:justify-center">
+    <div className="bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-3xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+      <div className="flex items-center justify-between">
+        <div className="text-xl font-semibold">Order #{selectedOrder.id}</div>
+        <div className="flex gap-2">
+          <button onClick={() => copyOrderId(selectedOrder.id)} className={`${btnSecondaryBase} ${btnSecondaryLight} ${btnSecondaryDark}`}>
+            <Copy className="w-4 h-4 inline mr-1" />Copy ID
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid sm:grid-cols-2 gap-4 text-sm">
+        <div>
+          <div className="font-medium">User</div>
+          <div className="flex items-center gap-2 mt-1"><User2 className="w-4 h-4" /> {userNameFrom(selectedOrder) || `User ${userIdFrom(selectedOrder)}`}</div>
+
+          <div className="mt-3 font-medium">Delivery Date</div>
+          <div>{deliveryDateFrom(selectedOrder) || "-"}</div>
+
+          <div className="mt-3 font-medium">Status</div>
+          <div>{selectedOrder.status}</div>
+
+          <div className="mt-3 font-medium">Address</div>
+          <div>{getShippingAddress(selectedOrder)}</div>
+
+          <div className="mt-3 font-medium">Instructions</div>
+          <div>{selectedOrder.instructions ?? selectedOrder.shipping_instructions ?? "-"}</div>
+        </div>
+
+        <div>
+          <div className="font-medium">Summary</div>
+          <div className="mt-1">
+            <div>Items: <b>{Array.isArray(selectedOrder.items) ? selectedOrder.items.length : ((Number(selectedOrder.items_count ?? selectedOrder.item_count ?? 0)) || safeItemsCount(selectedOrder))}</b></div>
+            <div className="mt-1">Amount: <b>{formatCurrency(Number(selectedOrder.total_amount ?? selectedOrder.amount ?? 0))}</b></div>
+          </div>
+
+          <div className="mt-4 font-medium">Payment / Tracking</div>
+          <div className="mt-1">
+            <div>Payment ID: {selectedOrder.razorpay_payment_id ?? selectedOrder.payment_id ?? "-"}</div>
+            <div>Razorpay Order: {selectedOrder.razorpay_order_id ?? "-"}</div>
+            <div>Tracking: {selectedOrder.tracking_number ?? selectedOrder.tracking ?? "-"}</div>
+          </div>
+        </div>
+      </div>
+
+      <hr className="my-4" />
+
+      <div className="font-medium mb-2">Products</div>
+
+      {Array.isArray(selectedOrder.items) && selectedOrder.items.length ? (
+        <div className="space-y-4">
+          {selectedOrder.items.map((it, idx) => {
+            // attempt to derive fields safely
+            const productName = it.name ?? it.title ?? it.product_name ?? it.product_title ?? it.description ?? `Product ${it.product_id ?? it.id ?? idx}`;
+            const qty = Number(it.quantity ?? it.qty ?? it.count ?? it.qty_ordered ?? 1);
+            const unitRaw = Number(it.unit_price ?? it.price_per_unit ?? it.unitPrice ?? it.rate ?? it.price ?? 0);
+            const lineTotalRaw = Number(it.line_total ?? it.total ?? it.price ?? 0);
+            const unit = (unitRaw > 0) ? unitRaw : (qty > 0 && lineTotalRaw > 0 ? (lineTotalRaw / qty) : 0);
+            const lineTotal = (lineTotalRaw > 0) ? lineTotalRaw : (unit * qty);
+
+            const img = extractImageUrl(it);
+
+            // ---- NEW: selected color & size extraction with safe fallbacks ----
+            const selColorRaw = it.selectedColor ?? it.selected_color ?? it.color ?? (it.variant && (it.variant.color ?? it.variant.colour)) ?? null;
+            const selSize = it.selectedSize ?? it.selected_size ?? it.size ?? (it.variant && it.variant.size) ?? null;
+
+            // normalize hex like "fff" -> "#fff" for CSS.supports check
+            const normalizeHex = (v) => {
+              if (!v || typeof v !== "string") return v;
+              const trimmed = v.trim();
+              if (/^[0-9A-Fa-f]{3}$/.test(trimmed) || /^[0-9A-Fa-f]{6}$/.test(trimmed)) return `#${trimmed}`;
+              return trimmed;
+            };
+            const normalizedColor = normalizeHex(selColorRaw);
+
+            // check CSS color support safely (client-only)
+            const colorIsCss = typeof window !== "undefined" && window.CSS && typeof window.CSS.supports === "function"
+              ? (Boolean(normalizedColor) && (window.CSS.supports("color", normalizedColor) || window.CSS.supports("color", selColorRaw)))
+              : false;
+
+            // choose display color (if normalized hex was needed use it)
+            const displayColor = colorIsCss ? (normalizedColor || selColorRaw) : null;
+
+            return (
+              <div key={idx} className="flex gap-4 items-center p-3 border rounded-lg bg-gray-50 dark:bg-gray-800">
+                <div className="w-16 h-16 flex-shrink-0 rounded-md overflow-hidden bg-white border">
+                  {img ? <img src={img} alt={productName} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">No Image</div>}
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium truncate">{productName}</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-300 mt-1">SKU: {it.sku ?? it.product_sku ?? it.product_id ?? "-"}</div>
+
+                  {/* Variant / selected color & size */}
+                  <div className="mt-1 flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-300">
+                    {/* color */}
+                    {selColorRaw ? (
+                      <div className="flex items-center gap-2">
+                        {colorIsCss ? (
+                          <span
+                            title={selColorRaw}
+                            className="w-4 h-4 rounded-full border"
+                            style={{ backgroundColor: displayColor }}
+                          />
+                        ) : (
+                          <span className="inline-block px-2 py-0.5 rounded text-xs bg-gray-100 dark:bg-gray-800">{selColorRaw}</span>
+                        )}
+                        <span>Color: <b className="ml-1">{selColorRaw}</b></span>
+                      </div>
+                    ) : null}
+
+                    {/* size */}
+                    {selSize ? (
+                      <div>Size: <b>{selSize}</b></div>
+                    ) : null}
+
+                    {/* keep existing variant display if present */}
+                    {it.variant && <div>Variant: {typeof it.variant === "string" ? it.variant : JSON.stringify(it.variant)}</div>}
                   </div>
                 </div>
 
-                <div className="mt-4 grid sm:grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <div className="font-medium">User</div>
-                    <div className="flex items-center gap-2 mt-1"><User2 className="w-4 h-4" /> {userNameFrom(selectedOrder) || `User ${userIdFrom(selectedOrder)}`}</div>
-
-                    <div className="mt-3 font-medium">Delivery Date</div>
-                    <div>{deliveryDateFrom(selectedOrder) || "-"}</div>
-
-                    <div className="mt-3 font-medium">Status</div>
-                    <div>{selectedOrder.status}</div>
-
-                    <div className="mt-3 font-medium">Address</div>
-                    <div>{getShippingAddress(selectedOrder)}</div>
-
-                    <div className="mt-3 font-medium">Instructions</div>
-                    <div>{selectedOrder.instructions ?? selectedOrder.shipping_instructions ?? "-"}</div>
-                  </div>
-
-                  <div>
-                    <div className="font-medium">Summary</div>
-                    <div className="mt-1">
-                      <div>Items: <b>{Array.isArray(selectedOrder.items) ? selectedOrder.items.length : ((Number(selectedOrder.items_count ?? selectedOrder.item_count ?? 0)) || safeItemsCount(selectedOrder))}</b></div>
-                      <div className="mt-1">Amount: <b>{formatCurrency(Number(selectedOrder.total_amount ?? selectedOrder.amount ?? 0))}</b></div>
-                    </div>
-
-                    <div className="mt-4 font-medium">Payment / Tracking</div>
-                    <div className="mt-1">
-                      <div>Payment ID: {selectedOrder.razorpay_payment_id ?? selectedOrder.payment_id ?? "-"}</div>
-                      <div>Razorpay Order: {selectedOrder.razorpay_order_id ?? "-"}</div>
-                      <div>Tracking: {selectedOrder.tracking_number ?? selectedOrder.tracking ?? "-"}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <hr className="my-4" />
-
-                <div className="font-medium mb-2">Products</div>
-
-                {Array.isArray(selectedOrder.items) && selectedOrder.items.length ? (
-                  <div className="space-y-4">
-                    {selectedOrder.items.map((it, idx) => {
-                      // attempt to derive fields safely
-                      const productName = it.name ?? it.title ?? it.product_name ?? it.product_title ?? it.description ?? `Product ${it.product_id ?? it.id ?? idx}`;
-                      const qty = Number(it.quantity ?? it.qty ?? it.count ?? it.qty_ordered ?? 1);
-                      const unitRaw = Number(it.unit_price ?? it.price_per_unit ?? it.unitPrice ?? it.rate ?? it.price ?? 0);
-                      // lineTotal may be provided
-                      const lineTotalRaw = Number(it.line_total ?? it.total ?? it.price ?? 0);
-                      // derive unit price: if unitRaw > 0 use it; else if lineTotalRaw and qty>0 compute
-                      const unit = (unitRaw > 0) ? unitRaw : (qty > 0 && lineTotalRaw > 0 ? (lineTotalRaw / qty) : 0);
-                      const lineTotal = (lineTotalRaw > 0) ? lineTotalRaw : (unit * qty);
-
-                      const img = extractImageUrl(it);
-
-                      return (
-                        <div key={idx} className="flex gap-4 items-center p-3 border rounded-lg bg-gray-50 dark:bg-gray-800">
-                          <div className="w-16 h-16 flex-shrink-0 rounded-md overflow-hidden bg-white border">
-                            {img ? <img src={img} alt={productName} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">No Image</div>}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium truncate">{productName}</div>
-                            <div className="text-sm text-gray-600 dark:text-gray-300 mt-1">SKU: {it.sku ?? it.product_sku ?? it.product_id ?? "-"}</div>
-                            {it.variant && <div className="text-sm text-gray-600 dark:text-gray-300 mt-1">Variant: {typeof it.variant === "string" ? it.variant : JSON.stringify(it.variant)}</div>}
-                          </div>
-                          <div className="text-right min-w-[140px]">
-                            <div className="text-sm">Qty: <b>{qty}</b></div>
-                            <div className="text-sm">Unit: <b>{formatCurrency(unit)}</b></div>
-                            <div className="text-sm mt-1">Line: <b>{formatCurrency(lineTotal)}</b></div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="p-4 text-sm text-gray-600">No product details available for this order.</div>
-                )}
-
-                <div className="mt-4 flex justify-end gap-2">
-                  <button onClick={() => setSelectedOrder(null)} className={btnSecondaryBase + " " + btnSecondaryLight + " " + btnSecondaryDark}>Close</button>
+                <div className="text-right min-w-[140px]">
+                  <div className="text-sm">Qty: <b>{qty}</b></div>
+                  <div className="text-sm">Unit: <b>{formatCurrency(unit)}</b></div>
+                  <div className="text-sm mt-1">Line: <b>{formatCurrency(lineTotal)}</b></div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })}
         </div>
+      ) : (
+        <div className="p-4 text-sm text-gray-600">No product details available for this order.</div>
       )}
+
+      <div className="mt-4 flex justify-end gap-2">
+        <button onClick={() => setSelectedOrder(null)} className={btnSecondaryBase + " " + btnSecondaryLight + " " + btnSecondaryDark}>Close</button>
+      </div>
+    </div>
+  </div>
+)}
 
       {/* UPDATE */}
       {activeTab === "update" && (
