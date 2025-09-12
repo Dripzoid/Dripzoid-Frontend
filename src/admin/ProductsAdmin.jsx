@@ -1,5 +1,5 @@
 // src/pages/ProductsAdmin.jsx
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import api from "../utils/api";
 import BulkUpload from "./BulkUpload";
 import {
@@ -31,7 +31,7 @@ const btnSecondaryCls =
 const cardCls =
   "p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-sm hover:shadow-lg transition";
 
-/* ======= Normalize helper (keeps compatibility with different API shapes) ======= */
+/* ======= Helpers ======= */
 const normalizeResponse = (res) => {
   if (!res) return {};
   if (res.data && typeof res.data === "object") {
@@ -41,17 +41,18 @@ const normalizeResponse = (res) => {
   return res;
 };
 
+const MAIN_CATEGORIES = ["Men", "Women", "Kids"];
+
 /* ======= CategoryFormModal ======= */
 function CategoryFormModal({ category, categories, onClose, onSave }) {
   const defaultForm = {
     id: null,
-    name: "",
     category: "Men",
+    subcategory: "",
     slug: "",
     parent_id: null,
     status: "active",
     sort_order: 0,
-    description: "",
     metadata: "",
   };
 
@@ -61,14 +62,13 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
   useEffect(() => {
     if (category && Object.keys(category).length) {
       setForm({
-        id: category.id ?? category._id ?? null,
-        name: category.subcategory ?? category.name ?? category.label ?? "",
+        id: category.id ?? null,
         category: category.category ?? "Men",
+        subcategory: category.subcategory ?? "",
         slug: category.slug ?? "",
-        parent_id: category.parent_id ?? category.parentId ?? null,
+        parent_id: category.parent_id ?? null,
         status: category.status ?? "active",
         sort_order: Number(category.sort_order ?? 0),
-        description: category.description ?? "",
         metadata:
           category.metadata && typeof category.metadata === "string"
             ? category.metadata
@@ -88,13 +88,12 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
     setSaving(true);
     try {
       const payload = {
-        name: form.name,
         category: form.category,
+        subcategory: form.subcategory,
         slug: form.slug || undefined,
         parent_id: form.parent_id ?? null,
         status: form.status,
         sort_order: Number(form.sort_order) || 0,
-        description: form.description || "",
         metadata: form.metadata ? JSON.parse(form.metadata) : null,
       };
 
@@ -124,8 +123,8 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
       >
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{form.id ? "Edit Category" : "Add Category"}</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Create or update categories and subcategories. API-ready.</p>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{form.id ? "Edit Subcategory" : "Add Subcategory"}</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Create or update subcategories (Men / Women / Kids).</p>
           </div>
           <div className="flex gap-2">
             <button type="button" onClick={() => onClose && onClose()} className="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700">
@@ -138,12 +137,20 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <input className={inputCls} placeholder="Subcategory name" value={form.name} onChange={(e) => setField("name", e.target.value)} required />
+          <input
+            className={inputCls}
+            placeholder="Subcategory name"
+            value={form.subcategory}
+            onChange={(e) => setField("subcategory", e.target.value)}
+            required
+          />
 
           <select className={inputCls} value={form.category} onChange={(e) => setField("category", e.target.value)}>
-            <option>Men</option>
-            <option>Women</option>
-            <option>Kids</option>
+            {MAIN_CATEGORIES.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
           </select>
 
           <input className={inputCls} placeholder="Slug (optional)" value={form.slug} onChange={(e) => setField("slug", e.target.value)} />
@@ -154,7 +161,7 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
               .filter((c) => c.id !== form.id)
               .map((c) => (
                 <option key={c.id} value={c.id}>
-                  {`${c.category ?? c.category_name ?? ""} → ${c.subcategory ?? c.name ?? c.label ?? ""}`}
+                  {`${c.category} → ${c.subcategory}`}
                 </option>
               ))}
           </select>
@@ -166,9 +173,13 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
 
           <input className={inputCls} placeholder="Sort order" type="number" value={form.sort_order} onChange={(e) => setField("sort_order", e.target.value)} />
 
-          <input className={inputCls} placeholder="Short description" value={form.description} onChange={(e) => setField("description", e.target.value)} />
-
-          <textarea className={textareaCls + " sm:col-span-2"} placeholder='Metadata JSON (e.g. {"icon":"shirt.png"})' value={form.metadata} onChange={(e) => setField("metadata", e.target.value)} rows={4} />
+          <textarea
+            className={textareaCls + " sm:col-span-2"}
+            placeholder='Metadata JSON (e.g. {"icon":"shirt.png"})'
+            value={form.metadata}
+            onChange={(e) => setField("metadata", e.target.value)}
+            rows={4}
+          />
         </div>
       </form>
     </div>
@@ -176,26 +187,36 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
 }
 
 /* ======= CategoryManagement Panel ======= */
-function CategoryManagement({ categories, setCategories, onRefresh }) {
+function CategoryManagement({ categories, onRefresh }) {
   const [editing, setEditing] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [draggingItem, setDraggingItem] = useState(null);
+  const [localCategories, setLocalCategories] = useState([]);
+  const dragOverIdRef = useRef(null);
+
+  useEffect(() => {
+    // keep a local copy for smoother drag reorders (will persist on drop)
+    setLocalCategories(categories.slice());
+  }, [categories]);
 
   const openForEdit = (c) => {
     setEditing(c);
     setShowForm(true);
   };
 
-  const handleCreate = () => {
-    setEditing(null);
+  const handleCreateForMain = (main) => {
+    setEditing({ category: main }); // modal will pick this up
     setShowForm(true);
   };
 
   const handleSave = async () => {
     await onRefresh();
+    setShowForm(false);
+    setEditing(null);
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Delete category/subcategory? This cannot be undone.")) return;
+    if (!window.confirm("Delete subcategory? This cannot be undone.")) return;
     try {
       await api.delete(`/api/admin/categories/${id}`, true);
       await onRefresh();
@@ -215,29 +236,121 @@ function CategoryManagement({ categories, setCategories, onRefresh }) {
     }
   };
 
-  // Build nested tree by parent_id for display
-  const tree = useMemo(() => {
+  /* ======= Drag & Drop handlers (HTML5) ======= */
+  const onDragStart = (e, itemId) => {
+    setDraggingItem(itemId);
+    e.dataTransfer.effectAllowed = "move";
+    try {
+      e.dataTransfer.setData("text/plain", String(itemId));
+    } catch (err) {
+      // some browsers may throw in strict modes; it's fine
+    }
+  };
+
+  const onDragOver = (e, overId) => {
+    e.preventDefault();
+    dragOverIdRef.current = overId;
+  };
+
+  const onDrop = async (e, targetParentCategory) => {
+    e.preventDefault();
+    const draggedId = draggingItem ?? e.dataTransfer.getData("text/plain");
+    if (!draggedId) return;
+    const dragIdNum = Number(draggedId);
+    const overId = dragOverIdRef.current ? Number(dragOverIdRef.current) : null;
+
+    // Build a list for the specific main category for reordering
+    const main = targetParentCategory;
+    const mainList = localCategories
+      .filter((c) => (c.category || c.category_name) === main && !c.parent_id)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+
+    const draggedIndex = mainList.findIndex((i) => Number(i.id) === dragIdNum);
+    if (draggedIndex === -1) {
+      // dragged item might not be in this list (dragging across columns) — update its category and position
+      try {
+        // find minimal highest sort_order in target column and append
+        const lastSort = mainList.length > 0 ? (mainList[mainList.length - 1].sort_order ?? 0) : 0;
+        await api.put(`/api/admin/categories/${dragIdNum}`, { category: main, parent_id: null, sort_order: lastSort + 1 }, true);
+        await onRefresh();
+      } catch (err) {
+        console.error("Failed cross-column drop:", err);
+        alert("Failed to reorder. See console.");
+      } finally {
+        setDraggingItem(null);
+        dragOverIdRef.current = null;
+      }
+      return;
+    }
+
+    // compute new order array (move dragged item to position of overId)
+    const overIndex = overId != null ? mainList.findIndex((i) => Number(i.id) === overId) : null;
+    if (overIndex === -1 && overIndex !== null) {
+      setDraggingItem(null);
+      dragOverIdRef.current = null;
+      return;
+    }
+
+    // remove dragged
+    const newList = mainList.slice();
+    const [draggedItem] = newList.splice(draggedIndex, 1);
+
+    let insertIndex = newList.length;
+    if (overIndex !== null) insertIndex = overIndex;
+    newList.splice(insertIndex, 0, draggedItem);
+
+    // persist new sort_order to server (batch)
+    try {
+      await Promise.all(
+        newList.map((itm, idx) =>
+          api.put(`/api/admin/categories/${itm.id}`, { sort_order: idx }, true).catch((err) => {
+            console.error("Failed to update order for", itm.id, err);
+            // swallow per-item errors so others continue
+          })
+        )
+      );
+      await onRefresh();
+    } catch (err) {
+      console.error("Persist order error:", err);
+      alert("Failed to save new order. See console.");
+    } finally {
+      setDraggingItem(null);
+      dragOverIdRef.current = null;
+    }
+  };
+
+  /* ======= Tree helpers for nested display (parent/children) ======= */
+  const buildTree = useMemo(() => {
     const map = {};
-    categories.forEach((c) => (map[c.id] = { ...c, children: [] }));
+    (categories || []).forEach((c) => (map[c.id] = { ...c, children: [] }));
     const roots = [];
-    categories.forEach((c) => {
-      if (c.parent_id && map[c.parent_id]) map[c.parent_id].children.push(map[c.id]);
-      else roots.push(map[c.id]);
+    (categories || []).forEach((c) => {
+      if (c.parent_id && map[c.parent_id]) {
+        map[c.parent_id].children.push(map[c.id]);
+      } else {
+        roots.push(map[c.id]);
+      }
     });
-    // group by main category ordering
-    return roots.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    return roots;
   }, [categories]);
 
   const renderNode = (node, level = 0) => {
     return (
-      <div key={node.id} className="pl-2">
+      <div
+        key={node.id}
+        draggable
+        onDragStart={(e) => onDragStart(e, node.id)}
+        onDragOver={(e) => onDragOver(e, node.id)}
+        onDrop={(e) => onDrop(e, node.category)}
+        className="pl-2"
+      >
         <div className="flex items-center justify-between gap-3 p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-8 h-8 grid place-items-center rounded bg-gray-100 dark:bg-gray-800">
               <Tag className="w-4 h-4 text-gray-600 dark:text-gray-300" />
             </div>
             <div className="min-w-0">
-              <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{node.subcategory ?? node.name ?? node.label}</div>
+              <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{node.subcategory}</div>
               <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{node.category}</div>
             </div>
           </div>
@@ -250,6 +363,7 @@ function CategoryManagement({ categories, setCategories, onRefresh }) {
             >
               {node.status === "active" ? "Active" : "Inactive"}
             </button>
+
             <button onClick={() => openForEdit(node)} className="p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800">
               <Edit className="w-4 h-4" />
             </button>
@@ -261,7 +375,9 @@ function CategoryManagement({ categories, setCategories, onRefresh }) {
 
         {node.children && node.children.length > 0 && (
           <div className="ml-6 mt-2 space-y-2">
-            {node.children.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).map((c) => renderNode(c, level + 1))}
+            {node.children
+              .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+              .map((c) => renderNode(c, level + 1))}
           </div>
         )}
       </div>
@@ -276,19 +392,24 @@ function CategoryManagement({ categories, setCategories, onRefresh }) {
           <p className="text-sm text-gray-500 dark:text-gray-400">Manage subcategories, nesting, ordering and status across Men / Women / Kids.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleCreate} className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-black text-white dark:bg-white dark:text-black">
-            <PlusCircle className="w-4 h-4" /> Add Subcategory
+          <button onClick={() => handleCreateForMain("Men")} className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-black text-white dark:bg-white dark:text-black">
+            <PlusCircle className="w-4 h-4" /> Add to Men
           </button>
         </div>
       </div>
 
       <div className="space-y-3">
-        {tree.length === 0 ? (
+        {(!categories || categories.length === 0) ? (
           <div className="text-sm text-gray-500 dark:text-gray-400">No categories yet.</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {["Men", "Women", "Kids"].map((main) => (
-              <div key={main} className="p-3 rounded-md border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
+            {MAIN_CATEGORIES.map((main) => (
+              <div
+                key={main}
+                className="p-3 rounded-md border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => onDrop(e, main)}
+              >
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 grid place-items-center rounded bg-black text-white">{main[0]}</div>
@@ -297,16 +418,31 @@ function CategoryManagement({ categories, setCategories, onRefresh }) {
                       <p className="text-xs text-gray-500 dark:text-gray-400">Main category</p>
                     </div>
                   </div>
+
+                  <button onClick={() => handleCreateForMain(main)} className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-black text-white dark:bg-white dark:text-black">
+                    <PlusCircle className="w-4 h-4" /> Add
+                  </button>
                 </div>
 
-                <div className="space-y-2 max-h-[40vh] overflow-auto">
-                  {categories.filter((c) => (c.category || c.category_name) === main).length === 0 ? (
+                <div className="space-y-2 max-h-[60vh] overflow-auto">
+                  {categories.filter((c) => (c.category || c.category_name) === main).filter((c) => !c.parent_id).length === 0 ? (
                     <div className="text-xs text-gray-500 dark:text-gray-400">No subcategories</div>
                   ) : (
                     categories
                       .filter((c) => (c.category || c.category_name) === main && !c.parent_id)
                       .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-                      .map((root) => renderNode(root))
+                      .map((root) => (
+                        <div
+                          key={root.id}
+                          draggable
+                          onDragStart={(e) => onDragStart(e, root.id)}
+                          onDragOver={(e) => onDragOver(e, root.id)}
+                          onDrop={(e) => onDrop(e, main)}
+                          className="rounded-md p-1"
+                        >
+                          {renderNode(root)}
+                        </div>
+                      ))
                   )}
                 </div>
               </div>
@@ -330,11 +466,11 @@ function CategoryManagement({ categories, setCategories, onRefresh }) {
   );
 }
 
-/* ======= ProductFormModal (original, kept unchanged) ======= */
-function ProductFormModal({ product, onClose, onSave }) {
+/* ======= ProductFormModal (updated to use DB categories/subcategories) ======= */
+function ProductFormModal({ product, onClose, onSave, categories }) {
   const defaultForm = {
     name: "",
-    category: "",
+    category: "Men",
     price: 0,
     actualPrice: 0,
     images: [],
@@ -351,12 +487,13 @@ function ProductFormModal({ product, onClose, onSave }) {
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
   const [uploadingCount, setUploadingCount] = useState(0);
+  const [useCustomSub, setUseCustomSub] = useState(false);
 
   useEffect(() => {
     if (product && Object.keys(product).length > 0) {
       setForm({
         name: product.name ?? "",
-        category: product.category ?? "",
+        category: product.category ?? "Men",
         price: Number(product.price ?? 0),
         actualPrice: Number(product.actualPrice ?? product.price ?? 0),
         images: product.images ? String(product.images).split(",").filter(Boolean) : [],
@@ -369,8 +506,10 @@ function ProductFormModal({ product, onClose, onSave }) {
         stock: Number(product.stock ?? 0),
         featured: Number(product.featured ?? 0),
       });
+      setUseCustomSub(false);
     } else {
       setForm(defaultForm);
+      setUseCustomSub(false);
     }
   }, [product]);
 
@@ -464,6 +603,12 @@ function ProductFormModal({ product, onClose, onSave }) {
     }
   };
 
+  // available subcategories for selected main category (top-level only)
+  const availableSubcats = useMemo(() => {
+    if (!categories || categories.length === 0) return [];
+    return categories.filter((c) => (c.category || c.category_name) === (form.category || "Men") && !c.parent_id).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  }, [categories, form.category]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => onClose && onClose()} />
@@ -477,7 +622,12 @@ function ProductFormModal({ product, onClose, onSave }) {
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Fill product details. Images are uploaded to your configured upload route.</p>
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => onClose && onClose()} className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800" aria-label="Close">
+            <button
+              type="button"
+              onClick={() => onClose && onClose()}
+              className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+              aria-label="Close"
+            >
               ✕
             </button>
           </div>
@@ -485,7 +635,10 @@ function ProductFormModal({ product, onClose, onSave }) {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <input className={inputCls} placeholder="Product name" value={form.name} onChange={(e) => setField("name", e.target.value)} required />
-          <input className={inputCls} placeholder="Category" value={form.category} onChange={(e) => setField("category", e.target.value)} required />
+
+          <select className={inputCls} value={form.category} onChange={(e) => setField("category", e.target.value)}>
+            {MAIN_CATEGORIES.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
 
           <input className={inputCls} placeholder="Price (₹)" type="number" value={form.price} onChange={(e) => setField("price", e.target.value)} />
           <input className={inputCls} placeholder="Actual Price (₹)" type="number" value={form.actualPrice} onChange={(e) => setField("actualPrice", e.target.value)} />
@@ -496,7 +649,23 @@ function ProductFormModal({ product, onClose, onSave }) {
           <input className={inputCls} placeholder="Sizes (comma separated)" value={form.sizes} onChange={(e) => setField("sizes", e.target.value)} />
           <input className={inputCls} placeholder="Colors (comma separated)" value={form.colors} onChange={(e) => setField("colors", e.target.value)} />
 
-          <input className={inputCls} placeholder="Subcategory" value={form.subcategory} onChange={(e) => setField("subcategory", e.target.value)} />
+          {/* Subcategory: prefer select from DB but allow custom */}
+          {availableSubcats.length > 0 && !useCustomSub ? (
+            <div className="flex gap-2 items-center">
+              <select className={inputCls + " flex-1"} value={form.subcategory} onChange={(e) => setField("subcategory", e.target.value)}>
+                <option value="">-- select subcategory --</option>
+                {availableSubcats.map((s) => <option key={s.id} value={s.subcategory}>{s.subcategory}</option>)}
+                <option value="__custom__">Other (custom)</option>
+              </select>
+              <button type="button" onClick={() => setUseCustomSub(true)} className="px-3 py-2 rounded border border-gray-200 dark:border-gray-700">Custom</button>
+            </div>
+          ) : (
+            <div className="flex gap-2 items-center">
+              <input className={inputCls + " flex-1"} placeholder="Subcategory (custom)" value={form.subcategory} onChange={(e) => setField("subcategory", e.target.value)} />
+              <button type="button" onClick={() => { setUseCustomSub(false); setField("subcategory", ""); }} className="px-3 py-2 rounded border border-gray-200 dark:border-gray-700">Choose</button>
+            </div>
+          )}
+
           <input className={inputCls} placeholder="Stock" type="number" value={form.stock} onChange={(e) => setField("stock", e.target.value)} />
 
           <div className="flex items-center gap-3">
@@ -519,13 +688,21 @@ function ProductFormModal({ product, onClose, onSave }) {
             {(form.images || []).map((img) => (
               <div key={img} className="relative w-28 h-28 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
                 <img src={img} alt="preview" className="w-full h-full object-cover" />
-                <button type="button" onClick={() => removeImage(img)} className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-7 h-7 grid place-items-center shadow" aria-label="Remove image">
+                <button
+                  type="button"
+                  onClick={() => removeImage(img)}
+                  className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-7 h-7 grid place-items-center shadow"
+                  aria-label="Remove image"
+                >
                   ✕
                 </button>
               </div>
             ))}
 
-            <label className="flex items-center justify-center w-28 h-28 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-500" title="Upload images">
+            <label
+              className="flex items-center justify-center w-28 h-28 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-500"
+              title="Upload images"
+            >
               <input type="file" multiple accept="image/*" className="hidden" onChange={handleUpload} />
               <div className="text-center">
                 <div className="text-2xl">＋</div>
@@ -627,13 +804,11 @@ export default function ProductsAdmin() {
     try {
       const res = await api.get("/api/admin/categories", {}, true);
       const body = normalizeResponse(res);
-      // API might return {data: [...]} or array directly
       const list = Array.isArray(body) ? body : Array.isArray(body.data) ? body.data : body.categories ?? [];
-      // normalize fields: ensure id, category, subcategory/name, parent_id, status, sort_order
       const norm = (list || []).map((c) => ({
-        id: c.id ?? c._id ?? c.category_id ?? null,
-        category: c.category ?? c.category_name ?? c.main_category ?? null,
-        subcategory: c.subcategory ?? c.name ?? c.label ?? null,
+        id: c.id ?? c._id ?? c.category_id ?? c.id,
+        category: c.category ?? c.category_name ?? c.main_category ?? c.category,
+        subcategory: c.subcategory ?? c.name ?? c.label ?? c.subcategory,
         parent_id: c.parent_id ?? c.parentId ?? c.parent ?? null,
         status: c.status ?? "active",
         sort_order: c.sort_order ?? c.order ?? 0,
@@ -650,21 +825,26 @@ export default function ProductsAdmin() {
     }
   }, []);
 
+  // initial load
   useEffect(() => {
     fetchStats();
-  }, []);
+    fetchCategories(); // fetch categories up-front so product modal subcategory select works
+  }, [fetchCategories]);
+
   useEffect(() => {
     if (!showProducts) return;
     setPage(1);
   }, [q, limit, sortBy, showProducts]);
+
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
+
   useEffect(() => {
     if (showProducts) fetchStats();
   }, [showProducts]);
 
-  // Fetch categories when management toggled on
+  // refetch categories when management toggled on/off (keeps in sync)
   useEffect(() => {
     if (showCategories) fetchCategories();
   }, [showCategories, fetchCategories]);
@@ -695,7 +875,7 @@ export default function ProductsAdmin() {
   };
 
   const handleSave = async () => {
-    await Promise.all([fetchProducts(), fetchStats()]);
+    await Promise.all([fetchProducts(), fetchStats(), fetchCategories()]);
     setEditing(null);
     setShowForm(false);
   };
@@ -739,7 +919,7 @@ export default function ProductsAdmin() {
             <Eye className="w-4 h-4" /> {showProducts ? "Hide Products" : "Browse Products"}
           </button>
 
-          {/* NEW: Category management toggle beside Browse Products */}
+          {/* Category management toggle beside Browse Products */}
           <button onClick={() => setShowCategories((s) => !s)} className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border ${showCategories ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black" : "border-gray-200 bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100"}`}>
             <Layers className="w-4 h-4" /> {showCategories ? "Hide Categories" : "Manage Categories"}
           </button>
@@ -755,7 +935,7 @@ export default function ProductsAdmin() {
 
       {/* Category Management */}
       {showCategories && (
-        <CategoryManagement categories={categories} setCategories={setCategories} onRefresh={fetchCategories} />
+        <CategoryManagement categories={categories} onRefresh={fetchCategories} />
       )}
 
       {/* Products */}
@@ -850,6 +1030,7 @@ export default function ProductsAdmin() {
           product={editing}
           onClose={() => { setShowForm(false); setEditing(null); }}
           onSave={handleSave}
+          categories={categories}
         />
       )}
     </div>
