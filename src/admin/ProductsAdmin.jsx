@@ -534,6 +534,13 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
     }
   }, [product]);
 
+  // Clear subcategory when main category changes (avoid stale selection)
+  useEffect(() => {
+    setField("subcategory", "");
+    setUseCustomSub(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.category]);
+
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "Escape") onClose && onClose();
@@ -593,6 +600,43 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
     setSaving(true);
 
     try {
+      // If user is in custom subcategory mode and typed something, ensure subcategory exists (create or reuse)
+      let chosenSub = form.subcategory ? String(form.subcategory).trim() : "";
+
+      if (useCustomSub && chosenSub) {
+        // try to find existing same-name subcategory in same main category (case-insensitive)
+        const exists = (categories || []).find((c) => {
+          const catName = (c.category || c.category_name || "").toString();
+          const subName = (c.subcategory || c.name || "").toString();
+          return (
+            catName === form.category &&
+            subName.toLowerCase() === chosenSub.toLowerCase()
+          );
+        });
+
+        if (exists) {
+          chosenSub = exists.subcategory || exists.name || chosenSub;
+        } else {
+          // create new category entry
+          try {
+            const createRes = await api.post(
+              "/api/admin/products/categories",
+              { category: form.category, subcategory: chosenSub, parent_id: null, status: "active", sort_order: 0 },
+              true
+            );
+            const created = normalizeResponse(createRes);
+            // created may be the created row or {data: row} etc.
+            const createdObj = created && typeof created === "object" && (created.subcategory || created.data) ? (created.subcategory ? created : created.data ?? created) : created;
+            if (createdObj && (createdObj.subcategory || createdObj.name)) {
+              chosenSub = createdObj.subcategory ?? createdObj.name ?? chosenSub;
+            }
+          } catch (err) {
+            console.warn("Failed to create subcategory; proceeding with typed name.", err);
+            // proceed with chosenSub as typed
+          }
+        }
+      }
+
       const payload = {
         ...form,
         price: Number(form.price) || 0,
@@ -602,6 +646,7 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
         stock: Number(form.stock) || 0,
         featured: Number(form.featured) ? 1 : 0,
         images: (form.images || []).join(","),
+        subcategory: chosenSub || form.subcategory || "",
       };
 
       let resp;
@@ -687,7 +732,19 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
           {/* Subcategory: prefer select from DB but allow custom */}
           {availableSubcats.length > 0 && !useCustomSub ? (
             <div className="flex gap-2 items-center">
-              <select className={inputCls + " flex-1"} value={form.subcategory} onChange={(e) => setField("subcategory", e.target.value)}>
+              <select
+                className={inputCls + " flex-1"}
+                value={form.subcategory}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "__custom__") {
+                    setUseCustomSub(true);
+                    setField("subcategory", "");
+                  } else {
+                    setField("subcategory", val);
+                  }
+                }}
+              >
                 <option value="">-- select subcategory --</option>
                 {availableSubcats.map((s) => (
                   <option key={s.id} value={s.subcategory}>
@@ -1028,7 +1085,8 @@ export default function ProductsAdmin() {
               {products.map((p) => {
                 const priceNum = Number(p.price ?? 0);
                 const actualNum = Number(p.actualPrice ?? 0);
-                const displayPrice = actualNum > 0 ? actualNum : priceNum;
+                // prefer price as the primary display (fixes "shows actualPrice instead of price" bug)
+                const displayPrice = priceNum > 0 ? priceNum : actualNum;
                 const showOriginal = Number(p.originalPrice ?? 0) > 0 && Number(p.originalPrice) > displayPrice;
                 const firstImage = p.images ? String(p.images).split(",")[0] : "/images/placeholder.jpg";
 
