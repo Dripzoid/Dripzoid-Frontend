@@ -745,13 +745,13 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
                   }
                 }}
               >
-                <option value="">-- select subcategory --</option>
+                <option value="">-- Select Subcategory --</option>
                 {availableSubcats.map((s) => (
                   <option key={s.id} value={s.subcategory}>
                     {s.subcategory}
                   </option>
                 ))}
-                <option value="__custom__">Other (custom)</option>
+                <option value="__custom__">Other (Custom)</option>
               </select>
               <button type="button" onClick={() => setUseCustomSub(true)} className="px-3 py-2 rounded border border-gray-200 dark:border-gray-700">
                 Custom
@@ -759,7 +759,7 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
             </div>
           ) : (
             <div className="flex gap-2 items-center">
-              <input className={inputCls + " flex-1"} placeholder="Subcategory (custom)" value={form.subcategory} onChange={(e) => setField("subcategory", e.target.value)} />
+              <input className={inputCls + " flex-1"} placeholder="Subcategory (Custom)" value={form.subcategory} onChange={(e) => setField("subcategory", e.target.value)} />
               <button
                 type="button"
                 onClick={() => {
