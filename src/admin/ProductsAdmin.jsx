@@ -256,7 +256,7 @@ function CategoryManagement({ categories = [], onRefresh }) {
 
   const toggleStatus = async (c) => {
     try {
-      await api.put(`/api/admin/products/categories/${c.id}`, { status: c.status === "active" ? "inactive" : "active" }, true);
+      await api.put(`/api/admin/products/categories/${c.id}/status`, { status: c.status === "active" ? "inactive" : "active" }, true);
       await onRefresh();
     } catch (err) {
       console.error("Toggle status error:", err);
