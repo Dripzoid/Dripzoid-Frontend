@@ -246,7 +246,7 @@ function CategoryManagement({ categories = [], onRefresh }) {
   const handleDelete = async (id) => {
     if (!window.confirm("Delete subcategory? This cannot be undone.")) return;
     try {
-      await api.delete(`/api/admin/categories/${id}`, true);
+      await api.delete(`/api/admin/products/categories/${id}`, true);
       await onRefresh();
     } catch (err) {
       console.error("Delete category error:", err);
