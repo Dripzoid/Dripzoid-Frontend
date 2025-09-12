@@ -14,12 +14,9 @@ import {
   CheckCircle,
   XCircle,
   Layers,
-  List,
-  Save,
-  PlusCircle,
-  ChevronDown,
-  ChevronRight,
   Tag,
+  PlusCircle,
+  Save,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -72,7 +69,12 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
         status: category.status ?? "active",
         sort_order: Number(category.sort_order ?? 0),
         description: category.description ?? "",
-        metadata: category.metadata ? (typeof category.metadata === "string" ? category.metadata : JSON.stringify(category.metadata)) : "",
+        metadata:
+          category.metadata && typeof category.metadata === "string"
+            ? category.metadata
+            : category.metadata
+            ? JSON.stringify(category.metadata)
+            : "",
       });
     } else {
       setForm(defaultForm);
@@ -89,7 +91,7 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
         name: form.name,
         category: form.category,
         slug: form.slug || undefined,
-        parent_id: form.parent_id || null,
+        parent_id: form.parent_id ?? null,
         status: form.status,
         sort_order: Number(form.sort_order) || 0,
         description: form.description || "",
@@ -116,14 +118,19 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => onClose && onClose()} />
-      <form onSubmit={handleSubmit} className="relative z-10 w-full max-w-2xl bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-2xl overflow-auto max-h-[92vh] border border-gray-100 dark:border-gray-800">
+      <form
+        onSubmit={handleSubmit}
+        className="relative z-10 w-full max-w-2xl bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-2xl overflow-auto max-h-[92vh] border border-gray-100 dark:border-gray-800"
+      >
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{form.id ? "Edit Category" : "Add Category"}</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">Create or update categories and subcategories. API-ready.</p>
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={() => onClose && onClose()} className="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700">Close</button>
+            <button type="button" onClick={() => onClose && onClose()} className="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700">
+              Close
+            </button>
             <button type="submit" disabled={saving} className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-black text-white dark:bg-white dark:text-black">
               <Save className="w-4 h-4" /> {saving ? "Saving..." : "Save"}
             </button>
@@ -147,7 +154,7 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
               .filter((c) => c.id !== form.id)
               .map((c) => (
                 <option key={c.id} value={c.id}>
-                  {`${c.category ?? c.category_name ?? ""} → ${c.subcategory ?? c.name ?? c.label ?? c.sub || ""}`}
+                  {`${c.category ?? c.category_name ?? ""} → ${c.subcategory ?? c.name ?? c.label ?? ""}`}
                 </option>
               ))}
           </select>
@@ -236,11 +243,19 @@ function CategoryManagement({ categories, setCategories, onRefresh }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <button title="Toggle status" onClick={() => toggleStatus(node)} className={`px-2 py-1 rounded text-sm ${node.status === "active" ? "bg-green-50 text-green-700" : "bg-gray-100 dark:bg-gray-800 text-gray-500"}`}>
+            <button
+              title="Toggle status"
+              onClick={() => toggleStatus(node)}
+              className={`px-2 py-1 rounded text-sm ${node.status === "active" ? "bg-green-50 text-green-700" : "bg-gray-100 dark:bg-gray-800 text-gray-500"}`}
+            >
               {node.status === "active" ? "Active" : "Inactive"}
             </button>
-            <button onClick={() => openForEdit(node)} className="p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800"><Edit className="w-4 h-4" /></button>
-            <button onClick={() => handleDelete(node.id)} className="p-2 rounded hover:bg-red-50 dark:hover:bg-red-900 text-red-600"><Trash2 className="w-4 h-4" /></button>
+            <button onClick={() => openForEdit(node)} className="p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800">
+              <Edit className="w-4 h-4" />
+            </button>
+            <button onClick={() => handleDelete(node.id)} className="p-2 rounded hover:bg-red-50 dark:hover:bg-red-900 text-red-600">
+              <Trash2 className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
@@ -272,7 +287,7 @@ function CategoryManagement({ categories, setCategories, onRefresh }) {
           <div className="text-sm text-gray-500 dark:text-gray-400">No categories yet.</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {['Men','Women','Kids'].map((main) => (
+            {["Men", "Women", "Kids"].map((main) => (
               <div key={main} className="p-3 rounded-md border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
@@ -285,12 +300,12 @@ function CategoryManagement({ categories, setCategories, onRefresh }) {
                 </div>
 
                 <div className="space-y-2 max-h-[40vh] overflow-auto">
-                  {categories.filter(c => (c.category || c.category_name) === main).length === 0 ? (
+                  {categories.filter((c) => (c.category || c.category_name) === main).length === 0 ? (
                     <div className="text-xs text-gray-500 dark:text-gray-400">No subcategories</div>
                   ) : (
                     categories
-                      .filter(c => (c.category || c.category_name) === main && !c.parent_id)
-                      .sort((a,b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                      .filter((c) => (c.category || c.category_name) === main && !c.parent_id)
+                      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
                       .map((root) => renderNode(root))
                   )}
                 </div>
@@ -304,7 +319,10 @@ function CategoryManagement({ categories, setCategories, onRefresh }) {
         <CategoryFormModal
           category={editing}
           categories={categories}
-          onClose={() => { setShowForm(false); setEditing(null); }}
+          onClose={() => {
+            setShowForm(false);
+            setEditing(null);
+          }}
           onSave={handleSave}
         />
       )}
@@ -357,7 +375,9 @@ function ProductFormModal({ product, onClose, onSave }) {
   }, [product]);
 
   useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose && onClose(); };
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose && onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -453,20 +473,11 @@ function ProductFormModal({ product, onClose, onSave }) {
       >
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
-            <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-              {product ? "Edit Product" : "Add Product"}
-            </h3>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Fill product details. Images are uploaded to your configured upload route.
-            </p>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white">{product ? "Edit Product" : "Add Product"}</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Fill product details. Images are uploaded to your configured upload route.</p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onClose && onClose()}
-              className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
-              aria-label="Close"
-            >
+            <button type="button" onClick={() => onClose && onClose()} className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800" aria-label="Close">
               ✕
             </button>
           </div>
@@ -508,21 +519,13 @@ function ProductFormModal({ product, onClose, onSave }) {
             {(form.images || []).map((img) => (
               <div key={img} className="relative w-28 h-28 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
                 <img src={img} alt="preview" className="w-full h-full object-cover" />
-                <button
-                  type="button"
-                  onClick={() => removeImage(img)}
-                  className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-7 h-7 grid place-items-center shadow"
-                  aria-label="Remove image"
-                >
+                <button type="button" onClick={() => removeImage(img)} className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-7 h-7 grid place-items-center shadow" aria-label="Remove image">
                   ✕
                 </button>
               </div>
             ))}
 
-            <label
-              className="flex items-center justify-center w-28 h-28 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-500"
-              title="Upload images"
-            >
+            <label className="flex items-center justify-center w-28 h-28 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-500" title="Upload images">
               <input type="file" multiple accept="image/*" className="hidden" onChange={handleUpload} />
               <div className="text-center">
                 <div className="text-2xl">＋</div>
@@ -564,39 +567,42 @@ export default function ProductsAdmin() {
 
   const DEBUG = false;
 
-  const fetchProducts = useCallback(async () => {
-    if (!showProducts) return;
-    setLoading(true);
-    try {
-      const res = await api.get("/api/admin/products", { search: q, page, limit, sort: sortBy }, true);
-      if (DEBUG) console.log("Products list raw:", res);
-      const body = normalizeResponse(res);
+  const fetchProducts = useCallback(
+    async () => {
+      if (!showProducts) return;
+      setLoading(true);
+      try {
+        const res = await api.get("/api/admin/products", { search: q, page, limit, sort: sortBy }, true);
+        if (DEBUG) console.log("Products list raw:", res);
+        const body = normalizeResponse(res);
 
-      let list = [];
-      let total = 0;
-      if (Array.isArray(body)) {
-        list = body;
-      } else if (Array.isArray(body.data)) {
-        list = body.data;
-        total = Number(body.total ?? body.totalCount ?? 0);
-      } else if (Array.isArray(body.products)) {
-        list = body.products;
-        total = Number(body.total ?? body.totalCount ?? 0);
-      } else {
-        const arr = Object.values(body).find((v) => Array.isArray(v));
-        if (arr) list = arr;
+        let list = [];
+        let total = 0;
+        if (Array.isArray(body)) {
+          list = body;
+        } else if (Array.isArray(body.data)) {
+          list = body.data;
+          total = Number(body.total ?? body.totalCount ?? 0);
+        } else if (Array.isArray(body.products)) {
+          list = body.products;
+          total = Number(body.total ?? body.totalCount ?? 0);
+        } else {
+          const arr = Object.values(body).find((v) => Array.isArray(v));
+          if (arr) list = arr;
+        }
+
+        setProducts(list || []);
+        setTotalPages(limit === 999999 ? 1 : Math.max(1, Math.ceil((total || list.length || 0) / (limit || 20))));
+      } catch (err) {
+        console.error("Fetch products error:", err);
+        setProducts([]);
+        setTotalPages(1);
+      } finally {
+        setLoading(false);
       }
-
-      setProducts(list || []);
-      setTotalPages(limit === 999999 ? 1 : Math.max(1, Math.ceil((total || list.length || 0) / (limit || 20))));
-    } catch (err) {
-      console.error("Fetch products error:", err);
-      setProducts([]);
-      setTotalPages(1);
-    } finally {
-      setLoading(false);
-    }
-  }, [q, page, limit, sortBy, showProducts, DEBUG]);
+    },
+    [q, page, limit, sortBy, showProducts, DEBUG]
+  );
 
   const fetchStats = async () => {
     try {
@@ -625,15 +631,15 @@ export default function ProductsAdmin() {
       const list = Array.isArray(body) ? body : Array.isArray(body.data) ? body.data : body.categories ?? [];
       // normalize fields: ensure id, category, subcategory/name, parent_id, status, sort_order
       const norm = (list || []).map((c) => ({
-        id: c.id ?? c._id ?? c.category_id ?? c.id,
-        category: c.category ?? c.category_name ?? c.main_category ?? c.category,
-        subcategory: c.subcategory ?? c.name ?? c.label ?? c.subcategory,
-        parent_id: c.parent_id ?? c.parentId ?? c.parent || null,
+        id: c.id ?? c._id ?? c.category_id ?? null,
+        category: c.category ?? c.category_name ?? c.main_category ?? null,
+        subcategory: c.subcategory ?? c.name ?? c.label ?? null,
+        parent_id: c.parent_id ?? c.parentId ?? c.parent ?? null,
         status: c.status ?? "active",
         sort_order: c.sort_order ?? c.order ?? 0,
-        slug: c.slug ?? c.slug,
-        metadata: c.metadata ?? c.metadata,
-        description: c.description ?? c.description,
+        slug: c.slug ?? null,
+        metadata: c.metadata ?? null,
+        description: c.description ?? null,
         raw: c,
       }));
 
@@ -644,13 +650,24 @@ export default function ProductsAdmin() {
     }
   }, []);
 
-  useEffect(() => { fetchStats(); }, []);
-  useEffect(() => { if (!showProducts) return; setPage(1); }, [q, limit, sortBy, showProducts]);
-  useEffect(() => { fetchProducts(); }, [fetchProducts]);
-  useEffect(() => { if (showProducts) fetchStats(); }, [showProducts]);
+  useEffect(() => {
+    fetchStats();
+  }, []);
+  useEffect(() => {
+    if (!showProducts) return;
+    setPage(1);
+  }, [q, limit, sortBy, showProducts]);
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
+  useEffect(() => {
+    if (showProducts) fetchStats();
+  }, [showProducts]);
 
   // Fetch categories when management toggled on
-  useEffect(() => { if (showCategories) fetchCategories(); }, [showCategories, fetchCategories]);
+  useEffect(() => {
+    if (showCategories) fetchCategories();
+  }, [showCategories, fetchCategories]);
 
   const openEditor = async (p) => {
     if (!p?.id) return;
@@ -691,7 +708,7 @@ export default function ProductsAdmin() {
           { label: "Total Products", value: stats.total, icon: Package, color: "bg-purple-500" },
           { label: "Sold Products", value: stats.sold, icon: ShoppingCart, color: "bg-green-500" },
           { label: "In Stock", value: stats.inStock, icon: CheckCircle, color: "bg-blue-500" },
-          { label: "Out of Stock", value: stats.outOfStock, icon: XCircle, color: "bg-red-500" }
+          { label: "Out of Stock", value: stats.outOfStock, icon: XCircle, color: "bg-red-500" },
         ].map((stat, i) => (
           <motion.div key={stat.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: i * 0.06 }} className="p-4 rounded-xl bg-white dark:bg-gray-900 shadow-sm hover:shadow-md transition">
             <div className="flex items-center gap-4">
