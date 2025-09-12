@@ -1,9 +1,25 @@
 // src/pages/ProductsAdmin.jsx
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import api from "../utils/api";
 import BulkUpload from "./BulkUpload";
 import {
-  Plus, Upload, Eye, Search, Edit, Trash2, Package, ShoppingCart, CheckCircle, XCircle
+  Plus,
+  Upload,
+  Eye,
+  Search,
+  Edit,
+  Trash2,
+  Package,
+  ShoppingCart,
+  CheckCircle,
+  XCircle,
+  Layers,
+  List,
+  Save,
+  PlusCircle,
+  ChevronDown,
+  ChevronRight,
+  Tag,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -18,14 +34,292 @@ const btnSecondaryCls =
 const cardCls =
   "p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-sm hover:shadow-lg transition";
 
-/* ======= ProductFormModal (modern + theme-aware + image uploads) ======= */
+/* ======= Normalize helper (keeps compatibility with different API shapes) ======= */
+const normalizeResponse = (res) => {
+  if (!res) return {};
+  if (res.data && typeof res.data === "object") {
+    if (res.data.data || typeof res.data.total !== "undefined") return res.data;
+    return res.data;
+  }
+  return res;
+};
+
+/* ======= CategoryFormModal ======= */
+function CategoryFormModal({ category, categories, onClose, onSave }) {
+  const defaultForm = {
+    id: null,
+    name: "",
+    category: "Men",
+    slug: "",
+    parent_id: null,
+    status: "active",
+    sort_order: 0,
+    description: "",
+    metadata: "",
+  };
+
+  const [form, setForm] = useState(defaultForm);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (category && Object.keys(category).length) {
+      setForm({
+        id: category.id ?? category._id ?? null,
+        name: category.subcategory ?? category.name ?? category.label ?? "",
+        category: category.category ?? "Men",
+        slug: category.slug ?? "",
+        parent_id: category.parent_id ?? category.parentId ?? null,
+        status: category.status ?? "active",
+        sort_order: Number(category.sort_order ?? 0),
+        description: category.description ?? "",
+        metadata: category.metadata ? (typeof category.metadata === "string" ? category.metadata : JSON.stringify(category.metadata)) : "",
+      });
+    } else {
+      setForm(defaultForm);
+    }
+  }, [category]);
+
+  const setField = (k, v) => setForm((s) => ({ ...s, [k]: v }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const payload = {
+        name: form.name,
+        category: form.category,
+        slug: form.slug || undefined,
+        parent_id: form.parent_id || null,
+        status: form.status,
+        sort_order: Number(form.sort_order) || 0,
+        description: form.description || "",
+        metadata: form.metadata ? JSON.parse(form.metadata) : null,
+      };
+
+      let res;
+      if (form.id) {
+        res = await api.put(`/api/admin/categories/${form.id}`, payload, true);
+      } else {
+        res = await api.post("/api/admin/categories", payload, true);
+      }
+
+      if (typeof onSave === "function") await onSave(normalizeResponse(res));
+      onClose && onClose();
+    } catch (err) {
+      console.error("Save category error:", err);
+      alert("Failed to save category. See console for details.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => onClose && onClose()} />
+      <form onSubmit={handleSubmit} className="relative z-10 w-full max-w-2xl bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-2xl overflow-auto max-h-[92vh] border border-gray-100 dark:border-gray-800">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{form.id ? "Edit Category" : "Add Category"}</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Create or update categories and subcategories. API-ready.</p>
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => onClose && onClose()} className="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700">Close</button>
+            <button type="submit" disabled={saving} className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-black text-white dark:bg-white dark:text-black">
+              <Save className="w-4 h-4" /> {saving ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <input className={inputCls} placeholder="Subcategory name" value={form.name} onChange={(e) => setField("name", e.target.value)} required />
+
+          <select className={inputCls} value={form.category} onChange={(e) => setField("category", e.target.value)}>
+            <option>Men</option>
+            <option>Women</option>
+            <option>Kids</option>
+          </select>
+
+          <input className={inputCls} placeholder="Slug (optional)" value={form.slug} onChange={(e) => setField("slug", e.target.value)} />
+
+          <select className={inputCls} value={form.parent_id ?? ""} onChange={(e) => setField("parent_id", e.target.value || null)}>
+            <option value="">No parent</option>
+            {categories
+              .filter((c) => c.id !== form.id)
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {`${c.category ?? c.category_name ?? ""} → ${c.subcategory ?? c.name ?? c.label ?? c.sub || ""}`}
+                </option>
+              ))}
+          </select>
+
+          <select className={inputCls} value={form.status} onChange={(e) => setField("status", e.target.value)}>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+
+          <input className={inputCls} placeholder="Sort order" type="number" value={form.sort_order} onChange={(e) => setField("sort_order", e.target.value)} />
+
+          <input className={inputCls} placeholder="Short description" value={form.description} onChange={(e) => setField("description", e.target.value)} />
+
+          <textarea className={textareaCls + " sm:col-span-2"} placeholder='Metadata JSON (e.g. {"icon":"shirt.png"})' value={form.metadata} onChange={(e) => setField("metadata", e.target.value)} rows={4} />
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/* ======= CategoryManagement Panel ======= */
+function CategoryManagement({ categories, setCategories, onRefresh }) {
+  const [editing, setEditing] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+
+  const openForEdit = (c) => {
+    setEditing(c);
+    setShowForm(true);
+  };
+
+  const handleCreate = () => {
+    setEditing(null);
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    await onRefresh();
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete category/subcategory? This cannot be undone.")) return;
+    try {
+      await api.delete(`/api/admin/categories/${id}`, true);
+      await onRefresh();
+    } catch (err) {
+      console.error("Delete category error:", err);
+      alert("Failed to delete. See console.");
+    }
+  };
+
+  const toggleStatus = async (c) => {
+    try {
+      await api.put(`/api/admin/categories/${c.id}`, { status: c.status === "active" ? "inactive" : "active" }, true);
+      await onRefresh();
+    } catch (err) {
+      console.error("Toggle status error:", err);
+      alert("Failed to toggle status. See console.");
+    }
+  };
+
+  // Build nested tree by parent_id for display
+  const tree = useMemo(() => {
+    const map = {};
+    categories.forEach((c) => (map[c.id] = { ...c, children: [] }));
+    const roots = [];
+    categories.forEach((c) => {
+      if (c.parent_id && map[c.parent_id]) map[c.parent_id].children.push(map[c.id]);
+      else roots.push(map[c.id]);
+    });
+    // group by main category ordering
+    return roots.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  }, [categories]);
+
+  const renderNode = (node, level = 0) => {
+    return (
+      <div key={node.id} className="pl-2">
+        <div className="flex items-center justify-between gap-3 p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 grid place-items-center rounded bg-gray-100 dark:bg-gray-800">
+              <Tag className="w-4 h-4 text-gray-600 dark:text-gray-300" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{node.subcategory ?? node.name ?? node.label}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{node.category}</div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button title="Toggle status" onClick={() => toggleStatus(node)} className={`px-2 py-1 rounded text-sm ${node.status === "active" ? "bg-green-50 text-green-700" : "bg-gray-100 dark:bg-gray-800 text-gray-500"}`}>
+              {node.status === "active" ? "Active" : "Inactive"}
+            </button>
+            <button onClick={() => openForEdit(node)} className="p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800"><Edit className="w-4 h-4" /></button>
+            <button onClick={() => handleDelete(node.id)} className="p-2 rounded hover:bg-red-50 dark:hover:bg-red-900 text-red-600"><Trash2 className="w-4 h-4" /></button>
+          </div>
+        </div>
+
+        {node.children && node.children.length > 0 && (
+          <div className="ml-6 mt-2 space-y-2">
+            {node.children.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).map((c) => renderNode(c, level + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Category Management</h4>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Manage subcategories, nesting, ordering and status across Men / Women / Kids.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={handleCreate} className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-black text-white dark:bg-white dark:text-black">
+            <PlusCircle className="w-4 h-4" /> Add Subcategory
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {tree.length === 0 ? (
+          <div className="text-sm text-gray-500 dark:text-gray-400">No categories yet.</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {['Men','Women','Kids'].map((main) => (
+              <div key={main} className="p-3 rounded-md border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 grid place-items-center rounded bg-black text-white">{main[0]}</div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">{main}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Main category</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2 max-h-[40vh] overflow-auto">
+                  {categories.filter(c => (c.category || c.category_name) === main).length === 0 ? (
+                    <div className="text-xs text-gray-500 dark:text-gray-400">No subcategories</div>
+                  ) : (
+                    categories
+                      .filter(c => (c.category || c.category_name) === main && !c.parent_id)
+                      .sort((a,b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                      .map((root) => renderNode(root))
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showForm && (
+        <CategoryFormModal
+          category={editing}
+          categories={categories}
+          onClose={() => { setShowForm(false); setEditing(null); }}
+          onSave={handleSave}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ======= ProductFormModal (original, kept unchanged) ======= */
 function ProductFormModal({ product, onClose, onSave }) {
   const defaultForm = {
     name: "",
     category: "",
     price: 0,
     actualPrice: 0,
-    images: [], // array of URLs
+    images: [],
     rating: 0,
     sizes: "",
     colors: "",
@@ -40,7 +334,6 @@ function ProductFormModal({ product, onClose, onSave }) {
   const [saving, setSaving] = useState(false);
   const [uploadingCount, setUploadingCount] = useState(0);
 
-  // Sync form when product changes (prevents empty-fields-after-save)
   useEffect(() => {
     if (product && Object.keys(product).length > 0) {
       setForm({
@@ -63,7 +356,6 @@ function ProductFormModal({ product, onClose, onSave }) {
     }
   }, [product]);
 
-  // close on ESC
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose && onClose(); };
     window.addEventListener("keydown", onKey);
@@ -72,51 +364,45 @@ function ProductFormModal({ product, onClose, onSave }) {
 
   const setField = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
-  // Upload handler supports multiple files and uses the same api wrapper signature as other calls.
-const handleUpload = async (e) => {
-  const files = Array.from(e.target.files || []);
-  if (!files.length) return;
+  const handleUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
 
-  setUploadingCount((c) => c + files.length);
+    setUploadingCount((c) => c + files.length);
 
-  try {
-    const uploads = await Promise.all(
-      files.map(async (file) => {
-        const fd = new FormData();
-        fd.append("image", file); // backend expects "image"
+    try {
+      const uploads = await Promise.all(
+        files.map(async (file) => {
+          const fd = new FormData();
+          fd.append("image", file);
+          const res = await api.formPost("/api/upload", fd, true);
+          const url =
+            res?.url ||
+            res?.secure_url ||
+            res?.data?.url ||
+            res?.data?.secure_url ||
+            (res?.public_id && res?.secure_url);
 
-        // use formPost instead of post (so FormData is sent correctly)
-        const res = await api.formPost("/api/upload", fd, true);
+          if (!url) {
+            console.warn("Upload returned unexpected shape:", res);
+            throw new Error("No URL returned from upload");
+          }
+          return url;
+        })
+      );
 
-        // normalize response (Cloudinary returns secure_url)
-        const url =
-          res?.url ||
-          res?.secure_url ||
-          res?.data?.url ||
-          res?.data?.secure_url ||
-          res?.public_id && res?.secure_url;
-
-        if (!url) {
-          console.warn("Upload returned unexpected shape:", res);
-          throw new Error("No URL returned from upload");
-        }
-        return url;
-      })
-    );
-
-    setForm((s) => ({
-      ...s,
-      images: [...(s.images || []), ...uploads],
-    }));
-  } catch (err) {
-    console.error("Upload error:", err);
-    alert("Upload failed. Check console for details.");
-  } finally {
-    setUploadingCount((c) => Math.max(0, c - files.length));
-    if (e.target) e.target.value = ""; // reset input so same file can be reselected
-  }
-};
-
+      setForm((s) => ({
+        ...s,
+        images: [...(s.images || []), ...uploads],
+      }));
+    } catch (err) {
+      console.error("Upload error:", err);
+      alert("Upload failed. Check console for details.");
+    } finally {
+      setUploadingCount((c) => Math.max(0, c - files.length));
+      if (e.target) e.target.value = "";
+    }
+  };
 
   const removeImage = (url) => {
     setForm((s) => ({ ...s, images: s.images.filter((i) => i !== url) }));
@@ -127,7 +413,6 @@ const handleUpload = async (e) => {
     setSaving(true);
 
     try {
-      // ensure numeric fields
       const payload = {
         ...form,
         price: Number(form.price) || 0,
@@ -136,7 +421,6 @@ const handleUpload = async (e) => {
         rating: Number(form.rating) || 0,
         stock: Number(form.stock) || 0,
         featured: Number(form.featured) ? 1 : 0,
-        // backend expects comma-separated string (backwards-compatible)
         images: (form.images || []).join(","),
       };
 
@@ -162,10 +446,7 @@ const handleUpload = async (e) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={() => onClose && onClose()}
-      />
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => onClose && onClose()} />
       <form
         onSubmit={handleSubmit}
         className="relative z-10 w-full max-w-4xl bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-2xl overflow-auto max-h-[92vh] border border-gray-100 dark:border-gray-800"
@@ -263,7 +544,7 @@ const handleUpload = async (e) => {
   );
 }
 
-/* ======= ProductsAdmin main component ======= */
+/* ======= ProductsAdmin main component (extended) ======= */
 export default function ProductsAdmin() {
   const [products, setProducts] = useState([]);
   const [stats, setStats] = useState({ total: 0, sold: 0, inStock: 0, outOfStock: 0 });
@@ -277,18 +558,11 @@ export default function ProductsAdmin() {
   const [showForm, setShowForm] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [showProducts, setShowProducts] = useState(false);
+  const [showCategories, setShowCategories] = useState(false);
+
+  const [categories, setCategories] = useState([]);
 
   const DEBUG = false;
-
-  const normalizeResponse = (res) => {
-    if (!res) return {};
-    // axios-like wrapper: res.data is body
-    if (res.data && typeof res.data === "object") {
-      if (res.data.data || typeof res.data.total !== "undefined") return res.data;
-      return res.data;
-    }
-    return res;
-  };
 
   const fetchProducts = useCallback(async () => {
     if (!showProducts) return;
@@ -342,13 +616,47 @@ export default function ProductsAdmin() {
     }
   };
 
-  // When opening editor, fetch the full product by id to avoid partial rows from listing
+  /* ======= Category API helpers ======= */
+  const fetchCategories = useCallback(async () => {
+    try {
+      const res = await api.get("/api/admin/categories", {}, true);
+      const body = normalizeResponse(res);
+      // API might return {data: [...]} or array directly
+      const list = Array.isArray(body) ? body : Array.isArray(body.data) ? body.data : body.categories ?? [];
+      // normalize fields: ensure id, category, subcategory/name, parent_id, status, sort_order
+      const norm = (list || []).map((c) => ({
+        id: c.id ?? c._id ?? c.category_id ?? c.id,
+        category: c.category ?? c.category_name ?? c.main_category ?? c.category,
+        subcategory: c.subcategory ?? c.name ?? c.label ?? c.subcategory,
+        parent_id: c.parent_id ?? c.parentId ?? c.parent || null,
+        status: c.status ?? "active",
+        sort_order: c.sort_order ?? c.order ?? 0,
+        slug: c.slug ?? c.slug,
+        metadata: c.metadata ?? c.metadata,
+        description: c.description ?? c.description,
+        raw: c,
+      }));
+
+      setCategories(norm);
+    } catch (err) {
+      console.error("Fetch categories error:", err);
+      setCategories([]);
+    }
+  }, []);
+
+  useEffect(() => { fetchStats(); }, []);
+  useEffect(() => { if (!showProducts) return; setPage(1); }, [q, limit, sortBy, showProducts]);
+  useEffect(() => { fetchProducts(); }, [fetchProducts]);
+  useEffect(() => { if (showProducts) fetchStats(); }, [showProducts]);
+
+  // Fetch categories when management toggled on
+  useEffect(() => { if (showCategories) fetchCategories(); }, [showCategories, fetchCategories]);
+
   const openEditor = async (p) => {
     if (!p?.id) return;
     try {
       const res = await api.get(`/api/admin/products/${p.id}`, {}, true);
       const body = normalizeResponse(res);
-      // body might be the product directly or {data: product}
       const prod = body?.data && typeof body.data === "object" ? body.data : body;
       setEditing(prod);
       setShowForm(true);
@@ -374,11 +682,6 @@ export default function ProductsAdmin() {
     setEditing(null);
     setShowForm(false);
   };
-
-  useEffect(() => { fetchStats(); }, []); // initial stats
-  useEffect(() => { if (!showProducts) return; setPage(1); }, [q, limit, sortBy, showProducts]);
-  useEffect(() => { fetchProducts(); }, [fetchProducts]);
-  useEffect(() => { if (showProducts) fetchStats(); }, [showProducts]);
 
   return (
     <div className="space-y-6">
@@ -414,9 +717,16 @@ export default function ProductsAdmin() {
           <Upload className="w-4 h-4" /> Bulk Upload
         </button>
 
-        <button onClick={() => setShowProducts((s) => !s)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-black text-white dark:bg-white dark:text-black shadow-sm">
-          <Eye className="w-4 h-4" /> {showProducts ? "Hide Products" : "Browse Products"}
-        </button>
+        <div className="inline-flex items-center gap-2">
+          <button onClick={() => setShowProducts((s) => !s)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-black text-white dark:bg-white dark:text-black shadow-sm">
+            <Eye className="w-4 h-4" /> {showProducts ? "Hide Products" : "Browse Products"}
+          </button>
+
+          {/* NEW: Category management toggle beside Browse Products */}
+          <button onClick={() => setShowCategories((s) => !s)} className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border ${showCategories ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black" : "border-gray-200 bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100"}`}>
+            <Layers className="w-4 h-4" /> {showCategories ? "Hide Categories" : "Manage Categories"}
+          </button>
+        </div>
       </div>
 
       {/* Bulk Upload */}
@@ -424,6 +734,11 @@ export default function ProductsAdmin() {
         <div className="p-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
           <BulkUpload onUploadComplete={handleSave} />
         </div>
+      )}
+
+      {/* Category Management */}
+      {showCategories && (
+        <CategoryManagement categories={categories} setCategories={setCategories} onRefresh={fetchCategories} />
       )}
 
       {/* Products */}
