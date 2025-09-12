@@ -73,38 +73,40 @@ function ProductFormModal({ product, onClose, onSave }) {
   const setField = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
   // Upload handler supports multiple files
-  const handleUpload = async (e) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
+ const handleUpload = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  setUploading(true);
 
-    setUploadingCount((c) => c + files.length);
-    try {
-      // upload all in parallel
-      const uploads = await Promise.all(
-        files.map(async (file) => {
-          const fd = new FormData();
-          fd.append("image", file);
-          // pass form-data; your api wrapper should forward to axios/fetch correctly
-          const res = await api.post("/api/upload", fd, true, {
-            headers: { "Content-Type": "multipart/form-data" },
-          });
-          // support multiple possible response shapes
-          const url = res?.data?.url || res?.url || res?.data?.secure_url || res?.secure_url || res?.data?.result?.secure_url;
-          if (!url) throw new Error("No URL returned from upload");
-          return url;
-        })
-      );
+  try {
+    const formData = new FormData();
+    formData.append("image", file); // 👈 backend expects "image"
 
-      // append new urls
-      setForm((s) => ({ ...s, images: [...(s.images || []), ...uploads] }));
-    } catch (err) {
-      console.error("Upload error:", err);
-      alert("Image upload failed — check console");
-    } finally {
-      setUploadingCount((c) => Math.max(0, c - files.length));
-      e.target.value = ""; // reset input so same file can be reselected
+    // Don't set Content-Type manually, axios handles it
+    const res = await api.post("/api/upload", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data", // only if your wrapper doesn't set it
+      },
+    });
+
+    console.log("Upload response:", res);
+
+    const url = res?.data?.url;
+    if (url) {
+      setForm((s) => ({ ...s, images: [...s.images, url] }));
+    } else {
+      alert("Upload succeeded but no URL returned!");
     }
-  };
+  } catch (err) {
+    console.error("Upload error:", err);
+    alert("Upload failed. Check console for details.");
+  } finally {
+    setUploading(false);
+  }
+};
+
+
+
 
   const removeImage = (url) => {
     setForm((s) => ({ ...s, images: s.images.filter((i) => i !== url) }));
