@@ -1,5 +1,5 @@
 // src/pages/ProductsAdmin.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import api from "../utils/api";
 import BulkUpload from "./BulkUpload";
 import {
@@ -7,20 +7,25 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 
-/**
- * ProductFormModal
- * - Carefully syncs form state when `product` changes (fixes empty-fields-after-edit bug)
- * - Submits all schema fields including actualPrice and featured
- */
-// inside ProductsAdmin.jsx
+/* ======= STYLE CONSTANTS (Tailwind utility strings) ======= */
+const inputCls =
+  "w-full p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-black dark:focus:ring-white transition";
+const textareaCls = inputCls + " resize-none";
+const btnPrimaryCls =
+  "px-4 py-2 rounded-lg shadow-sm bg-black text-white dark:bg-white dark:text-black hover:scale-[1.02] transition-transform disabled:opacity-60";
+const btnSecondaryCls =
+  "px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 transition";
+const cardCls =
+  "p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-sm hover:shadow-lg transition";
 
+/* ======= ProductFormModal (modern + theme-aware + image uploads) ======= */
 function ProductFormModal({ product, onClose, onSave }) {
   const defaultForm = {
     name: "",
     category: "",
     price: 0,
     actualPrice: 0,
-    images: [],
+    images: [], // array of URLs
     rating: 0,
     sizes: "",
     colors: "",
@@ -33,62 +38,94 @@ function ProductFormModal({ product, onClose, onSave }) {
 
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [uploadingCount, setUploadingCount] = useState(0);
 
+  // Sync form when product changes (prevents empty-fields-after-save)
   useEffect(() => {
-    if (product) {
+    if (product && Object.keys(product).length > 0) {
       setForm({
-        ...defaultForm,
-        ...product,
-        images: product.images ? product.images.split(",") : [],
+        name: product.name ?? "",
+        category: product.category ?? "",
+        price: Number(product.price ?? 0),
+        actualPrice: Number(product.actualPrice ?? product.price ?? 0),
+        images: product.images ? String(product.images).split(",").filter(Boolean) : [],
+        rating: Number(product.rating ?? 0),
+        sizes: product.sizes ?? "",
+        colors: product.colors ?? "",
+        originalPrice: Number(product.originalPrice ?? 0),
+        description: product.description ?? "",
+        subcategory: product.subcategory ?? "",
+        stock: Number(product.stock ?? 0),
+        featured: Number(product.featured ?? 0),
       });
+    } else {
+      setForm(defaultForm);
     }
   }, [product]);
 
+  // close on ESC
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose && onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   const setField = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
+  // Upload handler supports multiple files
   const handleUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
 
-    setUploading(true);
+    setUploadingCount((c) => c + files.length);
     try {
-      const formData = new FormData();
-      formData.append("image", file);
+      // upload all in parallel
+      const uploads = await Promise.all(
+        files.map(async (file) => {
+          const fd = new FormData();
+          fd.append("image", file);
+          // pass form-data; your api wrapper should forward to axios/fetch correctly
+          const res = await api.post("/api/upload", fd, true, {
+            headers: { "Content-Type": "multipart/form-data" },
+          });
+          // support multiple possible response shapes
+          const url = res?.data?.url || res?.url || res?.data?.secure_url || res?.secure_url || res?.data?.result?.secure_url;
+          if (!url) throw new Error("No URL returned from upload");
+          return url;
+        })
+      );
 
-      const res = await api.post("/api/upload", formData, true, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-
-      const url = res?.url || res?.data?.url;
-      if (url) {
-        setForm((s) => ({ ...s, images: [...s.images, url] }));
-      }
+      // append new urls
+      setForm((s) => ({ ...s, images: [...(s.images || []), ...uploads] }));
     } catch (err) {
-      console.error("Upload failed", err);
-      alert("Upload failed");
+      console.error("Upload error:", err);
+      alert("Image upload failed — check console");
     } finally {
-      setUploading(false);
+      setUploadingCount((c) => Math.max(0, c - files.length));
+      e.target.value = ""; // reset input so same file can be reselected
     }
   };
 
   const removeImage = (url) => {
-    setForm((s) => ({ ...s, images: s.images.filter((img) => img !== url) }));
+    setForm((s) => ({ ...s, images: s.images.filter((i) => i !== url) }));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (ev) => {
+    ev.preventDefault();
     setSaving(true);
+
     try {
+      // ensure numeric fields
       const payload = {
         ...form,
         price: Number(form.price) || 0,
-        actualPrice: Number(form.actualPrice) || Number(form.price),
+        actualPrice: Number(form.actualPrice) || Number(form.price) || 0,
         originalPrice: Number(form.originalPrice) || 0,
         rating: Number(form.rating) || 0,
         stock: Number(form.stock) || 0,
         featured: Number(form.featured) ? 1 : 0,
-        images: form.images.join(","), // save as comma string
+        // backend expects comma-separated string (backwards-compatible)
+        images: (form.images || []).join(","),
       };
 
       let resp;
@@ -98,11 +135,14 @@ function ProductFormModal({ product, onClose, onSave }) {
         resp = await api.post(`/api/admin/products`, payload, true);
       }
 
-      if (onSave) await onSave(resp);
-      else onClose();
+      if (typeof onSave === "function") {
+        await onSave(resp);
+      } else {
+        onClose && onClose();
+      }
     } catch (err) {
-      console.error("Save error", err);
-      alert("Failed to save product");
+      console.error("Save product error:", err);
+      alert("Failed to save product — check console");
     } finally {
       setSaving(false);
     }
@@ -111,82 +151,99 @@ function ProductFormModal({ product, onClose, onSave }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={() => onClose && onClose()}
       />
       <form
         onSubmit={handleSubmit}
-        className="relative w-full max-w-3xl bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-xl overflow-auto max-h-[90vh]"
+        className="relative z-10 w-full max-w-4xl bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-2xl overflow-auto max-h-[92vh] border border-gray-100 dark:border-gray-800"
       >
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-            {product ? "Edit Product" : "Add Product"}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1 rounded-lg border dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
-          >
-            ✕
-          </button>
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
+              {product ? "Edit Product" : "Add Product"}
+            </h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Fill product details. Images are uploaded to your configured upload route.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onClose && onClose()}
+              className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <input value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="Name" className="input" />
-          <input value={form.category} onChange={(e) => setField("category", e.target.value)} placeholder="Category" className="input" />
+          <input className={inputCls} placeholder="Product name" value={form.name} onChange={(e) => setField("name", e.target.value)} required />
+          <input className={inputCls} placeholder="Category" value={form.category} onChange={(e) => setField("category", e.target.value)} required />
 
-          <input type="number" value={form.price} onChange={(e) => setField("price", e.target.value)} placeholder="Price (₹)" className="input" />
-          <input type="number" value={form.actualPrice} onChange={(e) => setField("actualPrice", e.target.value)} placeholder="Actual Price (₹)" className="input" />
+          <input className={inputCls} placeholder="Price (₹)" type="number" value={form.price} onChange={(e) => setField("price", e.target.value)} />
+          <input className={inputCls} placeholder="Actual Price (₹)" type="number" value={form.actualPrice} onChange={(e) => setField("actualPrice", e.target.value)} />
 
-          <input type="number" value={form.originalPrice} onChange={(e) => setField("originalPrice", e.target.value)} placeholder="Original Price (₹)" className="input" />
-          <input type="number" value={form.rating} onChange={(e) => setField("rating", e.target.value)} placeholder="Rating" className="input" />
+          <input className={inputCls} placeholder="Original Price (₹)" type="number" value={form.originalPrice} onChange={(e) => setField("originalPrice", e.target.value)} />
+          <input className={inputCls} placeholder="Rating" type="number" step="0.1" value={form.rating} onChange={(e) => setField("rating", e.target.value)} />
 
-          <input value={form.sizes} onChange={(e) => setField("sizes", e.target.value)} placeholder="Sizes (comma separated)" className="input" />
-          <input value={form.colors} onChange={(e) => setField("colors", e.target.value)} placeholder="Colors (comma separated)" className="input" />
+          <input className={inputCls} placeholder="Sizes (comma separated)" value={form.sizes} onChange={(e) => setField("sizes", e.target.value)} />
+          <input className={inputCls} placeholder="Colors (comma separated)" value={form.colors} onChange={(e) => setField("colors", e.target.value)} />
 
-          <input value={form.subcategory} onChange={(e) => setField("subcategory", e.target.value)} placeholder="Subcategory" className="input" />
-          <input type="number" value={form.stock} onChange={(e) => setField("stock", e.target.value)} placeholder="Stock" className="input" />
+          <input className={inputCls} placeholder="Subcategory" value={form.subcategory} onChange={(e) => setField("subcategory", e.target.value)} />
+          <input className={inputCls} placeholder="Stock" type="number" value={form.stock} onChange={(e) => setField("stock", e.target.value)} />
 
-          <div className="flex items-center gap-2">
-            <input
-              id="featured"
-              type="checkbox"
-              checked={Number(form.featured) === 1}
-              onChange={(e) => setField("featured", e.target.checked ? 1 : 0)}
-            />
-            <label htmlFor="featured" className="text-gray-700 dark:text-gray-300">Featured</label>
+          <div className="flex items-center gap-3">
+            <label htmlFor="featuredSwitch" className="flex items-center gap-2 cursor-pointer select-none">
+              <div className={`w-11 h-6 flex items-center rounded-full p-1 transition ${form.featured ? "bg-green-500" : "bg-gray-300 dark:bg-gray-700"}`}>
+                <div className={`bg-white w-4 h-4 rounded-full shadow transform transition ${form.featured ? "translate-x-5" : ""}`} />
+              </div>
+              <span className="text-sm text-gray-700 dark:text-gray-300">Featured</span>
+            </label>
+            <input id="featuredSwitch" type="checkbox" className="sr-only" checked={Number(form.featured) === 1} onChange={(e) => setField("featured", e.target.checked ? 1 : 0)} />
           </div>
 
-          <textarea value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Description" className="input col-span-1 sm:col-span-2" rows={4} />
+          <textarea className={textareaCls + " sm:col-span-2"} rows={4} placeholder="Description" value={form.description} onChange={(e) => setField("description", e.target.value)} />
         </div>
 
         {/* Images uploader */}
         <div className="mt-6">
-          <label className="block mb-2 font-medium text-gray-900 dark:text-white">Product Images</label>
-          <div className="flex flex-wrap gap-3">
-            {form.images.map((img) => (
-              <div key={img} className="relative group">
-                <img src={img} alt="Product" className="h-24 w-24 object-cover rounded-lg border" />
+          <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">Product images</label>
+          <div className="flex flex-wrap items-center gap-3">
+            {(form.images || []).map((img) => (
+              <div key={img} className="relative w-28 h-28 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                <img src={img} alt="preview" className="w-full h-full object-cover" />
                 <button
                   type="button"
                   onClick={() => removeImage(img)}
-                  className="absolute top-1 right-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100"
+                  className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-7 h-7 grid place-items-center shadow"
+                  aria-label="Remove image"
                 >
                   ✕
                 </button>
               </div>
             ))}
-            <label className="h-24 w-24 flex items-center justify-center border-2 border-dashed rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800">
-              {uploading ? "Uploading..." : "+"}
-              <input type="file" hidden onChange={handleUpload} />
+
+            <label
+              className="flex items-center justify-center w-28 h-28 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-500"
+              title="Upload images"
+            >
+              <input type="file" multiple accept="image/*" className="hidden" onChange={handleUpload} />
+              <div className="text-center">
+                <div className="text-2xl">＋</div>
+                <div className="text-xs mt-1">{uploadingCount ? `${uploadingCount} uploading...` : "Upload"}</div>
+              </div>
             </label>
           </div>
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">You can upload multiple images. They will be saved as a comma-separated string to keep DB compatible with existing CSV/bulk upload.</p>
         </div>
 
-        <div className="flex justify-end gap-3 mt-6">
-          <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
-          <button type="submit" disabled={saving} className="btn-primary">
-            {saving ? "Saving..." : "Save Product"}
+        <div className="flex items-center justify-end gap-3 mt-6">
+          <button type="button" onClick={() => onClose && onClose()} className={btnSecondaryCls}>Cancel</button>
+          <button type="submit" disabled={saving || uploadingCount > 0} className={btnPrimaryCls}>
+            {saving ? "Saving..." : "Save product"}
           </button>
         </div>
       </form>
@@ -194,17 +251,7 @@ function ProductFormModal({ product, onClose, onSave }) {
   );
 }
 
-// Tailwind helpers
-const input = "p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white outline-none";
-const btnPrimary = "px-4 py-2 rounded-lg bg-black text-white dark:bg-white dark:text-black shadow hover:scale-105 transition disabled:opacity-60";
-const btnSecondary = "px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700";
-
-
-/**
- * ProductsAdmin (updated)
- * - Displays actualPrice / originalPrice correctly
- * - Passes full product object to editor
- */
+/* ======= ProductsAdmin main component ======= */
 export default function ProductsAdmin() {
   const [products, setProducts] = useState([]);
   const [stats, setStats] = useState({ total: 0, sold: 0, inStock: 0, outOfStock: 0 });
@@ -219,10 +266,11 @@ export default function ProductsAdmin() {
   const [showBulk, setShowBulk] = useState(false);
   const [showProducts, setShowProducts] = useState(false);
 
-  const DEBUG = false; // toggle logs
+  const DEBUG = false;
 
   const normalizeResponse = (res) => {
     if (!res) return {};
+    // axios-like wrapper: res.data is body
     if (res.data && typeof res.data === "object") {
       if (res.data.data || typeof res.data.total !== "undefined") return res.data;
       return res.data;
@@ -230,18 +278,16 @@ export default function ProductsAdmin() {
     return res;
   };
 
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     if (!showProducts) return;
     setLoading(true);
     try {
       const res = await api.get("/api/admin/products", { search: q, page, limit, sort: sortBy }, true);
-      if (DEBUG) console.log("Products API raw response:", res);
-
+      if (DEBUG) console.log("Products list raw:", res);
       const body = normalizeResponse(res);
 
       let list = [];
       let total = 0;
-
       if (Array.isArray(body)) {
         list = body;
       } else if (Array.isArray(body.data)) {
@@ -251,25 +297,25 @@ export default function ProductsAdmin() {
         list = body.products;
         total = Number(body.total ?? body.totalCount ?? 0);
       } else {
-        const arrVal = Object.values(body).find((v) => Array.isArray(v));
-        if (arrVal) list = arrVal;
+        const arr = Object.values(body).find((v) => Array.isArray(v));
+        if (arr) list = arr;
       }
 
       setProducts(list || []);
       setTotalPages(limit === 999999 ? 1 : Math.max(1, Math.ceil((total || list.length || 0) / (limit || 20))));
     } catch (err) {
-      console.error("Error fetching products:", err);
+      console.error("Fetch products error:", err);
       setProducts([]);
       setTotalPages(1);
     } finally {
       setLoading(false);
     }
-  };
+  }, [q, page, limit, sortBy, showProducts, DEBUG]);
 
   const fetchStats = async () => {
     try {
       const res = await api.get("/api/admin/stats", {}, true);
-      if (DEBUG) console.log("Stats API raw response:", res);
+      if (DEBUG) console.log("Stats raw:", res);
       const body = normalizeResponse(res);
 
       const total = Number(body.total ?? body.totalProducts ?? 0);
@@ -279,19 +325,35 @@ export default function ProductsAdmin() {
 
       setStats({ total, sold, inStock, outOfStock });
     } catch (err) {
-      console.error("Error fetching stats:", err);
+      console.error("Fetch stats error:", err);
       setStats({ total: 0, sold: 0, inStock: 0, outOfStock: 0 });
     }
   };
 
+  // When opening editor, fetch the full product by id to avoid partial rows from listing
+  const openEditor = async (p) => {
+    if (!p?.id) return;
+    try {
+      const res = await api.get(`/api/admin/products/${p.id}`, {}, true);
+      const body = normalizeResponse(res);
+      // body might be the product directly or {data: product}
+      const prod = body?.data && typeof body.data === "object" ? body.data : body;
+      setEditing(prod);
+      setShowForm(true);
+    } catch (err) {
+      console.error("Failed to fetch product for edit:", err);
+      alert("Failed to load product for editing. See console.");
+    }
+  };
+
   const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this product?")) return;
+    if (!window.confirm("Delete product? This cannot be undone.")) return;
     try {
       await api.delete(`/api/admin/products/${id}`, true);
       await Promise.all([fetchProducts(), fetchStats()]);
     } catch (err) {
-      console.error("Error deleting product:", err);
-      alert("Could not delete product. Check console for details.");
+      console.error("Delete error:", err);
+      alert("Failed to delete product. See console.");
     }
   };
 
@@ -301,15 +363,9 @@ export default function ProductsAdmin() {
     setShowForm(false);
   };
 
-  useEffect(() => { fetchStats(); }, []);
-
-  useEffect(() => {
-    if (!showProducts) return;
-    setPage(1);
-  }, [q, limit, sortBy, showProducts]);
-
-  useEffect(() => { fetchProducts(); /* eslint-disable-line */ }, [q, page, limit, sortBy, showProducts]);
-
+  useEffect(() => { fetchStats(); }, []); // initial stats
+  useEffect(() => { if (!showProducts) return; setPage(1); }, [q, limit, sortBy, showProducts]);
+  useEffect(() => { fetchProducts(); }, [fetchProducts]);
   useEffect(() => { if (showProducts) fetchStats(); }, [showProducts]);
 
   return (
@@ -322,14 +378,14 @@ export default function ProductsAdmin() {
           { label: "In Stock", value: stats.inStock, icon: CheckCircle, color: "bg-blue-500" },
           { label: "Out of Stock", value: stats.outOfStock, icon: XCircle, color: "bg-red-500" }
         ].map((stat, i) => (
-          <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: i * 0.1 }} className="p-5 rounded-xl bg-white dark:bg-gray-900 shadow hover:shadow-lg transition">
+          <motion.div key={stat.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: i * 0.06 }} className="p-4 rounded-xl bg-white dark:bg-gray-900 shadow-sm hover:shadow-md transition">
             <div className="flex items-center gap-4">
               <div className={`p-3 rounded-full ${stat.color} text-white`}>
-                <stat.icon className="w-6 h-6" />
+                <stat.icon className="w-5 h-5" />
               </div>
               <div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</p>
+                <p className="text-2xl font-semibold text-gray-900 dark:text-white">{stat.value}</p>
               </div>
             </div>
           </motion.div>
@@ -338,20 +394,22 @@ export default function ProductsAdmin() {
 
       {/* Actions */}
       <div className="flex flex-wrap gap-4">
-        <button onClick={() => { setEditing(null); setShowForm(true); }} className="flex items-center gap-2 px-5 py-3 bg-black text-white dark:bg-white dark:text-black rounded-lg shadow hover:scale-105 transition-transform">
-          <Plus className="w-5 h-5" /> Add Product
+        <button onClick={() => { setEditing(null); setShowForm(true); }} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-black text-white dark:bg-white dark:text-black shadow-sm hover:scale-[1.02] transition">
+          <Plus className="w-4 h-4" /> Add Product
         </button>
-        <button onClick={() => setShowBulk(!showBulk)} className="flex items-center gap-2 px-5 py-3 bg-white dark:bg-black border border-gray-300 dark:border-gray-700 text-black dark:text-white rounded-lg shadow hover:scale-105 transition-transform">
-          <Upload className="w-5 h-5" /> Bulk Upload
+
+        <button onClick={() => setShowBulk((s) => !s)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+          <Upload className="w-4 h-4" /> Bulk Upload
         </button>
-        <button onClick={() => setShowProducts(!showProducts)} className="flex items-center gap-2 px-5 py-3 bg-black text-white dark:bg-white dark:text-black rounded-lg shadow hover:scale-105 transition-transform">
-          <Eye className="w-5 h-5" /> {showProducts ? "Hide Products" : "Browse Products"}
+
+        <button onClick={() => setShowProducts((s) => !s)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-black text-white dark:bg-white dark:text-black shadow-sm">
+          <Eye className="w-4 h-4" /> {showProducts ? "Hide Products" : "Browse Products"}
         </button>
       </div>
 
       {/* Bulk Upload */}
       {showBulk && (
-        <div className="p-6 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-black">
+        <div className="p-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
           <BulkUpload onUploadComplete={handleSave} />
         </div>
       )}
@@ -363,18 +421,16 @@ export default function ProductsAdmin() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="relative w-full sm:w-64">
               <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search products..." className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-black text-black dark:text-white" />
+              <input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search products..." className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
             </div>
 
             <div className="flex items-center gap-3">
-              <select value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }} className="w-40 pl-3 pr-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-black dark:text-white">
-                {[10, 20, 50, 100].map(size => (
-                  <option key={size} value={size}>{size} per page</option>
-                ))}
+              <select value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }} className="pl-3 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                {[10, 20, 50, 100].map((s) => <option key={s} value={s}>{s} per page</option>)}
                 <option value={999999}>Show All</option>
               </select>
 
-              <select value={sortBy} onChange={(e) => { setSortBy(e.target.value); setPage(1); }} className="w-52 pl-3 pr-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-black dark:text-white">
+              <select value={sortBy} onChange={(e) => { setSortBy(e.target.value); setPage(1); }} className="pl-3 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
                 <option value="newest">Newest</option>
                 <option value="price_asc">Price: Low → High</option>
                 <option value="price_desc">Price: High → Low</option>
@@ -385,7 +441,7 @@ export default function ProductsAdmin() {
             </div>
           </div>
 
-          {/* Products Grid */}
+          {/* Product Grid */}
           {loading ? (
             <div className="text-center text-gray-500 dark:text-gray-400">Loading...</div>
           ) : products.length === 0 ? (
@@ -397,31 +453,32 @@ export default function ProductsAdmin() {
                 const actualNum = Number(p.actualPrice ?? 0);
                 const displayPrice = actualNum > 0 ? actualNum : priceNum;
                 const showOriginal = Number(p.originalPrice ?? 0) > 0 && Number(p.originalPrice) > displayPrice;
+                const firstImage = p.images ? String(p.images).split(",")[0] : "/images/placeholder.jpg";
 
                 return (
-                  <div key={p.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-black shadow hover:shadow-lg transition">
-                    <img src={p.images?.split(",")[0] || "/images/placeholder.jpg"} alt={p.name} className="h-40 w-full object-cover rounded-md" />
-                    <div className="mt-3 flex justify-between items-start">
+                  <div key={p.id} className={cardCls}>
+                    <div className="h-44 rounded-md overflow-hidden bg-gray-50 dark:bg-gray-800">
+                      <img src={firstImage || "/images/placeholder.jpg"} alt={p.name} className="w-full h-full object-cover" />
+                    </div>
+
+                    <div className="mt-3 flex justify-between items-start gap-3">
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-black dark:text-white">{p.name}</h3>
+                        <h3 className="font-semibold text-gray-900 dark:text-white truncate">{p.name}</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{p.category} {p.subcategory ? `/ ${p.subcategory}` : ""}</p>
-                        <div className="mt-2 font-bold text-black dark:text-white flex items-baseline gap-3">
+
+                        <div className="mt-2 font-semibold text-gray-900 dark:text-white flex items-baseline gap-3">
                           <span>₹{displayPrice.toLocaleString()}</span>
                           {showOriginal && <span className="text-sm line-through text-gray-400">₹{Number(p.originalPrice).toLocaleString()}</span>}
-                          {typeof p.sold !== "undefined" && (
-                            <span className="text-xs text-gray-500 dark:text-gray-400">• {p.sold} sold</span>
-                          )}
-                          {Number(p.featured) === 1 && (
-                            <span className="ml-2 text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800">Featured</span>
-                          )}
+                          {typeof p.sold !== "undefined" && <span className="text-xs text-gray-500 dark:text-gray-400">• {p.sold} sold</span>}
+                          {Number(p.featured) === 1 && <span className="ml-2 text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800">Featured</span>}
                         </div>
                       </div>
 
                       <div className="flex flex-col gap-2">
-                        <button onClick={() => { setEditing(p); setShowForm(true); }} className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
-                          <Edit className="w-4 h-4 text-black dark:text-white" />
+                        <button onClick={() => openEditor(p)} className="p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800">
+                          <Edit className="w-4 h-4 text-gray-900 dark:text-white" />
                         </button>
-                        <button onClick={() => handleDelete(p.id)} className="p-2 rounded-md hover:bg-red-100 dark:hover:bg-red-900 text-red-600">
+                        <button onClick={() => handleDelete(p.id)} className="p-2 rounded-md hover:bg-red-50 dark:hover:bg-red-900 text-red-600">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -435,15 +492,15 @@ export default function ProductsAdmin() {
           {/* Pagination */}
           {totalPages > 1 && limit !== 999999 && (
             <div className="flex justify-center items-center gap-4 pt-4">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 disabled:opacity-50 hover:bg-gray-100 dark:hover:bg-gray-800">Prev</button>
+              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-40">Prev</button>
               <span className="text-gray-700 dark:text-gray-300">Page {page} of {totalPages}</span>
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 disabled:opacity-50 hover:bg-gray-100 dark:hover:bg-gray-800">Next</button>
+              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-40">Next</button>
             </div>
           )}
         </div>
       )}
 
-      {/* Product Form Modal */}
+      {/* Product Modal */}
       {showForm && (
         <ProductFormModal
           product={editing}
