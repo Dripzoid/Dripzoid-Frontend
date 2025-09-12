@@ -72,41 +72,41 @@ function ProductFormModal({ product, onClose, onSave }) {
 
   const setField = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
-  // Upload handler supports multiple files
- const handleUpload = async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  setUploading(true);
+  // Upload handler supports multiple files and uses the same api wrapper signature as other calls.
+  const handleUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
 
-  try {
-    const formData = new FormData();
-    formData.append("image", file); // 👈 backend expects "image"
+    // increase pending counter
+    setUploadingCount((c) => c + files.length);
 
-    // Don't set Content-Type manually, axios handles it
-    const res = await api.post("/api/upload", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data", // only if your wrapper doesn't set it
-      },
-    });
+    try {
+      const uploads = await Promise.all(files.map(async (file) => {
+        const fd = new FormData();
+        fd.append("image", file); // backend expects 'image' as field name
 
-    console.log("Upload response:", res);
+        // Use the same api wrapper pattern: (url, data, auth?, config?)
+        // We pass `true` as third arg to keep auth behavior consistent with other calls.
+        const res = await api.post("/api/upload", fd, true);
+        // normalize response shapes
+        const url = res?.data?.url || res?.data?.secure_url || res?.url || res?.secure_url || res?.data?.result?.secure_url;
+        if (!url) {
+          console.warn("Upload returned unexpected shape:", res);
+          throw new Error("No URL returned from upload");
+        }
+        return url;
+      }));
 
-    const url = res?.data?.url;
-    if (url) {
-      setForm((s) => ({ ...s, images: [...s.images, url] }));
-    } else {
-      alert("Upload succeeded but no URL returned!");
+      setForm((s) => ({ ...s, images: [...(s.images || []), ...uploads] }));
+    } catch (err) {
+      console.error("Upload error:", err);
+      alert("Upload failed. Check console for details.");
+    } finally {
+      // decrease pending counter and reset input value so same file can be re-selected
+      setUploadingCount((c) => Math.max(0, c - files.length));
+      try { e.target.value = ""; } catch (e) {}
     }
-  } catch (err) {
-    console.error("Upload error:", err);
-    alert("Upload failed. Check console for details.");
-  } finally {
-    setUploading(false);
-  }
-};
-
-
-
+  };
 
   const removeImage = (url) => {
     setForm((s) => ({ ...s, images: s.images.filter((i) => i !== url) }));
