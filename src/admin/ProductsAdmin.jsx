@@ -108,9 +108,9 @@ function CategoryFormModal({ editing, fixedCategory = null, categories = [], onC
 
       let res;
       if (form.id) {
-        res = await api.put(`/api/admin/categories/${form.id}`, payload, true);
+        res = await api.put(`/api/admin/products/categories/${form.id}`, payload, true);
       } else {
-        res = await api.post("/api/admin/categories", payload, true);
+        res = await api.post("/api/admin/products/categories", payload, true);
       }
 
       if (typeof onSave === "function") {
@@ -298,7 +298,7 @@ function CategoryManagement({ categories = [], onRefresh }) {
       try {
         // append to end with next sort order
         const lastSort = mainList.length > 0 ? (mainList[mainList.length - 1].sort_order ?? 0) : 0;
-        await api.put(`/api/admin/categories/${dragIdNum}`, { category: targetMain, parent_id: null, sort_order: lastSort + 1 }, true);
+        await api.put(`/api/admin/products/categories/${dragIdNum}`, { category: targetMain, parent_id: null, sort_order: lastSort + 1 }, true);
         await onRefresh();
       } catch (err) {
         console.error("Failed cross-column drop:", err);
@@ -329,7 +329,7 @@ function CategoryManagement({ categories = [], onRefresh }) {
     try {
       await Promise.all(
         newList.map((itm, idx) =>
-          api.put(`/api/admin/categories/${itm.id}`, { sort_order: idx }, true).catch((err) => {
+          api.put(`/api/admin/products/categories/${itm.id}`, { sort_order: idx }, true).catch((err) => {
             console.error("Failed to update order for", itm.id, err);
             // continue
           })
