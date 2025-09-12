@@ -604,10 +604,10 @@ export default function ProductsAdmin() {
       if (DEBUG) console.log("Stats raw:", res);
       const body = normalizeResponse(res);
 
-      const total = Number(body.total ?? body.totalProducts ?? 0);
-      const sold = Number(body.sold ?? body.soldProducts ?? 0);
-      const inStock = Number(body.inStock ?? body.in_stock ?? 0);
-      const outOfStock = Number(body.outOfStock ?? body.out_of_stock ?? 0);
+      const total = Number((body.total ?? body.totalProducts) ?? 0);
+      const sold = Number((body.sold ?? body.soldProducts) ?? 0);
+      const inStock = Number((body.inStock ?? body.in_stock) ?? 0);
+      const outOfStock = Number((body.outOfStock ?? body.out_of_stock) ?? 0);
 
       setStats({ total, sold, inStock, outOfStock });
     } catch (err) {
