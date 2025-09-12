@@ -156,16 +156,23 @@ export default function CheckoutPage() {
     return false;
   };
 
-  const applyPromo = () => {
-    if (!promoCode) return alert("Enter a promo code (demo)");
-    if (promoCode.toUpperCase() === "SAVE50") {
-      setPromoApplied({ code: "SAVE50", amount: 50 });
-      alert("Promo applied: ₹50 off (demo)");
-    } else {
-      setPromoApplied(null);
-      alert("Invalid/expired promo (demo)");
-    }
-  };
+const applyPromo = () => {
+  if (!promoCode) return alert("Enter a promo code (demo)");
+
+  const code = promoCode.toUpperCase();
+
+  if (code === "SAVE50") {
+    setPromoApplied({ code: "SAVE50", amount: 50 });
+    alert("Promo applied: ₹50 off (demo)");
+  } else if (code === "RAJU200") {
+    setPromoApplied({ code: "RAJU200", amount: 200 });
+    alert("Promo applied: ₹200 off (demo)");
+  } else {
+    setPromoApplied(null);
+    alert("Invalid/expired promo (demo)");
+  }
+};
+
 
   // Address save/delete/select functions unchanged (kept for brevity in this file)
   const handleSaveAddress = async () => {
