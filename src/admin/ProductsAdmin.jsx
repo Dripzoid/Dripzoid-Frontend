@@ -44,7 +44,15 @@ const normalizeResponse = (res) => {
 const MAIN_CATEGORIES = ["Men", "Women", "Kids"];
 
 /* ======= CategoryFormModal ======= */
-function CategoryFormModal({ category, categories, onClose, onSave }) {
+/*
+  Props:
+    - editing: object|null (if editing an existing subcategory)
+    - fixedCategory: string|null (if provided, category selector is locked to this value)
+    - categories: array (for parent selection)
+    - onClose: fn
+    - onSave: fn (called after successful save; passed normalized response)
+*/
+function CategoryFormModal({ editing, fixedCategory = null, categories = [], onClose, onSave }) {
   const defaultForm = {
     id: null,
     category: "Men",
@@ -60,26 +68,27 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (category && Object.keys(category).length) {
+    if (editing && typeof editing === "object" && Object.keys(editing).length > 0) {
       setForm({
-        id: category.id ?? null,
-        category: category.category ?? "Men",
-        subcategory: category.subcategory ?? "",
-        slug: category.slug ?? "",
-        parent_id: category.parent_id ?? null,
-        status: category.status ?? "active",
-        sort_order: Number(category.sort_order ?? 0),
+        id: editing.id ?? null,
+        category: editing.category ?? fixedCategory ?? "Men",
+        subcategory: editing.subcategory ?? "",
+        slug: editing.slug ?? "",
+        parent_id: editing.parent_id ?? null,
+        status: editing.status ?? "active",
+        sort_order: Number(editing.sort_order ?? 0),
         metadata:
-          category.metadata && typeof category.metadata === "string"
-            ? category.metadata
-            : category.metadata
-            ? JSON.stringify(category.metadata)
+          editing.metadata && typeof editing.metadata === "string"
+            ? editing.metadata
+            : editing.metadata
+            ? JSON.stringify(editing.metadata)
             : "",
       });
     } else {
-      setForm(defaultForm);
+      // New create flow. If caller provided a fixedCategory (via section add button), use it.
+      setForm((f) => ({ ...defaultForm, category: fixedCategory ?? defaultForm.category }));
     }
-  }, [category]);
+  }, [editing, fixedCategory]);
 
   const setField = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
@@ -104,7 +113,9 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
         res = await api.post("/api/admin/categories", payload, true);
       }
 
-      if (typeof onSave === "function") await onSave(normalizeResponse(res));
+      if (typeof onSave === "function") {
+        await onSave(normalizeResponse(res));
+      }
       onClose && onClose();
     } catch (err) {
       console.error("Save category error:", err);
@@ -113,6 +124,11 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
       setSaving(false);
     }
   };
+
+  // available parents: only categories in same main category (top-level)
+  const parentOptions = (categories || [])
+    .filter((c) => (c.category || c.category_name) === form.category && !c.parent_id)
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -145,7 +161,13 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
             required
           />
 
-          <select className={inputCls} value={form.category} onChange={(e) => setField("category", e.target.value)}>
+          {/* Category selector - lock when opened from a section add button */}
+          <select
+            className={inputCls}
+            value={form.category}
+            onChange={(e) => setField("category", e.target.value)}
+            disabled={!!fixedCategory && !form.id} // locked for create-from-section, but editable when editing existing
+          >
             {MAIN_CATEGORIES.map((m) => (
               <option key={m} value={m}>
                 {m}
@@ -157,13 +179,11 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
 
           <select className={inputCls} value={form.parent_id ?? ""} onChange={(e) => setField("parent_id", e.target.value || null)}>
             <option value="">No parent</option>
-            {categories
-              .filter((c) => c.id !== form.id)
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {`${c.category} → ${c.subcategory}`}
-                </option>
-              ))}
+            {parentOptions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.subcategory}
+              </option>
+            ))}
           </select>
 
           <select className={inputCls} value={form.status} onChange={(e) => setField("status", e.target.value)}>
@@ -187,25 +207,28 @@ function CategoryFormModal({ category, categories, onClose, onSave }) {
 }
 
 /* ======= CategoryManagement Panel ======= */
-function CategoryManagement({ categories, onRefresh }) {
-  const [editing, setEditing] = useState(null);
+function CategoryManagement({ categories = [], onRefresh }) {
+  const [editing, setEditing] = useState(null); // object or null
   const [showForm, setShowForm] = useState(false);
+  const [fixedCategory, setFixedCategory] = useState(null); // when creating from a section
   const [draggingItem, setDraggingItem] = useState(null);
   const [localCategories, setLocalCategories] = useState([]);
   const dragOverIdRef = useRef(null);
 
   useEffect(() => {
     // keep a local copy for smoother drag reorders (will persist on drop)
-    setLocalCategories(categories.slice());
+    setLocalCategories((categories || []).slice());
   }, [categories]);
 
   const openForEdit = (c) => {
     setEditing(c);
+    setFixedCategory(null);
     setShowForm(true);
   };
 
   const handleCreateForMain = (main) => {
-    setEditing({ category: main }); // modal will pick this up
+    setEditing({ category: main }); // seed form with category
+    setFixedCategory(main);
     setShowForm(true);
   };
 
@@ -213,6 +236,7 @@ function CategoryManagement({ categories, onRefresh }) {
     await onRefresh();
     setShowForm(false);
     setEditing(null);
+    setFixedCategory(null);
   };
 
   const handleDelete = async (id) => {
@@ -238,40 +262,39 @@ function CategoryManagement({ categories, onRefresh }) {
 
   /* ======= Drag & Drop handlers (HTML5) ======= */
   const onDragStart = (e, itemId) => {
-    setDraggingItem(itemId);
+    setDraggingItem(String(itemId));
     e.dataTransfer.effectAllowed = "move";
     try {
       e.dataTransfer.setData("text/plain", String(itemId));
     } catch (err) {
-      // some browsers may throw in strict modes; it's fine
+      // some browsers may throw; ignore
     }
   };
 
   const onDragOver = (e, overId) => {
     e.preventDefault();
-    dragOverIdRef.current = overId;
+    dragOverIdRef.current = String(overId);
   };
 
-  const onDrop = async (e, targetParentCategory) => {
+  const onDrop = async (e, targetMain) => {
     e.preventDefault();
     const draggedId = draggingItem ?? e.dataTransfer.getData("text/plain");
     if (!draggedId) return;
     const dragIdNum = Number(draggedId);
     const overId = dragOverIdRef.current ? Number(dragOverIdRef.current) : null;
 
-    // Build a list for the specific main category for reordering
-    const main = targetParentCategory;
-    const mainList = localCategories
-      .filter((c) => (c.category || c.category_name) === main && !c.parent_id)
+    // build main column list (top-level only)
+    const mainList = (localCategories || [])
+      .filter((c) => (c.category || c.category_name) === targetMain && !c.parent_id)
       .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
 
+    // if dragged item not in this list => cross-column drop -> update category and append
     const draggedIndex = mainList.findIndex((i) => Number(i.id) === dragIdNum);
     if (draggedIndex === -1) {
-      // dragged item might not be in this list (dragging across columns) — update its category and position
       try {
-        // find minimal highest sort_order in target column and append
+        // append to end with next sort order
         const lastSort = mainList.length > 0 ? (mainList[mainList.length - 1].sort_order ?? 0) : 0;
-        await api.put(`/api/admin/categories/${dragIdNum}`, { category: main, parent_id: null, sort_order: lastSort + 1 }, true);
+        await api.put(`/api/admin/categories/${dragIdNum}`, { category: targetMain, parent_id: null, sort_order: lastSort + 1 }, true);
         await onRefresh();
       } catch (err) {
         console.error("Failed cross-column drop:", err);
@@ -283,7 +306,7 @@ function CategoryManagement({ categories, onRefresh }) {
       return;
     }
 
-    // compute new order array (move dragged item to position of overId)
+    // same-column reorder
     const overIndex = overId != null ? mainList.findIndex((i) => Number(i.id) === overId) : null;
     if (overIndex === -1 && overIndex !== null) {
       setDraggingItem(null);
@@ -291,21 +314,20 @@ function CategoryManagement({ categories, onRefresh }) {
       return;
     }
 
-    // remove dragged
+    // remove dragged item and reinsert
     const newList = mainList.slice();
     const [draggedItem] = newList.splice(draggedIndex, 1);
-
     let insertIndex = newList.length;
     if (overIndex !== null) insertIndex = overIndex;
     newList.splice(insertIndex, 0, draggedItem);
 
-    // persist new sort_order to server (batch)
+    // persist sort_order
     try {
       await Promise.all(
         newList.map((itm, idx) =>
           api.put(`/api/admin/categories/${itm.id}`, { sort_order: idx }, true).catch((err) => {
             console.error("Failed to update order for", itm.id, err);
-            // swallow per-item errors so others continue
+            // continue
           })
         )
       );
@@ -320,7 +342,7 @@ function CategoryManagement({ categories, onRefresh }) {
   };
 
   /* ======= Tree helpers for nested display (parent/children) ======= */
-  const buildTree = useMemo(() => {
+  const treeRoots = useMemo(() => {
     const map = {};
     (categories || []).forEach((c) => (map[c.id] = { ...c, children: [] }));
     const roots = [];
@@ -334,7 +356,7 @@ function CategoryManagement({ categories, onRefresh }) {
     return roots;
   }, [categories]);
 
-  const renderNode = (node, level = 0) => {
+  const renderNode = (node) => {
     return (
       <div
         key={node.id}
@@ -377,7 +399,7 @@ function CategoryManagement({ categories, onRefresh }) {
           <div className="ml-6 mt-2 space-y-2">
             {node.children
               .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-              .map((c) => renderNode(c, level + 1))}
+              .map((c) => renderNode(c))}
           </div>
         )}
       </div>
@@ -391,6 +413,7 @@ function CategoryManagement({ categories, onRefresh }) {
           <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Category Management</h4>
           <p className="text-sm text-gray-500 dark:text-gray-400">Manage subcategories, nesting, ordering and status across Men / Women / Kids.</p>
         </div>
+        {/* header Add kept as general (optional) */}
         <div className="flex items-center gap-2">
           <button onClick={() => handleCreateForMain("Men")} className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-black text-white dark:bg-white dark:text-black">
             <PlusCircle className="w-4 h-4" /> Add to Men
@@ -453,11 +476,13 @@ function CategoryManagement({ categories, onRefresh }) {
 
       {showForm && (
         <CategoryFormModal
-          category={editing}
+          editing={editing}
+          fixedCategory={fixedCategory}
           categories={categories}
           onClose={() => {
             setShowForm(false);
             setEditing(null);
+            setFixedCategory(null);
           }}
           onSave={handleSave}
         />
@@ -467,7 +492,7 @@ function CategoryManagement({ categories, onRefresh }) {
 }
 
 /* ======= ProductFormModal (updated to use DB categories/subcategories) ======= */
-function ProductFormModal({ product, onClose, onSave, categories }) {
+function ProductFormModal({ product, onClose, onSave, categories = [] }) {
   const defaultForm = {
     name: "",
     category: "Men",
@@ -490,7 +515,7 @@ function ProductFormModal({ product, onClose, onSave, categories }) {
   const [useCustomSub, setUseCustomSub] = useState(false);
 
   useEffect(() => {
-    if (product && Object.keys(product).length > 0) {
+    if (product && typeof product === "object" && Object.keys(product).length > 0) {
       setForm({
         name: product.name ?? "",
         category: product.category ?? "Men",
@@ -606,8 +631,18 @@ function ProductFormModal({ product, onClose, onSave, categories }) {
   // available subcategories for selected main category (top-level only)
   const availableSubcats = useMemo(() => {
     if (!categories || categories.length === 0) return [];
-    return categories.filter((c) => (c.category || c.category_name) === (form.category || "Men") && !c.parent_id).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    return categories
+      .filter((c) => (c.category || c.category_name) === (form.category || "Men") && !c.parent_id)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   }, [categories, form.category]);
+
+  useEffect(() => {
+    // if selected existing option is "__custom__" switch to custom mode
+    if (form.subcategory === "__custom__") {
+      setUseCustomSub(true);
+      setField("subcategory", "");
+    }
+  }, [form.subcategory]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
