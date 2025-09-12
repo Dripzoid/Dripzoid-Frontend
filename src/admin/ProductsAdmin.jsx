@@ -12,13 +12,15 @@ import { motion } from "framer-motion";
  * - Carefully syncs form state when `product` changes (fixes empty-fields-after-edit bug)
  * - Submits all schema fields including actualPrice and featured
  */
+// inside ProductsAdmin.jsx
+
 function ProductFormModal({ product, onClose, onSave }) {
   const defaultForm = {
     name: "",
     category: "",
     price: 0,
     actualPrice: 0,
-    images: "",
+    images: [],
     rating: 0,
     sizes: "",
     colors: "",
@@ -31,57 +33,63 @@ function ProductFormModal({ product, onClose, onSave }) {
 
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
-  // IMPORTANT: sync local form state whenever `product` prop changes
   useEffect(() => {
     if (product) {
       setForm({
-        name: product.name ?? "",
-        category: product.category ?? "",
-        price: Number(product.price ?? 0),
-        // prefer actualPrice but fallback to price for nice UX
-        actualPrice: Number(product.actualPrice ?? product.price ?? 0),
-        images: product.images ?? "",
-        rating: Number(product.rating ?? 0),
-        sizes: product.sizes ?? "",
-        colors: product.colors ?? "",
-        originalPrice: Number(product.originalPrice ?? 0),
-        description: product.description ?? "",
-        subcategory: product.subcategory ?? "",
-        stock: Number(product.stock ?? 0),
-        featured: Number(product.featured ?? 0),
+        ...defaultForm,
+        ...product,
+        images: product.images ? product.images.split(",") : [],
       });
-    } else {
-      setForm(defaultForm);
     }
   }, [product]);
 
   const setField = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
+  const handleUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+
+      const res = await api.post("/api/upload", formData, true, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      const url = res?.url || res?.data?.url;
+      if (url) {
+        setForm((s) => ({ ...s, images: [...s.images, url] }));
+      }
+    } catch (err) {
+      console.error("Upload failed", err);
+      alert("Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeImage = (url) => {
+    setForm((s) => ({ ...s, images: s.images.filter((img) => img !== url) }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-
     try {
-      // ensure numbers are typed correctly
       const payload = {
-        name: (form.name || "").toString().trim(),
-        category: (form.category || "").toString().trim(),
+        ...form,
         price: Number(form.price) || 0,
-        actualPrice: Number(form.actualPrice) || 0,
-        images: (form.images || "").toString(),
-        rating: Number(form.rating) || 0,
-        sizes: (form.sizes || "").toString(),
-        colors: (form.colors || "").toString(),
+        actualPrice: Number(form.actualPrice) || Number(form.price),
         originalPrice: Number(form.originalPrice) || 0,
-        description: (form.description || "").toString(),
-        subcategory: (form.subcategory || "").toString(),
+        rating: Number(form.rating) || 0,
         stock: Number(form.stock) || 0,
         featured: Number(form.featured) ? 1 : 0,
+        images: form.images.join(","), // save as comma string
       };
-
-      // UX: if actualPrice is zero / not provided, default to price so re-open shows value
-      if (!payload.actualPrice) payload.actualPrice = payload.price;
 
       let resp;
       if (product && product.id) {
@@ -90,12 +98,11 @@ function ProductFormModal({ product, onClose, onSave }) {
         resp = await api.post(`/api/admin/products`, payload, true);
       }
 
-      // let parent refresh lists & close modal
-      if (typeof onSave === "function") await onSave(resp);
-      else if (typeof onClose === "function") onClose();
+      if (onSave) await onSave(resp);
+      else onClose();
     } catch (err) {
-      console.error("Product save error:", err);
-      alert("Failed to save product. Check console for details.");
+      console.error("Save error", err);
+      alert("Failed to save product");
     } finally {
       setSaving(false);
     }
@@ -103,49 +110,95 @@ function ProductFormModal({ product, onClose, onSave }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40" onClick={() => onClose && onClose()} />
-      <form onSubmit={handleSubmit} className="relative w-full max-w-2xl bg-white dark:bg-gray-900 rounded-lg p-6 z-10 shadow-lg overflow-auto max-h-[90vh]">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{product ? "Edit Product" : "Add Product"}</h3>
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+      />
+      <form
+        onSubmit={handleSubmit}
+        className="relative w-full max-w-3xl bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-xl overflow-auto max-h-[90vh]"
+      >
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
+            {product ? "Edit Product" : "Add Product"}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1 rounded-lg border dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <input value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="Name" className="input" />
+          <input value={form.category} onChange={(e) => setField("category", e.target.value)} placeholder="Category" className="input" />
+
+          <input type="number" value={form.price} onChange={(e) => setField("price", e.target.value)} placeholder="Price (₹)" className="input" />
+          <input type="number" value={form.actualPrice} onChange={(e) => setField("actualPrice", e.target.value)} placeholder="Actual Price (₹)" className="input" />
+
+          <input type="number" value={form.originalPrice} onChange={(e) => setField("originalPrice", e.target.value)} placeholder="Original Price (₹)" className="input" />
+          <input type="number" value={form.rating} onChange={(e) => setField("rating", e.target.value)} placeholder="Rating" className="input" />
+
+          <input value={form.sizes} onChange={(e) => setField("sizes", e.target.value)} placeholder="Sizes (comma separated)" className="input" />
+          <input value={form.colors} onChange={(e) => setField("colors", e.target.value)} placeholder="Colors (comma separated)" className="input" />
+
+          <input value={form.subcategory} onChange={(e) => setField("subcategory", e.target.value)} placeholder="Subcategory" className="input" />
+          <input type="number" value={form.stock} onChange={(e) => setField("stock", e.target.value)} placeholder="Stock" className="input" />
+
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => onClose && onClose()} className="px-3 py-1 rounded-lg border">Close</button>
+            <input
+              id="featured"
+              type="checkbox"
+              checked={Number(form.featured) === 1}
+              onChange={(e) => setField("featured", e.target.checked ? 1 : 0)}
+            />
+            <label htmlFor="featured" className="text-gray-700 dark:text-gray-300">Featured</label>
+          </div>
+
+          <textarea value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Description" className="input col-span-1 sm:col-span-2" rows={4} />
+        </div>
+
+        {/* Images uploader */}
+        <div className="mt-6">
+          <label className="block mb-2 font-medium text-gray-900 dark:text-white">Product Images</label>
+          <div className="flex flex-wrap gap-3">
+            {form.images.map((img) => (
+              <div key={img} className="relative group">
+                <img src={img} alt="Product" className="h-24 w-24 object-cover rounded-lg border" />
+                <button
+                  type="button"
+                  onClick={() => removeImage(img)}
+                  className="absolute top-1 right-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <label className="h-24 w-24 flex items-center justify-center border-2 border-dashed rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800">
+              {uploading ? "Uploading..." : "+"}
+              <input type="file" hidden onChange={handleUpload} />
+            </label>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <input value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="Name" className="p-2 rounded border" />
-          <input value={form.category} onChange={(e) => setField("category", e.target.value)} placeholder="Category" className="p-2 rounded border" />
-
-          <input type="number" value={form.price} onChange={(e) => setField("price", e.target.value)} placeholder="Price (₹)" className="p-2 rounded border" />
-          <input type="number" value={form.actualPrice} onChange={(e) => setField("actualPrice", e.target.value)} placeholder="Actual Price (₹)" className="p-2 rounded border" />
-
-          <input value={form.images} onChange={(e) => setField("images", e.target.value)} placeholder="Images (comma separated URLs)" className="p-2 rounded border col-span-1 sm:col-span-2" />
-
-          <input type="number" value={form.originalPrice} onChange={(e) => setField("originalPrice", e.target.value)} placeholder="Original Price (₹)" className="p-2 rounded border" />
-          <input type="number" value={form.rating} onChange={(e) => setField("rating", e.target.value)} placeholder="Rating" className="p-2 rounded border" />
-
-          <input value={form.sizes} onChange={(e) => setField("sizes", e.target.value)} placeholder="Sizes (comma separated)" className="p-2 rounded border" />
-          <input value={form.colors} onChange={(e) => setField("colors", e.target.value)} placeholder="Colors (comma separated)" className="p-2 rounded border" />
-
-          <input value={form.subcategory} onChange={(e) => setField("subcategory", e.target.value)} placeholder="Subcategory" className="p-2 rounded border" />
-          <input type="number" value={form.stock} onChange={(e) => setField("stock", e.target.value)} placeholder="Stock" className="p-2 rounded border" />
-
-          <div className="flex items-center gap-2">
-            <input id="featured" type="checkbox" checked={Number(form.featured) === 1} onChange={(e) => setField("featured", e.target.checked ? 1 : 0)} />
-            <label htmlFor="featured">Featured</label>
-          </div>
-
-          <textarea value={form.description} onChange={(e) => setField("description", e.target.value)} placeholder="Description" className="p-2 rounded border col-span-1 sm:col-span-2" rows={4} />
-        </div>
-
-        <div className="flex items-center justify-end gap-3 mt-4">
-          <button type="button" onClick={() => onClose && onClose()} className="px-4 py-2 rounded border">Cancel</button>
-          <button type="submit" disabled={saving} className="px-4 py-2 rounded bg-black text-white disabled:opacity-60">{saving ? "Saving..." : "Save Product"}</button>
+        <div className="flex justify-end gap-3 mt-6">
+          <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+          <button type="submit" disabled={saving} className="btn-primary">
+            {saving ? "Saving..." : "Save Product"}
+          </button>
         </div>
       </form>
     </div>
   );
 }
+
+// Tailwind helpers
+const input = "p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white outline-none";
+const btnPrimary = "px-4 py-2 rounded-lg bg-black text-white dark:bg-white dark:text-black shadow hover:scale-105 transition disabled:opacity-60";
+const btnSecondary = "px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700";
+
 
 /**
  * ProductsAdmin (updated)
