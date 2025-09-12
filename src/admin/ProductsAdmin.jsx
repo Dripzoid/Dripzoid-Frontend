@@ -85,18 +85,16 @@ const handleUpload = async (e) => {
         const fd = new FormData();
         fd.append("image", file); // backend expects "image"
 
-        // If your api wrapper is Axios-like:
-        const res = await api.post("/api/upload", fd, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
+        // use formPost instead of post (so FormData is sent correctly)
+        const res = await api.formPost("/api/upload", fd, true);
 
-        // normalize response
+        // normalize response (Cloudinary returns secure_url)
         const url =
-          res?.data?.url ||
-          res?.data?.secure_url ||
           res?.url ||
           res?.secure_url ||
-          res?.data?.result?.secure_url;
+          res?.data?.url ||
+          res?.data?.secure_url ||
+          res?.public_id && res?.secure_url;
 
         if (!url) {
           console.warn("Upload returned unexpected shape:", res);
@@ -115,8 +113,7 @@ const handleUpload = async (e) => {
     alert("Upload failed. Check console for details.");
   } finally {
     setUploadingCount((c) => Math.max(0, c - files.length));
-    // allow selecting the same file again
-    if (e.target) e.target.value = "";
+    if (e.target) e.target.value = ""; // reset input so same file can be reselected
   }
 };
 
