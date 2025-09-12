@@ -854,7 +854,7 @@ export default function ProductsAdmin() {
   /* ======= Category API helpers ======= */
   const fetchCategories = useCallback(async () => {
     try {
-      const res = await api.get("/api/admin/categories", {}, true);
+      const res = await api.get("/api/admin/products/categories", {}, true);
       const body = normalizeResponse(res);
       const list = Array.isArray(body) ? body : Array.isArray(body.data) ? body.data : body.categories ?? [];
       const norm = (list || []).map((c) => ({
