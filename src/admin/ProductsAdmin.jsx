@@ -418,11 +418,6 @@ function CategoryManagement({ categories = [], onRefresh }) {
           <p className="text-sm text-gray-500 dark:text-gray-400">Manage subcategories, nesting, ordering and status across Men / Women / Kids.</p>
         </div>
         {/* header Add kept as general (optional) */}
-        <div className="flex items-center gap-2">
-          <button onClick={() => handleCreateForMain("Men")} className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-black text-white dark:bg-white dark:text-black">
-            <PlusCircle className="w-4 h-4" /> Add to Men
-          </button>
-        </div>
       </div>
 
       <div className="space-y-3">
