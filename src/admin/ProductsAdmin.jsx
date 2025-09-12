@@ -177,7 +177,11 @@ function CategoryFormModal({ editing, fixedCategory = null, categories = [], onC
 
           <input className={inputCls} placeholder="Slug (optional)" value={form.slug} onChange={(e) => setField("slug", e.target.value)} />
 
-          <select className={inputCls} value={form.parent_id ?? ""} onChange={(e) => setField("parent_id", e.target.value || null)}>
+          <select
+            className={inputCls}
+            value={form.parent_id ?? ""}
+            onChange={(e) => setField("parent_id", e.target.value ? Number(e.target.value) : null)}
+          >
             <option value="">No parent</option>
             {parentOptions.map((p) => (
               <option key={p.id} value={p.id}>
@@ -422,56 +426,53 @@ function CategoryManagement({ categories = [], onRefresh }) {
       </div>
 
       <div className="space-y-3">
-        {(!categories || categories.length === 0) ? (
-          <div className="text-sm text-gray-500 dark:text-gray-400">No categories yet.</div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {MAIN_CATEGORIES.map((main) => (
-              <div
-                key={main}
-                className="p-3 rounded-md border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => onDrop(e, main)}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 grid place-items-center rounded bg-black text-white">{main[0]}</div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white">{main}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Main category</p>
-                    </div>
+        {/* ALWAYS show the 3-column layout (so each main category has its own Add button) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {MAIN_CATEGORIES.map((main) => (
+            <div
+              key={main}
+              className="p-3 rounded-md border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => onDrop(e, main)}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 grid place-items-center rounded bg-black text-white">{main[0]}</div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">{main}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Main category</p>
                   </div>
-
-                  <button onClick={() => handleCreateForMain(main)} className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-black text-white dark:bg-white dark:text-black">
-                    <PlusCircle className="w-4 h-4" /> Add
-                  </button>
                 </div>
 
-                <div className="space-y-2 max-h-[60vh] overflow-auto">
-                  {categories.filter((c) => (c.category || c.category_name) === main).filter((c) => !c.parent_id).length === 0 ? (
-                    <div className="text-xs text-gray-500 dark:text-gray-400">No subcategories</div>
-                  ) : (
-                    categories
-                      .filter((c) => (c.category || c.category_name) === main && !c.parent_id)
-                      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-                      .map((root) => (
-                        <div
-                          key={root.id}
-                          draggable
-                          onDragStart={(e) => onDragStart(e, root.id)}
-                          onDragOver={(e) => onDragOver(e, root.id)}
-                          onDrop={(e) => onDrop(e, main)}
-                          className="rounded-md p-1"
-                        >
-                          {renderNode(root)}
-                        </div>
-                      ))
-                  )}
-                </div>
+                <button onClick={() => handleCreateForMain(main)} className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-black text-white dark:bg-white dark:text-black">
+                  <PlusCircle className="w-4 h-4" /> Add
+                </button>
               </div>
-            ))}
-          </div>
-        )}
+
+              <div className="space-y-2 max-h-[60vh] overflow-auto">
+                {categories.filter((c) => (c.category || c.category_name) === main && !c.parent_id).length === 0 ? (
+                  <div className="text-xs text-gray-500 dark:text-gray-400">No subcategories</div>
+                ) : (
+                  categories
+                    .filter((c) => (c.category || c.category_name) === main && !c.parent_id)
+                    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                    .map((root) => (
+                      <div
+                        key={root.id}
+                        draggable
+                        onDragStart={(e) => onDragStart(e, root.id)}
+                        onDragOver={(e) => onDragOver(e, root.id)}
+                        onDrop={(e) => onDrop(e, main)}
+                        className="rounded-md p-1"
+                      >
+                        {renderNode(root)}
+                      </div>
+                    ))
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {showForm && (
@@ -672,7 +673,11 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
           <input className={inputCls} placeholder="Product name" value={form.name} onChange={(e) => setField("name", e.target.value)} required />
 
           <select className={inputCls} value={form.category} onChange={(e) => setField("category", e.target.value)}>
-            {MAIN_CATEGORIES.map((m) => <option key={m} value={m}>{m}</option>)}
+            {MAIN_CATEGORIES.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
           </select>
 
           <input className={inputCls} placeholder="Price (₹)" type="number" value={form.price} onChange={(e) => setField("price", e.target.value)} />
@@ -689,15 +694,30 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
             <div className="flex gap-2 items-center">
               <select className={inputCls + " flex-1"} value={form.subcategory} onChange={(e) => setField("subcategory", e.target.value)}>
                 <option value="">-- select subcategory --</option>
-                {availableSubcats.map((s) => <option key={s.id} value={s.subcategory}>{s.subcategory}</option>)}
+                {availableSubcats.map((s) => (
+                  <option key={s.id} value={s.subcategory}>
+                    {s.subcategory}
+                  </option>
+                ))}
                 <option value="__custom__">Other (custom)</option>
               </select>
-              <button type="button" onClick={() => setUseCustomSub(true)} className="px-3 py-2 rounded border border-gray-200 dark:border-gray-700">Custom</button>
+              <button type="button" onClick={() => setUseCustomSub(true)} className="px-3 py-2 rounded border border-gray-200 dark:border-gray-700">
+                Custom
+              </button>
             </div>
           ) : (
             <div className="flex gap-2 items-center">
               <input className={inputCls + " flex-1"} placeholder="Subcategory (custom)" value={form.subcategory} onChange={(e) => setField("subcategory", e.target.value)} />
-              <button type="button" onClick={() => { setUseCustomSub(false); setField("subcategory", ""); }} className="px-3 py-2 rounded border border-gray-200 dark:border-gray-700">Choose</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUseCustomSub(false);
+                  setField("subcategory", "");
+                }}
+                className="px-3 py-2 rounded border border-gray-200 dark:border-gray-700"
+              >
+                Choose
+              </button>
             </div>
           )}
 
@@ -749,7 +769,9 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
         </div>
 
         <div className="flex items-center justify-end gap-3 mt-6">
-          <button type="button" onClick={() => onClose && onClose()} className={btnSecondaryCls}>Cancel</button>
+          <button type="button" onClick={() => onClose && onClose()} className={btnSecondaryCls}>
+            Cancel
+          </button>
           <button type="submit" disabled={saving || uploadingCount > 0} className={btnPrimaryCls}>
             {saving ? "Saving..." : "Save product"}
           </button>
@@ -816,7 +838,7 @@ export default function ProductsAdmin() {
     [q, page, limit, sortBy, showProducts, DEBUG]
   );
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const res = await api.get("/api/admin/stats", {}, true);
       if (DEBUG) console.log("Stats raw:", res);
@@ -832,7 +854,7 @@ export default function ProductsAdmin() {
       console.error("Fetch stats error:", err);
       setStats({ total: 0, sold: 0, inStock: 0, outOfStock: 0 });
     }
-  };
+  }, [DEBUG]);
 
   /* ======= Category API helpers ======= */
   const fetchCategories = useCallback(async () => {
@@ -864,7 +886,8 @@ export default function ProductsAdmin() {
   useEffect(() => {
     fetchStats();
     fetchCategories(); // fetch categories up-front so product modal subcategory select works
-  }, [fetchCategories]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchCategories, fetchStats]);
 
   useEffect(() => {
     if (!showProducts) return;
@@ -877,7 +900,7 @@ export default function ProductsAdmin() {
 
   useEffect(() => {
     if (showProducts) fetchStats();
-  }, [showProducts]);
+  }, [showProducts, fetchStats]);
 
   // refetch categories when management toggled on/off (keeps in sync)
   useEffect(() => {
