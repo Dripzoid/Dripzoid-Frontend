@@ -1,3 +1,4 @@
+// src/components/FilterSidebar.jsx
 import React, { useEffect, useRef } from "react";
 import tinycolor from "tinycolor2";
 import { X } from "lucide-react";
@@ -19,10 +20,11 @@ const normalizeColor = (raw) => {
   tc = tinycolor(firstToken);
   if (tc.isValid()) return tc.toHexString();
 
+  // fallback hash → deterministic color
   let hash = 0;
   for (let i = 0; i < s.length; i++) {
     hash = s.charCodeAt(i) + ((hash << 5) - hash);
-    hash = hash & hash;
+    hash &= hash;
   }
   const hex = ((hash >>> 0) & 0xffffff).toString(16).padStart(6, "0");
   return `#${hex}`;
@@ -51,25 +53,32 @@ export default function FilterSidebar({
   isStatic = false,
   onClose = () => {},
   onApply = () => {},
-  categoryData = [],
+  clearFilters = () => {},
+
+  categoryData = [], // [{id, name, icon, subcategories:[{id,name,icon}]}]
   colorsList = [],
+
   MIN = 0,
   MAX = 10000,
 
-  selectedSubcategories,
-  setSelectedSubcategories,
-  expandedCategories,
-  setExpandedCategories,
-  priceRange,
-  setPriceRange,
-  selectedColors,
-  setSelectedColors,
-  sortOption,
-  setSortOption,
-  clearFilters,
+  selectedSubcategories = [],
+  setSelectedSubcategories = () => {},
+
+  expandedCategories = [],
+  setExpandedCategories = () => {},
+
+  priceRange = [MIN, MAX],
+  setPriceRange = () => {},
+
+  selectedColors = [],
+  setSelectedColors = () => {},
+
+  sortOption = "",
+  setSortOption = () => {},
 }) {
   const closeBtnRef = useRef(null);
 
+  // focus close button when opening (mobile only)
   useEffect(() => {
     if (!isStatic && isOpen) {
       setTimeout(() => {
@@ -78,6 +87,7 @@ export default function FilterSidebar({
     }
   }, [isOpen, isStatic]);
 
+  /* ---------- Logic ---------- */
   const toggleCategory = (categoryId) =>
     setExpandedCategories((prev) =>
       prev.includes(categoryId)
@@ -91,20 +101,20 @@ export default function FilterSidebar({
     );
 
   const toggleSubcategory = (categoryId, subId) =>
-    setSelectedSubcategories((prev) => {
-      if (prev.some((s) => s.categoryId === categoryId && s.subId === subId)) {
-        return prev.filter(
-          (s) => !(s.categoryId === categoryId && s.subId === subId)
-        );
-      }
-      return [...prev, { categoryId, subId }];
-    });
+    setSelectedSubcategories((prev) =>
+      prev.some((s) => s.categoryId === categoryId && s.subId === subId)
+        ? prev.filter((s) => !(s.categoryId === categoryId && s.subId === subId))
+        : [...prev, { categoryId, subId }]
+    );
 
   const handlePriceChange = (index, rawValue) => {
     const value = Number(rawValue);
     const next = [...priceRange];
-    if (index === 0) next[0] = Math.min(Math.max(MIN, value), next[1]);
-    else next[1] = Math.max(Math.min(MAX, value), next[0]);
+    if (index === 0) {
+      next[0] = Math.min(Math.max(MIN, value), next[1]);
+    } else {
+      next[1] = Math.max(Math.min(MAX, value), next[0]);
+    }
     setPriceRange(next);
   };
 
@@ -137,9 +147,11 @@ export default function FilterSidebar({
                 className="w-full flex items-center justify-between py-2 px-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition"
               >
                 <span className="flex items-center gap-3 text-sm">
-                  <span className="p-2 rounded-md bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100">
-                    {category.icon}
-                  </span>
+                  {category.icon && (
+                    <span className="p-2 rounded-md bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100">
+                      {category.icon}
+                    </span>
+                  )}
                   <span className="font-medium">{category.name}</span>
                 </span>
                 <span className="text-sm font-bold select-none">
@@ -149,12 +161,14 @@ export default function FilterSidebar({
 
               {expandedCategories.includes(category.id) && (
                 <div className="mt-2 ml-10 flex flex-wrap gap-2">
-                  {category.subcategories.map((sub) => {
+                  {category.subcategories?.map((sub) => {
                     const active = isSelected(category.id, sub.id);
                     return (
                       <button
                         key={sub.id}
-                        onClick={() => toggleSubcategory(category.id, sub.id)}
+                        onClick={() =>
+                          toggleSubcategory(category.id, sub.id)
+                        }
                         className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm border transition select-none ${
                           active
                             ? "bg-black text-white border-black dark:bg-white dark:text-black dark:border-white"
@@ -162,7 +176,9 @@ export default function FilterSidebar({
                         }`}
                         aria-pressed={active}
                       >
-                        <span className="text-lg">{sub.icon}</span>
+                        {sub.icon && (
+                          <span className="text-lg">{sub.icon}</span>
+                        )}
                         <span>{sub.name}</span>
                       </button>
                     );
@@ -187,7 +203,9 @@ export default function FilterSidebar({
               className="absolute h-2 bg-black dark:bg-white rounded-full"
               style={{
                 left: `${((priceRange?.[0] ?? MIN) / MAX) * 100}%`,
-                right: `${100 - ((priceRange?.[1] ?? MAX) / MAX) * 100}%`,
+                right: `${
+                  100 - ((priceRange?.[1] ?? MAX) / MAX) * 100
+                }%`,
               }}
             />
           </div>
@@ -296,7 +314,9 @@ export default function FilterSidebar({
       <div
         aria-hidden={!isOpen}
         className={`fixed inset-0 bg-black/30 transition-opacity ${
-          isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          isOpen
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none"
         }`}
         onClick={onClose}
       />
