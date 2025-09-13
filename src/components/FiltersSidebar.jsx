@@ -1,4 +1,3 @@
-// src/components/FilterSidebar.jsx
 import React, { useEffect, useRef } from "react";
 import tinycolor from "tinycolor2";
 import { X } from "lucide-react";
@@ -20,11 +19,10 @@ const normalizeColor = (raw) => {
   tc = tinycolor(firstToken);
   if (tc.isValid()) return tc.toHexString();
 
-  // fallback hash → deterministic color
   let hash = 0;
   for (let i = 0; i < s.length; i++) {
     hash = s.charCodeAt(i) + ((hash << 5) - hash);
-    hash &= hash;
+    hash = hash & hash;
   }
   const hex = ((hash >>> 0) & 0xffffff).toString(16).padStart(6, "0");
   return `#${hex}`;
@@ -53,32 +51,25 @@ export default function FilterSidebar({
   isStatic = false,
   onClose = () => {},
   onApply = () => {},
-  clearFilters = () => {},
-
-  categoryData = [], // [{id, name, icon, subcategories:[{id,name,icon}]}]
+  categoryData = [], // backend: [{ name, subcategories: [string] }]
   colorsList = [],
-
   MIN = 0,
   MAX = 10000,
 
-  selectedSubcategories = [],
-  setSelectedSubcategories = () => {},
-
-  expandedCategories = [],
-  setExpandedCategories = () => {},
-
-  priceRange = [MIN, MAX],
-  setPriceRange = () => {},
-
-  selectedColors = [],
-  setSelectedColors = () => {},
-
-  sortOption = "",
-  setSortOption = () => {},
+  selectedSubcategories,
+  setSelectedSubcategories,
+  expandedCategories,
+  setExpandedCategories,
+  priceRange,
+  setPriceRange,
+  selectedColors,
+  setSelectedColors,
+  sortOption,
+  setSortOption,
+  clearFilters,
 }) {
   const closeBtnRef = useRef(null);
 
-  // focus close button when opening (mobile only)
   useEffect(() => {
     if (!isStatic && isOpen) {
       setTimeout(() => {
@@ -87,36 +78,44 @@ export default function FilterSidebar({
     }
   }, [isOpen, isStatic]);
 
-  /* ---------- Logic ---------- */
-  const toggleCategory = (categoryId) =>
+  /* ---------- Category helpers ---------- */
+  const toggleCategory = (categoryName) =>
     setExpandedCategories((prev) =>
-      prev.includes(categoryId)
-        ? prev.filter((c) => c !== categoryId)
-        : [...prev, categoryId]
+      prev.includes(categoryName)
+        ? prev.filter((c) => c !== categoryName)
+        : [...prev, categoryName]
     );
 
-  const isSelected = (categoryId, subId) =>
+  const isSelected = (categoryName, subName) =>
     selectedSubcategories.some(
-      (s) => s.categoryId === categoryId && s.subId === subId
+      (s) => s.category === categoryName && s.subcategory === subName
     );
 
-  const toggleSubcategory = (categoryId, subId) =>
-    setSelectedSubcategories((prev) =>
-      prev.some((s) => s.categoryId === categoryId && s.subId === subId)
-        ? prev.filter((s) => !(s.categoryId === categoryId && s.subId === subId))
-        : [...prev, { categoryId, subId }]
-    );
+  const toggleSubcategory = (categoryName, subName) =>
+    setSelectedSubcategories((prev) => {
+      if (
+        prev.some((s) => s.category === categoryName && s.subcategory === subName)
+      ) {
+        return prev.filter(
+          (s) => !(s.category === categoryName && s.subcategory === subName)
+        );
+      }
+      return [...prev, { category: categoryName, subcategory: subName }];
+    });
 
   const handlePriceChange = (index, rawValue) => {
     const value = Number(rawValue);
     const next = [...priceRange];
-    if (index === 0) {
-      next[0] = Math.min(Math.max(MIN, value), next[1]);
-    } else {
-      next[1] = Math.max(Math.min(MAX, value), next[0]);
-    }
+    if (index === 0) next[0] = Math.min(Math.max(MIN, value), next[1]);
+    else next[1] = Math.max(Math.min(MAX, value), next[0]);
     setPriceRange(next);
   };
+
+  /* ---------- Sort categories manually ---------- */
+  const categoryOrder = ["Men", "Women", "Kids"];
+  const sortedCategories = [...categoryData].sort(
+    (a, b) => categoryOrder.indexOf(a.name) - categoryOrder.indexOf(b.name)
+  );
 
   /* ---------- UI ---------- */
   const Inner = (
@@ -140,46 +139,34 @@ export default function FilterSidebar({
       <div>
         <h3 className="text-sm font-medium mb-3">Categories</h3>
         <div className="space-y-3">
-          {categoryData.map((category) => (
-            <div key={category.id}>
+          {sortedCategories.map((category) => (
+            <div key={category.name}>
               <button
-                onClick={() => toggleCategory(category.id)}
+                onClick={() => toggleCategory(category.name)}
                 className="w-full flex items-center justify-between py-2 px-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition"
               >
-                <span className="flex items-center gap-3 text-sm">
-                  {category.icon && (
-                    <span className="p-2 rounded-md bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100">
-                      {category.icon}
-                    </span>
-                  )}
-                  <span className="font-medium">{category.name}</span>
-                </span>
+                <span className="font-medium">{category.name}</span>
                 <span className="text-sm font-bold select-none">
-                  {expandedCategories.includes(category.id) ? "−" : "+"}
+                  {expandedCategories.includes(category.name) ? "−" : "+"}
                 </span>
               </button>
 
-              {expandedCategories.includes(category.id) && (
-                <div className="mt-2 ml-10 flex flex-wrap gap-2">
-                  {category.subcategories?.map((sub) => {
-                    const active = isSelected(category.id, sub.id);
+              {expandedCategories.includes(category.name) && (
+                <div className="mt-2 ml-6 flex flex-wrap gap-2">
+                  {category.subcategories.map((sub) => {
+                    const active = isSelected(category.name, sub);
                     return (
                       <button
-                        key={sub.id}
-                        onClick={() =>
-                          toggleSubcategory(category.id, sub.id)
-                        }
-                        className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm border transition select-none ${
+                        key={sub}
+                        onClick={() => toggleSubcategory(category.name, sub)}
+                        className={`px-3 py-1 rounded-full text-sm border transition ${
                           active
                             ? "bg-black text-white border-black dark:bg-white dark:text-black dark:border-white"
                             : "bg-white dark:bg-transparent text-gray-800 dark:text-gray-200 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
                         }`}
                         aria-pressed={active}
                       >
-                        {sub.icon && (
-                          <span className="text-lg">{sub.icon}</span>
-                        )}
-                        <span>{sub.name}</span>
+                        {sub}
                       </button>
                     );
                   })}
@@ -203,9 +190,7 @@ export default function FilterSidebar({
               className="absolute h-2 bg-black dark:bg-white rounded-full"
               style={{
                 left: `${((priceRange?.[0] ?? MIN) / MAX) * 100}%`,
-                right: `${
-                  100 - ((priceRange?.[1] ?? MAX) / MAX) * 100
-                }%`,
+                right: `${100 - ((priceRange?.[1] ?? MAX) / MAX) * 100}%`,
               }}
             />
           </div>
