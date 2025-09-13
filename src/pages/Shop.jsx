@@ -1,23 +1,24 @@
+// src/pages/Shop.jsx
 import React, { useState, useEffect } from "react";
 import { FaMale, FaFemale, FaChild } from "react-icons/fa";
 import ProductCard from "../components/ProductCard";
-import FilterSidebar from "../components/FiltersSidebar";
+import FilterSidebar from "../components/FiltersSidebar"; // <- make sure file is named FilterSidebar.jsx
 
-const API_BASE = process.env.REACT_APP_API_BASE;
+const API_BASE = process.env.REACT_APP_API_BASE || "";
 
 const MIN = 0;
 const MAX = 10000;
 
 const Shop = () => {
-  // Filters / UI state
-  const [selectedSubcategories, setSelectedSubcategories] = useState([]); // store as {categoryId, subId}
+  // Filters / UI state (selectedSubcategories: array of { category, subcategory })
+  const [selectedSubcategories, setSelectedSubcategories] = useState([]);
   const [expandedCategories, setExpandedCategories] = useState([]);
   const [priceRange, setPriceRange] = useState([MIN, MAX]);
   const [selectedColors, setSelectedColors] = useState([]);
   const [colorsList, setColorsList] = useState([]);
   const [sortOption, setSortOption] = useState("");
 
-  // Dynamic categories
+  // Dynamic categories: normalized to [{ name, subcategories: [ "Shirts", "Pants" ] }]
   const [categoryData, setCategoryData] = useState([]);
 
   // Products + pagination
@@ -31,19 +32,33 @@ const Shop = () => {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // --- Fetch categories on mount
+  // --- Fetch categories on mount (handles either { categories: [...] } or raw array)
   useEffect(() => {
+    let mounted = true;
     (async () => {
       try {
         const res = await fetch(`${API_BASE}/api/products/categories`);
         if (!res.ok) throw new Error("Failed to fetch categories");
         const json = await res.json();
-        setCategoryData(json || []);
+
+        // Normalize: accept either an array or { categories: [...] } object
+        const raw = Array.isArray(json) ? json : (json.categories || json || []);
+        const mapped = (raw || []).map((c) => {
+          const name = c?.name ?? String(c);
+          const subsRaw = c?.subcategories ?? [];
+          const subs = (Array.isArray(subsRaw) ? subsRaw : []).map((s) =>
+            typeof s === "string" ? s : s?.name ?? String(s)
+          ).filter(Boolean);
+          return { name: String(name), subcategories: subs };
+        });
+
+        if (mounted) setCategoryData(mapped);
       } catch (err) {
         console.error("Error fetching categories:", err);
-        setCategoryData([]);
+        if (mounted) setCategoryData([]);
       }
     })();
+    return () => { mounted = false; };
   }, []);
 
   // --- Fetch colors on mount
@@ -55,16 +70,14 @@ const Shop = () => {
         if (!res.ok) throw new Error("Failed to fetch colors");
         const json = await res.json();
         if (!mounted) return;
-        if (json.colors && json.colors.length) setColorsList(json.colors);
+        if (json?.colors && json.colors.length) setColorsList(json.colors);
         else setColorsList(["#f5f5f5", "#e8e1da", "#dbeaf0", "#f9f0f5"]);
       } catch (err) {
         console.warn("Could not load colors from API, using fallback", err);
         if (mounted) setColorsList(["#f5f5f5", "#e8e1da", "#dbeaf0", "#f9f0f5"]);
       }
     })();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
   // --- Fetch products
@@ -73,13 +86,14 @@ const Shop = () => {
     try {
       const params = new URLSearchParams();
 
+      // If user selected category-scoped subcategories, we send them as Category:Subcategory pairs
       if (selectedSubcategories.length > 0) {
-        // Send category-specific subcategories (catId:subId)
         const mapped = selectedSubcategories.map(
-          (sel) => `${sel.categoryId}:${sel.subId}`
+          (sel) => `${encodeURIComponent(sel.category)}:${encodeURIComponent(sel.subcategory)}`
         );
         params.append("subcategory", mapped.join(","));
       }
+
       if (selectedColors.length > 0) {
         params.append("colors", selectedColors.join(","));
       }
@@ -91,14 +105,16 @@ const Shop = () => {
       else if (sortOption === "high-low") params.append("sort", "price_desc");
       else if (sortOption === "newest") params.append("sort", "newest");
 
-      if (perPage === "all") {
-        params.append("limit", "all");
-      } else {
+      if (perPage === "all") params.append("limit", "all");
+      else {
         params.append("limit", String(perPage));
         params.append("page", String(page));
       }
 
       const url = `${API_BASE}/api/products?${params.toString()}`;
+      // helpful debug in dev
+      // console.debug("Products fetch url:", url);
+
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Products fetch failed: ${res.status}`);
       const data = await res.json();
@@ -111,18 +127,13 @@ const Shop = () => {
       const serverMeta = data?.meta || {};
       const total = Number(serverMeta.total ?? productsArray.length) || 0;
       const serverPage = Number(serverMeta.page ?? page) || 1;
-      const limitUsed =
-        Number(serverMeta.limit ?? (perPage === "all" ? total : Number(perPage))) ||
-        (perPage === "all" ? total : Number(perPage));
-      const serverPages =
-        Number(serverMeta.pages ?? Math.max(1, Math.ceil(total / (limitUsed || 1)))) || 1;
+      const limitUsed = Number(serverMeta.limit ?? (perPage === "all" ? total : Number(perPage))) || (perPage === "all" ? total : Number(perPage));
+      const serverPages = Number(serverMeta.pages ?? Math.max(1, Math.ceil(total / (limitUsed || 1)))) || 1;
 
       setMeta({ total, page: serverPage, pages: serverPages, limit: limitUsed });
       setProducts(productsArray);
 
-      if (page > serverPages && serverPages > 0) {
-        setPage(1);
-      }
+      if (page > serverPages && serverPages > 0) setPage(1);
     } catch (err) {
       console.error("Error fetching products:", err);
       setProducts([]);
@@ -132,6 +143,7 @@ const Shop = () => {
     }
   };
 
+  // Re-fetch when filters change
   useEffect(() => {
     fetchProducts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -148,10 +160,7 @@ const Shop = () => {
     setPage(1);
   };
 
-  const handlePerPageChange = (val) => {
-    setPerPage(val);
-    setPage(1);
-  };
+  const handlePerPageChange = (val) => { setPerPage(val); setPage(1); };
   const prevPage = () => setPage((p) => Math.max(1, p - 1));
   const nextPage = () => setPage((p) => Math.min(meta.pages || 1, p + 1));
 
@@ -182,38 +191,20 @@ const Shop = () => {
 
       {/* Main */}
       <main className="flex-1 p-6">
-        {/* top bar */}
         <div className="flex items-center justify-between w-full mb-4">
           <div>
             <p className="text-sm text-gray-500 dark:text-gray-400">Some filters here</p>
           </div>
 
           <div className="flex items-center gap-3">
-            <label htmlFor="perPage" className="text-sm text-gray-500 dark:text-gray-400 mr-2">
-              Per page:
-            </label>
-            <select
-              id="perPage"
-              value={perPage}
-              onChange={(e) => handlePerPageChange(e.target.value)}
-              className="rounded-md pl-3 pr-8 py-1 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm"
-            >
-              {perPageOptions.map((opt) => (
-                <option key={String(opt)} value={String(opt)}>
-                  {opt === "all" ? "All" : opt}
-                </option>
-              ))}
+            <label htmlFor="perPage" className="text-sm text-gray-500 dark:text-gray-400 mr-2">Per page:</label>
+            <select id="perPage" value={perPage} onChange={(e) => handlePerPageChange(e.target.value)} className="rounded-md pl-3 pr-8 py-1 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm">
+              {perPageOptions.map((opt) => (<option key={String(opt)} value={String(opt)}>{opt === "all" ? "All" : opt}</option>))}
             </select>
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700"
-            >
-              Filters & Sorting
-            </button>
+            <button onClick={() => setSidebarOpen(true)} className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700">Filters & Sorting</button>
           </div>
         </div>
 
-        {/* Products */}
         {loading ? (
           <p>Loading...</p>
         ) : products.length === 0 ? (
@@ -221,30 +212,14 @@ const Shop = () => {
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {products.map((p) => (
-                <ProductCard key={p.id} product={p} />
-              ))}
+              {products.map((p) => <ProductCard key={p.id} product={p} />)}
             </div>
 
             {perPage !== "all" && meta.pages > 1 && (
               <div className="mt-6 flex items-center justify-center gap-4">
-                <button
-                  onClick={prevPage}
-                  disabled={page <= 1}
-                  className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700 disabled:opacity-50"
-                >
-                  Prev
-                </button>
-                <div className="text-sm text-gray-600 dark:text-gray-300">
-                  Page <strong>{meta.page}</strong> of <strong>{meta.pages}</strong>
-                </div>
-                <button
-                  onClick={nextPage}
-                  disabled={meta.page >= meta.pages}
-                  className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700 disabled:opacity-50"
-                >
-                  Next
-                </button>
+                <button onClick={prevPage} disabled={page <= 1} className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700 disabled:opacity-50">Prev</button>
+                <div className="text-sm text-gray-600 dark:text-gray-300">Page <strong>{meta.page}</strong> of <strong>{meta.pages}</strong></div>
+                <button onClick={nextPage} disabled={meta.page >= meta.pages} className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700 disabled:opacity-50">Next</button>
               </div>
             )}
           </>
@@ -255,7 +230,7 @@ const Shop = () => {
       <FilterSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
-        onApply={() => setPage(1)}
+        onApply={() => { setPage(1); setSidebarOpen(false); }}
         categoryData={categoryData}
         colorsList={colorsList}
         MIN={MIN}
