@@ -1,9 +1,7 @@
 // src/pages/Shop.jsx
 import React, { useState, useEffect } from "react";
-import { FaMale, FaFemale, FaChild } from "react-icons/fa";
 import ProductCard from "../components/ProductCard";
-import FilterSidebar from "../components/FiltersSidebar"; // <- make sure file is named FilterSidebar.jsx
-
+import FilterSidebar from "../components/FiltersSidebar"; // ensure file is named FilterSidebar.jsx
 const API_BASE = process.env.REACT_APP_API_BASE || "";
 
 const MIN = 0;
@@ -30,6 +28,7 @@ const Shop = () => {
   const [perPage, setPerPage] = useState("12");
   const [page, setPage] = useState(1);
 
+  // Sidebar open for mobile
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // --- Fetch categories on mount (handles either { categories: [...] } or raw array)
@@ -112,8 +111,6 @@ const Shop = () => {
       }
 
       const url = `${API_BASE}/api/products?${params.toString()}`;
-      // helpful debug in dev
-      // console.debug("Products fetch url:", url);
 
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Products fetch failed: ${res.status}`);
@@ -148,6 +145,15 @@ const Shop = () => {
     fetchProducts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSubcategories, selectedColors, priceRange, sortOption, perPage, page]);
+
+  // close sidebar on ESC (mobile)
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") setSidebarOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Sidebar helpers
   const clearFilters = () => {
@@ -190,10 +196,10 @@ const Shop = () => {
       </div>
 
       {/* Main */}
-      <main className="flex-1 p-6">
+      <main className="flex-1 p-4 sm:p-6">
         <div className="flex items-center justify-between w-full mb-4">
           <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Some filters here</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Shop</p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -201,7 +207,16 @@ const Shop = () => {
             <select id="perPage" value={perPage} onChange={(e) => handlePerPageChange(e.target.value)} className="rounded-md pl-3 pr-8 py-1 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm">
               {perPageOptions.map((opt) => (<option key={String(opt)} value={String(opt)}>{opt === "all" ? "All" : opt}</option>))}
             </select>
-            <button onClick={() => setSidebarOpen(true)} className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700">Filters & Sorting</button>
+
+            {/* Mobile: open sliding sidebar */}
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700"
+              aria-controls="filters-panel"
+              aria-expanded={sidebarOpen}
+            >
+              Apply Filters & Sorting
+            </button>
           </div>
         </div>
 
@@ -211,7 +226,8 @@ const Shop = () => {
           <p>No products found</p>
         ) : (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* Responsive grid: mobile/tablet = 2 columns, desktop = 3 columns */}
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {products.map((p) => <ProductCard key={p.id} product={p} />)}
             </div>
 
@@ -226,7 +242,7 @@ const Shop = () => {
         )}
       </main>
 
-      {/* Mobile sidebar */}
+      {/* Mobile sidebar (sliding panel) */}
       <FilterSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
