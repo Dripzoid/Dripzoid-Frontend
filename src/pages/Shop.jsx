@@ -35,7 +35,7 @@ const Shop = () => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/categories`);
+        const res = await fetch(`${API_BASE}/api/products/categories`);
         if (!res.ok) throw new Error("Failed to fetch categories");
         const json = await res.json();
         setCategoryData(json || []);
