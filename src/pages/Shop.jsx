@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { FaMale, FaFemale, FaChild } from "react-icons/fa";
 import ProductCard from "../components/ProductCard";
-import FilterSidebar from "../components/FilterSidebar";
+import FilterSidebar from "../components/FiltersSidebar";
 
 const API_BASE = process.env.REACT_APP_API_BASE;
 
