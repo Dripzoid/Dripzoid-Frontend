@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from "react";
+// src/pages/Men.jsx
+import React, { useState, useEffect, useCallback } from "react";
 import ProductCard from "../components/ProductCard";
-import FilterSidebar from "../components/FiltersSidebar"; // ✅ make sure file name matches
+import FilterSidebar from "../components/FiltersSidebar";
+
 const API_BASE = process.env.REACT_APP_API_BASE || "";
 
 const MIN = 0;
@@ -12,8 +14,8 @@ const Men = () => {
   const [priceRange, setPriceRange] = useState([MIN, MAX]);
   const [selectedColors, setSelectedColors] = useState([]);
   const [colorsList, setColorsList] = useState([]);
-  const [sortOption, setSortOption] = useState("");
 
+  const [sortOption, setSortOption] = useState("");
   const [categoryData, setCategoryData] = useState([]);
   const [products, setProducts] = useState([]);
   const [meta, setMeta] = useState({ total: 0, page: 1, pages: 1, limit: 0 });
@@ -24,7 +26,7 @@ const Men = () => {
   const [page, setPage] = useState(1);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // --- Fetch categories scoped to Men
+  // --- Fetch categories (Men only)
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -32,25 +34,28 @@ const Men = () => {
         const res = await fetch(`${API_BASE}/api/products/categories?gender=men`);
         if (!res.ok) throw new Error("Failed to fetch categories");
         const json = await res.json();
-        const raw = Array.isArray(json) ? json : (json.categories || json || []);
-        const mapped = (raw || []).map((c) => {
+
+        const raw = Array.isArray(json) ? json : json.categories || [];
+        const mapped = raw.map((c) => {
           const name = c?.name ?? String(c);
-          const subsRaw = c?.subcategories ?? [];
-          const subs = (Array.isArray(subsRaw) ? subsRaw : []).map((s) =>
+          const subs = (c?.subcategories || []).map((s) =>
             typeof s === "string" ? s : s?.name ?? String(s)
-          ).filter(Boolean);
-          return { name: String(name), subcategories: subs };
+          );
+          return { name: String(name), subcategories: subs.filter(Boolean) };
         });
+
         if (mounted) setCategoryData(mapped);
       } catch (err) {
         console.error("Error fetching categories:", err);
         if (mounted) setCategoryData([]);
       }
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  // --- Fetch colors
+  // --- Fetch available colors
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -58,18 +63,20 @@ const Men = () => {
         const res = await fetch(`${API_BASE}/api/products/colors`);
         if (!res.ok) throw new Error("Failed to fetch colors");
         const json = await res.json();
-        if (!mounted) return;
-        if (json?.colors?.length) setColorsList(json.colors);
-        else setColorsList(["#f5f5f5", "#e8e1da", "#dbeaf0", "#f9f0f5"]);
+        if (mounted) {
+          setColorsList(json?.colors?.length ? json.colors : ["#f5f5f5", "#e8e1da", "#dbeaf0"]);
+        }
       } catch {
-        if (mounted) setColorsList(["#f5f5f5", "#e8e1da", "#dbeaf0", "#f9f0f5"]);
+        if (mounted) setColorsList(["#f5f5f5", "#e8e1da", "#dbeaf0"]);
       }
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // --- Fetch products
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -77,12 +84,18 @@ const Men = () => {
 
       if (selectedSubcategories.length > 0) {
         const mapped = selectedSubcategories.map(
-          (sel) => `${encodeURIComponent(sel.category)}:${encodeURIComponent(sel.subcategory)}`
+          (sel) =>
+            `${encodeURIComponent(sel.category.toLowerCase())}:${encodeURIComponent(
+              sel.subcategory.toLowerCase()
+            )}`
         );
         params.append("subcategory", mapped.join(","));
       }
 
-      if (selectedColors.length > 0) params.append("colors", selectedColors.join(","));
+      if (selectedColors.length > 0) {
+        params.append("colors", selectedColors.join(","));
+      }
+
       params.append("minPrice", priceRange[0]);
       params.append("maxPrice", priceRange[1]);
 
@@ -90,14 +103,12 @@ const Men = () => {
       else if (sortOption === "high-low") params.append("sort", "price_desc");
       else if (sortOption === "newest") params.append("sort", "newest");
 
-      if (perPage === "all") params.append("limit", "all");
-      else {
-        params.append("limit", String(perPage));
-        params.append("page", String(page));
+      if (perPage !== "all") {
+        params.append("limit", perPage);
+        params.append("page", page);
       }
 
-      const url = `${API_BASE}/api/products?${params.toString()}`;
-      const res = await fetch(url);
+      const res = await fetch(`${API_BASE}/api/products?${params.toString()}`);
       if (!res.ok) throw new Error(`Products fetch failed: ${res.status}`);
       const data = await res.json();
 
@@ -105,8 +116,10 @@ const Men = () => {
       const serverMeta = data?.meta || {};
       const total = Number(serverMeta.total ?? productsArray.length) || 0;
       const serverPage = Number(serverMeta.page ?? page) || 1;
-      const limitUsed = Number(serverMeta.limit ?? (perPage === "all" ? total : Number(perPage)));
-      const serverPages = Number(serverMeta.pages ?? Math.max(1, Math.ceil(total / (limitUsed || 1))));
+      const limitUsed =
+        perPage === "all" ? total : Number(serverMeta.limit ?? perPage ?? 12);
+      const serverPages =
+        perPage === "all" ? 1 : Number(serverMeta.pages ?? Math.ceil(total / (limitUsed || 1)));
 
       setMeta({ total, page: serverPage, pages: serverPages, limit: limitUsed });
       setProducts(productsArray);
@@ -119,13 +132,13 @@ const Men = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedSubcategories, selectedColors, priceRange, sortOption, perPage, page]);
 
   useEffect(() => {
     fetchProducts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSubcategories, selectedColors, priceRange, sortOption, perPage, page]);
+  }, [fetchProducts]);
 
+  // --- Reset all filters
   const clearFilters = () => {
     setSelectedSubcategories([]);
     setExpandedCategories([]);
@@ -136,19 +149,16 @@ const Men = () => {
     setPage(1);
   };
 
-  const handlePerPageChange = (val) => { setPerPage(val); setPage(1); };
-  const prevPage = () => setPage((p) => Math.max(1, p - 1));
-  const nextPage = () => setPage((p) => Math.min(meta.pages || 1, p + 1));
-
   return (
     <div className="flex min-h-screen bg-white dark:bg-black text-black dark:text-white">
-      {/* Sidebar */}
+      {/* Sidebar (desktop) */}
       <div className="hidden lg:block">
         <FilterSidebar
           isStatic
           categoryData={categoryData}
           colorsList={colorsList}
-          MIN={MIN} MAX={MAX}
+          MIN={MIN}
+          MAX={MAX}
           selectedSubcategories={selectedSubcategories}
           setSelectedSubcategories={setSelectedSubcategories}
           expandedCategories={expandedCategories}
@@ -164,55 +174,86 @@ const Men = () => {
         />
       </div>
 
-      {/* Main */}
+      {/* Main products */}
       <main className="flex-1 p-4 sm:p-6">
         <div className="flex items-center justify-between w-full mb-4">
           <h1 className="text-xl font-bold">Men’s Shop</h1>
           <div className="flex items-center gap-3">
-            <label htmlFor="perPage" className="text-sm">Per page:</label>
+            <label htmlFor="perPage" className="text-sm">
+              Per page:
+            </label>
             <select
-              id="perPage" value={perPage}
-              onChange={(e) => handlePerPageChange(e.target.value)}
+              id="perPage"
+              value={perPage}
+              onChange={(e) => {
+                setPerPage(e.target.value);
+                setPage(1);
+              }}
               className="rounded-md pl-3 pr-8 py-1 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm"
             >
               {perPageOptions.map((opt) => (
-                <option key={opt} value={opt}>{opt === "all" ? "All" : opt}</option>
+                <option key={opt} value={opt}>
+                  {opt === "all" ? "All" : opt}
+                </option>
               ))}
             </select>
             <button
               onClick={() => setSidebarOpen(true)}
               className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700"
             >
-              Apply Filters & Sorting
+              Filters
             </button>
           </div>
         </div>
 
-        {loading ? <p>Loading...</p> :
-         products.length === 0 ? <p>No products found</p> :
-         <>
-           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-             {products.map((p) => <ProductCard key={p.id} product={p} />)}
-           </div>
-           {perPage !== "all" && meta.pages > 1 && (
-             <div className="mt-6 flex items-center justify-center gap-4">
-               <button onClick={prevPage} disabled={page <= 1} className="px-3 py-1 border rounded-md">Prev</button>
-               <span>Page {meta.page} of {meta.pages}</span>
-               <button onClick={nextPage} disabled={meta.page >= meta.pages} className="px-3 py-1 border rounded-md">Next</button>
-             </div>
-           )}
-         </>
-        }
+        {loading ? (
+          <p>Loading...</p>
+        ) : products.length === 0 ? (
+          <p>No products found</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+              {products.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
+            {perPage !== "all" && meta.pages > 1 && (
+              <div className="mt-6 flex items-center justify-center gap-4">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                  className="px-3 py-1 border rounded-md"
+                >
+                  Prev
+                </button>
+                <span>
+                  Page {meta.page} of {meta.pages}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(meta.pages, p + 1))}
+                  disabled={meta.page >= meta.pages}
+                  className="px-3 py-1 border rounded-md"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </main>
 
-      {/* Mobile Sidebar */}
+      {/* Sidebar (mobile) */}
       <FilterSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
-        onApply={() => { setPage(1); setSidebarOpen(false); }}
+        onApply={() => {
+          setPage(1);
+          setSidebarOpen(false);
+        }}
         categoryData={categoryData}
         colorsList={colorsList}
-        MIN={MIN} MAX={MAX}
+        MIN={MIN}
+        MAX={MAX}
         selectedSubcategories={selectedSubcategories}
         setSelectedSubcategories={setSelectedSubcategories}
         expandedCategories={expandedCategories}
