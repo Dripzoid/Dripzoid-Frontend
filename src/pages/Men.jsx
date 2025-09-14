@@ -1,156 +1,232 @@
-import React, { useEffect, useState } from "react";
-import tinycolor from "tinycolor2";
+import React, { useState, useEffect } from "react";
 import ProductCard from "../components/ProductCard";
-
+import FilterSidebar from "../components/FiltersSidebar"; // ✅ make sure file name matches
 const API_BASE = process.env.REACT_APP_API_BASE || "";
 
-// --- helpers ---
-const normalizeColor = (raw) => {
-  if (!raw) return null;
-  const s = String(raw).trim();
-  if (!s) return null;
-  let tc = tinycolor(s);
-  if (tc.isValid()) return tc.toHexString();
-  const cleaned = s.replace(/[()]/g, "").replace(/\s+/g, " ").trim();
-  tc = tinycolor(cleaned);
-  if (tc.isValid()) return tc.toHexString();
-  const firstToken = cleaned.split(" ")[0];
-  tc = tinycolor(firstToken);
-  if (tc.isValid()) return tc.toHexString();
-  let hash = 0;
-  for (let i = 0; i < s.length; i++) {
-    hash = s.charCodeAt(i) + ((hash << 5) - hash);
-    hash = hash & hash;
-  }
-  const hex = ((hash >>> 0) & 0xffffff).toString(16).padStart(6, "0");
-  return `#${hex}`;
-};
-const colorIsLight = (cssColor) => !!cssColor && tinycolor(cssColor).isLight();
+const MIN = 0;
+const MAX = 10000;
 
-export default function Men() {
-  const CATEGORY = "Men";
-  const MIN = 0, MAX = 10000;
-
-  const [subcategories, setSubcategories] = useState([]); // fetched dynamically
+const Men = () => {
   const [selectedSubcategories, setSelectedSubcategories] = useState([]);
+  const [expandedCategories, setExpandedCategories] = useState([]);
   const [priceRange, setPriceRange] = useState([MIN, MAX]);
   const [selectedColors, setSelectedColors] = useState([]);
   const [colorsList, setColorsList] = useState([]);
   const [sortOption, setSortOption] = useState("");
-  const [perPage, setPerPage] = useState("12");
-  const [page, setPage] = useState(1);
 
+  const [categoryData, setCategoryData] = useState([]);
   const [products, setProducts] = useState([]);
-  const [meta, setMeta] = useState({ total: 0, page: 1, pages: 1, limit: 12 });
+  const [meta, setMeta] = useState({ total: 0, page: 1, pages: 1, limit: 0 });
   const [loading, setLoading] = useState(false);
 
-  // fetch categories → extract Men subcategories
+  const perPageOptions = ["12", "24", "36", "all"];
+  const [perPage, setPerPage] = useState("12");
+  const [page, setPage] = useState(1);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // --- Fetch categories scoped to Men
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/products/categories`);
+        const res = await fetch(`${API_BASE}/api/products/categories?gender=men`);
+        if (!res.ok) throw new Error("Failed to fetch categories");
         const json = await res.json();
         const raw = Array.isArray(json) ? json : (json.categories || json || []);
-        const menCat = raw.find((c) =>
-          (c?.name ?? "").toLowerCase() === CATEGORY.toLowerCase()
-        );
-        const subs = (menCat?.subcategories || []).map((s) =>
-          typeof s === "string" ? s : s?.name ?? String(s)
-        );
-        if (mounted) setSubcategories(subs);
+        const mapped = (raw || []).map((c) => {
+          const name = c?.name ?? String(c);
+          const subsRaw = c?.subcategories ?? [];
+          const subs = (Array.isArray(subsRaw) ? subsRaw : []).map((s) =>
+            typeof s === "string" ? s : s?.name ?? String(s)
+          ).filter(Boolean);
+          return { name: String(name), subcategories: subs };
+        });
+        if (mounted) setCategoryData(mapped);
       } catch (err) {
-        console.error("Failed to load Men subcategories:", err);
-        if (mounted) setSubcategories([]);
+        console.error("Error fetching categories:", err);
+        if (mounted) setCategoryData([]);
       }
     })();
-    return () => { mounted = false };
+    return () => { mounted = false; };
   }, []);
 
-  // fetch colors
+  // --- Fetch colors
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         const res = await fetch(`${API_BASE}/api/products/colors`);
+        if (!res.ok) throw new Error("Failed to fetch colors");
         const json = await res.json();
-        if (mounted) setColorsList(json.colors || []);
+        if (!mounted) return;
+        if (json?.colors?.length) setColorsList(json.colors);
+        else setColorsList(["#f5f5f5", "#e8e1da", "#dbeaf0", "#f9f0f5"]);
       } catch {
-        if (mounted) setColorsList(["White", "Black", "Blue"]);
+        if (mounted) setColorsList(["#f5f5f5", "#e8e1da", "#dbeaf0", "#f9f0f5"]);
       }
     })();
-    return () => { mounted = false };
+    return () => { mounted = false; };
   }, []);
 
+  // --- Fetch products
   const fetchProducts = async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.append("category", CATEGORY);
-      if (selectedSubcategories.length)
-        params.append("subcategory", selectedSubcategories.join(","));
-      if (selectedColors.length)
-        params.append("colors", selectedColors.join(","));
-      params.append("minPrice", String(priceRange[0]));
-      params.append("maxPrice", String(priceRange[1]));
+      params.append("gender", "men");
+
+      if (selectedSubcategories.length > 0) {
+        const mapped = selectedSubcategories.map(
+          (sel) => `${encodeURIComponent(sel.category)}:${encodeURIComponent(sel.subcategory)}`
+        );
+        params.append("subcategory", mapped.join(","));
+      }
+
+      if (selectedColors.length > 0) params.append("colors", selectedColors.join(","));
+      params.append("minPrice", priceRange[0]);
+      params.append("maxPrice", priceRange[1]);
+
       if (sortOption === "low-high") params.append("sort", "price_asc");
       else if (sortOption === "high-low") params.append("sort", "price_desc");
       else if (sortOption === "newest") params.append("sort", "newest");
-      if (perPage === "all") params.append("limit", "all");
-      else { params.append("limit", perPage); params.append("page", page); }
 
-      const res = await fetch(`${API_BASE}/api/products?${params}`);
-      const raw = await res.json();
-      const productsArray = raw?.data || raw || [];
-      const serverMeta = raw?.meta ?? {};
-      setMeta({
-        total: serverMeta.total ?? productsArray.length,
-        page: serverMeta.page ?? page,
-        pages: serverMeta.pages ?? 1,
-        limit: serverMeta.limit ?? perPage
-      });
+      if (perPage === "all") params.append("limit", "all");
+      else {
+        params.append("limit", String(perPage));
+        params.append("page", String(page));
+      }
+
+      const url = `${API_BASE}/api/products?${params.toString()}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Products fetch failed: ${res.status}`);
+      const data = await res.json();
+
+      const productsArray = Array.isArray(data) ? data : data?.data || [];
+      const serverMeta = data?.meta || {};
+      const total = Number(serverMeta.total ?? productsArray.length) || 0;
+      const serverPage = Number(serverMeta.page ?? page) || 1;
+      const limitUsed = Number(serverMeta.limit ?? (perPage === "all" ? total : Number(perPage)));
+      const serverPages = Number(serverMeta.pages ?? Math.max(1, Math.ceil(total / (limitUsed || 1))));
+
+      setMeta({ total, page: serverPage, pages: serverPages, limit: limitUsed });
       setProducts(productsArray);
+
+      if (page > serverPages && serverPages > 0) setPage(1);
     } catch (err) {
-      console.error("Error fetching Men products:", err);
+      console.error("Error fetching products:", err);
       setProducts([]);
-    } finally { setLoading(false); }
+      setMeta({ total: 0, page: 1, pages: 1, limit: 0 });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { fetchProducts(); },
-    [selectedSubcategories, selectedColors, priceRange, sortOption, perPage, page]);
+  useEffect(() => {
+    fetchProducts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSubcategories, selectedColors, priceRange, sortOption, perPage, page]);
 
-  const toggleSubcategory = (sub) =>
-    setSelectedSubcategories((prev) =>
-      prev.includes(sub) ? prev.filter((s) => s !== sub) : [...prev, sub]
-    );
+  const clearFilters = () => {
+    setSelectedSubcategories([]);
+    setExpandedCategories([]);
+    setPriceRange([MIN, MAX]);
+    setSelectedColors([]);
+    setSortOption("");
+    setPerPage("12");
+    setPage(1);
+  };
+
+  const handlePerPageChange = (val) => { setPerPage(val); setPage(1); };
+  const prevPage = () => setPage((p) => Math.max(1, p - 1));
+  const nextPage = () => setPage((p) => Math.min(meta.pages || 1, p + 1));
 
   return (
     <div className="flex min-h-screen bg-white dark:bg-black text-black dark:text-white">
-      <aside className="w-64 border-r border-gray-200 dark:border-gray-700 p-6">
-        <h2 className="text-lg font-semibold mb-3">Subcategories</h2>
-        <div className="flex flex-wrap gap-2">
-          {subcategories.map((sub) => {
-            const active = selectedSubcategories.includes(sub);
-            return (
-              <button key={sub}
-                onClick={() => toggleSubcategory(sub)}
-                className={`px-3 py-1 rounded-full border text-sm ${active ? "bg-black text-white" : "border-gray-300"}`}>
-                {sub}
-              </button>
-            )
-          })}
-        </div>
-      </aside>
+      {/* Sidebar */}
+      <div className="hidden lg:block">
+        <FilterSidebar
+          isStatic
+          categoryData={categoryData}
+          colorsList={colorsList}
+          MIN={MIN} MAX={MAX}
+          selectedSubcategories={selectedSubcategories}
+          setSelectedSubcategories={setSelectedSubcategories}
+          expandedCategories={expandedCategories}
+          setExpandedCategories={setExpandedCategories}
+          priceRange={priceRange}
+          setPriceRange={setPriceRange}
+          selectedColors={selectedColors}
+          setSelectedColors={setSelectedColors}
+          sortOption={sortOption}
+          setSortOption={setSortOption}
+          clearFilters={clearFilters}
+          onApply={() => setPage(1)}
+        />
+      </div>
 
-      <main className="flex-1 p-6">
-        <h1 className="text-2xl font-bold mb-4">Men’s Collection</h1>
+      {/* Main */}
+      <main className="flex-1 p-4 sm:p-6">
+        <div className="flex items-center justify-between w-full mb-4">
+          <h1 className="text-xl font-bold">Men’s Shop</h1>
+          <div className="flex items-center gap-3">
+            <label htmlFor="perPage" className="text-sm">Per page:</label>
+            <select
+              id="perPage" value={perPage}
+              onChange={(e) => handlePerPageChange(e.target.value)}
+              className="rounded-md pl-3 pr-8 py-1 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm"
+            >
+              {perPageOptions.map((opt) => (
+                <option key={opt} value={opt}>{opt === "all" ? "All" : opt}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700"
+            >
+              Filters
+            </button>
+          </div>
+        </div>
+
         {loading ? <p>Loading...</p> :
-          products.length === 0 ? <p>No products found</p> :
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-              {products.map((p) => <ProductCard key={p.id} product={p} />)}
-            </div>
+         products.length === 0 ? <p>No products found</p> :
+         <>
+           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+             {products.map((p) => <ProductCard key={p.id} product={p} />)}
+           </div>
+           {perPage !== "all" && meta.pages > 1 && (
+             <div className="mt-6 flex items-center justify-center gap-4">
+               <button onClick={prevPage} disabled={page <= 1} className="px-3 py-1 border rounded-md">Prev</button>
+               <span>Page {meta.page} of {meta.pages}</span>
+               <button onClick={nextPage} disabled={meta.page >= meta.pages} className="px-3 py-1 border rounded-md">Next</button>
+             </div>
+           )}
+         </>
         }
       </main>
+
+      {/* Mobile Sidebar */}
+      <FilterSidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        onApply={() => { setPage(1); setSidebarOpen(false); }}
+        categoryData={categoryData}
+        colorsList={colorsList}
+        MIN={MIN} MAX={MAX}
+        selectedSubcategories={selectedSubcategories}
+        setSelectedSubcategories={setSelectedSubcategories}
+        expandedCategories={expandedCategories}
+        setExpandedCategories={setExpandedCategories}
+        priceRange={priceRange}
+        setPriceRange={setPriceRange}
+        selectedColors={selectedColors}
+        setSelectedColors={setSelectedColors}
+        sortOption={sortOption}
+        setSortOption={setSortOption}
+        clearFilters={clearFilters}
+      />
     </div>
   );
-}
+};
+
+export default Men;
