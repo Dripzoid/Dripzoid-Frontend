@@ -21,7 +21,7 @@ export default function Kids() {
 
   const [subcategories, setSubcategories] = useState([]);
 
-  // fetch subcategories for Kids from backend
+  // ✅ fetch subcategories for Kids from backend
   useEffect(() => {
     (async () => {
       try {
@@ -38,7 +38,7 @@ export default function Kids() {
     })();
   }, []);
 
-  // fetch products
+  // ✅ fetch products with filters
   const fetchProducts = async () => {
     setLoading(true);
     try {
@@ -95,7 +95,7 @@ export default function Kids() {
     }
   };
 
-  // refetch when filters change
+  // ✅ refetch when filters change
   useEffect(() => {
     fetchProducts();
   }, [selectedSubcategories, selectedColors, priceRange, sortOption, perPage, page]);
