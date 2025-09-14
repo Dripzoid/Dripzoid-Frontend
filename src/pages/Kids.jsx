@@ -1,7 +1,7 @@
 // src/pages/Kids.jsx
 import React, { useEffect, useState } from "react";
 import ProductCard from "../components/ProductCard";
-import FilterSidebar from "../components/FilterSidebar";
+import FilterSidebar from "../components/FiltersSidebar";
 
 const API_BASE = process.env.REACT_APP_API_BASE;
 
