@@ -1,12 +1,11 @@
 // src/pages/Kids.jsx
 import React, { useEffect, useState } from "react";
-import { FaFemale } from "react-icons/fa";
 import tinycolor from "tinycolor2";
 import ProductCard from "../components/ProductCard";
 
 const API_BASE = process.env.REACT_APP_API_BASE;
 
-// color helpers (same as Men.jsx)
+// --- color helpers ---
 const normalizeColor = (raw) => {
   if (!raw) return null;
   const s = String(raw).trim();
@@ -27,13 +26,15 @@ const normalizeColor = (raw) => {
   const hex = ((hash >>> 0) & 0xffffff).toString(16).padStart(6, "0");
   return `#${hex}`;
 };
-const colorIsLight = (cssColor) => !!cssColor && tinycolor(cssColor).isLight();
+const colorIsLight = (cssColor) =>
+  !!cssColor && tinycolor(cssColor).isLight();
 
 export default function Kids() {
   const CATEGORY = "Kids";
   const MIN = 0,
     MAX = 10000;
 
+  const [availableSubcategories, setAvailableSubcategories] = useState([]);
   const [selectedSubcategories, setSelectedSubcategories] = useState([]);
   const [priceRange, setPriceRange] = useState([MIN, MAX]);
   const [selectedColors, setSelectedColors] = useState([]);
@@ -51,37 +52,32 @@ export default function Kids() {
   });
   const [loading, setLoading] = useState(false);
 
-  // Kids subcategories
-  const kidsSubcategories = [
-    { name: "Shirts", icon: "👕" },
-    { name: "Pants", icon: "👖" },
-    { name: "Hoodies", icon: "🧥" },
-    { name: "Skirts", icon: "👗" },
-  ];
+  // --- fetch subcategories dynamically ---
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/products/categories?category=${CATEGORY}`
+        );
+        if (!res.ok) throw new Error("Failed to fetch categories");
+        const json = await res.json();
+        if (!mounted) return;
+        const subs =
+          json?.categories?.find((c) => c.name === CATEGORY)
+            ?.subcategories || [];
+        setAvailableSubcategories(subs);
+      } catch (err) {
+        console.error("Subcategories fetch failed", err);
+        setAvailableSubcategories([]);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
-  const toggleSubcategory = (sub) =>
-    setSelectedSubcategories((prev) =>
-      prev.includes(sub) ? prev.filter((s) => s !== sub) : [...prev, sub]
-    );
-
-  const handlePriceChange = (i, v) => {
-    const value = Number(v);
-    const next = [...priceRange];
-    if (i === 0) next[0] = Math.min(Math.max(MIN, value), next[1]);
-    else next[1] = Math.max(Math.min(MAX, value), next[0]);
-    setPriceRange(next);
-    setPage(1);
-  };
-
-  const clearFilters = () => {
-    setSelectedSubcategories([]);
-    setPriceRange([MIN, MAX]);
-    setSelectedColors([]);
-    setSortOption("");
-    setPerPage("12");
-    setPage(1);
-  };
-
+  // --- fetch available colors ---
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -91,14 +87,39 @@ export default function Kids() {
         const json = await res.json();
         if (!mounted) return;
         setColorsList(
-          Array.isArray(json.colors) && json.colors.length ? json.colors : []
+          Array.isArray(json.colors) && json.colors.length
+            ? json.colors
+            : []
         );
       } catch {
         if (mounted) setColorsList(["White", "Black", "Blue", "Gray"]);
       }
     })();
-    return () => (mounted = false);
+    return () => {
+      mounted = false;
+    };
   }, []);
+
+  const toggleSubcategory = (sub) =>
+    setSelectedSubcategories((prev) =>
+      prev.includes(sub)
+        ? prev.filter((s) => s !== sub)
+        : [...prev, sub]
+    );
+
+  const handlePriceChange = (i, v) => {
+    const value = Number(v);
+    const next = [...priceRange];
+    if (i === 0)
+      next[0] = Math.min(Math.max(MIN, value), next[1]);
+    else next[1] = Math.max(Math.min(MAX, value), next[0]);
+    setPriceRange(next);
+  };
+
+  const applyFilters = () => {
+    setPage(1);
+    fetchProducts();
+  };
 
   const fetchProducts = async () => {
     setLoading(true);
@@ -106,14 +127,19 @@ export default function Kids() {
       const params = new URLSearchParams();
       params.append("category", CATEGORY);
       if (selectedSubcategories.length)
-        params.append("subcategory", selectedSubcategories.join(","));
+        params.append(
+          "subcategory",
+          selectedSubcategories.join(",")
+        );
       if (selectedColors.length)
         params.append("colors", selectedColors.join(","));
       params.append("minPrice", String(priceRange[0]));
       params.append("maxPrice", String(priceRange[1]));
       if (sortOption === "low-high") params.append("sort", "price_asc");
-      else if (sortOption === "high-low") params.append("sort", "price_desc");
-      else if (sortOption === "newest") params.append("sort", "newest");
+      else if (sortOption === "high-low")
+        params.append("sort", "price_desc");
+      else if (sortOption === "newest")
+        params.append("sort", "newest");
       if (perPage === "all") params.append("limit", "all");
       else {
         params.append("limit", String(perPage));
@@ -123,13 +149,15 @@ export default function Kids() {
       const res = await fetch(
         `${API_BASE}/api/products?${params.toString()}`
       );
-      if (!res.ok) throw new Error(`Products fetch failed: ${res.status}`);
+      if (!res.ok)
+        throw new Error(`Products fetch failed: ${res.status}`);
       const raw = await res.json();
 
       let productsArray = [];
       if (!raw) productsArray = [];
       else if (Array.isArray(raw)) productsArray = raw;
-      else if (raw.data && Array.isArray(raw.data)) productsArray = raw.data;
+      else if (raw.data && Array.isArray(raw.data))
+        productsArray = raw.data;
       else
         productsArray = Object.values(raw).filter(
           (v) =>
@@ -139,20 +167,27 @@ export default function Kids() {
         );
 
       const serverMeta = raw?.meta ?? {};
-      const total = Number(serverMeta.total ?? productsArray.length) || 0;
+      const total =
+        Number(serverMeta.total ?? productsArray.length) || 0;
       const serverPage = Number(serverMeta.page ?? page) || 1;
       const limitUsed =
         Number(
           serverMeta.limit ??
             (perPage === "all" ? total : Number(perPage))
-        ) || (perPage === "all" ? total : Number(perPage));
+        ) ||
+        (perPage === "all" ? total : Number(perPage));
       const serverPages =
         Number(
           serverMeta.pages ??
             Math.max(1, Math.ceil(total / (limitUsed || 1)))
         ) || 1;
 
-      setMeta({ total, page: serverPage, pages: serverPages, limit: limitUsed });
+      setMeta({
+        total,
+        page: serverPage,
+        pages: serverPages,
+        limit: limitUsed,
+      });
       setProducts(productsArray || []);
       if (page > serverPages && serverPages > 0) setPage(1);
     } catch (err) {
@@ -166,14 +201,7 @@ export default function Kids() {
 
   useEffect(() => {
     fetchProducts();
-  }, [
-    selectedSubcategories,
-    selectedColors,
-    priceRange,
-    sortOption,
-    perPage,
-    page,
-  ]);
+  }, [page, perPage]);
 
   const swatchBorder = (parsed, selected) =>
     selected
@@ -190,23 +218,28 @@ export default function Kids() {
 
   return (
     <div className="flex min-h-screen bg-white dark:bg-black text-black dark:text-white transition-colors">
+      {/* Sidebar */}
       <aside className="w-80 border-r border-gray-200 dark:border-gray-700 p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Filters</h2>
-          <button onClick={clearFilters} className="text-sm underline">
-            Clear
+          <button
+            onClick={applyFilters}
+            className="text-sm underline"
+          >
+            Apply Filters & Sorting
           </button>
         </div>
+
         {/* Subcategories */}
         <div>
           <h3 className="text-sm font-medium mb-3">Subcategories</h3>
           <div className="flex flex-wrap gap-2">
-            {kidsSubcategories.map((sub) => {
-              const active = selectedSubcategories.includes(sub.name);
+            {availableSubcategories.map((sub) => {
+              const active = selectedSubcategories.includes(sub);
               return (
                 <button
-                  key={sub.name}
-                  onClick={() => toggleSubcategory(sub.name)}
+                  key={sub}
+                  onClick={() => toggleSubcategory(sub)}
                   className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm border transition select-none ${
                     active
                       ? "bg-black text-white border-black dark:bg-white dark:text-black dark:border-white"
@@ -214,13 +247,13 @@ export default function Kids() {
                   }`}
                   aria-pressed={active}
                 >
-                  <span className="text-lg">{sub.icon}</span>
-                  <span>{sub.name}</span>
+                  <span>{sub}</span>
                 </button>
               );
             })}
           </div>
         </div>
+
         {/* Price Range */}
         <div className="mt-6">
           <h3 className="text-sm font-medium mb-3">Price Range (₹)</h3>
@@ -258,6 +291,7 @@ export default function Kids() {
             />
           </div>
         </div>
+
         {/* Colors */}
         <div className="mt-6">
           <h3 className="text-sm font-medium mb-3">Colors</h3>
@@ -289,6 +323,7 @@ export default function Kids() {
             })}
           </div>
         </div>
+
         {/* Sort */}
         <div className="mt-6">
           <h3 className="text-sm font-medium mb-3">Sort By</h3>
@@ -296,7 +331,6 @@ export default function Kids() {
             value={sortOption}
             onChange={(e) => {
               setSortOption(e.target.value);
-              setPage(1);
             }}
             className="w-full rounded-md px-3 py-2 border border-gray-300 dark:border-gray-700"
           >
@@ -307,6 +341,8 @@ export default function Kids() {
           </select>
         </div>
       </aside>
+
+      {/* Main Content */}
       <main className="flex-1 p-6">
         <div className="flex items-center justify-between w-full mb-4">
           <div>
