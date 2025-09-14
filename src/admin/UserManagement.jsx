@@ -40,7 +40,7 @@ function Avatar({ name }) {
     .slice(0, 2)
     .join("");
   return (
-    <div className="w-10 h-10 rounded-full bg-white/6 dark:bg-black/20 flex items-center justify-center text-sm font-medium text-white/90 dark:text-black/90">
+    <div className="w-10 h-10 rounded-full bg-white/6 dark:bg-black/20 flex items-center justify-center text-sm font-medium text-black dark:text-white/90">
       {initials}
     </div>
   );
@@ -53,10 +53,7 @@ function Heatmap365({ cells = [] }) {
   const grid = Array.from({ length: rows * cols }).map((_, i) => cells[i] || 0);
   return (
     <div className="w-full overflow-auto">
-      <div
-        className="grid grid-cols-52 gap-1"
-        style={{ gridTemplateColumns: `repeat(${cols}, 6px)` }}
-      >
+      <div className="grid grid-cols-52 gap-1" style={{ gridTemplateColumns: `repeat(${cols}, 6px)` }}>
         {grid.map((c, i) => (
           <div
             key={i}
@@ -93,12 +90,12 @@ function HoverSparkline({ points = [] }) {
   }));
 
   return (
-    <div className="relative bg-neutral-900 dark:bg-white/10 p-3 rounded border border-neutral-800 dark:border-black">
+    <div className="relative bg-white/10 dark:bg-black/10 p-3 rounded border border-neutral-300 dark:border-black">
       <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-24" preserveAspectRatio="none">
         <polyline
           points={coords.map((c) => `${c.x},${c.y}`).join(" ")}
           fill="none"
-          stroke="#fff"
+          stroke="#000"
           strokeOpacity="0.95"
           strokeWidth={2}
           strokeLinecap="round"
@@ -110,8 +107,8 @@ function HoverSparkline({ points = [] }) {
             cx={c.x}
             cy={c.y}
             r={4}
-            fill={hover === i ? "#fff" : "transparent"}
-            stroke="#fff"
+            fill={hover === i ? "#000" : "transparent"}
+            stroke="#000"
             strokeOpacity={0.9}
           />
         ))}
@@ -142,7 +139,7 @@ export default function UserManagement() {
   const [users, setUsers] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [openUser, setOpenUser] = useState(null);
-  const [timeRange, setTimeRange] = useState("overall"); // fixed
+  const [timeRange, setTimeRange] = useState("overall");
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [week, setWeek] = useState(isoWeek());
   const [date, setDate] = useState("");
@@ -262,8 +259,67 @@ export default function UserManagement() {
   return (
     <div className="min-h-screen bg-white dark:bg-black text-black dark:text-white p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Tabs and stat cards omitted for brevity, same as before */}
-        {/* Floating user card uses timeRange correctly, with dark/light colors */}
+        {/* Search bar */}
+        <div className="mb-4 flex items-center gap-2">
+          <Search className="w-5 h-5" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search users..."
+            className="flex-1 p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-black text-black dark:text-white"
+          />
+        </div>
+
+        {/* User List */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map((user) => (
+            <div
+              key={user.id}
+              className={`p-4 rounded border cursor-pointer dark:border-gray-700 ${
+                selectedIds.has(user.id) ? "border-blue-500" : ""
+              }`}
+              onClick={() => setOpenUser(user)}
+            >
+              <div className="flex items-center gap-2">
+                <Avatar name={user.name} />
+                <div>
+                  <div className="font-medium">{user.name}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{user.email}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Floating User Card */}
+        {openUser && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="fixed bottom-6 right-6 bg-white dark:bg-gray-900 shadow-lg rounded p-4 w-80 border border-gray-200 dark:border-gray-700"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <Avatar name={openUser.name} />
+              <div>
+                <div className="font-semibold">{openUser.name}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">{openUser.email}</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div>Total Orders: {openUser?.stats?.[timeRange]?.total_orders ?? 0}</div>
+              <div>Total Spend: {formatCurrency(openUser?.stats?.[timeRange]?.total_spend)}</div>
+              <div>Coupon Savings: {formatCurrency(openUser?.stats?.[timeRange]?.coupon_savings)}</div>
+              <div>Successful Orders: {openUser?.stats?.[timeRange]?.orders_successful ?? 0}</div>
+              <div>Cancelled Orders: {openUser?.stats?.[timeRange]?.orders_cancelled ?? 0}</div>
+              <div>Returned Orders: {openUser?.stats?.[timeRange]?.orders_returned ?? 0}</div>
+            </div>
+            <div className="mt-2 flex justify-between text-xs text-gray-500 dark:text-gray-400">
+              <button onClick={() => setOpenUser(null)}>Close</button>
+              <div>Time Range: {timeRange}</div>
+            </div>
+          </motion.div>
+        )}
       </div>
     </div>
   );
