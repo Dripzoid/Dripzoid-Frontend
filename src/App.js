@@ -23,6 +23,7 @@ import ProductsAdmin from "./admin/ProductsAdmin.jsx";
 import BulkUpload from "./admin/BulkUpload.jsx";
 import Dashboard from "./admin/Dashboard.jsx";
 import AdminOrdersDashboard from "./admin/OrderManagement.jsx";
+import UserManagement from "./admin/UserManagement.jsx"; 
 import LabelsManager from './admin/LabelsDownload.jsx';
 
 // 🛒 Cart imports
@@ -74,7 +75,7 @@ function App() {
                 <Route path="products" element={<ProductsAdmin />} />
                 <Route path="bulk-upload" element={<BulkUpload />} />
                 <Route path="upload" element={<ImageUpload />} />
-                <Route path="users" element={<div className="p-6">Users Management Coming Soon...</div>} />
+                <Route path="users" element={<UserManagement />} />
                 <Route path="orders" element={<AdminOrdersDashboard />} />
                 <Route path="labels" element={<LabelsManager />} />
                 <Route path="coupons" element={<div className="p-6">Coupons Management Coming Soon...</div>} />
