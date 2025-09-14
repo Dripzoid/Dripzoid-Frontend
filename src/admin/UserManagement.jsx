@@ -11,46 +11,84 @@ import {
   CheckCircle,
   User,
   ChevronsUpDown,
+  CalendarDays,
 } from "lucide-react";
 
 /**
- * Modern, black & white themed User Management page
- * - Uses Tailwind CSS (dark/BW theme)
- * - lucide-react icons
- * - Inline small UI primitives inside the file (Button, IconButton, Chip, Badge, Avatar)
- * - Demo data baked-in
- *
- * Paste into src/pages/UserManagement.jsx
+ * UserManagement.jsx
+ * - Black & white minimalist admin UI using Tailwind
+ * - RBAC, segments, inline analytics, impersonation, bulk ops, smart delete
+ * - Updated to show overall stats (total, active, inactive, blocked, new)
+ * - User list rows show id, name, gender + View button
+ * - View card shows personal details + block/delete and detailed stats
+ * - Stats can be filtered: Day / Week / Month / Overall
+ * - All demo / hardcoded data for testing
  */
 
 export default function UserManagement() {
+  // --- UI state ---
   const [query, setQuery] = useState("");
   const [users, setUsers] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [openUser, setOpenUser] = useState(null);
   const [activeFilter, setActiveFilter] = useState(null);
+  const [timeRange, setTimeRange] = useState("overall"); // 'day'|'week'|'month'|'overall'
   const [bulkState, setBulkState] = useState({ running: false, action: null, progress: 0 });
 
-  // DEMO generator
+  // --- Demo data generator with genders, age, lastLogin, and per-range stats ---
+  const genders = ["Female", "Male", "Non-binary"];
+
   const makeUser = (i) => {
     const spend = Math.round(Math.random() * 12000);
-    const orders = Math.floor(Math.random() * 20);
-    const days = Math.floor(Math.random() * 180);
-    const roles = ["Admin", "Editor", "Customer"];
-    const role = roles[i % roles.length];
+    const orders = Math.floor(Math.random() * 25);
+    const roleSet = ["Admin", "Editor", "Customer"];
+    const role = roleSet[i % roleSet.length];
+    const gender = genders[i % genders.length];
+    const age = 20 + (i % 35);
+    const lastLoginOffset = Math.floor(Math.random() * 60); // days ago
+
+    const stats = {
+      overall: {
+        total_orders: orders,
+        total_spend: spend,
+        coupon_savings: Math.round(Math.random() * 2000),
+        orders_successful: Math.floor(orders * (0.75 + Math.random() * 0.2)),
+        orders_cancelled: Math.floor(orders * Math.random() * 0.2),
+        orders_returned: Math.floor(orders * Math.random() * 0.1),
+      },
+      month: {},
+      week: {},
+      day: {},
+    };
+
+    // generate smaller slices for month/week/day (demo random)
+    ['month','week','day'].forEach(k => {
+      const factor = k === 'month'? 0.5 : k === 'week'? 0.15 : 0.02;
+      const total_orders = Math.max(0, Math.floor(orders * factor));
+      const total_spend = Math.round(spend * factor);
+      stats[k] = {
+        total_orders,
+        total_spend,
+        coupon_savings: Math.round((Math.random() * 2000) * factor),
+        orders_successful: Math.floor(total_orders * 0.8),
+        orders_cancelled: Math.floor(total_orders * 0.15),
+        orders_returned: Math.floor(total_orders * 0.05),
+      };
+    });
+
     return {
       id: i + 1,
       name: ["Asha", "Rahul", "Maya", "Vikram", "Sonia"][i % 5] + " " + (i + 1),
       email: `user${i + 1}@example.com`,
       phone: `+91-9${String(100000000 + i).slice(-9)}`,
       signup: new Date(Date.now() - i * 86400000).toISOString(),
-      status: i % 7 === 0 ? "blocked" : "active",
+      lastLogin: new Date(Date.now() - lastLoginOffset * 86400000).toISOString(),
+      status: i % 7 === 0 ? "blocked" : (lastLoginOffset > 90 ? "inactive" : "active"),
       tags: i % 10 === 0 ? ["VIP"] : [],
-      total_orders: orders,
-      total_spend: spend,
-      coupon_savings: Math.round(Math.random() * 2000),
-      last_active_days: days,
       role,
+      gender,
+      age,
+      stats,
       spendTrend: Array.from({ length: 12 }, () => Math.floor(Math.random() * Math.max(100, spend / 6))),
       loginHeatmap: Array.from({ length: 30 }, () => (Math.random() > 0.7 ? 1 : 0)),
       activityLog: [
@@ -64,48 +102,34 @@ export default function UserManagement() {
   };
 
   useEffect(() => {
-    const demo = [...Array(24).keys()].map((i) => makeUser(i));
+    const demo = [...Array(28).keys()].map((i) => makeUser(i));
     setUsers(demo);
   }, []);
 
-  // simulated realtime updates
-  useEffect(() => {
-    const iv = setInterval(() => {
-      setUsers((prev) => {
-        if (!prev.length) return prev;
-        const idx = Math.floor(Math.random() * prev.length);
-        const copy = prev.slice();
-        const u = { ...copy[idx] };
-        if (Math.random() > 0.6) u.total_spend += Math.round(Math.random() * 300);
-        if (Math.random() > 0.7) u.total_orders += 1;
-        u.last_active_days = Math.max(0, u.last_active_days - 1);
-        copy[idx] = u;
-        return copy;
-      });
-    }, 7000);
-    return () => clearInterval(iv);
-  }, []);
+  // --- Derived overall stats ---
+  const summary = useMemo(() => {
+    const total = users.length;
+    const active = users.filter((u) => u.status === "active").length;
+    const blocked = users.filter((u) => u.status === "blocked").length;
+    const inactive = users.filter((u) => u.status === "inactive").length;
+    // new users: signed up in last 7 days
+    const now = Date.now();
+    const newUsers = users.filter((u) => now - new Date(u.signup).getTime() < 7 * 86400000).length;
+    return { total, active, blocked, inactive, newUsers };
+  }, [users]);
 
-  // filters
-  const filters = [
-    { key: "highSpend", label: "High Spend (₹>5k)" },
-    { key: "frequentBuyer", label: "Frequent Buyer (>5 orders)" },
-    { key: "inactive", label: "Inactive >90d" },
-  ];
+  // --- Filtering by search + segment ---
+  const filtered = useMemo(() => {
+    return users.filter((u) => {
+      if (query && !(`${u.name} ${u.email}`.toLowerCase().includes(query.toLowerCase()))) return false;
+      if (activeFilter === "highSpend" && u.stats.overall.total_spend <= 5000) return false;
+      if (activeFilter === "frequentBuyer" && u.stats.overall.total_orders <= 5) return false;
+      if (activeFilter === "inactive" && u.status !== "inactive") return false;
+      return true;
+    });
+  }, [users, query, activeFilter]);
 
-  const filtered = useMemo(
-    () =>
-      users.filter((u) => {
-        if (query && !(`${u.name} ${u.email}`.toLowerCase().includes(query.toLowerCase()))) return false;
-        if (activeFilter === "highSpend" && u.total_spend <= 5000) return false;
-        if (activeFilter === "frequentBuyer" && u.total_orders <= 5) return false;
-        if (activeFilter === "inactive" && u.last_active_days <= 90) return false;
-        return true;
-      }),
-    [users, query, activeFilter]
-  );
-
-  // selections
+  // --- Selection helpers ---
   const toggleSelect = (id) => {
     setSelectedIds((s) => {
       const copy = new Set(s);
@@ -117,12 +141,10 @@ export default function UserManagement() {
   const selectAll = () => setSelectedIds(new Set(filtered.map((u) => u.id)));
   const clearSelection = () => setSelectedIds(new Set());
 
-  // RBAC inline update
-  const updateRole = (userId, role) => {
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role } : u)));
-  };
+  // --- RBAC role update ---
+  const updateRole = (userId, role) => setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role } : u)));
 
-  // bulk simulation
+  // --- Bulk action simulation ---
   const startBulkAction = (action) => {
     if (selectedIds.size === 0) return alert("Select at least one user");
     setBulkState({ running: true, action, progress: 6 });
@@ -146,117 +168,84 @@ export default function UserManagement() {
     }, 320);
   };
 
-  // Smart delete flows
+  // --- Smart delete flows ---
   const softDeleteUser = (userId) => {
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, deleteMode: "soft", purgeCountdown: 30 } : u)));
+    setUsers((p) => p.map((u) => (u.id === userId ? { ...u, deleteMode: "soft", purgeCountdown: 30 } : u)));
     setOpenUser(null);
     alert("Soft-deleted: will purge in 30 days (demo)");
   };
   const anonymizeUser = (userId) => {
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, email: `anon+${u.id}@example.local`, name: `Deleted user ${u.id}`, deleteMode: "anonymized", purgeCountdown: null } : u)));
+    setUsers((p) => p.map((u) => (u.id === userId ? { ...u, email: `anon+${u.id}@example.local`, name: `Deleted user ${u.id}`, deleteMode: "anonymized", purgeCountdown: null } : u)));
     setOpenUser(null);
     alert("Anonymized (demo)");
   };
   const purgeUserNow = (userId) => {
-    setUsers((prev) => prev.filter((u) => u.id !== userId));
+    setUsers((p) => p.filter((u) => u.id !== userId));
     setOpenUser(null);
     alert("Purged (demo)");
   };
 
-  // impersonate (mock)
-  const impersonate = (user) => {
-    alert(`Impersonation started for ${user.email} (demo)`);
-  };
+  // --- Impersonation ---
+  const impersonate = (user) => alert(`Impersonation started for ${user.email} (demo)`);
 
-  // small UI primitives
-  const IconButton = ({ children, title, onClick, className = "" }) => (
-    <button
-      title={title}
-      onClick={onClick}
-      className={`inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 border border-neutral-800 text-sm hover:bg-white hover:text-black transition ${className}`}
-    >
-      {children}
-    </button>
-  );
-
-  const PrimaryButton = ({ children, onClick, disabled }) => (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm bg-white/5 border border-neutral-800 hover:bg-white hover:text-black transition ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
-    >
-      {children}
-    </button>
-  );
-
+  // --- Small UI primitives ---
   const Chip = ({ active, onClick, children }) => (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1 rounded-full text-xs font-medium transition ${active ? "bg-white text-black border border-white" : "bg-transparent border border-neutral-800 text-white/80 hover:bg-neutral-900"}`}
-    >
+    <button onClick={onClick} className={`px-3 py-1 rounded-full text-xs font-medium transition ${active ? "bg-white text-black border border-white" : "bg-transparent border border-neutral-800 text-white/80 hover:bg-neutral-900"}`}>
       {children}
     </button>
   );
 
-  const Badge = ({ children, color = "white" }) => {
-    const base = "text-xs px-2 py-0.5 rounded-full font-medium";
-    if (color === "danger") return <span className={`${base} bg-red-700/20 text-red-300`}>{children}</span>;
-    if (color === "vip") return <span className={`${base} bg-white text-black`}>{children}</span>;
-    return <span className={`${base} bg-white/10 text-white/90`}>{children}</span>;
-  };
+  const IconButton = ({ children, title, onClick, className = "" }) => (
+    <button title={title} onClick={onClick} className={`inline-flex items-center gap-2 px-3 py-2 rounded-md border border-neutral-800 text-sm hover:bg-white hover:text-black transition ${className}`}>
+      {children}
+    </button>
+  );
+
+  const Metric = ({ label, value }) => (
+    <div className="p-3 bg-neutral-900 rounded-lg border border-neutral-800">
+      <div className="text-xs text-white/70">{label}</div>
+      <div className="text-lg font-semibold">{value}</div>
+    </div>
+  );
 
   const Avatar = ({ name }) => {
-    const initials = name.split(" ").map((p) => p[0]).slice(0, 2).join("");
-    return <div className="w-9 h-9 rounded-full bg-white/8 flex items-center justify-center text-sm font-medium text-white/90">{initials}</div>;
+    const initials = name.split(" ").map((n) => n[0]).slice(0, 2).join("");
+    return <div className="w-10 h-10 rounded-full bg-white/6 flex items-center justify-center text-sm font-medium text-white/90">{initials}</div>;
   };
 
-  // small chart helpers
   const Sparkline = ({ points = [] }) => {
-    const w = 120;
-    const h = 40;
-    const max = Math.max(...points, 1);
-    const min = Math.min(...points, 0);
-    const step = points.length > 1 ? w / (points.length - 1) : w;
-    let path = "";
-    points.forEach((p, i) => {
-      const x = i * step;
-      const y = h - ((p - min) / (max - min || 1)) * h;
-      path += i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
-    });
+    const w = 120; const h = 40; const max = Math.max(...points, 1); const min = Math.min(...points, 0);
+    const step = points.length > 1 ? w / (points.length - 1) : w; let path = "";
+    points.forEach((p, i) => { const x = i * step; const y = h - ((p - min) / (max - min || 1)) * h; path += i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`; });
     return (
       <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-10" preserveAspectRatio="none" aria-hidden>
-        <path d={path} fill="none" stroke="url(#g1)" strokeWidth="2" strokeLinecap="round" />
-        <defs>
-          <linearGradient id="g1" x1="0" x2="1">
-            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#9CA3AF" stopOpacity="0.6" />
-          </linearGradient>
-        </defs>
+        <path d={path} fill="none" stroke="#fff" strokeOpacity="0.95" strokeWidth={1.6} strokeLinecap="round" />
       </svg>
     );
   };
 
   const Heatmap = ({ cells = [] }) => (
-    <div className="grid grid-cols-10 gap-1">
-      {cells.map((c, i) => (
-        <div key={i} className={`w-4 h-4 rounded ${c ? "bg-white/90" : "bg-white/6"}`} />
-      ))}
-    </div>
+    <div className="grid grid-cols-10 gap-1">{cells.map((c, i) => <div key={i} className={`w-4 h-4 rounded ${c ? "bg-white/90" : "bg-white/6"}`} />)}</div>
   );
+
+  // --- Helper to get stats by selected time range ---
+  const statsFor = (user) => user.stats[timeRange] || user.stats.overall;
 
   return (
     <div className="min-h-screen bg-black text-white p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Top bar */}
+        {/* header area */}
         <div className="flex items-center justify-between mb-6 gap-4">
           <div className="flex items-center gap-3">
             <div className="rounded-2xl bg-neutral-900 p-3 flex items-center gap-3 border border-neutral-800">
               <Users className="text-white/90" />
               <div>
                 <div className="text-sm font-semibold">User Management</div>
-                <div className="text-xs text-white/60">Manage accounts, roles & activity</div>
+                <div className="text-xs text-white/60">Black & white admin console</div>
               </div>
             </div>
+
+            {/* segmentation chips visible on large */}
             <div className="hidden md:flex items-center gap-2">
               <Chip active={activeFilter === "highSpend"} onClick={() => setActiveFilter(activeFilter === "highSpend" ? null : "highSpend")}>
                 💰 High Spend
@@ -273,123 +262,69 @@ export default function UserManagement() {
           <div className="flex items-center gap-3">
             <div className="flex items-center bg-neutral-900 rounded-md border border-neutral-800 px-3 py-1 gap-2 w-80">
               <Search className="text-white/70" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search name, email, id..."
-                className="bg-transparent outline-none text-white/90 placeholder:text-white/50 w-full"
-              />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search id, name, email..." className="bg-transparent outline-none text-white/90 placeholder:text-white/50 w-full" />
             </div>
 
-            <PrimaryButton onClick={() => startBulkAction("block")} disabled={bulkState.running}>
-              <Trash2 className="w-4 h-4" />
-              Block
-            </PrimaryButton>
-            <PrimaryButton onClick={() => startBulkAction("export")} disabled={bulkState.running}>
-              <Zap className="w-4 h-4" />
-              Export
-            </PrimaryButton>
+            <IconButton onClick={() => startBulkAction("block")} title="Block selected">
+              <Trash2 className="w-4 h-4" /> Block
+            </IconButton>
+            <IconButton onClick={() => startBulkAction("export")} title="Export selected">
+              <Zap className="w-4 h-4" /> Export
+            </IconButton>
           </div>
         </div>
 
-        {/* bulk progress */}
-        {bulkState.running && (
-          <div className="mb-4 bg-neutral-900 p-3 rounded-md border border-neutral-800 flex items-center gap-3">
-            <Loader2 className="animate-spin w-5 h-5 text-white/80" />
-            <div className="text-sm text-white/80">Running {bulkState.action}...</div>
-            <div className="flex-1 h-2 bg-white/6 rounded overflow-hidden">
-              <div style={{ width: `${bulkState.progress}%` }} className="h-2 bg-white" />
-            </div>
-            <div className="text-xs text-white/60">{bulkState.progress}%</div>
-          </div>
-        )}
+        {/* top summary */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+          <Metric label="Total users" value={summary.total} />
+          <Metric label="Active users" value={summary.active} />
+          <Metric label="Inactive users" value={summary.inactive} />
+          <Metric label="Blocked users" value={summary.blocked} />
+          <Metric label="New (7d)" value={summary.newUsers} />
+        </div>
 
+        {/* main content */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* List (main) */}
+          {/* users list (left/middle) */}
           <section className="lg:col-span-2">
             <div className="rounded-2xl overflow-hidden border border-neutral-800 bg-neutral-900 shadow">
               <div className="px-4 py-3 flex items-center justify-between border-b border-neutral-800">
-                <div className="text-sm text-white/80">
-                  Showing <span className="font-medium">{filtered.length}</span> users
+                <div className="text-sm text-white/80">Users</div>
+                <div className="flex items-center gap-3">
+                  <div className="text-xs text-white/60">Stats range:</div>
+                  <select value={timeRange} onChange={(e) => setTimeRange(e.target.value)} className="bg-transparent border border-neutral-800 text-white px-2 py-1 rounded text-sm">
+                    <option value="overall">Overall</option>
+                    <option value="month">Monthly</option>
+                    <option value="week">Weekly</option>
+                    <option value="day">Daily</option>
+                  </select>
                 </div>
-                <div className="text-xs text-white/50">Live / demo</div>
               </div>
 
               <div className="overflow-auto">
                 <table className="w-full text-sm table-auto">
                   <thead className="bg-neutral-950/60 text-white/70 sticky top-0">
                     <tr>
-                      <th className="px-4 py-3 text-left w-12">
-                        <input type="checkbox" onChange={(e) => (e.target.checked ? selectAll() : clearSelection())} />
-                      </th>
-                      <th className="px-4 py-3 text-left">User</th>
-                      <th className="px-4 py-3 text-left">Orders</th>
-                      <th className="px-4 py-3 text-left">Spend</th>
-                      <th className="px-4 py-3 text-left">Trend</th>
-                      <th className="px-4 py-3 text-left">Role</th>
-                      <th className="px-4 py-3 text-left">Status</th>
-                      <th className="px-4 py-3 text-left w-36">Actions</th>
+                      <th className="px-4 py-3 text-left w-12"><input type="checkbox" onChange={(e) => (e.target.checked ? selectAll() : clearSelection())} /></th>
+                      <th className="px-4 py-3 text-left">ID</th>
+                      <th className="px-4 py-3 text-left">Name</th>
+                      <th className="px-4 py-3 text-left">Gender</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filtered.length === 0 && (
-                      <tr>
-                        <td colSpan={8} className="p-8 text-center text-white/60">
-                          No users found
-                        </td>
-                      </tr>
+                      <tr><td colSpan={5} className="p-8 text-center text-white/60">No users found</td></tr>
                     )}
 
                     {filtered.map((u, idx) => (
                       <tr key={u.id} className={`transition ${idx % 2 === 0 ? "bg-white/2" : ""} hover:bg-white/5`}>
-                        <td className="px-4 py-3">
-                          <input checked={selectedIds.has(u.id)} onChange={() => toggleSelect(u.id)} type="checkbox" />
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <Avatar name={u.name} />
-                            <div>
-                              <div className="font-medium">{u.name}</div>
-                              <div className="text-xs text-white/60">{u.email}</div>
-                            </div>
-                          </div>
-                        </td>
-
-                        <td className="px-4 py-3">{u.total_orders}</td>
-                        <td className="px-4 py-3">₹{u.total_spend.toLocaleString("en-IN")}</td>
-
-                        <td className="px-4 py-3 w-28">
-                          <div className="w-full">
-                            <Sparkline points={u.spendTrend} />
-                          </div>
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <div className="inline-flex items-center gap-2">
-                            <ChevronsUpDown className="w-4 h-4 text-white/70" />
-                            <select value={u.role} onChange={(e) => updateRole(u.id, e.target.value)} className="bg-transparent border border-neutral-800 text-white/90 px-2 py-1 rounded text-xs">
-                              <option>Admin</option>
-                              <option>Editor</option>
-                              <option>Customer</option>
-                            </select>
-                          </div>
-                        </td>
-
-                        <td className="px-4 py-3">
-                          {u.tags?.includes("VIP") ? <Badge color="vip">VIP</Badge> : u.status === "active" ? <Badge>Active</Badge> : <Badge color="danger">Blocked</Badge>}
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2 justify-end">
-                            <IconButton title="View details" onClick={() => setOpenUser(u)}><User className="w-4 h-4" /> View</IconButton>
-                            <IconButton title="Toggle block" onClick={() => setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, status: x.status === "active" ? "blocked" : "active" } : x)))}>
-                              <CheckCircle className="w-4 h-4" /> Toggle
-                            </IconButton>
-                            <IconButton title="Delete / Smart delete" onClick={() => setOpenUser(u)} className="border-red-700 text-red-400 hover:bg-red-600 hover:text-white">
-                              <Trash2 className="w-4 h-4" /> Delete
-                            </IconButton>
-                          </div>
+                        <td className="px-4 py-3"><input checked={selectedIds.has(u.id)} onChange={() => toggleSelect(u.id)} type="checkbox" /></td>
+                        <td className="px-4 py-3 font-mono text-sm">#{u.id}</td>
+                        <td className="px-4 py-3 flex items-center gap-3"><Avatar name={u.name} /> <div><div className="font-medium">{u.name}</div><div className="text-xs text-white/60">{u.email}</div></div></td>
+                        <td className="px-4 py-3 text-sm">{u.gender}</td>
+                        <td className="px-4 py-3 text-right">
+                          <IconButton title="View user" onClick={() => setOpenUser(u)}><User className="w-4 h-4" /> View</IconButton>
                         </td>
                       </tr>
                     ))}
@@ -400,9 +335,7 @@ export default function UserManagement() {
               <div className="px-4 py-3 border-t border-neutral-800 flex items-center justify-between">
                 <div className="text-sm text-white/70">{selectedIds.size} selected</div>
                 <div className="flex items-center gap-2">
-                  <PrimaryButton onClick={() => startBulkAction("block")} disabled={bulkState.running || selectedIds.size === 0}>
-                    <Trash2 className="w-4 h-4" /> Block selected
-                  </PrimaryButton>
+                  <IconButton onClick={() => startBulkAction("block")} title="Block selected"> <Trash2 className="w-4 h-4" /> Block selected</IconButton>
                 </div>
               </div>
             </div>
@@ -413,10 +346,11 @@ export default function UserManagement() {
             <div className="rounded-2xl bg-neutral-900 border border-neutral-800 p-4 mb-4">
               <div className="text-sm text-white/80 mb-3">Quick metrics</div>
               <div className="grid grid-cols-2 gap-3">
-                <MetricCard label="Total users" value={users.length} />
-                <MetricCard label="Active" value={users.filter((u) => u.status === "active").length} />
-                <MetricCard label="Blocked" value={users.filter((u) => u.status === "blocked").length} />
-                <MetricCard label="Selected" value={selectedIds.size} />
+                <Metric label="Total users" value={summary.total} />
+                <Metric label="Active" value={summary.active} />
+                <Metric label="Inactive" value={summary.inactive} />
+                <Metric label="Blocked" value={summary.blocked} />
+                <Metric label="New (7d)" value={summary.newUsers} />
               </div>
             </div>
 
@@ -431,103 +365,89 @@ export default function UserManagement() {
           </aside>
         </div>
 
-        {/* flyout (dark glass) */}
+        {/* flyout (dark glass) - user card */}
         {openUser && (
           <div className="fixed inset-0 z-50 flex">
             <div className="flex-1 bg-black/60 backdrop-blur-sm" onClick={() => setOpenUser(null)} />
-            <aside className="w-full max-w-2xl bg-neutral-950/95 border-l border-neutral-800 p-6 overflow-auto">
+            <aside className="w-full max-w-md bg-neutral-950/95 border-l border-neutral-800 p-6 overflow-auto">
               <div className="flex items-start justify-between">
                 <div>
                   <h2 className="text-xl font-semibold">{openUser.name}</h2>
                   <div className="text-sm text-white/70">{openUser.email} • {openUser.phone}</div>
-                  <div className="text-xs text-white/60 mt-1">Joined {new Date(openUser.signup).toLocaleDateString()}</div>
+                  <div className="text-xs text-white/60 mt-1">Last login: {new Date(openUser.lastLogin).toLocaleString()}</div>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  <IconButton title="Impersonate (demo)" onClick={() => impersonate(openUser)}>
-                    <LogIn className="w-4 h-4" /> Login
-                  </IconButton>
+                <div className="flex flex-col gap-2">
+                  <IconButton title="Impersonate" onClick={() => impersonate(openUser)}><LogIn className="w-4 h-4" /> Login</IconButton>
                   <IconButton title="Close" onClick={() => setOpenUser(null)}>Close</IconButton>
                 </div>
               </div>
 
-              <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Kpi label="Total orders" value={openUser.total_orders} />
-                <Kpi label="Total spend" value={`₹${openUser.total_spend.toLocaleString("en-IN")}`} />
-                <Kpi label="Coupon savings" value={`₹${openUser.coupon_savings.toLocaleString("en-IN")}`} />
+              <div className="mt-6 space-y-3">
+                <div className="flex items-center gap-4">
+                  <div className="text-sm text-white/70">Gender</div>
+                  <div className="font-medium">{openUser.gender}</div>
+                  <div className="text-sm text-white/70 ml-4">Age</div>
+                  <div className="font-medium">{openUser.age}</div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button className={`px-4 py-2 rounded border ${openUser.status === 'active' ? 'border-red-600 text-red-300' : 'border-green-600 text-green-300'}`} onClick={() => setUsers((us) => us.map((x) => x.id === openUser.id ? {...x, status: x.status === 'active' ? 'blocked' : 'active'} : x))}>
+                    {openUser.status === 'active' ? 'Block' : 'Unblock'}
+                  </button>
+
+                  <button className="px-4 py-2 rounded border border-red-700 text-red-400" onClick={() => purgeUserNow(openUser.id)}>Delete user</button>
+                </div>
               </div>
 
-              <section className="mt-6">
-                <h3 className="font-medium flex items-center gap-2"><BarChart3 className="w-4 h-4" /> Spend (12 months)</h3>
-                <div className="mt-2 w-full h-12"><Sparkline points={openUser.spendTrend} /></div>
-              </section>
+              <hr className="my-4 border-neutral-800" />
 
-              <section className="mt-6">
-                <h3 className="font-medium">Login heatmap (30 days)</h3>
-                <div className="mt-2"><Heatmap cells={openUser.loginHeatmap} /></div>
-              </section>
-
-              <section className="mt-6">
-                <h3 className="font-medium">Activity history</h3>
-                <ul className="mt-2 text-sm text-white/70 list-inside space-y-1">
-                  {openUser.activityLog.map((a, i) => <li key={i}>• {a}</li>)}
-                </ul>
-              </section>
-
-              <section className="mt-6">
-                <h3 className="font-medium">Role & actions</h3>
-                <div className="mt-2 flex items-center gap-3">
-                  <select value={openUser.role} onChange={(e) => updateRole(openUser.id, e.target.value)} className="bg-transparent border border-neutral-800 text-white px-3 py-2 rounded">
-                    <option>Admin</option>
-                    <option>Editor</option>
-                    <option>Customer</option>
-                  </select>
-
-                  <IconButton title="Toggle block" onClick={() => setUsers((us) => us.map((x) => x.id === openUser.id ? { ...x, status: x.status === "active" ? "blocked" : "active" } : x))}>
-                    <CheckCircle className="w-4 h-4" /> Toggle
-                  </IconButton>
-
-                  <IconButton title="Anonymize" onClick={() => anonymizeUser(openUser.id)} className="border-red-700 text-red-400 hover:bg-red-600 hover:text-white">
-                    <Trash2 className="w-4 h-4" /> Anonymize
-                  </IconButton>
+              {/* user stats area filtered by timeRange */}
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium">User stats</div>
+                  <div className="text-xs text-white/60">Showing: <strong className="ml-1">{timeRange}</strong></div>
                 </div>
-              </section>
 
-              <section className="mt-6">
-                <h3 className="font-medium">Smart delete</h3>
-                <div className="mt-2 flex items-center gap-3">
-                  <IconButton title="Soft delete" onClick={() => softDeleteUser(openUser.id)} className="border-yellow-600 text-yellow-300">Soft delete</IconButton>
-                  <IconButton title="Anonymize now" onClick={() => anonymizeUser(openUser.id)} className="border-red-700 text-red-400">Anonymize</IconButton>
-                  <IconButton title="Purge now" onClick={() => purgeUserNow(openUser.id)} className="border-red-800 bg-red-700/10">Purge</IconButton>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <Metric label="Total orders" value={statsFor(openUser).total_orders} />
+                  <Metric label="Total spend" value={`₹${statsFor(openUser).total_spend}`} />
+                  <Metric label="Coupon savings" value={`₹${statsFor(openUser).coupon_savings}`} />
+                  <Metric label="Successful" value={statsFor(openUser).orders_successful} />
+                  <Metric label="Cancelled" value={statsFor(openUser).orders_cancelled} />
+                  <Metric label="Returned" value={statsFor(openUser).orders_returned} />
                 </div>
-                {openUser.deleteMode === "soft" && <div className="mt-3 text-sm text-white/70">Purge in: {openUser.purgeCountdown ?? 30} days</div>}
-              </section>
+
+                <div className="mt-4">
+                  <h4 className="text-sm font-medium mb-2">Activity (last 30 days)</h4>
+                  <div className="w-full h-12"><Sparkline points={openUser.spendTrend} /></div>
+                </div>
+
+                <div className="mt-4">
+                  <h4 className="text-sm font-medium mb-2">Login heatmap</h4>
+                  <Heatmap cells={openUser.loginHeatmap} />
+                </div>
+
+              </div>
             </aside>
           </div>
         )}
+
       </div>
     </div>
   );
 }
 
-/* small UI helpers (metrics, etc.) */
-function MetricCard({ label, value }) {
+/* small helpers */
+function Metric({ label, value }) {
   return (
-    <div className="p-3 bg-black/20 rounded">
-      <div className="text-xs text-white/70">{label}</div>
-      <div className="text-lg font-semibold">{value}</div>
-    </div>
-  );
-}
-function Kpi({ label, value }) {
-  return (
-    <div className="p-3 bg-black/20 rounded text-center">
+    <div className="p-3 bg-neutral-900 rounded-lg border border-neutral-800 text-center">
       <div className="text-xs text-white/70">{label}</div>
       <div className="text-lg font-semibold mt-1">{value}</div>
     </div>
   );
 }
+
 function Avatar({ name }) {
   const initials = name.split(" ").map((n) => n[0]).slice(0, 2).join("");
-  return <div className="w-9 h-9 rounded-full bg-white/6 flex items-center justify-center text-sm font-medium text-white/90">{initials}</div>;
+  return <div className="w-10 h-10 rounded-full bg-white/6 flex items-center justify-center text-sm font-medium text-white/90">{initials}</div>;
 }
