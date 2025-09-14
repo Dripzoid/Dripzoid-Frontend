@@ -8,11 +8,10 @@ import {
   User,
   Calendar,
   Download,
-  Male,
   Smartphone,
-  Female,
   CheckCircle,
 } from "lucide-react";
+import { FaMale as Male, FaFemale as Female, FaTransgender } from "react-icons/fa";
 import { motion } from "framer-motion";
 
 /* helpers */
