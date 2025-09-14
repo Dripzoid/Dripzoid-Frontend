@@ -436,4 +436,4 @@ function HoverSparkline({ points = [] }) {
   );
 }
 
-function formatCurrency(n) { return typeof n === 'number' ? n.toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) : '₹0'; }
+
