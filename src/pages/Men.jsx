@@ -201,7 +201,7 @@ const Men = () => {
               onClick={() => setSidebarOpen(true)}
               className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700"
             >
-              Filters
+              Apply Filters & Sorting
             </button>
           </div>
         </div>
