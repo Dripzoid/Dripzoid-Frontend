@@ -8,18 +8,13 @@ const MIN = 0;
 const MAX = 10000;
 
 const Shop = () => {
-  // Filters / UI state (selectedSubcategories: array of { category, subcategory })
   const [selectedSubcategories, setSelectedSubcategories] = useState([]);
   const [expandedCategories, setExpandedCategories] = useState([]);
   const [priceRange, setPriceRange] = useState([MIN, MAX]);
   const [selectedColors, setSelectedColors] = useState([]);
   const [colorsList, setColorsList] = useState([]);
   const [sortOption, setSortOption] = useState("");
-
-  // Dynamic categories: normalized to [{ name, subcategories: [ "Shirts", "Pants" ] }]
   const [categoryData, setCategoryData] = useState([]);
-
-  // Products + pagination
   const [products, setProducts] = useState([]);
   const [meta, setMeta] = useState({ total: 0, page: 1, pages: 1, limit: 0 });
   const [loading, setLoading] = useState(false);
@@ -27,11 +22,9 @@ const Shop = () => {
   const perPageOptions = ["12", "24", "36", "all"];
   const [perPage, setPerPage] = useState("12");
   const [page, setPage] = useState(1);
-
-  // Sidebar open for mobile
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // --- Fetch categories on mount (handles either { categories: [...] } or raw array)
+  // --- Fetch categories
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -40,7 +33,6 @@ const Shop = () => {
         if (!res.ok) throw new Error("Failed to fetch categories");
         const json = await res.json();
 
-        // Normalize: accept either an array or { categories: [...] } object
         const raw = Array.isArray(json) ? json : (json.categories || json || []);
         const mapped = (raw || []).map((c) => {
           const name = c?.name ?? String(c);
@@ -60,7 +52,7 @@ const Shop = () => {
     return () => { mounted = false; };
   }, []);
 
-  // --- Fetch colors on mount
+  // --- Fetch colors
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -85,7 +77,6 @@ const Shop = () => {
     try {
       const params = new URLSearchParams();
 
-      // If user selected category-scoped subcategories, we send them as Category:Subcategory pairs
       if (selectedSubcategories.length > 0) {
         const mapped = selectedSubcategories.map(
           (sel) => `${encodeURIComponent(sel.category)}:${encodeURIComponent(sel.subcategory)}`
@@ -111,7 +102,6 @@ const Shop = () => {
       }
 
       const url = `${API_BASE}/api/products?${params.toString()}`;
-
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Products fetch failed: ${res.status}`);
       const data = await res.json();
@@ -119,7 +109,6 @@ const Shop = () => {
       let productsArray = [];
       if (Array.isArray(data)) productsArray = data;
       else if (data?.data && Array.isArray(data.data)) productsArray = data.data;
-      else productsArray = [];
 
       const serverMeta = data?.meta || {};
       const total = Number(serverMeta.total ?? productsArray.length) || 0;
@@ -140,22 +129,11 @@ const Shop = () => {
     }
   };
 
-  // Re-fetch when filters change
   useEffect(() => {
     fetchProducts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSubcategories, selectedColors, priceRange, sortOption, perPage, page]);
 
-  // close sidebar on ESC (mobile)
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === "Escape") setSidebarOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  // Sidebar helpers
   const clearFilters = () => {
     setSelectedSubcategories([]);
     setExpandedCategories([]);
@@ -198,25 +176,21 @@ const Shop = () => {
       {/* Main */}
       <main className="flex-1 p-4 sm:p-6">
         <div className="flex items-center justify-between w-full mb-4">
-          <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Shop</p>
-          </div>
-
+          <p className="text-sm text-gray-500 dark:text-gray-400">Shop</p>
           <div className="flex items-center gap-3">
             <label htmlFor="perPage" className="text-sm text-gray-500 dark:text-gray-400 mr-2">Per page:</label>
-            <select id="perPage" value={perPage} onChange={(e) => handlePerPageChange(e.target.value)} className="rounded-md pl-3 pr-8 py-1 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm">
-              {perPageOptions.map((opt) => (<option key={String(opt)} value={String(opt)}>{opt === "all" ? "All" : opt}</option>))}
-            </select>
-
-            {/* Mobile: open sliding sidebar */}
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700"
-              aria-controls="filters-panel"
-              aria-expanded={sidebarOpen}
+            <select
+              id="perPage"
+              value={perPage}
+              onChange={(e) => handlePerPageChange(e.target.value)}
+              className="rounded-md pl-3 pr-8 py-1 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm"
             >
-              Apply Filters & Sorting
-            </button>
+              {perPageOptions.map((opt) => (
+                <option key={String(opt)} value={String(opt)}>
+                  {opt === "all" ? "All" : opt}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -226,7 +200,6 @@ const Shop = () => {
           <p>No products found</p>
         ) : (
           <>
-            {/* Responsive grid: mobile/tablet = 2 columns, desktop = 3 columns */}
             <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {products.map((p) => <ProductCard key={p.id} product={p} />)}
             </div>
@@ -242,7 +215,17 @@ const Shop = () => {
         )}
       </main>
 
-      {/* Mobile sidebar (sliding panel) */}
+      {/* Floating Mobile Filter Button */}
+      <button
+        onClick={() => setSidebarOpen(true)}
+        className="lg:hidden fixed bottom-4 right-4 px-4 py-2 rounded-full bg-blue-600 text-white shadow-lg z-50"
+        aria-controls="filters-panel"
+        aria-expanded={sidebarOpen}
+      >
+        Apply Filters & Sorting
+      </button>
+
+      {/* Mobile sidebar */}
       <FilterSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
