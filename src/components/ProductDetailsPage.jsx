@@ -463,17 +463,93 @@ export default function ProductDetailsPage() {
     });
   }
 
-  /* ---------- gallery ---------- */
-  const galleryImages =
-    Array.isArray(product?.images) && product.images.length
-      ? product.images
-      : ["/placeholder.png"];
+  /* ---------- gallery (color-aware) ---------- */
+  // Determine whether the product requires color
+  const requiresColor = Array.isArray(product?.colors) && product.colors.length > 0;
+  const requiresSize = Array.isArray(product?.sizes) && product.sizes.length > 0;
+
+  // Build a mapping of colorKey -> images slice
+  const colorImageMap = useMemo(() => {
+    const imgs = Array.isArray(product?.images) ? product.images.slice() : [];
+    const colors = Array.isArray(product?.colors) && product.colors.length ? product.colors.slice() : [];
+    const map = {};
+
+    if (!imgs.length) {
+      map.__all__ = ["/placeholder.png"];
+      return map;
+    }
+
+    if (!colors.length) {
+      map.__all__ = imgs;
+      return map;
+    }
+
+    const nImgs = imgs.length;
+    const nColors = colors.length;
+
+    // If fewer images than colors, assign one image each to the first nImgs colors
+    if (nImgs <= nColors) {
+      for (let i = 0; i < nColors; i++) {
+        const key = sanitizeColorNameForLookup(String(colors[i] || ""));
+        map[key] = i < nImgs ? [imgs[i]] : [];
+      }
+      return map;
+    }
+
+    // Distribute images as evenly as possible across colors. If there's a remainder,
+    // distribute one extra image to the first `remainder` colors.
+    const base = Math.floor(nImgs / nColors);
+    let remainder = nImgs % nColors;
+    let idx = 0;
+    for (let i = 0; i < nColors; i++) {
+      const extra = remainder > 0 ? 1 : 0;
+      const count = base + extra;
+      const key = sanitizeColorNameForLookup(String(colors[i] || ""));
+      map[key] = imgs.slice(idx, idx + count);
+      idx += count;
+      if (remainder > 0) remainder -= 1;
+    }
+
+    // If any images left (shouldn't happen), append to last color
+    if (idx < nImgs) {
+      const lastKey = sanitizeColorNameForLookup(String(colors[colors.length - 1] || ""));
+      map[lastKey] = (map[lastKey] || []).concat(imgs.slice(idx));
+    }
+
+    return map;
+  }, [product?.images, product?.colors]);
+
+  const galleryImages = useMemo(() => {
+    const imgsAll = colorImageMap.__all__ || [];
+    if (!requiresColor) {
+      return imgsAll.length ? imgsAll : ["/placeholder.png"];
+    }
+
+    const key = sanitizeColorNameForLookup(String(selectedColor || ""));
+    // Try exact match
+    let imgs = colorImageMap[key];
+
+    // If not found, try to find by matching to any color by sanitized string
+    if (!imgs) {
+      const colors = Array.isArray(product?.colors) ? product.colors : [];
+      const firstColorKey = sanitizeColorNameForLookup(String(colors[0] || ""));
+      imgs = colorImageMap[firstColorKey] || imgsAll;
+    }
+
+    return imgs && imgs.length ? imgs : ["/placeholder.png"];
+  }, [colorImageMap, requiresColor, selectedColor, product?.colors]);
+
   function prevImage() {
     setSelectedImage((s) => (s - 1 + galleryImages.length) % galleryImages.length);
   }
   function nextImage() {
     setSelectedImage((s) => (s + 1) % galleryImages.length);
   }
+
+  // whenever gallery images or selected color changes, reset selectedImage to 0
+  useEffect(() => {
+    setSelectedImage(0);
+  }, [galleryImages.length, selectedColor]);
 
   // Lightbox
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -496,9 +572,6 @@ export default function ProductDetailsPage() {
   const closeLightbox = () => setLightboxOpen(false);
 
   /* ---------- variant-aware stock & quantity safety ---------- */
-  const requiresColor = Array.isArray(product?.colors) && product.colors.length > 0;
-  const requiresSize = Array.isArray(product?.sizes) && product.sizes.length > 0;
-
   const selectedVariant = useMemo(() => {
     const variants = Array.isArray(product?.variants) ? product.variants : [];
     if (!variants.length) return null;
@@ -950,7 +1023,7 @@ export default function ProductDetailsPage() {
                   {(product.colors || []).map((c, idx) => {
                     const name = typeof c === "string" ? c : (c && (c.label || c.name)) || String(c || "");
                     const hex = resolveColor(c);
-                    const isSelected = String(selectedColor) === String(c) || String(selectedColor) === String(name);
+                    const isSelected = sanitizeColorNameForLookup(String(selectedColor)) === sanitizeColorNameForLookup(String(c)) || String(selectedColor) === String(name);
                     const border = isSelected ? "ring-2 ring-offset-1 ring-black dark:ring-white" : "border border-gray-300 dark:border-gray-700";
                     return (
                       <button
