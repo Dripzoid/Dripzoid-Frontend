@@ -21,6 +21,8 @@ import {
 
 import { SketchPicker } from "react-color";
 
+import nearestColor from "nearest-color";
+
 import ProductCard from "./ProductCard";
 import Reviews from "./Reviews";
 
@@ -52,14 +54,34 @@ function normalizeVariantValue(v) {
  *  - If value is an object with label/name -> use that
  *  - If value is a hex already -> return hex
  *  - If the browser accepts the string as a CSS color -> return the original string
+ *  - Use nearest-color to match to a friendly palette name
  *  - Fallback to stringified value
  */
+// --- nearest-color setup ---
+const CUSTOM_NAMED_COLORS = {
+  black: "#000000",
+  cornsilk: "#FFF8DC", // standard CSS cornsilk
+  "irish green": "#009A44", // common 'irish green' approximation
+  azalea: "#F7C6D9", // azalea / azalea pink approximation
+  "heather royal": "#307FE2", // Gildan Heather Royal approx
+  "heather sapphire": "#0076A8", // Gildan Heather Sapphire approx
+  // add other friendly names as needed
+};
+
+let nearest = null;
+try {
+  nearest = nearestColor.from(CUSTOM_NAMED_COLORS);
+} catch (err) {
+  // if nearest-color isn't available for some reason, we'll gracefully degrade
+  nearest = null;
+}
+
 function detectColorTextName(color) {
   if (!color && color !== 0) return "";
   if (typeof color === "object") {
     if (color.label) return String(color.label);
     if (color.name) return String(color.name);
-    if (color.hex) return String(color.hex);
+    if (color.hex) return String(color.hex).toUpperCase();
     if (color.value) return String(color.value);
     // attempt stringify
     return String(color).replace(/\s+/g, " ").trim();
@@ -67,15 +89,53 @@ function detectColorTextName(color) {
   const s = String(color).trim();
   if (!s) return "";
   // hex?
-  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s)) return s.toUpperCase();
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s)) {
+    const hex = s.toUpperCase();
+    // try nearest color name if available
+    if (nearest) {
+      try {
+        const r = nearest(hex);
+        if (r && r.name) return r.name;
+      } catch {}
+    }
+    return hex;
+  }
+
   // try browser accept
   try {
     if (typeof document !== "undefined") {
       const st = document.createElement("span").style;
       st.color = s;
-      if (st.color) return s; // browser accepts the name
+      if (st.color) {
+        // if browser accepts the color string, try to resolve computed color
+        try {
+          const span = document.createElement("span");
+          span.style.color = s;
+          span.style.display = "none";
+          document.body.appendChild(span);
+          const cs = window.getComputedStyle(span).color;
+          document.body.removeChild(span);
+          // convert to hex and then nearest name if possible
+          const hex = rgbStringToHex(cs);
+          if (hex && nearest) {
+            try {
+              const r = nearest(hex);
+              if (r && r.name) return r.name;
+            } catch {}
+          }
+        } catch {}
+        return s; // browser accepts the name
+      }
     }
   } catch {}
+
+  // lastly, if we have nearest palette, try to resolve the raw string via name lookup
+  if (nearest) {
+    // try direct palette key match
+    const key = Object.keys(CUSTOM_NAMED_COLORS).find((k) => sanitizeColorNameForLookup(k) === sanitizeColorNameForLookup(s));
+    if (key) return key;
+  }
+
   return s;
 }
 
@@ -230,6 +290,19 @@ function stringToHslColor(str = "", s = 65, l = 40) {
   }
   const h = Math.abs(hash) % 360;
   return `hsl(${h} ${s}% ${l}%)`;
+}
+
+// Helper: return friendly nearest name (falls back to detectColorTextName)
+function getNearestColorLabel(c) {
+  const hex = resolveColor(c);
+  if (!hex) return detectColorTextName(c);
+  if (nearest) {
+    try {
+      const r = nearest(hex);
+      if (r && r.name) return r.name;
+    } catch {}
+  }
+  return detectColorTextName(c);
 }
 
 /* -------------------- MAIN COMPONENT -------------------- */
@@ -559,7 +632,7 @@ export default function ProductDetailsPage() {
   // Helper: derive a readable list of color names (advanced detection)
   const allColorNames = useMemo(() => {
     const colors = Array.isArray(product?.colors) ? product.colors : [];
-    return colors.map((c) => detectColorTextName(c));
+    return colors.map((c) => getNearestColorLabel(c));
   }, [product?.colors]);
 
   const galleryImages = useMemo(() => {
@@ -939,6 +1012,7 @@ export default function ProductDetailsPage() {
   function ColorDisplay({ color }) {
     const name = typeof color === "string" ? color : (color && (color.label || color.name)) || String(color || "");
     const final = resolveColor(color);
+    const nearestLabel = getNearestColorLabel(color);
     const [pickerOpen, setPickerOpen] = useState(false);
     const [pickerColor, setPickerColor] = useState(final);
 
@@ -963,7 +1037,7 @@ export default function ProductDetailsPage() {
 
         <div className="text-xs text-gray-600 dark:text-gray-300 leading-none">
           <div className="leading-none">{String(name)}</div>
-          <div className="text-[11px] leading-none">{String(final).toUpperCase()}</div>
+          <div className="text-[11px] leading-none">{String(final).toUpperCase()} • {nearestLabel}</div>
         </div>
 
         {pickerOpen && (
@@ -993,313 +1067,114 @@ export default function ProductDetailsPage() {
     );
   }
 
-  return (
-    <div className="bg-white dark:bg-black min-h-screen text-black dark:text-white pb-20">
-      <div className="container mx-auto p-6 space-y-8">
-        {/* Gallery + details */}
-        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 border border-gray-200/60 dark:border-gray-700/60">
-          <div className="relative">
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => openLightbox(selectedImage)}
-                aria-label="Open gallery"
-                className="w-full block"
-              >
-                <img
-                  src={galleryImages[selectedImage]}
-                  alt={`${product.name} - image ${selectedImage + 1}`}
-                  className="w-full h-[460px] object-cover rounded-xl shadow"
-                />
-              </button>
-              <div className="absolute top-4 left-4 bg-black/60 text-white px-2 py-1 rounded">
-                {selectedImage + 1}/{galleryImages.length}
-              </div>
-
-              <button
-                onClick={prevImage}
-                type="button"
-                className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-black/70 text-black dark:text-white p-2 rounded-full shadow z-30"
-                aria-label="Previous image"
-              >
-                <ChevronLeft />
-              </button>
-              <button
-                onClick={nextImage}
-                type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-black/70 text-black dark:text-white p-2 rounded-full shadow z-30"
-                aria-label="Next image"
-              >
-                <ChevronRight />
-              </button>
-            </div>
-
-            <div
-              className="flex gap-3 mt-4 overflow-x-auto thumbs-container py-1"
-              role="tablist"
-              aria-label="Product images"
-            >
-              {galleryImages.map((g, i) => {
-                const isActive = i === selectedImage;
-                return (
-                  <button
-                    key={`${g}-${i}`}
-                    onClick={() => setSelectedImage(i)}
-                    aria-selected={isActive}
-                    aria-label={`Image ${i + 1}`}
-                    title={`Image ${i + 1}`}
-                    type="button"
-                    role="tab"
-                    className="relative flex-shrink-0 w-20 h-20 rounded-md overflow-hidden focus:outline-none"
-                  >
-                    <div
-                      className={`w-full h-full rounded-md border transition-all duration-200 overflow-hidden ${isActive
-                        ? "border-2 border-black dark:border-white shadow-md"
-                        : "border border-gray-300 dark:border-gray-700 hover:border-gray-500"
-                        }`}
-                    >
-                      <img
-                        src={g}
-                        alt={`Thumbnail ${i + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
-            <div className="flex items-start justify-between">
-              <div className="pr-4">
-                <h1 className="text-3xl font-bold mb-2 text-black dark:text-white">{product.name}</h1>
-                <p className="text-gray-600 dark:text-gray-300 mb-4">{product.description}</p>
-                <div className="text-2xl font-semibold mb-2">{formatINR(product.price)}</div>
-              </div>
-
-              <div className="flex flex-col items-end gap-3">
-                {/* Wishlist toggle (simple Heart icon, no count) */}
-                <button
-                  onClick={handleTopWishlistToggle}
-                  disabled={wlBusyTop}
-                  aria-pressed={isWishlisted}
-                  aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
-                  title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
-                  className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white dark:bg-gray-800 border hover:shadow focus:outline-none"
-                >
-                  <Heart className={`${isWishlisted ? "text-red-500" : "text-gray-600"} w-5 h-5`} />
-                </button>
-              </div>
-            </div>
-
-            <div className="mb-4">
-              {availableStock <= 0 ? (
-                <div className="inline-block px-3 py-1 rounded-full bg-red-600 text-white text-sm font-semibold">
-                  Out of stock
-                </div>
-              ) : availableStock <= 10 ? (
-                <div className="inline-block px-3 py-1 rounded-full bg-amber-500 text-black text-sm font-semibold">
-                  Only {availableStock} left
-                </div>
-              ) : availableStock <= 20 ? (
-                <div className="inline-block px-3 py-1 rounded-full bg-amber-200 text-black text-sm font-semibold">
-                  Only a few left
-                </div>
-              ) : (
-                <div className="inline-block px-3 py-1 rounded-full bg-green-600 text-white text-sm font-semibold">
-                  In stock
-                </div>
-              )}
-            </div>
-
-            {requiresColor && (
-              <div className="mb-4">
-                <div className="font-medium mb-2">Color</div>
-                <div className="flex gap-3 items-center">
-                  {(product.colors || []).map((c, idx) => {
-                    const name = typeof c === "string" ? c : (c && (c.label || c.name)) || String(c || "");
-                    const hex = resolveColor(c);
-                    const isSelected = sanitizeColorNameForLookup(String(selectedColor)) === sanitizeColorNameForLookup(String(c)) || String(selectedColor) === String(name);
-                    const border = isSelected ? "ring-2 ring-offset-1 ring-black dark:ring-white" : "border border-gray-300 dark:border-gray-700";
-                    return (
-                      <button
-                        key={`${String(name)}-${idx}`}
-                        onClick={() => setSelectedColor(c)}
-                        aria-label={`color-${name} ${hex ? `(${hex})` : ""}`}
-                        aria-pressed={isSelected}
-                        className={`w-10 h-10 rounded-full focus:outline-none ${isSelected ? "shadow-inner" : ""} ${border}`}
-                        style={{ backgroundColor: hex }}
-                        title={`${name} ${hex ? `(${hex})` : ""}`}
-                        type="button"
-                      />
-                    );
-                  })}
-                  {(product.colors || []).length === 0 && (
-                    <div className="text-sm text-gray-500">No color options</div>
-                  )}
-
-                  {/* show small color details for currently selected color */}
-                  {selectedColor ? <ColorDisplay color={selectedColor} /> : null}
-                </div>
-
-                {/* Advanced: show detected color text names (helpful when product color objects are complex) */}
-                {allColorNames && allColorNames.length > 0 && (
-                  <div className="mt-2 text-xs text-gray-500">
-                    Available colors: {allColorNames.join(" — ")}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {requiresSize && (
-              <div className="mb-4">
-                <div className="font-medium mb-2">Size</div>
-                <div className="flex gap-3">
-                  {(product.sizes || []).map((s) => {
-                    const active = String(selectedSize) === String(s);
-                    return (
-                      <button
-                        key={String(s)}
-                        onClick={() => setSelectedSize(s)}
-                        className={`px-4 py-2 rounded-lg border ${active ? "bg-black text-white dark:bg-white dark:text-black" : "bg-gray-100 dark:bg-gray-800"}`}
-                        aria-pressed={active}
-                        type="button"
-                      >
-                        {String(s)}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            <div className="mb-6">
-              <div className="font-medium mb-2">Quantity</div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                  className="px-3 py-1 border rounded"
-                  type="button"
-                  aria-label="Decrease quantity"
-                >
-                  -
-                </button>
-                <span className="min-w-[36px] text-center" aria-live="polite">{quantity}</span>
-                <button
-                  onClick={() => setQuantity((q) => Math.min(availableStock || q, q + 1))}
-                  className={`px-3 py-1 border rounded ${availableStock <= 0 || quantity >= availableStock ? "opacity-50 cursor-not-allowed" : ""}`}
-                  type="button"
-                  disabled={availableStock <= 0 || quantity >= availableStock}
-                  aria-label="Increase quantity"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
-            <div className="flex gap-3 items-center">
-              <motion.button
-                onClick={addedToCart ? goToCart : addToCartHandler}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                disabled={disablePurchase && !addedToCart}
-                className={`cssbuttons-io small shadow-neon-black flex-1 py-2 rounded-full flex items-center justify-center gap-2 transition ${disablePurchase && !addedToCart ? "opacity-50 cursor-not-allowed" : "bg-black text-white"}`}
-                aria-label={addedToCart ? "Go to cart" : "Add to cart"}
-                type="button"
-              >
-                <ShoppingCart /> <span className="label">{addedToCart ? "Go to Cart" : "Add to Cart"}</span>
-              </motion.button>
-
-              <motion.button
-                onClick={buyNowHandler}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                disabled={disablePurchase}
-                className={`cssbuttons-io small shadow-neon-black flex-1 py-2 rounded-full flex items-center justify-center gap-2 transition ${disablePurchase ? "opacity-50 cursor-not-allowed bg-white text-black border" : "bg-white text-black border"}`}
-                aria-label="Buy now"
-                type="button"
-              >
-                <CreditCard /> <span className="label">Buy Now</span>
-              </motion.button>
-
-              {/* keep share near buy buttons */}
-              <button
-                onClick={handleShare}
-                type="button"
-                className="p-2 rounded-full border ml-1 hover:scale-105 transition"
-                aria-label="Share product"
-              >
-                <MessageCircle />
-              </button>
-            </div>
-
-            <div className="mt-6 flex items-center gap-3">
-              <input
-                placeholder="PIN code (e.g. 123 456)"
-                value={zipDisplay}
-                onChange={(e) => formatZipInput(e.target.value)}
-                className="p-3 border rounded-full w-48 bg-white dark:bg-gray-900 text-black dark:text-white"
-                inputMode="numeric"
-                aria-label="PIN code"
+ return (
+  <div className="bg-white dark:bg-black min-h-screen text-black dark:text-white pb-20">
+    <div className="container mx-auto p-6 space-y-8">
+      {/* Gallery + details */}
+      <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* Left: Image Gallery */}
+        <div className="space-y-4">
+          <div className="aspect-square rounded-2xl overflow-hidden shadow-md bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+            {product.images && product.images.length > 0 ? (
+              <img
+                src={product.images[selectedIndex]}
+                alt={product.name}
+                className="object-contain w-full h-full"
               />
-              <button onClick={checkDelivery} className={`${actionButtonClass}`} type="button">
-                <MapPin size={16} /> Check
+            ) : (
+              <span className="text-gray-400">No image</span>
+            )}
+          </div>
+
+          {/* Thumbnail row */}
+          <div className="flex gap-2 overflow-x-auto">
+            {product.images?.map((img, idx) => (
+              <button
+                key={idx}
+                onClick={() => setSelectedIndex(idx)}
+                className={`h-20 w-20 rounded-xl overflow-hidden border-2 ${
+                  selectedIndex === idx
+                    ? "border-blue-500"
+                    : "border-transparent"
+                }`}
+              >
+                <img
+                  src={img}
+                  alt={`Thumbnail ${idx + 1}`}
+                  className="object-cover w-full h-full"
+                />
               </button>
-              <div className="text-sm text-gray-600 dark:text-gray-300 ml-4">
-                {deliveryMsg ? (
-                  <span className={`${deliveryMsg.ok ? "text-black dark:text-white" : "text-red-600 dark:text-red-400"}`}>
-                    {deliveryMsg.text}
-                  </span>
-                ) : (
-                  <span>Check estimated delivery</span>
-                )}
+            ))}
+          </div>
+        </div>
+
+        {/* Right: Details */}
+        <div className="flex flex-col gap-6">
+          <h1 className="text-3xl font-bold">{product.name}</h1>
+          <p className="text-xl font-semibold text-blue-600 dark:text-blue-400">
+            {formatCurrency(product.price)}
+          </p>
+          <p className="text-gray-700 dark:text-gray-300">{product.description}</p>
+
+          {/* Colors */}
+          {product.colors?.length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold mb-2">Colors</h2>
+              <div className="flex gap-3 flex-wrap">
+                {product.colors.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setSelectedColor(c)}
+                    className={`h-10 w-10 rounded-full border-2 ${
+                      selectedColor === c ? "border-blue-500" : "border-gray-300"
+                    }`}
+                    style={{ backgroundColor: resolveColor(c) }}
+                    title={c}
+                  />
+                ))}
               </div>
             </div>
-          </div>
-        </section>
+          )}
 
-        {/* Lightbox modal */}
-        {lightboxOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/80"
-              onClick={closeLightbox}
-            />
-            <motion.div
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 20, opacity: 0 }}
-              className="relative max-w-5xl w-full mx-4"
+          {/* Sizes */}
+          {product.sizes?.length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold mb-2">Sizes</h2>
+              <div className="flex gap-3 flex-wrap">
+                {product.sizes.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setSelectedSize(s)}
+                    className={`px-4 py-2 rounded-lg border ${
+                      selectedSize === s
+                        ? "bg-blue-500 text-white border-blue-500"
+                        : "border-gray-300"
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-4">
+            <button
+              onClick={handleAddToCart}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl shadow-md transition"
             >
-              <div className="relative">
-                <img
-                  src={galleryImages[lightboxIndex]}
-                  alt={`Lightbox ${lightboxIndex + 1}`}
-                  className="w-full max-h-[80vh] object-contain rounded"
-                />
-                <button
-                  onClick={closeLightbox}
-                  className="absolute top-3 right-3 bg-white/90 dark:bg-gray-800 text-black dark:text-white p-2 rounded-full"
-                  aria-label="Close lightbox"
-                >
-                  <X />
-                </button>
-
-                <button
-                  onClick={() => setLightboxIndex((i) => (i - 1 + galleryImages.length) % galleryImages.length)}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-gray-800 text-black dark:text-white p-2 rounded-full"
-                  aria-label="Previous in lightbox"
-                >
-                  <ChevronLeft />
-                </button>
-
-                <button
-                  onClick={() => setLightboxIndex((i) => (i + 1) % galleryImages.length)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-gray-800 text-black dark:text-white p-2 rounded-full"
-                  aria-label="Next in lightbox"
-                >
-                  <Chevro... (truncated)
+              {isInCart ? "Go to Cart" : "Add to Cart"}
+            </button>
+            <button
+              onClick={handleBuyNow}
+              className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl shadow-md transition"
+            >
+              Buy Now
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+);
