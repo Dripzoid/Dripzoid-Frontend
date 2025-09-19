@@ -42,6 +42,43 @@ function sanitizeColorNameForLookup(name) {
   return name.trim().toLowerCase().replace(/\s+/g, "");
 }
 
+function normalizeVariantValue(v) {
+  if (v === null || v === undefined) return "";
+  return String(v).trim().toLowerCase();
+}
+
+/**
+ * Attempts to return a useful text-name for a color value. Strategies:
+ *  - If value is an object with label/name -> use that
+ *  - If value is a hex already -> return hex
+ *  - If the browser accepts the string as a CSS color -> return the original string
+ *  - Fallback to stringified value
+ */
+function detectColorTextName(color) {
+  if (!color && color !== 0) return "";
+  if (typeof color === "object") {
+    if (color.label) return String(color.label);
+    if (color.name) return String(color.name);
+    if (color.hex) return String(color.hex);
+    if (color.value) return String(color.value);
+    // attempt stringify
+    return String(color).replace(/\s+/g, " ").trim();
+  }
+  const s = String(color).trim();
+  if (!s) return "";
+  // hex?
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s)) return s.toUpperCase();
+  // try browser accept
+  try {
+    if (typeof document !== "undefined") {
+      const st = document.createElement("span").style;
+      st.color = s;
+      if (st.color) return s; // browser accepts the name
+    }
+  } catch {}
+  return s;
+}
+
 // Handle upvote/downvote (example)
 const handleVote = async (entityId, entityType, voteType) => {
   try {
@@ -519,6 +556,12 @@ export default function ProductDetailsPage() {
     return map;
   }, [product?.images, product?.colors]);
 
+  // Helper: derive a readable list of color names (advanced detection)
+  const allColorNames = useMemo(() => {
+    const colors = Array.isArray(product?.colors) ? product.colors : [];
+    return colors.map((c) => detectColorTextName(c));
+  }, [product?.colors]);
+
   const galleryImages = useMemo(() => {
     const imgsAll = colorImageMap.__all__ || [];
     if (!requiresColor) {
@@ -611,7 +654,52 @@ export default function ProductDetailsPage() {
     }
   }, [fetchCart]);
 
-  // whenever product or cart updates, detect whether this product exists in cart
+  // Helper: check if a cart item matches current product + selection (color/size/variant)
+  function cartItemMatchesSelection(item, prodKey, selColor, selSize, selVariantId) {
+    if (!item) return false;
+    const pid = String(item.product_id ?? item.productId ?? item.product?.id ?? item.product?._id ?? item.id ?? "");
+    if (!pid || String(pid) !== String(prodKey)) return false;
+
+    // find color from possible keys
+    const itemColorCandidates = [
+      item.selectedColor,
+      item.selected_color,
+      item.color,
+      item.variantColor,
+      item.variant?.color,
+      item.attributes?.color,
+      item.product?.color,
+    ];
+    const itemSizeCandidates = [
+      item.selectedSize,
+      item.selected_size,
+      item.size,
+      item.variantSize,
+      item.variant?.size,
+      item.attributes?.size,
+      item.product?.size,
+    ];
+    const itemVariantCandidates = [item.variantId, item.variant?.id, item.variant_id, item.variant?._id];
+
+    const normalize = (v) => (v === null || v === undefined ? "" : String(v).trim().toLowerCase());
+
+    const itemColor = itemColorCandidates.find((c) => c !== undefined && c !== null && String(c).trim() !== "") || "";
+    const itemSize = itemSizeCandidates.find((s) => s !== undefined && s !== null && String(s).trim() !== "") || "";
+    const itemVariant = itemVariantCandidates.find((v) => v !== undefined && v !== null && String(v).trim() !== "") || "";
+
+    // If variant id is available on both sides, prefer exact match
+    if (selVariantId && itemVariant) {
+      if (String(itemVariant).trim() === String(selVariantId).trim()) return true;
+    }
+
+    // Otherwise compare color + size (both should match if provided)
+    const colorMatch = !selColor || !itemColor ? (normalize(selColor) === normalize(itemColor)) : normalize(selColor) === normalize(itemColor);
+    const sizeMatch = !selSize || !itemSize ? (normalize(selSize) === normalize(itemSize)) : normalize(selSize) === normalize(itemSize);
+
+    return colorMatch && sizeMatch;
+  }
+
+  // whenever product or cart updates, detect whether this product+selection exists in cart
   useEffect(() => {
     try {
       if (!product) {
@@ -620,12 +708,13 @@ export default function ProductDetailsPage() {
       }
 
       const prodKey = String(product.id ?? product._id ?? product.productId ?? product.product_id ?? "");
+      const selColorNormalized = selectedColor ? String(selectedColor).trim() : "";
+      const selSizeNormalized = selectedSize ? String(selectedSize).trim() : "";
+      const selVariantId = selectedVariant?.id || selectedVariant?._id || null;
 
+      // First try to find a matching item in the cart array
       if (Array.isArray(cart) && cart.length > 0) {
-        const found = cart.some((it) => {
-          const pid = String(it.product_id ?? it.productId ?? it.product?.id ?? it.product?._id ?? it.id ?? "");
-          return pid && pid === prodKey;
-        });
+        const found = cart.some((it) => cartItemMatchesSelection(it, prodKey, selColorNormalized, selSizeNormalized, selVariantId));
         if (found) {
           setAddedToCart(true);
           try {
@@ -634,25 +723,33 @@ export default function ProductDetailsPage() {
           return;
         }
 
-        // not found
+        // not found: try localStorage fallback keys that include color/size/variant
         try {
-          if (prodKey) localStorage.removeItem(`cart_added_${prodKey}`);
-        } catch { }
+          const keyExact = `cart_added_${prodKey}_${selVariantId || ""}_${String(selColorNormalized || "").replace(/\s+/g, "_")}_${String(selSizeNormalized || "").replace(/\s+/g, "_")}`;
+          const flag = localStorage.getItem(keyExact);
+          if (flag) {
+            setAddedToCart(true);
+            return;
+          }
+        } catch {}
+
         setAddedToCart(false);
         return;
       }
 
-      // fallback to localStorage
+      // fallback to localStorage when cart array is empty or not provided
       try {
-        const flag = prodKey ? localStorage.getItem(`cart_added_${prodKey}`) : null;
+        const keyExact = `cart_added_${prodKey}_${selVariantId || ""}_${String(selColorNormalized || "").replace(/\s+/g, "_")}_${String(selSizeNormalized || "").replace(/\s+/g, "_")}`;
+        const flag = localStorage.getItem(keyExact);
         setAddedToCart(Boolean(flag));
       } catch {
         setAddedToCart(false);
       }
     } catch (err) {
       console.warn("cart detection error", err);
+      setAddedToCart(false);
     }
-  }, [cart, product, productId]);
+  }, [cart, product, productId, selectedColor, selectedSize, selectedVariant]);
 
   /* ---------- actions ---------- */
   async function addToCartHandler() {
@@ -1045,6 +1142,13 @@ export default function ProductDetailsPage() {
                   {/* show small color details for currently selected color */}
                   {selectedColor ? <ColorDisplay color={selectedColor} /> : null}
                 </div>
+
+                {/* Advanced: show detected color text names (helpful when product color objects are complex) */}
+                {allColorNames && allColorNames.length > 0 && (
+                  <div className="mt-2 text-xs text-gray-500">
+                    Available colors: {allColorNames.join(" — ")}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1198,281 +1302,4 @@ export default function ProductDetailsPage() {
                   className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-gray-800 text-black dark:text-white p-2 rounded-full"
                   aria-label="Next in lightbox"
                 >
-                  <ChevronRight />
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-
-        {/* Reviews */}
-        <Reviews
-          productId={productId}
-          apiBase={API_BASE}
-          currentUser={currentUser}
-          showToast={showToast}
-        />
-
-        {/* Questions & Answers */}
-        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 border border-gray-200/60 dark:border-gray-700/60">
-          <h3 className="text-lg font-semibold mb-4 text-black dark:text-white">
-            Questions & Answers
-          </h3>
-
-          <div className="mb-4">
-            <div className="flex gap-3">
-              <input
-                value={questionText}
-                onChange={(e) => setQuestionText(e.target.value)}
-                placeholder="Ask a question..."
-                className="flex-1 p-3 border rounded-lg bg-white dark:bg-gray-900 text-black dark:text-white"
-                aria-label="Ask a question"
-              />
-              <button
-                onClick={async () => {
-                  if (!questionText.trim()) return showToast("Type your question first");
-                  setIsAsking(true);
-                  try {
-                    const payload = {
-                      productId,
-                      text: questionText.trim(),
-                      userId: currentUser?.id || currentUser?._id || null,
-                    };
-                    const res = await fetch(`${API_BASE}/api/qa`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify(payload),
-                    });
-                    if (!res.ok) throw new Error(`Ask failed (${res.status})`);
-                    const saved = await res.json();
-                    const inserted = {
-                      id: saved.id || saved._id || Date.now(),
-                      productId: saved.productId || payload.productId,
-                      text: saved.text || payload.text,
-                      userId: saved.userId || payload.userId || null,
-                      userName: saved.userName || currentUser?.name || saved.name || "You",
-                      avatar: saved.avatar || currentUser?.avatar || null,
-                      createdAt: saved.createdAt || new Date().toISOString(),
-                      answers: (saved.answers || []).map((a) => ({
-                        id: a.id || a._id,
-                        text: a.text,
-                        userId: a.userId || a.user_id,
-                        userName: a.userName || a.name || null,
-                        avatar: a.avatar || null,
-                        createdAt: a.createdAt || new Date().toISOString(),
-                        likes: Number(a.likes || 0),
-                        dislikes: Number(a.dislikes || 0),
-                      })),
-                    };
-                    setQuestions((prev) => [inserted, ...prev]);
-                    setQuestionText("");
-                    showToast("Question posted");
-                  } catch (err) {
-                    console.error(err);
-                    showToast("Could not post question");
-                  } finally {
-                    setIsAsking(false);
-                  }
-                }}
-                disabled={isAsking || !questionText.trim()}
-                className={`px-4 py-2 rounded-lg ${isAsking || !questionText.trim() ? "opacity-60 cursor-not-allowed bg-gray-200 dark:bg-gray-800" : "bg-black text-white"}`}
-                type="button"
-              >
-                <MessageCircle size={16} /> {isAsking ? "Posting..." : "Ask"}
-              </button>
-            </div>
-          </div>
-
-          {/* questions list (same as earlier) */}
-{Array.isArray(questions) && questions.length > 0 ? (
-  <ul className="space-y-6">
-    {questions.map((q) => {
-      const qid = q.id || q._id;
-      const displayName = q.userName || q.name || "Anonymous";
-      const avatarUrl = q.avatar || null;   // ✅ this is the variable you want
-      const initials =
-        (displayName || "A")
-          .split(" ")
-          .map((p) => p?.[0])
-          .filter(Boolean)
-          .slice(0, 2)
-          .join("")
-          .toUpperCase() || "A";
-
-      return (
-        <li key={qid} className="space-y-3">
-          <div className="flex items-start gap-3">
-            {avatarUrl ? (  // ✅ changed from avatarSrc → avatarUrl
-              <Avatar
-                alt={displayName}
-                src={avatarUrl}
-                sx={{ width: 40, height: 40 }}
-              />
-            ) : (
-              <Avatar
-                sx={{
-                  width: 40,
-                  height: 40,
-                  bgcolor: stringToHslColor(displayName || initials),
-                  color: "#fff",
-                  fontWeight: 600,
-                }}
-              >
-                {initials}
-              </Avatar>
-            )}
-
-            <div className="flex-1">
-              <div>
-                <p className="font-medium text-black dark:text-white">{displayName}</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {q.createdAt ? formatRelativeIST(q.createdAt) : ""}
-                </p>
-              </div>
-
-              <div className="mt-2 bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
-                <p className="text-sm text-gray-900 dark:text-gray-100">{q.text}</p>
-              </div>
-            </div>
-          </div>
-
-                    {(q.answers || []).length > 0 && (
-                      <div className="ml-12 space-y-3">
-                        {q.answers.map((a, idx) => {
-                          const aId = a.id || a._id || idx;
-                          const aName = a.userName || a.name || "Anonymous";
-                          const aAvatar = a.avatar || null;
-                          const initialsA = (aName || "A").split(" ").map((p) => p?.[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "A";
-                          const isLast = idx === (q.answers || []).length - 1;
-                          return (
-                            <div key={aId} className="flex items-start gap-3" ref={(el) => { if (isLast) lastAnswerRef.current[qid] = el; }}>
-                              {aAvatar ? (
-                                <Avatar alt={aName} src={aAvatar} sx={{ width: 36, height: 36 }} />
-                              ) : (
-                                <Avatar
-                                  sx={{
-                                    width: 36,
-                                    height: 36,
-                                    bgcolor: stringToHslColor(aName || initialsA),
-                                    color: "#fff",
-                                    fontWeight: 600,
-                                    fontSize: 12,
-                                  }}
-                                >
-                                  {initialsA}
-                                </Avatar>
-                              )}
-
-                              <div className="flex-1">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <p className="text-sm font-medium text-black dark:text-white">{aName}</p>
-                                    <p className="text-xs text-gray-500 mt-0.5">{a.createdAt ? formatRelativeIST(a.createdAt) : ""}{a.optimistic ? " (sending...)" : ""}</p>
-                                  </div>
-                                  <div className="flex items-center gap-2 text-xs text-gray-600">
-                                    <button
-                                      onClick={() => {
-                                        handleVote(aId, "answer", "like");
-                                      }}
-                                      className={`flex items-center gap-1 px-2 py-1 rounded ${userVotes[aId] === "like" ? "bg-green-100 dark:bg-green-900/40" : "hover:bg-gray-100 dark:hover:bg-gray-800"}`}
-                                      type="button"
-                                      aria-label="Like answer"
-                                    >
-                                      <ThumbsUp size={14} /> <span>{a.likes || 0}</span>
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        handleVote(aId, "answer", "dislike");
-                                      }}
-                                      className={`flex items-center gap-1 px-2 py-1 rounded ${userVotes[aId] === "dislike" ? "bg-red-100 dark:bg-red-900/30" : "hover:bg-gray-100 dark:hover:bg-gray-800"}`}
-                                      type="button"
-                                      aria-label="Dislike answer"
-                                    >
-                                      <ThumbsDown size={14} /> <span>{a.dislikes || 0}</span>
-                                    </button>
-                                  </div>
-                                </div>
-                                <div className="mt-1 bg-gray-50 dark:bg-gray-800/70 rounded-lg p-3">
-                                  <p className="text-sm text-gray-900 dark:text-gray-100">{a.text}</p>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    <div className="ml-12 mt-2 flex gap-2 items-start">
-                      <input
-                        value={answerInputs[qid] || ""}
-                        onChange={(e) => setAnswerInputs((prev) => ({ ...prev, [qid]: e.target.value }))}
-                        placeholder="Write an answer..."
-                        className="flex-1 p-2 border rounded-lg bg-white dark:bg-gray-900 text-sm text-black dark:text-white"
-                        aria-label={`Answer to question ${qid}`}
-                      />
-                      <button
-                        onClick={async () => {
-                          const text = (answerInputs[qid] || "").trim();
-                          if (!text) return showToast("Type an answer first");
-                          setAnswerLoading((s) => ({ ...s, [qid]: true }));
-                          setAnswerInputs((s) => ({ ...s, [qid]: "" }));
-                          try {
-                            await handlePostAnswer(qid, text);
-                            // refresh Q&A or optimistically append; here we just show toast
-                            showToast("Answer posted");
-                          } catch {
-                            showToast("Could not post answer");
-                          } finally {
-                            setAnswerLoading((s) => ({ ...s, [qid]: false }));
-                          }
-                        }}
-                        disabled={(answerLoading[qid] === true) || !(answerInputs[qid] && answerInputs[qid].trim())}
-                        className={`px-3 py-2 rounded-full border ${answerLoading[qid] ? "opacity-60 cursor-not-allowed" : "bg-black text-white"}`}
-                        type="button"
-                        aria-label={`Post answer to question ${qid}`}
-                      >
-                        {answerLoading[qid] ? "..." : <Send size={14} />}
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="text-sm text-gray-600 dark:text-gray-300">No questions yet.</p>
-          )}
-        </section>
-
-        {/* Related products */}
-        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 border border-gray-200/60 dark:border-gray-700/60">
-          <h2 className="text-xl font-bold mb-4 text-black dark:text-white">
-            You might be interested in
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {(relatedProducts && relatedProducts.length ? relatedProducts : [1, 2, 3, 4]).map((p, i) => (
-              <ProductCard
-                key={p?.id || p?._id || i}
-                product={
-                  typeof p === "object"
-                    ? {
-                      id: p.id || p._id,
-                      name: p.name || p.title || `Product ${i + 1}`,
-                      price: p.price || 2499,
-                      images: p.images || (p.image ? [p.image] : []),
-                    }
-                    : { id: i + 1, name: `Product ${p}`, price: 2499, images: [galleryImages[0]] }
-                }
-              />
-            ))}
-          </div>
-        </section>
-      </div>
-
-      {toast && (
-        <div className="fixed right-6 top-6 z-60">
-          <div className="px-4 py-2 rounded shadow bg-black text-white">{toast}</div>
-        </div>
-      )}
-    </div>
-  );
-}
+                  <Chevro... (truncated)
