@@ -56,11 +56,12 @@ function normalizeVariantValue(v) {
 // --- nearest-color setup ---
 const CUSTOM_NAMED_COLORS = {
   black: "#000000",
-  cornsilk: "#FFF8DC",
-  "irish green": "#009A44",
-  azalea: "#F7C6D9",
-  "heather royal": "#307FE2",
-  "heather sapphire": "#0076A8",
+  cornsilk: "#FFF8DC", // standard CSS cornsilk
+  "irish green": "#009A44", // common 'irish green' approximation
+  azalea: "#F7C6D9", // azalea / azalea pink approximation
+  "heather royal": "#307FE2", // Gildan Heather Royal approx
+  "heather sapphire": "#0076A8", // Gildan Heather Sapphire approx
+  // add other friendly names as needed
 };
 
 let nearest = null;
@@ -77,10 +78,12 @@ function detectColorTextName(color) {
     if (color.name) return String(color.name);
     if (color.hex) return String(color.hex).toUpperCase();
     if (color.value) return String(color.value);
+    // attempt stringify
     return String(color).replace(/\s+/g, " ").trim();
   }
   const s = String(color).trim();
   if (!s) return "";
+  // hex?
   if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s)) {
     const hex = s.toUpperCase();
     if (nearest) {
@@ -92,6 +95,7 @@ function detectColorTextName(color) {
     return hex;
   }
 
+  // try browser accept
   try {
     if (typeof document !== "undefined") {
       const st = document.createElement("span").style;
@@ -112,7 +116,7 @@ function detectColorTextName(color) {
             } catch {}
           }
         } catch {}
-        return s;
+        return s; // browser accepts the name
       }
     }
   } catch {}
@@ -129,6 +133,13 @@ function detectColorTextName(color) {
 
 /**
  * Try to resolve a CSS color name (or hex string) into a hex value.
+ * Approach:
+ *  - If input is already a hex -> return it.
+ *  - Attempt to resolve named CSS color by creating a temporary element,
+ *    setting its color, reading computed style (rgb) and converting that to hex.
+ *  - Fall back to '#808080'.
+ *
+ * Works only in browser (guards for SSR).
  */
 function rgbStringToHex(rgb) {
   if (!rgb || typeof rgb !== "string") return null;
@@ -146,7 +157,7 @@ function rgbStringToHex(rgb) {
 
 function nameToHex(name) {
   if (!name || typeof name !== "string") return null;
-  if (typeof document === "undefined") return null;
+  if (typeof document === "undefined") return null; // SSR guard
   try {
     const span = document.createElement("span");
     span.style.color = "";
@@ -173,10 +184,13 @@ function resolveColor(c) {
   }
   const s = String(c).trim();
   if (!s) return "#808080";
+  // hex candidate?
   if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s)) return s.toUpperCase();
+  // try name -> hex
   const sanitized = sanitizeColorNameForLookup(s);
   const fromName = nameToHex(sanitized) || nameToHex(s);
   if (fromName) return fromName;
+  // try DOM accept (some names like 'light blue' might not work, but safer to try original)
   try {
     if (typeof document !== "undefined") {
       const st = document.createElement("span").style;
@@ -216,7 +230,7 @@ function formatRelativeIST(dateString) {
   if (!dateString) return "";
   const date = new Date(dateString);
   const now = new Date();
-  const diff = Math.floor((now - date) / 1000);
+  const diff = Math.floor((now - date) / 1000); // seconds
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
@@ -233,6 +247,79 @@ function stringToHslColor(str = "", s = 65, l = 40) {
   }
   const h = Math.abs(hash) % 360;
   return `hsl(${h} ${s}% ${l}%)`;
+}
+
+/* -------------------- COLOR / SIZE COMPARISON HELPERS -------------------- */
+
+/**
+ * Get a sanitized name string from a color input (object/string).
+ * Returns lowercased, whitespace-collapsed string.
+ */
+function colorNameFromInput(v) {
+  if (!v && v !== 0) return "";
+  if (typeof v === "object") {
+    const maybeName = v.label || v.name || v.value || v.color || v.hex || v.code || "";
+    return sanitizeColorNameForLookup(String(maybeName || ""));
+  }
+  return sanitizeColorNameForLookup(String(v || ""));
+}
+
+/**
+ * Get resolved hex (uppercase) for an input where possible.
+ * May return null if resolution fails (e.g. SSR or unknown name).
+ */
+function colorHexFromInput(v) {
+  try {
+    const hex = resolveColor(v);
+    if (hex && /^#([0-9A-F]{6}|[0-9A-F]{3})$/i.test(hex)) return hex.toUpperCase();
+  } catch {}
+  return null;
+}
+
+/**
+ * Compare two color inputs tolerant of name-vs-hex vs object differences.
+ * Returns true if they are likely the same color.
+ */
+function colorEquals(a, b) {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+
+  // If direct string equality after trimming (fast path)
+  const sa = String(a).trim().toLowerCase();
+  const sb = String(b).trim().toLowerCase();
+  if (sa && sb && sa === sb) return true;
+
+  // Compare sanitized friendly names
+  const na = colorNameFromInput(a);
+  const nb = colorNameFromInput(b);
+  if (na && nb && na === nb) return true;
+
+  // Compare resolved hex values (if any)
+  const ha = colorHexFromInput(a);
+  const hb = colorHexFromInput(b);
+  if (ha && hb && ha === hb) return true;
+
+  // Try nearest-name mapping via CUSTOM_NAMED_COLORS (fallback)
+  if (nearest) {
+    try {
+      const ra = ha ? nearest(ha) : nearest(colorNameFromInput(a));
+      const rb = hb ? nearest(hb) : nearest(colorNameFromInput(b));
+      const rna = ra && ra.name ? sanitizeColorNameForLookup(ra.name) : null;
+      const rnb = rb && rb.name ? sanitizeColorNameForLookup(rb.name) : null;
+      if (rna && rnb && rna === rnb) return true;
+    } catch {}
+  }
+
+  return false;
+}
+
+/**
+ * Compare two size inputs (normalized strings)
+ */
+function sizeEquals(a, b) {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return normalizeVariantValue(a) === normalizeVariantValue(b);
 }
 
 /* -------------------- MAIN COMPONENT -------------------- */
@@ -527,6 +614,7 @@ export default function ProductDetailsPage() {
     const nImgs = imgs.length;
     const nColors = colors.length;
 
+    // If fewer images than colors, assign one image each to the first nImgs colors
     if (nImgs <= nColors) {
       for (let i = 0; i < nColors; i++) {
         const key = sanitizeColorNameForLookup(String(colors[i] || ""));
@@ -568,8 +656,10 @@ export default function ProductDetailsPage() {
     }
 
     const key = sanitizeColorNameForLookup(String(selectedColor || ""));
+    // Try exact match
     let imgs = colorImageMap[key];
 
+    // If not found, try to find by matching to any color by sanitized string
     if (!imgs) {
       const colors = Array.isArray(product?.colors) ? product.colors : [];
       const firstColorKey = sanitizeColorNameForLookup(String(colors[0] || ""));
@@ -586,6 +676,7 @@ export default function ProductDetailsPage() {
     setSelectedImage((s) => (s + 1) % galleryImages.length);
   }
 
+  // whenever gallery images or selected color changes, reset selectedImage to 0
   useEffect(() => {
     setSelectedImage(0);
   }, [galleryImages.length, selectedColor]);
@@ -618,8 +709,8 @@ export default function ProductDetailsPage() {
       variants.find((v) => {
         const vColor = v.color ?? v.colour ?? v.variantColor ?? v.attributes?.color;
         const vSize = v.size ?? v.variantSize ?? v.attributes?.size;
-        const okColor = requiresColor ? String(vColor) === String(selectedColor) : true;
-        const okSize = requiresSize ? String(vSize) === String(selectedSize) : true;
+        const okColor = requiresColor ? colorEquals(vColor, selectedColor) : true;
+        const okSize = requiresSize ? sizeEquals(vSize, selectedSize) : true;
         return okColor && okSize;
       }) || null
     );
@@ -656,6 +747,7 @@ export default function ProductDetailsPage() {
     const pid = String(item.product_id ?? item.productId ?? item.product?.id ?? item.product?._id ?? item.id ?? "");
     if (!pid || String(pid) !== String(prodKey)) return false;
 
+    // Gather color candidates from the item (may be stored in different keys and formats)
     const itemColorCandidates = [
       item.selectedColor,
       item.selected_color,
@@ -664,7 +756,11 @@ export default function ProductDetailsPage() {
       item.variant?.color,
       item.attributes?.color,
       item.product?.color,
-    ];
+      item.colorName,
+      item.color_name,
+    ].filter((c) => c !== undefined && c !== null && String(c).trim() !== "");
+
+    // Gather size candidates likewise
     const itemSizeCandidates = [
       item.selectedSize,
       item.selected_size,
@@ -673,23 +769,41 @@ export default function ProductDetailsPage() {
       item.variant?.size,
       item.attributes?.size,
       item.product?.size,
-    ];
-    const itemVariantCandidates = [item.variantId, item.variant?.id, item.variant_id, item.variant?._id];
+      item.sizeName,
+      item.size_name,
+    ].filter((s) => s !== undefined && s !== null && String(s).trim() !== "");
 
-    const normalize = (v) => (v === null || v === undefined ? "" : String(v).trim().toLowerCase());
+    // Gather variant id candidates
+    const itemVariantCandidates = [item.variantId, item.variant?.id, item.variant_id, item.variant?._id].filter(
+      (v) => v !== undefined && v !== null && String(v).trim() !== ""
+    );
 
-    const itemColor = itemColorCandidates.find((c) => c !== undefined && c !== null && String(c).trim() !== "") || "";
-    const itemSize = itemSizeCandidates.find((s) => s !== undefined && s !== null && String(s).trim() !== "") || "";
-    const itemVariant = itemVariantCandidates.find((v) => v !== undefined && v !== null && String(v).trim() !== "") || "";
-
-    if (selVariantId && itemVariant) {
-      if (String(itemVariant).trim() === String(selVariantId).trim()) return true;
+    // If variant id is available on both sides, prefer exact match
+    if (selVariantId && itemVariantCandidates.length > 0) {
+      if (itemVariantCandidates.some((iv) => String(iv).trim() === String(selVariantId).trim())) return true;
     }
 
-    const colorMatch = !selColor || !itemColor ? normalize(selColor) === normalize(itemColor) : normalize(selColor) === normalize(itemColor);
-    const sizeMatch = !selSize || !itemSize ? normalize(selSize) === normalize(itemSize) : normalize(selSize) === normalize(itemSize);
+    // Compare colors: if either side has ANY candidate matching, accept
+    const colorMatches =
+      (!selColor && itemColorCandidates.length === 0) ||
+      (selColor &&
+        itemColorCandidates.length > 0 &&
+        itemColorCandidates.some((ic) => colorEquals(ic, selColor)));
 
-    return colorMatch && sizeMatch;
+    // Compare sizes similarly
+    const sizeMatches =
+      (!selSize && itemSizeCandidates.length === 0) ||
+      (selSize &&
+        itemSizeCandidates.length > 0 &&
+        itemSizeCandidates.some((isize) => sizeEquals(isize, selSize)));
+
+    // If product has both color & size requirements, both must match.
+    if (requiresColor && requiresSize) return Boolean(colorMatches && sizeMatches);
+    if (requiresColor) return Boolean(colorMatches);
+    if (requiresSize) return Boolean(sizeMatches);
+
+    // if neither required, product match is enough
+    return true;
   }
 
   // whenever product or cart updates, detect whether this product+selection exists in cart
@@ -701,10 +815,11 @@ export default function ProductDetailsPage() {
       }
 
       const prodKey = String(product.id ?? product._id ?? product.productId ?? product.product_id ?? "");
-      const selColorNormalized = selectedColor ? String(selectedColor).trim() : "";
-      const selSizeNormalized = selectedSize ? String(selectedSize).trim() : "";
+      const selColorNormalized = selectedColor ? selectedColor : "";
+      const selSizeNormalized = selectedSize ? selectedSize : "";
       const selVariantId = selectedVariant?.id || selectedVariant?._id || null;
 
+      // First try to find a matching item in the cart array
       if (Array.isArray(cart) && cart.length > 0) {
         const found = cart.some((it) => cartItemMatchesSelection(it, prodKey, selColorNormalized, selSizeNormalized, selVariantId));
         if (found) {
@@ -715,8 +830,11 @@ export default function ProductDetailsPage() {
           return;
         }
 
+        // not found: try localStorage fallback keys that include color/size/variant
         try {
-          const keyExact = `cart_added_${prodKey}_${selVariantId || ""}_${String(selColorNormalized || "").replace(/\s+/g, "_")}_${String(selSizeNormalized || "").replace(/\s+/g, "_")}`;
+          const colorToken = sanitizeColorNameForLookup(String(selColorNormalized || "")).replace(/\s+/g, "_");
+          const sizeToken = String(selSizeNormalized || "").replace(/\s+/g, "_");
+          const keyExact = `cart_added_${prodKey}_${selVariantId || ""}_${String(colorToken || "")}_${String(sizeToken || "")}`;
           const flag = localStorage.getItem(keyExact);
           if (flag) {
             setAddedToCart(true);
@@ -728,8 +846,11 @@ export default function ProductDetailsPage() {
         return;
       }
 
+      // fallback to localStorage when cart array is empty or not provided
       try {
-        const keyExact = `cart_added_${prodKey}_${selVariantId || ""}_${String(selColorNormalized || "").replace(/\s+/g, "_")}_${String(selSizeNormalized || "").replace(/\s+/g, "_")}`;
+        const colorToken = sanitizeColorNameForLookup(String(selColorNormalized || "")).replace(/\s+/g, "_");
+        const sizeToken = String(selSizeNormalized || "").replace(/\s+/g, "_");
+        const keyExact = `cart_added_${prodKey}_${selVariantId || ""}_${String(colorToken || "")}_${String(sizeToken || "")}`;
         const flag = localStorage.getItem(keyExact);
         setAddedToCart(Boolean(flag));
       } catch {
@@ -782,7 +903,9 @@ export default function ProductDetailsPage() {
 
       setAddedToCart(true);
       try {
-        const localKey = `cart_added_${prodKey}_${variantInfo.variantId || ""}_${String(selectedColor || "").replace(/\s+/g, "_")}_${String(selectedSize || "").replace(/\s+/g, "_")}`;
+        const colorToken = sanitizeColorNameForLookup(String(selectedColor || "")).replace(/\s+/g, "_");
+        const sizeToken = String(selectedSize || "").replace(/\s+/g, "_");
+        const localKey = `cart_added_${prodKey}_${variantInfo.variantId || ""}_${String(colorToken || "")}_${String(sizeToken || "")}`;
         if (prodKey) localStorage.setItem(localKey, "1");
       } catch {}
       showToast("Added to cart");
@@ -1117,7 +1240,7 @@ export default function ProductDetailsPage() {
                   {(product.colors || []).map((c, idx) => {
                     const name = typeof c === "string" ? c : (c && (c.label || c.name)) || String(c || "");
                     const hex = resolveColor(c);
-                    const isSelected = sanitizeColorNameForLookup(String(selectedColor)) === sanitizeColorNameForLookup(String(c)) || String(selectedColor) === String(name);
+                    const isSelected = colorEquals(c, selectedColor);
                     const border = isSelected ? "ring-2 ring-offset-1 ring-black dark:ring-white" : "border border-gray-300 dark:border-gray-700";
                     return (
                       <button
@@ -1146,7 +1269,7 @@ export default function ProductDetailsPage() {
                 <div className="font-medium mb-2">Size</div>
                 <div className="flex gap-3">
                   {(product.sizes || []).map((s) => {
-                    const active = String(selectedSize) === String(s);
+                    const active = sizeEquals(s, selectedSize);
                     return (
                       <button key={String(s)} onClick={() => setSelectedSize(s)} className={`px-4 py-2 rounded-lg border ${active ? "bg-black text-white dark:bg-white dark:text-black" : "bg-gray-100 dark:bg-gray-800"}`} aria-pressed={active} type="button">
                         {String(s)}
