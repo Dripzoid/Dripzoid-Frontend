@@ -50,13 +50,9 @@ function normalizeVariantValue(v) {
 }
 
 /**
- * Attempts to return a useful text-name for a color value. Strategies:
- *  - If value is an object with label/name -> use that
- *  - If value is a hex already -> return hex
- *  - If the browser accepts the string as a CSS color -> return the original string
- *  - Use nearest-color to match to a friendly palette name
- *  - Fallback to stringified value
+ * Color name detection + nearest-color integration
  */
+
 // --- nearest-color setup ---
 const CUSTOM_NAMED_COLORS = {
   black: "#000000",
@@ -72,7 +68,6 @@ let nearest = null;
 try {
   nearest = nearestColor.from(CUSTOM_NAMED_COLORS);
 } catch (err) {
-  // if nearest-color isn't available for some reason, we'll gracefully degrade
   nearest = null;
 }
 
@@ -91,7 +86,6 @@ function detectColorTextName(color) {
   // hex?
   if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s)) {
     const hex = s.toUpperCase();
-    // try nearest color name if available
     if (nearest) {
       try {
         const r = nearest(hex);
@@ -107,7 +101,6 @@ function detectColorTextName(color) {
       const st = document.createElement("span").style;
       st.color = s;
       if (st.color) {
-        // if browser accepts the color string, try to resolve computed color
         try {
           const span = document.createElement("span");
           span.style.color = s;
@@ -115,7 +108,6 @@ function detectColorTextName(color) {
           document.body.appendChild(span);
           const cs = window.getComputedStyle(span).color;
           document.body.removeChild(span);
-          // convert to hex and then nearest name if possible
           const hex = rgbStringToHex(cs);
           if (hex && nearest) {
             try {
@@ -129,55 +121,15 @@ function detectColorTextName(color) {
     }
   } catch {}
 
-  // lastly, if we have nearest palette, try to resolve the raw string via name lookup
   if (nearest) {
-    // try direct palette key match
-    const key = Object.keys(CUSTOM_NAMED_COLORS).find((k) => sanitizeColorNameForLookup(k) === sanitizeColorNameForLookup(s));
+    const key = Object.keys(CUSTOM_NAMED_COLORS).find(
+      (k) => sanitizeColorNameForLookup(k) === sanitizeColorNameForLookup(s)
+    );
     if (key) return key;
   }
 
   return s;
 }
-
-// Handle upvote/downvote (example)
-const handleVote = async (entityId, entityType, voteType) => {
-  try {
-    const res = await fetch(`${API_BASE}/api/votes`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-      },
-      body: JSON.stringify({ entityId, entityType, vote: voteType }),
-    });
-
-    if (!res.ok) throw new Error("Failed to submit vote");
-    const data = await res.json();
-    console.log("Vote success:", data);
-  } catch (err) {
-    console.error("Vote failed:", err);
-  }
-};
-
-// Handle posting a new answer (example)
-const handlePostAnswer = async (questionId, text) => {
-  try {
-    const res = await fetch(`${API_BASE}/api/qa/${questionId}/answers`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-      },
-      body: JSON.stringify({ text }),
-    });
-
-    if (!res.ok) throw new Error("Failed to post answer");
-    const data = await res.json();
-    console.log("Answer posted:", data);
-  } catch (err) {
-    console.error("Post answer failed", err);
-  }
-};
 
 /**
  * Try to resolve a CSS color name (or hex string) into a hex value.
@@ -190,7 +142,6 @@ const handlePostAnswer = async (questionId, text) => {
  * Works only in browser (guards for SSR).
  */
 function rgbStringToHex(rgb) {
-  // rgb(...) or rgba(...)
   if (!rgb || typeof rgb !== "string") return null;
   const m = rgb.match(/rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/i);
   if (!m) return null;
@@ -208,7 +159,6 @@ function nameToHex(name) {
   if (!name || typeof name !== "string") return null;
   if (typeof document === "undefined") return null; // SSR guard
   try {
-    // sanitized small element approach:
     const span = document.createElement("span");
     span.style.color = "";
     span.style.display = "none";
@@ -224,12 +174,7 @@ function nameToHex(name) {
   return null;
 }
 
-/** Try to resolve provided color (string or object) to a usable CSS color hex.
- *  1) If color is a hex-like string, return it (normalize to uppercase).
- *  2) If color is a named color, try `nameToHex`.
- *  3) If DOM accepts the string as a color, return the original string (browser understands it).
- *  4) Fallback '#808080'.
- */
+/** Try to resolve provided color (string or object) to a usable CSS color hex. */
 function resolveColor(c) {
   if (!c) return "#808080";
   if (typeof c === "object") {
@@ -256,6 +201,19 @@ function resolveColor(c) {
   return "#808080";
 }
 
+// Helper: return friendly nearest name (falls back to detectColorTextName)
+function getNearestColorLabel(c) {
+  const hex = resolveColor(c);
+  if (!hex) return detectColorTextName(c);
+  if (nearest) {
+    try {
+      const r = nearest(hex);
+      if (r && r.name) return r.name;
+    } catch {}
+  }
+  return detectColorTextName(c);
+}
+
 /* Format timestamp into IST string */
 function formatIST(isoOrDate) {
   try {
@@ -277,7 +235,6 @@ function formatRelativeIST(dateString) {
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 2592000) return `${Math.floor(diff / 86400)}d ago`;
-  // older -> show IST formatted date
   return formatIST(date);
 }
 
@@ -292,19 +249,6 @@ function stringToHslColor(str = "", s = 65, l = 40) {
   return `hsl(${h} ${s}% ${l}%)`;
 }
 
-// Helper: return friendly nearest name (falls back to detectColorTextName)
-function getNearestColorLabel(c) {
-  const hex = resolveColor(c);
-  if (!hex) return detectColorTextName(c);
-  if (nearest) {
-    try {
-      const r = nearest(hex);
-      if (r && r.name) return r.name;
-    } catch {}
-  }
-  return detectColorTextName(c);
-}
-
 /* -------------------- MAIN COMPONENT -------------------- */
 export default function ProductDetailsPage() {
   const { id: routeProductId } = useParams();
@@ -314,7 +258,7 @@ export default function ProductDetailsPage() {
   // contexts
   const { addToCart, buyNow: ctxBuyNow, cart = [], fetchCart } = useCart() || {};
   const wishlistCtx = useWishlist() || {};
-  const { wishlist = [], addToWishlist = async () => { }, removeFromWishlist = async () => { }, fetchWishlist = async () => { } } = wishlistCtx;
+  const { wishlist = [], addToWishlist = async () => {}, removeFromWishlist = async () => {}, fetchWishlist = async () => {} } = wishlistCtx;
   const { user: ctxUser } = useContext(UserContext) || {};
 
   const [currentUser, setCurrentUser] = useState(() => ctxUser || null);
@@ -363,11 +307,11 @@ export default function ProductDetailsPage() {
     () =>
       String(
         product?.id ??
-        product?._id ??
-        product?.productId ??
-        product?.product_id ??
-        productId ??
-        ""
+          product?._id ??
+          product?.productId ??
+          product?.product_id ??
+          productId ??
+          ""
       ),
     [product, productId]
   );
@@ -451,8 +395,8 @@ export default function ProductDetailsPage() {
           }
           const filtered = Array.isArray(list)
             ? list
-              .filter((x) => String(x.id || x._id || x.productId) !== String(productId))
-              .slice(0, 8)
+                .filter((x) => String(x.id || x._id || x.productId) !== String(productId))
+                .slice(0, 8)
             : [];
           if (mounted) setRelatedProducts(filtered);
         } catch (err) {
@@ -606,8 +550,6 @@ export default function ProductDetailsPage() {
       return map;
     }
 
-    // Distribute images as evenly as possible across colors. If there's a remainder,
-    // distribute one extra image to the first `remainder` colors.
     const base = Math.floor(nImgs / nColors);
     let remainder = nImgs % nColors;
     let idx = 0;
@@ -620,7 +562,6 @@ export default function ProductDetailsPage() {
       if (remainder > 0) remainder -= 1;
     }
 
-    // If any images left (shouldn't happen), append to last color
     if (idx < nImgs) {
       const lastKey = sanitizeColorNameForLookup(String(colors[colors.length - 1] || ""));
       map[lastKey] = (map[lastKey] || []).concat(imgs.slice(idx));
@@ -722,8 +663,8 @@ export default function ProductDetailsPage() {
   useEffect(() => {
     if (typeof fetchCart === "function") {
       try {
-        fetchCart().catch(() => { });
-      } catch { }
+        fetchCart().catch(() => {});
+      } catch {}
     }
   }, [fetchCart]);
 
@@ -766,8 +707,8 @@ export default function ProductDetailsPage() {
     }
 
     // Otherwise compare color + size (both should match if provided)
-    const colorMatch = !selColor || !itemColor ? (normalize(selColor) === normalize(itemColor)) : normalize(selColor) === normalize(itemColor);
-    const sizeMatch = !selSize || !itemSize ? (normalize(selSize) === normalize(itemSize)) : normalize(selSize) === normalize(itemSize);
+    const colorMatch = !selColor || !itemColor ? normalize(selColor) === normalize(itemColor) : normalize(selColor) === normalize(itemColor);
+    const sizeMatch = !selSize || !itemSize ? normalize(selSize) === normalize(itemSize) : normalize(selSize) === normalize(itemSize);
 
     return colorMatch && sizeMatch;
   }
@@ -792,7 +733,7 @@ export default function ProductDetailsPage() {
           setAddedToCart(true);
           try {
             if (prodKey) localStorage.setItem(`cart_added_${prodKey}`, "1");
-          } catch { }
+          } catch {}
           return;
         }
 
@@ -826,8 +767,7 @@ export default function ProductDetailsPage() {
 
   /* ---------- actions ---------- */
   async function addToCartHandler() {
-    const needSelectionError =
-      (requiresColor && !selectedColor) || (requiresSize && !selectedSize);
+    const needSelectionError = (requiresColor && !selectedColor) || (requiresSize && !selectedSize);
     if (needSelectionError) {
       showToast("Select size and color");
       return;
@@ -842,11 +782,8 @@ export default function ProductDetailsPage() {
       return;
     }
     try {
-      const variantInfo = selectedVariant
-        ? { variantId: selectedVariant.id || selectedVariant._id, selectedColor, selectedSize }
-        : { selectedColor, selectedSize };
+      const variantInfo = selectedVariant ? { variantId: selectedVariant.id || selectedVariant._id, selectedColor, selectedSize } : { selectedColor, selectedSize };
 
-      // Build a clear, explicit cart item payload so the cart context or API gets all needed data
       const prodKey = String(product.id ?? product._id ?? product.productId ?? product.product_id ?? "");
       const itemForCart = {
         product_id: prodKey || null,
@@ -859,24 +796,19 @@ export default function ProductDetailsPage() {
         images: Array.isArray(product?.images) ? product.images : product?.images ? [product.images] : [],
       };
 
-      // Try to call addToCart provided by context. Many contexts accept either (product, qty, size, color, variantInfo)
-      // or a single payload object — try payload first, fallback to legacy signature if it throws.
       if (typeof addToCart === "function") {
         try {
-          // Prefer new object-style API
           await addToCart(itemForCart);
         } catch (err) {
-          // Fallback to legacy call signature for backward compatibility
           await addToCart(product, Number(quantity || 1), selectedSize, selectedColor, variantInfo);
         }
       }
 
       setAddedToCart(true);
       try {
-        // store a key that includes variant + color + size to avoid clobbering different variants
         const localKey = `cart_added_${prodKey}_${variantInfo.variantId || ""}_${String(selectedColor || "").replace(/\s+/g, "_")}_${String(selectedSize || "").replace(/\s+/g, "_")}`;
         if (prodKey) localStorage.setItem(localKey, "1");
-      } catch { }
+      } catch {}
       showToast("Added to cart");
     } catch (err) {
       console.error("addToCartHandler failed", err);
@@ -889,8 +821,7 @@ export default function ProductDetailsPage() {
   }
 
   function buyNowHandler() {
-    const needSelectionError =
-      (requiresColor && !selectedColor) || (requiresSize && !selectedSize);
+    const needSelectionError = (requiresColor && !selectedColor) || (requiresSize && !selectedSize);
     if (needSelectionError) {
       showToast("Select size and color");
       return;
@@ -936,7 +867,7 @@ export default function ProductDetailsPage() {
           await navigator.share({ title, text, url: shareUrl });
           showToast("Shared");
           return;
-        } catch { }
+        } catch {}
       }
       const encodedUrl = encodeURIComponent(shareUrl);
       const encodedText = encodeURIComponent(`${title} — ${text}`);
@@ -1022,17 +953,8 @@ export default function ProductDetailsPage() {
 
     return (
       <div className="flex items-center gap-3 ml-2 relative">
-        <button
-          onClick={() => setPickerOpen((s) => !s)}
-          aria-label={`Color ${name}`}
-          type="button"
-          className="p-0 border-0"
-        >
-          <div
-            aria-hidden
-            style={{ backgroundColor: final, width: 20, height: 20, borderRadius: 6, border: "1px solid rgba(0,0,0,0.12)" }}
-            title={final}
-          />
+        <button onClick={() => setPickerOpen((s) => !s)} aria-label={`Color ${name}`} type="button" className="p-0 border-0">
+          <div aria-hidden style={{ backgroundColor: final, width: 20, height: 20, borderRadius: 6, border: "1px solid rgba(0,0,0,0.12)" }} title={final} />
         </button>
 
         <div className="text-xs text-gray-600 dark:text-gray-300 leading-none">
@@ -1053,10 +975,7 @@ export default function ProductDetailsPage() {
                 }}
               />
               <div className="mt-2 flex gap-2">
-                <button
-                  onClick={() => setPickerOpen(false)}
-                  className="px-3 py-1 rounded border bg-white dark:bg-gray-800 text-black dark:text-white"
-                >
+                <button onClick={() => setPickerOpen(false)} className="px-3 py-1 rounded border bg-white dark:bg-gray-800 text-black dark:text-white">
                   Close
                 </button>
               </div>
@@ -1067,114 +986,355 @@ export default function ProductDetailsPage() {
     );
   }
 
- return (
-  <div className="bg-white dark:bg-black min-h-screen text-black dark:text-white pb-20">
-    <div className="container mx-auto p-6 space-y-8">
-      {/* Gallery + details */}
-      <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Left: Image Gallery */}
-        <div className="space-y-4">
-          <div className="aspect-square rounded-2xl overflow-hidden shadow-md bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-            {product.images && product.images.length > 0 ? (
-              <img
-                src={product.images[selectedIndex]}
-                alt={product.name}
-                className="object-contain w-full h-full"
-              />
-            ) : (
-              <span className="text-gray-400">No image</span>
-            )}
+  return (
+    <div className="bg-white dark:bg-black min-h-screen text-black dark:text-white pb-20">
+      <div className="container mx-auto p-6 space-y-8">
+        {/* Gallery + details */}
+        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 border border-gray-200/60 dark:border-gray-700/60">
+          <div className="relative">
+            <div className="relative">
+              <button type="button" onClick={() => openLightbox(selectedImage)} aria-label="Open gallery" className="w-full block">
+                <img src={galleryImages[selectedImage]} alt={`${product.name} - image ${selectedImage + 1}`} className="w-full h-[460px] object-cover rounded-xl shadow" />
+              </button>
+              <div className="absolute top-4 left-4 bg-black/60 text-white px-2 py-1 rounded">
+                {selectedImage + 1}/{galleryImages.length}
+              </div>
+
+              <button onClick={prevImage} type="button" className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-black/70 text-black dark:text-white p-2 rounded-full shadow z-30" aria-label="Previous image">
+                <ChevronLeft />
+              </button>
+              <button onClick={nextImage} type="button" className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-black/70 text-black dark:text-white p-2 rounded-full shadow z-30" aria-label="Next image">
+                <ChevronRight />
+              </button>
+            </div>
+
+            <div className="flex gap-3 mt-4 overflow-x-auto thumbs-container py-1" role="tablist" aria-label="Product images">
+              {galleryImages.map((g, i) => {
+                const isActive = i === selectedImage;
+                return (
+                  <button key={`${g}-${i}`} onClick={() => setSelectedImage(i)} aria-selected={isActive} aria-label={`Image ${i + 1}`} title={`Image ${i + 1}`} type="button" role="tab" className="relative flex-shrink-0 w-20 h-20 rounded-md overflow-hidden focus:outline-none">
+                    <div className={`w-full h-full rounded-md border transition-all duration-200 overflow-hidden ${isActive ? "border-2 border-black dark:border-white shadow-md" : "border border-gray-300 dark:border-gray-700 hover:border-gray-500"}`}>
+                      <img src={g} alt={`Thumbnail ${i + 1}`} className="w-full h-full object-cover" />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Thumbnail row */}
-          <div className="flex gap-2 overflow-x-auto">
-            {product.images?.map((img, idx) => (
-              <button
-                key={idx}
-                onClick={() => setSelectedIndex(idx)}
-                className={`h-20 w-20 rounded-xl overflow-hidden border-2 ${
-                  selectedIndex === idx
-                    ? "border-blue-500"
-                    : "border-transparent"
-                }`}
-              >
-                <img
-                  src={img}
-                  alt={`Thumbnail ${idx + 1}`}
-                  className="object-cover w-full h-full"
-                />
+          <div>
+            <div className="flex items-start justify-between">
+              <div className="pr-4">
+                <h1 className="text-3xl font-bold mb-2 text-black dark:text-white">{product.name}</h1>
+                <p className="text-gray-600 dark:text-gray-300 mb-4">{product.description}</p>
+                <div className="text-2xl font-semibold mb-2">{formatINR(product.price)}</div>
+              </div>
+
+              <div className="flex flex-col items-end gap-3">
+                <button onClick={handleTopWishlistToggle} disabled={wlBusyTop} aria-pressed={isWishlisted} aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white dark:bg-gray-800 border hover:shadow focus:outline-none">
+                  <Heart className={`${isWishlisted ? "text-red-500" : "text-gray-600"} w-5 h-5`} />
+                </button>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              {availableStock <= 0 ? (
+                <div className="inline-block px-3 py-1 rounded-full bg-red-600 text-white text-sm font-semibold">Out of stock</div>
+              ) : availableStock <= 10 ? (
+                <div className="inline-block px-3 py-1 rounded-full bg-amber-500 text-black text-sm font-semibold">Only {availableStock} left</div>
+              ) : availableStock <= 20 ? (
+                <div className="inline-block px-3 py-1 rounded-full bg-amber-200 text-black text-sm font-semibold">Only a few left</div>
+              ) : (
+                <div className="inline-block px-3 py-1 rounded-full bg-green-600 text-white text-sm font-semibold">In stock</div>
+              )}
+            </div>
+
+            {requiresColor && (
+              <div className="mb-4">
+                <div className="font-medium mb-2">Color</div>
+                <div className="flex gap-3 items-center">
+                  {(product.colors || []).map((c, idx) => {
+                    const name = typeof c === "string" ? c : (c && (c.label || c.name)) || String(c || "");
+                    const hex = resolveColor(c);
+                    const isSelected = sanitizeColorNameForLookup(String(selectedColor)) === sanitizeColorNameForLookup(String(c)) || String(selectedColor) === String(name);
+                    const border = isSelected ? "ring-2 ring-offset-1 ring-black dark:ring-white" : "border border-gray-300 dark:border-gray-700";
+                    return (
+                      <button
+                        key={`${String(name)}-${idx}`}
+                        onClick={() => setSelectedColor(c)}
+                        aria-label={`color-${name} ${hex ? `(${hex})` : ""}`}
+                        aria-pressed={isSelected}
+                        className={`w-10 h-10 rounded-full focus:outline-none ${isSelected ? "shadow-inner" : ""} ${border}`}
+                        style={{ backgroundColor: hex }}
+                        title={`${name} ${hex ? `(${hex})` : ""}`}
+                        type="button"
+                      />
+                    );
+                  })}
+                  {(product.colors || []).length === 0 && <div className="text-sm text-gray-500">No color options</div>}
+
+                  {selectedColor ? <ColorDisplay color={selectedColor} /> : null}
+                </div>
+
+                {allColorNames && allColorNames.length > 0 && <div className="mt-2 text-xs text-gray-500">Available colors: {allColorNames.join(" — ")}</div>}
+              </div>
+            )}
+
+            {requiresSize && (
+              <div className="mb-4">
+                <div className="font-medium mb-2">Size</div>
+                <div className="flex gap-3">
+                  {(product.sizes || []).map((s) => {
+                    const active = String(selectedSize) === String(s);
+                    return (
+                      <button key={String(s)} onClick={() => setSelectedSize(s)} className={`px-4 py-2 rounded-lg border ${active ? "bg-black text-white dark:bg-white dark:text-black" : "bg-gray-100 dark:bg-gray-800"}`} aria-pressed={active} type="button">
+                        {String(s)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="mb-6">
+              <div className="font-medium mb-2">Quantity</div>
+              <div className="flex items-center gap-3">
+                <button onClick={() => setQuantity((q) => Math.max(1, q - 1))} className="px-3 py-1 border rounded" type="button" aria-label="Decrease quantity">-</button>
+                <span className="min-w-[36px] text-center" aria-live="polite">{quantity}</span>
+                <button onClick={() => setQuantity((q) => Math.min(availableStock || q, q + 1))} className={`px-3 py-1 border rounded ${availableStock <= 0 || quantity >= availableStock ? "opacity-50 cursor-not-allowed" : ""}`} type="button" disabled={availableStock <= 0 || quantity >= availableStock} aria-label="Increase quantity">+</button>
+              </div>
+            </div>
+
+            <div className="flex gap-3 items-center">
+              <motion.button onClick={addedToCart ? goToCart : addToCartHandler} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} disabled={disablePurchase && !addedToCart} className={`cssbuttons-io small shadow-neon-black flex-1 py-2 rounded-full flex items-center justify-center gap-2 transition ${disablePurchase && !addedToCart ? "opacity-50 cursor-not-allowed" : "bg-black text-white"}`} aria-label={addedToCart ? "Go to cart" : "Add to cart"} type="button">
+                <ShoppingCart /> <span className="label">{addedToCart ? "Go to Cart" : "Add to Cart"}</span>
+              </motion.button>
+
+              <motion.button onClick={buyNowHandler} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} disabled={disablePurchase} className={`cssbuttons-io small shadow-neon-black flex-1 py-2 rounded-full flex items-center justify-center gap-2 transition ${disablePurchase ? "opacity-50 cursor-not-allowed bg-white text-black border" : "bg-white text-black border"}`} aria-label="Buy now" type="button">
+                <CreditCard /> <span className="label">Buy Now</span>
+              </motion.button>
+
+              <button onClick={handleShare} type="button" className="p-2 rounded-full border ml-1 hover:scale-105 transition" aria-label="Share product">
+                <MessageCircle />
               </button>
+            </div>
+
+            <div className="mt-6 flex items-center gap-3">
+              <input placeholder="PIN code (e.g. 123 456)" value={zipDisplay} onChange={(e) => formatZipInput(e.target.value)} className="p-3 border rounded-full w-48 bg-white dark:bg-gray-900 text-black dark:text-white" inputMode="numeric" aria-label="PIN code" />
+              <button onClick={checkDelivery} className={`${actionButtonClass}`} type="button"><MapPin size={16} /> Check</button>
+              <div className="text-sm text-gray-600 dark:text-gray-300 ml-4">
+                {deliveryMsg ? <span className={`${deliveryMsg.ok ? "text-black dark:text-white" : "text-red-600 dark:text-red-400"}`}>{deliveryMsg.text}</span> : <span>Check estimated delivery</span>}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Lightbox modal */}
+        {lightboxOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/80" onClick={closeLightbox} />
+            <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} className="relative max-w-5xl w-full mx-4">
+              <div className="relative">
+                <img src={galleryImages[lightboxIndex]} alt={`Lightbox ${lightboxIndex + 1}`} className="w-full max-h-[80vh] object-contain rounded" />
+                <button onClick={closeLightbox} className="absolute top-3 right-3 bg-white/90 dark:bg-gray-800 text-black dark:text-white p-2 rounded-full" aria-label="Close lightbox"><X /></button>
+
+                <button onClick={() => setLightboxIndex((i) => (i - 1 + galleryImages.length) % galleryImages.length)} className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-gray-800 text-black dark:text-white p-2 rounded-full" aria-label="Previous in lightbox"><ChevronLeft /></button>
+
+                <button onClick={() => setLightboxIndex((i) => (i + 1) % galleryImages.length)} className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-gray-800 text-black dark:text-white p-2 rounded-full" aria-label="Next in lightbox"><ChevronRight /></button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Reviews */}
+        <Reviews productId={productId} apiBase={API_BASE} currentUser={currentUser} showToast={showToast} />
+
+        {/* Questions & Answers */}
+        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 border border-gray-200/60 dark:border-gray-700/60">
+          <h3 className="text-lg font-semibold mb-4 text-black dark:text-white">Questions & Answers</h3>
+
+          <div className="mb-4">
+            <div className="flex gap-3">
+              <input value={questionText} onChange={(e) => setQuestionText(e.target.value)} placeholder="Ask a question..." className="flex-1 p-3 border rounded-lg bg-white dark:bg-gray-900 text-black dark:text-white" aria-label="Ask a question" />
+              <button onClick={async () => {
+                if (!questionText.trim()) return showToast("Type your question first");
+                setIsAsking(true);
+                try {
+                  const payload = {
+                    productId,
+                    text: questionText.trim(),
+                    userId: currentUser?.id || currentUser?._id || null,
+                  };
+                  const res = await fetch(`${API_BASE}/api/qa`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                  });
+                  if (!res.ok) throw new Error(`Ask failed (${res.status})`);
+                  const saved = await res.json();
+                  const inserted = {
+                    id: saved.id || saved._id || Date.now(),
+                    productId: saved.productId || payload.productId,
+                    text: saved.text || payload.text,
+                    userId: saved.userId || payload.userId || null,
+                    userName: saved.userName || currentUser?.name || saved.name || "You",
+                    avatar: saved.avatar || currentUser?.avatar || null,
+                    createdAt: saved.createdAt || new Date().toISOString(),
+                    answers: (saved.answers || []).map((a) => ({
+                      id: a.id || a._id,
+                      text: a.text,
+                      userId: a.userId || a.user_id,
+                      userName: a.userName || a.name || null,
+                      avatar: a.avatar || null,
+                      createdAt: a.createdAt || new Date().toISOString(),
+                      likes: Number(a.likes || 0),
+                      dislikes: Number(a.dislikes || 0),
+                    })),
+                  };
+                  setQuestions((prev) => [inserted, ...prev]);
+                  setQuestionText("");
+                  showToast("Question posted");
+                } catch (err) {
+                  console.error(err);
+                  showToast("Could not post question");
+                } finally {
+                  setIsAsking(false);
+                }
+              }} disabled={isAsking || !questionText.trim()} className={`px-4 py-2 rounded-lg ${isAsking || !questionText.trim() ? "opacity-60 cursor-not-allowed bg-gray-200 dark:bg-gray-800" : "bg-black text-white"}`} type="button">
+                <MessageCircle size={16} /> {isAsking ? "Posting..." : "Ask"}
+              </button>
+            </div>
+          </div>
+
+          {Array.isArray(questions) && questions.length > 0 ? (
+            <ul className="space-y-6">
+              {questions.map((q) => {
+                const qid = q.id || q._id;
+                const displayName = q.userName || q.name || "Anonymous";
+                const avatarUrl = q.avatar || null;
+                const initials =
+                  (displayName || "A")
+                    .split(" ")
+                    .map((p) => p?.[0])
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .join("")
+                    .toUpperCase() || "A";
+
+                return (
+                  <li key={qid} className="space-y-3">
+                    <div className="flex items-start gap-3">
+                      {avatarUrl ? (
+                        <Avatar alt={displayName} src={avatarUrl} sx={{ width: 40, height: 40 }} />
+                      ) : (
+                        <Avatar sx={{ width: 40, height: 40, bgcolor: stringToHslColor(displayName || initials), color: "#fff", fontWeight: 600 }}>
+                          {initials}
+                        </Avatar>
+                      )}
+
+                      <div className="flex-1">
+                        <div>
+                          <p className="font-medium text-black dark:text-white">{displayName}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{q.createdAt ? formatRelativeIST(q.createdAt) : ""}</p>
+                        </div>
+
+                        <div className="mt-2 bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
+                          <p className="text-sm text-gray-900 dark:text-gray-100">{q.text}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {(q.answers || []).length > 0 && (
+                      <div className="ml-12 space-y-3">
+                        {q.answers.map((a, idx) => {
+                          const aId = a.id || a._id || idx;
+                          const aName = a.userName || a.name || "Anonymous";
+                          const aAvatar = a.avatar || null;
+                          const initialsA = (aName || "A").split(" ").map((p) => p?.[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "A";
+                          const isLast = idx === (q.answers || []).length - 1;
+                          return (
+                            <div key={aId} className="flex items-start gap-3" ref={(el) => { if (isLast) lastAnswerRef.current[qid] = el; }}>
+                              {aAvatar ? (
+                                <Avatar alt={aName} src={aAvatar} sx={{ width: 36, height: 36 }} />
+                              ) : (
+                                <Avatar sx={{ width: 36, height: 36, bgcolor: stringToHslColor(aName || initialsA), color: "#fff", fontWeight: 600, fontSize: 12 }}>
+                                  {initialsA}
+                                </Avatar>
+                              )}
+
+                              <div className="flex-1">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <p className="text-sm font-medium text-black dark:text-white">{aName}</p>
+                                    <p className="text-xs text-gray-500 mt-0.5">{a.createdAt ? formatRelativeIST(a.createdAt) : ""}{a.optimistic ? " (sending...)" : ""}</p>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs text-gray-600">
+                                    <button onClick={() => { handleVote(aId, "answer", "like"); }} className={`flex items-center gap-1 px-2 py-1 rounded ${userVotes[aId] === "like" ? "bg-green-100 dark:bg-green-900/40" : "hover:bg-gray-100 dark:hover:bg-gray-800"}`} type="button" aria-label="Like answer">
+                                      <ThumbsUp size={14} /> <span>{a.likes || 0}</span>
+                                    </button>
+                                    <button onClick={() => { handleVote(aId, "answer", "dislike"); }} className={`flex items-center gap-1 px-2 py-1 rounded ${userVotes[aId] === "dislike" ? "bg-red-100 dark:bg-red-900/30" : "hover:bg-gray-100 dark:hover:bg-gray-800"}`} type="button" aria-label="Dislike answer">
+                                      <ThumbsDown size={14} /> <span>{a.dislikes || 0}</span>
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="mt-1 bg-gray-50 dark:bg-gray-800/70 rounded-lg p-3">
+                                  <p className="text-sm text-gray-900 dark:text-gray-100">{a.text}</p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <div className="ml-12 mt-2 flex gap-2 items-start">
+                      <input value={answerInputs[qid] || ""} onChange={(e) => setAnswerInputs((prev) => ({ ...prev, [qid]: e.target.value }))} placeholder="Write an answer..." className="flex-1 p-2 border rounded-lg bg-white dark:bg-gray-900 text-sm text-black dark:text-white" aria-label={`Answer to question ${qid}`} />
+                      <button onClick={async () => {
+                        const text = (answerInputs[qid] || "").trim();
+                        if (!text) return showToast("Type an answer first");
+                        setAnswerLoading((s) => ({ ...s, [qid]: true }));
+                        setAnswerInputs((s) => ({ ...s, [qid]: "" }));
+                        try {
+                          await handlePostAnswer(qid, text);
+                          showToast("Answer posted");
+                        } catch {
+                          showToast("Could not post answer");
+                        } finally {
+                          setAnswerLoading((s) => ({ ...s, [qid]: false }));
+                        }
+                      }} disabled={(answerLoading[qid] === true) || !(answerInputs[qid] && answerInputs[qid].trim())} className={`px-3 py-2 rounded-full border ${answerLoading[qid] ? "opacity-60 cursor-not-allowed" : "bg-black text-white"}`} type="button" aria-label={`Post answer to question ${qid}`}>
+                        {answerLoading[qid] ? "..." : <Send size={14} />}
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-gray-600 dark:text-gray-300">No questions yet.</p>
+          )}
+        </section>
+
+        {/* Related products */}
+        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 border border-gray-200/60 dark:border-gray-700/60">
+          <h2 className="text-xl font-bold mb-4 text-black dark:text-white">You might be interested in</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {(relatedProducts && relatedProducts.length ? relatedProducts : [1, 2, 3, 4]).map((p, i) => (
+              <ProductCard key={p?.id || p?._id || i} product={
+                typeof p === "object"
+                  ? { id: p.id || p._id, name: p.name || p.title || `Product ${i + 1}`, price: p.price || 2499, images: p.images || (p.image ? [p.image] : []) }
+                  : { id: i + 1, name: `Product ${p}`, price: 2499, images: [galleryImages[0]] }
+              } />
             ))}
           </div>
+        </section>
+      </div>
+
+      {toast && (
+        <div className="fixed right-6 top-6 z-60">
+          <div className="px-4 py-2 rounded shadow bg-black text-white">{toast}</div>
         </div>
-
-        {/* Right: Details */}
-        <div className="flex flex-col gap-6">
-          <h1 className="text-3xl font-bold">{product.name}</h1>
-          <p className="text-xl font-semibold text-blue-600 dark:text-blue-400">
-            {formatCurrency(product.price)}
-          </p>
-          <p className="text-gray-700 dark:text-gray-300">{product.description}</p>
-
-          {/* Colors */}
-          {product.colors?.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold mb-2">Colors</h2>
-              <div className="flex gap-3 flex-wrap">
-                {product.colors.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setSelectedColor(c)}
-                    className={`h-10 w-10 rounded-full border-2 ${
-                      selectedColor === c ? "border-blue-500" : "border-gray-300"
-                    }`}
-                    style={{ backgroundColor: resolveColor(c) }}
-                    title={c}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Sizes */}
-          {product.sizes?.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold mb-2">Sizes</h2>
-              <div className="flex gap-3 flex-wrap">
-                {product.sizes.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setSelectedSize(s)}
-                    className={`px-4 py-2 rounded-lg border ${
-                      selectedSize === s
-                        ? "bg-blue-500 text-white border-blue-500"
-                        : "border-gray-300"
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex gap-4">
-            <button
-              onClick={handleAddToCart}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl shadow-md transition"
-            >
-              {isInCart ? "Go to Cart" : "Add to Cart"}
-            </button>
-            <button
-              onClick={handleBuyNow}
-              className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl shadow-md transition"
-            >
-              Buy Now
-            </button>
-          </div>
-        </div>
-      </section>
+      )}
     </div>
-  </div>
-);
+  );
+}
