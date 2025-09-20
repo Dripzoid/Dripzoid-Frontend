@@ -8,29 +8,36 @@ export const useCart = () => useContext(CartContext);
 export const CartProvider = ({ children }) => {
   const { user, token } = useContext(UserContext);
   const [cart, setCart] = useState([]);
-  const [buyNowItem, setBuyNowItem] = useState(null); // for Buy Now
+  const [buyNowItem, setBuyNowItem] = useState(null);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const API_BASE = process.env.REACT_APP_API_BASE;
 
+  /** Normalize cart row from backend */
   const normalizeRow = (row = {}) => {
     const cart_id = row.cart_id ?? row.id ?? row.cartId ?? null;
-    const product_id =
-      row.product_id ?? row.productId ?? row.product_id ?? null;
-
+    const product_id = row.product_id ?? row.productId ?? null;
     const quantity = Number(row.quantity ?? row.qty ?? 1);
-    const selectedSize =
-      row.selectedSize ?? row.size ?? row.variant_size ?? null;
-    const selectedColor =
-      row.selectedColor ?? row.color ?? row.colors ?? row.variant_color ?? null;
+    const selectedSize = row.selectedSize ?? row.size ?? null;
+    const selectedColor = row.selectedColor ?? row.color ?? null;
     const variantId = row.variantId ?? row.variant_id ?? null;
 
     const productName = row.name ?? row.product_name ?? row.title ?? "";
     const productPrice = Number(row.price ?? row.unit_price ?? 0);
-    const productImages = row.images ?? row.product_images ?? [];
     const productStock = row.stock ?? null;
+
+    // Map images for selected color
+    let productImages = [];
+    if (row.product?.variants?.length) {
+      const variant = row.product.variants.find(
+        (v) => v.color === selectedColor
+      );
+      productImages = variant ? variant.images : row.product.images ?? [];
+    } else {
+      productImages = row.images ?? row.product_images ?? [];
+    }
 
     const product = {
       id: product_id,
@@ -49,7 +56,6 @@ export const CartProvider = ({ children }) => {
       selectedSize,
       selectedColor,
       variantId,
-
       name: productName,
       price: productPrice,
       images: productImages,
@@ -58,6 +64,7 @@ export const CartProvider = ({ children }) => {
     };
   };
 
+  /** Fetch cart from backend */
   const fetchCart = async () => {
     if (!user || !token) {
       setCart([]);
@@ -75,15 +82,11 @@ export const CartProvider = ({ children }) => {
       }
       const data = await res.json();
       if (!Array.isArray(data)) {
-        console.warn(
-          "Cart fetch: unexpected response shape, expected array:",
-          data
-        );
+        console.warn("Cart fetch: expected array but got:", data);
         setCart([]);
         return;
       }
-      const normalized = data.map(normalizeRow);
-      setCart(normalized);
+      setCart(data.map(normalizeRow));
     } catch (err) {
       console.error("Error fetching cart:", err);
       setError("Could not load cart");
@@ -95,9 +98,9 @@ export const CartProvider = ({ children }) => {
 
   /**
    * Add to cart
-   * Supports two signatures:
-   *   1. addToCart(itemForCartObject)
-   *   2. addToCart(product, quantity, size, color, variantInfo)
+   * Supports:
+   * 1. addToCart(itemObject)
+   * 2. addToCart(product, quantity, size, color, variantInfo)
    */
   const addToCart = async (...args) => {
     if (!user || !token) {
@@ -108,8 +111,16 @@ export const CartProvider = ({ children }) => {
     let payload = {};
 
     if (args.length === 1 && typeof args[0] === "object") {
-      // ✅ New API: object payload
       const item = args[0];
+      // Map images for selected color
+      let imagesForColor = item.images ?? [];
+      if (item.product?.variants?.length) {
+        const variant = item.product.variants.find(
+          (v) => v.color === item.selectedColor
+        );
+        imagesForColor = variant ? variant.images : item.images ?? [];
+      }
+
       payload = {
         product_id: item.product_id ?? item.product?.id ?? null,
         quantity: Number(item.quantity ?? 1),
@@ -117,18 +128,25 @@ export const CartProvider = ({ children }) => {
         selectedColor: item.selectedColor ?? null,
         variantId: item.variantId ?? null,
         price: item.price ?? null,
-        images: item.images ?? [],
+        images: imagesForColor,
       };
     } else {
-      // ✅ Legacy API
       const [product, quantity = 1, size = null, color = null, variantInfo = {}] =
         args;
+
+      let imagesForColor = product?.images ?? [];
+      if (product?.variants?.length) {
+        const variant = product.variants.find((v) => v.color === color);
+        imagesForColor = variant ? variant.images : product.images ?? [];
+      }
+
       payload = {
         product_id: product?.id ?? product?._id ?? null,
         quantity: Number(quantity ?? 1),
         selectedSize: size,
         selectedColor: color,
         variantId: variantInfo?.variantId ?? null,
+        images: imagesForColor,
       };
     }
 
@@ -195,12 +213,19 @@ export const CartProvider = ({ children }) => {
   };
 
   const buyNow = (product, quantity = 1, size = null, color = null, variantInfo = {}) => {
+    let imagesForColor = product?.images ?? [];
+    if (product?.variants?.length) {
+      const variant = product.variants.find((v) => v.color === color);
+      imagesForColor = variant ? variant.images : product.images ?? [];
+    }
+
     setBuyNowItem({
       product,
       quantity,
       selectedSize: size,
       selectedColor: color,
       variantId: variantInfo?.variantId ?? null,
+      images: imagesForColor,
     });
   };
 
