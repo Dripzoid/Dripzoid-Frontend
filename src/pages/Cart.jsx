@@ -8,27 +8,25 @@ export default function CartPage() {
   const { cart, updateQuantity, removeFromCart } = useCart();
   const navigate = useNavigate();
 
+  // Total price of cart
   const total = cart.reduce(
-    (sum, item) =>
-      sum + (Number(item.product?.price || item.price || 0) * item.quantity),
+    (sum, item) => sum + (Number(item.product?.price || item.price || 0) * item.quantity),
     0
   );
 
+  // Navigate to checkout with selected items
   const handleCheckout = () => {
     const itemsData = cart.map((item) => ({
       id: item.product?.id || item.product_id || item.id,
       name: item.product?.name || item.name,
       price: Number(item.product?.price || item.price) || 0,
       quantity: item.quantity,
-      color: item.selectedColor || item.colors || null,  // ✅ fixed
-      size: item.selectedSize || item.size || null,      // ✅ fixed
-      image: (item.product?.images || item.images || "").split(",")[0].trim(),
+      color: item.selectedColor || item.colors || null,
+      size: item.selectedSize || item.size || null,
+      image: item.images?.[0] ?? "", // ✅ first image of selected color
     }));
 
-    const totalAmount = itemsData.reduce(
-      (sum, it) => sum + it.price * it.quantity,
-      0
-    );
+    const totalAmount = itemsData.reduce((sum, it) => sum + it.price * it.quantity, 0);
 
     navigate("/checkout", {
       state: {
@@ -64,9 +62,8 @@ export default function CartPage() {
               const name = item.product?.name || item.name;
               const productId = item.product?.id || item.product_id || item.id;
 
-              const image = (item.product?.images || item.images || "")
-                .split(",")[0]
-                .trim();
+              // ✅ Use only images for selected color
+              const image = item.images?.[0] ?? "";
 
               return (
                 <motion.div
@@ -86,22 +83,18 @@ export default function CartPage() {
                     <h3 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
                       {name}
                     </h3>
-                    <p className="text-sm text-gray-500">
-                      ₹{price.toLocaleString()}
-                    </p>
+                    <p className="text-sm text-gray-500">₹{price.toLocaleString()}</p>
 
-                    {/* ✅ Fixed: Render selected color & size */}
+                    {/* Render selected color & size */}
                     <div className="flex gap-4 mt-2 text-sm text-gray-600 dark:text-gray-300">
                       {item.selectedColor && (
                         <p>
-                          <span className="font-medium">Color:</span>{" "}
-                          {item.selectedColor}
+                          <span className="font-medium">Color:</span> {item.selectedColor}
                         </p>
                       )}
                       {item.selectedSize && (
                         <p>
-                          <span className="font-medium">Size:</span>{" "}
-                          {item.selectedSize}
+                          <span className="font-medium">Size:</span> {item.selectedSize}
                         </p>
                       )}
                     </div>
@@ -151,9 +144,7 @@ export default function CartPage() {
           </div>
 
           <div className="mt-10 flex flex-col sm:flex-row justify-between items-center gap-6">
-            <span className="text-2xl font-bold">
-              Total: ₹{total.toLocaleString()}
-            </span>
+            <span className="text-2xl font-bold">Total: ₹{total.toLocaleString()}</span>
 
             <motion.button
               onClick={handleCheckout}
