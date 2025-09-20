@@ -56,12 +56,11 @@ function normalizeVariantValue(v) {
 // --- nearest-color setup ---
 const CUSTOM_NAMED_COLORS = {
   black: "#000000",
-  cornsilk: "#FFF8DC", // standard CSS cornsilk
-  "irish green": "#009A44", // common 'irish green' approximation
-  azalea: "#F7C6D9", // azalea / azalea pink approximation
-  "heather royal": "#307FE2", // Gildan Heather Royal approx
-  "heather sapphire": "#0076A8", // Gildan Heather Sapphire approx
-  // add other friendly names as needed
+  cornsilk: "#FFF8DC",
+  "irish green": "#009A44",
+  azalea: "#F7C6D9",
+  "heather royal": "#307FE2",
+  "heather sapphire": "#0076A8",
 };
 
 let nearest = null;
@@ -78,12 +77,10 @@ function detectColorTextName(color) {
     if (color.name) return String(color.name);
     if (color.hex) return String(color.hex).toUpperCase();
     if (color.value) return String(color.value);
-    // attempt stringify
     return String(color).replace(/\s+/g, " ").trim();
   }
   const s = String(color).trim();
   if (!s) return "";
-  // hex?
   if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s)) {
     const hex = s.toUpperCase();
     if (nearest) {
@@ -95,7 +92,6 @@ function detectColorTextName(color) {
     return hex;
   }
 
-  // try browser accept
   try {
     if (typeof document !== "undefined") {
       const st = document.createElement("span").style;
@@ -116,7 +112,7 @@ function detectColorTextName(color) {
             } catch {}
           }
         } catch {}
-        return s; // browser accepts the name
+        return s;
       }
     }
   } catch {}
@@ -133,13 +129,6 @@ function detectColorTextName(color) {
 
 /**
  * Try to resolve a CSS color name (or hex string) into a hex value.
- * Approach:
- *  - If input is already a hex -> return it.
- *  - Attempt to resolve named CSS color by creating a temporary element,
- *    setting its color, reading computed style (rgb) and converting that to hex.
- *  - Fall back to '#808080'.
- *
- * Works only in browser (guards for SSR).
  */
 function rgbStringToHex(rgb) {
   if (!rgb || typeof rgb !== "string") return null;
@@ -157,7 +146,7 @@ function rgbStringToHex(rgb) {
 
 function nameToHex(name) {
   if (!name || typeof name !== "string") return null;
-  if (typeof document === "undefined") return null; // SSR guard
+  if (typeof document === "undefined") return null;
   try {
     const span = document.createElement("span");
     span.style.color = "";
@@ -184,13 +173,10 @@ function resolveColor(c) {
   }
   const s = String(c).trim();
   if (!s) return "#808080";
-  // hex candidate?
   if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s)) return s.toUpperCase();
-  // try name -> hex
   const sanitized = sanitizeColorNameForLookup(s);
   const fromName = nameToHex(sanitized) || nameToHex(s);
   if (fromName) return fromName;
-  // try DOM accept (some names like 'light blue' might not work, but safer to try original)
   try {
     if (typeof document !== "undefined") {
       const st = document.createElement("span").style;
@@ -230,7 +216,7 @@ function formatRelativeIST(dateString) {
   if (!dateString) return "";
   const date = new Date(dateString);
   const now = new Date();
-  const diff = Math.floor((now - date) / 1000); // seconds
+  const diff = Math.floor((now - date) / 1000);
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
@@ -541,7 +527,6 @@ export default function ProductDetailsPage() {
     const nImgs = imgs.length;
     const nColors = colors.length;
 
-    // If fewer images than colors, assign one image each to the first nImgs colors
     if (nImgs <= nColors) {
       for (let i = 0; i < nColors; i++) {
         const key = sanitizeColorNameForLookup(String(colors[i] || ""));
@@ -583,10 +568,8 @@ export default function ProductDetailsPage() {
     }
 
     const key = sanitizeColorNameForLookup(String(selectedColor || ""));
-    // Try exact match
     let imgs = colorImageMap[key];
 
-    // If not found, try to find by matching to any color by sanitized string
     if (!imgs) {
       const colors = Array.isArray(product?.colors) ? product.colors : [];
       const firstColorKey = sanitizeColorNameForLookup(String(colors[0] || ""));
@@ -603,7 +586,6 @@ export default function ProductDetailsPage() {
     setSelectedImage((s) => (s + 1) % galleryImages.length);
   }
 
-  // whenever gallery images or selected color changes, reset selectedImage to 0
   useEffect(() => {
     setSelectedImage(0);
   }, [galleryImages.length, selectedColor]);
@@ -674,7 +656,6 @@ export default function ProductDetailsPage() {
     const pid = String(item.product_id ?? item.productId ?? item.product?.id ?? item.product?._id ?? item.id ?? "");
     if (!pid || String(pid) !== String(prodKey)) return false;
 
-    // find color from possible keys
     const itemColorCandidates = [
       item.selectedColor,
       item.selected_color,
@@ -701,12 +682,10 @@ export default function ProductDetailsPage() {
     const itemSize = itemSizeCandidates.find((s) => s !== undefined && s !== null && String(s).trim() !== "") || "";
     const itemVariant = itemVariantCandidates.find((v) => v !== undefined && v !== null && String(v).trim() !== "") || "";
 
-    // If variant id is available on both sides, prefer exact match
     if (selVariantId && itemVariant) {
       if (String(itemVariant).trim() === String(selVariantId).trim()) return true;
     }
 
-    // Otherwise compare color + size (both should match if provided)
     const colorMatch = !selColor || !itemColor ? normalize(selColor) === normalize(itemColor) : normalize(selColor) === normalize(itemColor);
     const sizeMatch = !selSize || !itemSize ? normalize(selSize) === normalize(itemSize) : normalize(selSize) === normalize(itemSize);
 
@@ -726,7 +705,6 @@ export default function ProductDetailsPage() {
       const selSizeNormalized = selectedSize ? String(selectedSize).trim() : "";
       const selVariantId = selectedVariant?.id || selectedVariant?._id || null;
 
-      // First try to find a matching item in the cart array
       if (Array.isArray(cart) && cart.length > 0) {
         const found = cart.some((it) => cartItemMatchesSelection(it, prodKey, selColorNormalized, selSizeNormalized, selVariantId));
         if (found) {
@@ -737,7 +715,6 @@ export default function ProductDetailsPage() {
           return;
         }
 
-        // not found: try localStorage fallback keys that include color/size/variant
         try {
           const keyExact = `cart_added_${prodKey}_${selVariantId || ""}_${String(selColorNormalized || "").replace(/\s+/g, "_")}_${String(selSizeNormalized || "").replace(/\s+/g, "_")}`;
           const flag = localStorage.getItem(keyExact);
@@ -751,7 +728,6 @@ export default function ProductDetailsPage() {
         return;
       }
 
-      // fallback to localStorage when cart array is empty or not provided
       try {
         const keyExact = `cart_added_${prodKey}_${selVariantId || ""}_${String(selColorNormalized || "").replace(/\s+/g, "_")}_${String(selSizeNormalized || "").replace(/\s+/g, "_")}`;
         const flag = localStorage.getItem(keyExact);
@@ -856,6 +832,91 @@ export default function ProductDetailsPage() {
     });
     showToast("Proceeding to checkout...");
   }
+
+  // ---- FIXED: Define handleVote + handlePostAnswer so ESLint/no-undef stops failing ----
+  const handleVote = async (entityId, entityType, voteType) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/votes`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ entityId, entityType, vote: voteType }),
+      });
+      if (!res.ok) throw new Error("Failed to submit vote");
+      const data = await res.json();
+
+      // optimistic/local UI update: mark user vote
+      setUserVotes((prev) => ({ ...prev, [String(entityId)]: voteType }));
+
+      // if API returned updated counts, update the question/answer likes/dislikes
+      if (data && (data.like !== undefined || data.likes !== undefined || data.dislike !== undefined || data.dislikes !== undefined)) {
+        const id = String(data.entityId ?? entityId);
+        const likes = Number(data.like ?? data.likes ?? 0);
+        const dislikes = Number(data.dislike ?? data.dislikes ?? 0);
+        setQuestions((prev) =>
+          (Array.isArray(prev) ? prev : []).map((q) => ({
+            ...q,
+            answers: (q.answers || []).map((a) => {
+              if (String(a.id) === id) return { ...a, likes, dislikes };
+              return a;
+            }),
+          }))
+        );
+      }
+
+      return data;
+    } catch (err) {
+      console.error("Vote failed:", err);
+      showToast("Could not submit vote");
+      throw err;
+    }
+  };
+
+  const handlePostAnswer = async (questionId, text) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/qa/${encodeURIComponent(questionId)}/answers`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) throw new Error("Failed to post answer");
+      const saved = await res.json();
+
+      const answerObj = {
+        id: saved.id || saved._id || Date.now(),
+        text: saved.text || text,
+        userId: saved.userId || saved.user_id || currentUser?.id || currentUser?._id || null,
+        userName: saved.userName || saved.name || currentUser?.name || "You",
+        avatar: saved.avatar || saved.avatarUrl || currentUser?.avatar || null,
+        createdAt: saved.createdAt || new Date().toISOString(),
+        likes: Number(saved.likes || saved.like || 0),
+        dislikes: Number(saved.dislikes || saved.dislike || 0),
+      };
+
+      // Append answer to relevant question in local state
+      setQuestions((prev) =>
+        (Array.isArray(prev) ? prev : []).map((q) => {
+          if (String(q.id) === String(questionId) || String(q._id) === String(questionId)) {
+            return { ...q, answers: [...(q.answers || []), answerObj] };
+          }
+          return q;
+        })
+      );
+
+      return saved;
+    } catch (err) {
+      console.error("Post answer failed:", err);
+      showToast("Could not post answer");
+      throw err;
+    }
+  };
+
+  // ------------------------------------------------------------------------------
 
   async function handleShare() {
     try {
