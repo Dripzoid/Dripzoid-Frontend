@@ -692,83 +692,185 @@ export default function OrdersSection() {
       )}
 
       {/* Order Detail Modal */}
-      {selectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center p-6 bg-black/40">
-          <div className="w-full max-w-3xl bg-white dark:bg-gray-900 rounded-lg shadow-xl overflow-auto">
-            <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800">
-              <h3 className="font-semibold">Order #{selectedOrder.id}</h3>
-              <div className="flex items-center gap-2">
-                <button onClick={() => downloadInvoice(selectedOrder)} className="px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-800"><Download size={16} /></button>
-                <button onClick={() => setRefreshKey((k) => k + 1)} className="px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-800" title="Refresh"><RefreshCw size={16} /></button>
-                <button onClick={closeOrder} className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"><X size={18} /></button>
-              </div>
+{selectedOrder && (
+  <div className="fixed inset-0 z-50 flex items-start justify-center p-6 bg-black/40">
+    <div className="w-full max-w-3xl bg-white dark:bg-gray-900 rounded-lg shadow-xl overflow-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800">
+        <h3 className="font-semibold">Order #{selectedOrder.id}</h3>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => downloadInvoice(selectedOrder)}
+            className="px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-800"
+            title="Download Invoice"
+          >
+            <Download size={16} />
+          </button>
+          <button
+            onClick={() => setRefreshKey((k) => k + 1)}
+            className="px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-800"
+            title="Refresh"
+          >
+            <RefreshCw size={16} />
+          </button>
+          <button
+            onClick={closeOrder}
+            className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
+            title="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Items */}
+        <div>
+          <h4 className="text-sm font-semibold mb-2">Items</h4>
+          <ul className="space-y-4">
+            {selectedOrder.items?.map((it) => {
+              const key =
+                it.id ??
+                it.sku ??
+                `${it.name}-${Math.random().toString(36).slice(2, 6)}`;
+              const img = getImageFromItem(it);
+              const color =
+                getOptionFromItem(it, "color") ||
+                getOptionFromItem(it, "colour");
+              const size = getOptionFromItem(it, "size");
+              const qty = it.quantity ?? it.qty ?? it.count ?? 1;
+              const price =
+                it.price ?? it.unit_price ?? it.price_per_unit ?? 0;
+              const total = Number(price) * Number(qty);
+
+              return (
+                <li
+                  key={key}
+                  className="flex items-center gap-4 border-b pb-3"
+                >
+                  {/* Image */}
+                  <div className="w-16 h-16 rounded overflow-hidden bg-gray-50 dark:bg-gray-800">
+                    <img
+                      src={img}
+                      alt={it.name || "item"}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.src = "/placeholder.jpg";
+                      }}
+                    />
+                  </div>
+
+                  {/* Details */}
+                  <div className="flex-1">
+                    <div className="font-medium">
+                      {it.name || it.title || "Item"}
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400 space-x-2">
+                      {color && (
+                        <span>
+                          Color: <strong>{color}</strong>
+                        </span>
+                      )}
+                      {size && (
+                        <span>
+                          Size: <strong>{size}</strong>
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      Qty: <strong>{qty}</strong> × {fmtCurrency(price)}
+                    </div>
+                  </div>
+
+                  {/* Line Total */}
+                  <div className="text-right font-semibold">
+                    {fmtCurrency(total)}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        {/* Summary / Delivery / Actions */}
+        <div>
+          {/* Summary */}
+          <h4 className="text-sm font-semibold mb-2">Summary</h4>
+          <div className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+            <div className="flex justify-between">
+              <span>Subtotal</span>
+              <span>
+                {fmtCurrency(selectedOrder.subtotal || selectedOrder.total)}
+              </span>
             </div>
-
-            <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <h4 className="text-sm font-semibold mb-2">Items</h4>
-                <ul className="space-y-3">
-                  {selectedOrder.items?.map((it) => {
-                    const key = it.id ?? it.sku ?? `${it.name}-${Math.random().toString(36).slice(2,6)}`;
-                    const img = getImageFromItem(it);
-                    const color = getOptionFromItem(it, "color") || getOptionFromItem(it, "colour");
-                    const size = getOptionFromItem(it, "size");
-                    const qty = it.quantity ?? it.qty ?? it.count ?? 1;
-                    const price = it.price ?? it.unit_price ?? it.price_per_unit ?? 0;
-                    return (
-                      <li key={key} className="flex items-center gap-3">
-                        <div className="w-16 h-16 rounded overflow-hidden bg-gray-50 dark:bg-gray-800">
-                          <img src={img} alt={it.name || "item"} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = "/placeholder.jpg"; }} />
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-medium">{it.name || it.title || "Item"}</div>
-                          <div className="text-sm text-gray-500 dark:text-gray-400">
-                            {color && <span className="mr-3">Color: <strong>{color}</strong></span>}
-                            {size && <span>Size: <strong>{size}</strong></span>}
-                          </div>
-                          <div className="text-sm text-gray-500 dark:text-gray-400">Qty: <strong>{qty}</strong></div>
-                        </div>
-                        <div className="text-right font-semibold">{fmtCurrency(Number(price) * Number(qty))}</div>
-                      </li>
-                    );
-                  })}
-                </ul>
+            <div className="flex justify-between">
+              <span>Shipping</span>
+              <span>{fmtCurrency(selectedOrder.shipping || 0)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Tax</span>
+              <span>{fmtCurrency(selectedOrder.tax || 0)}</span>
+            </div>
+            {selectedOrder.discount != null && (
+              <div className="flex justify-between text-green-600">
+                <span>Discount</span>
+                <span>-{fmtCurrency(selectedOrder.discount)}</span>
               </div>
-
-              <div>
-                <h4 className="text-sm font-semibold mb-2">Summary</h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm text-gray-600 dark:text-gray-300"><span>Subtotal</span><span>{fmtCurrency(selectedOrder.subtotal || selectedOrder.total)}</span></div>
-                  <div className="flex justify-between text-sm text-gray-600 dark:text-gray-300"><span>Shipping</span><span>{fmtCurrency(selectedOrder.shipping || 0)}</span></div>
-                  <div className="flex justify-between text-sm text-gray-600 dark:text-gray-300"><span>Tax</span><span>{fmtCurrency(selectedOrder.tax || 0)}</span></div>
-                  <div className="flex justify-between font-semibold text-lg"><span>Total</span><span>{fmtCurrency(selectedOrder.total)}</span></div>
-                </div>
-
-                <div className="mt-4">
-                  <h4 className="text-sm font-semibold mb-2">Delivery</h4>
-                  <div className="text-sm text-gray-600 dark:text-gray-300">{selectedOrder.shipping_address?.name || selectedOrder.customer_name}</div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">{selectedOrder.shipping_address?.line1 || selectedOrder.address}</div>
-                </div>
-
-                <div className="mt-4">
-                  <h4 className="text-sm font-semibold mb-2">Tracking</h4>
-                  <ShipmentProgress status={selectedOrder.status} checkpoints={selectedOrder.tracking?.checkpoints} />
-                </div>
-
-                <div className="mt-4 flex gap-2">
-                  {!["cancelled", "delivered"].includes((selectedOrder.status || "").toLowerCase()) && (
-                    <button onClick={() => setOrderToCancel(selectedOrder.id)} className="px-3 py-2 rounded-md bg-rose-50 text-rose-600">Cancel</button>
-                  )}
-                  <button onClick={() => reorder(selectedOrder.id)} className="px-3 py-2 rounded-md bg-black text-white">Reorder</button>
-                </div>
-              </div>
+            )}
+            <div className="border-t pt-2 flex justify-between font-semibold text-lg">
+              <span>Total</span>
+              <span>{fmtCurrency(selectedOrder.total)}</span>
             </div>
           </div>
+
+          {/* Delivery */}
+          <div className="mt-6">
+            <h4 className="text-sm font-semibold mb-2">Delivery</h4>
+            <div className="text-sm text-gray-600 dark:text-gray-300">
+              {selectedOrder.shipping_address?.name ||
+                selectedOrder.customer_name}
+            </div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              {selectedOrder.shipping_address?.line1 ||
+                selectedOrder.address}
+            </div>
+          </div>
+
+          {/* Tracking */}
+          <div className="mt-6">
+            <h4 className="text-sm font-semibold mb-2">Tracking</h4>
+            <ShipmentProgress
+              status={selectedOrder.status}
+              checkpoints={selectedOrder.tracking?.checkpoints}
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="mt-6 flex gap-2">
+            {!["cancelled", "delivered"].includes(
+              (selectedOrder.status || "").toLowerCase()
+            ) && (
+              <button
+                onClick={() => setOrderToCancel(selectedOrder.id)}
+                className="px-3 py-2 rounded-md bg-rose-50 text-rose-600"
+              >
+                Cancel
+              </button>
+            )}
+            <button
+              onClick={() => reorder(selectedOrder.id)}
+              className="px-3 py-2 rounded-md bg-black text-white"
+            >
+              Reorder
+            </button>
+          </div>
         </div>
-      )}
+      </div>
     </div>
-  );
-}
+  </div>
+)}
+
 
 /** ShipmentProgress */
 function ShipmentProgress({ status, checkpoints = [] }) {
