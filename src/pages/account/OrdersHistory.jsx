@@ -101,7 +101,8 @@ export default function OrdersSection() {
       id: o.id,
       status: (o.status || "").toString(),
       total:
-  (o.total ?? o.total_amount ?? o.total_price ?? Number(o.total || 0)) || 0,
+        (o.total ?? o.total_amount ?? o.total_price ?? Number(o.total || 0)) ||
+        0,
 
       created_at: o.created_at || o.date || o.createdAt || null,
       items: Array.isArray(o.items) ? o.items : o.items?.length ? o.items : o.order_items ?? [],
@@ -119,6 +120,83 @@ export default function OrdersSection() {
       return s;
     }
   }
+
+  /**
+   * New helper: try many common places to get an image URL for an order item/variant
+   */
+  const getImageFromItem = (item) => {
+    if (!item) return "/placeholder.jpg";
+    // common fields
+    const possible =
+      item.image ||
+      item.thumbnail ||
+      item.thumbnail_url ||
+      item.img ||
+      item.image_url ||
+      (item.images && (Array.isArray(item.images) ? item.images[0] : item.images)?.url) ||
+      (item.media && item.media[0]?.url) ||
+      (item.variant && (item.variant.image || item.variant.images?.[0]?.url)) ||
+      (item.product && (item.product.image || item.product.images?.[0]?.url)) ||
+      (item.product && item.product.thumbnail) ||
+      item.picture ||
+      item.photo;
+    if (possible) return possible;
+    return "/placeholder.jpg";
+  };
+
+  /**
+   * New helper: try to get a named option/property (Color, Size, etc.)
+   * Looks at several common shapes vendors use: selected_options, options, attributes, variant.options
+   */
+  const getOptionFromItem = (item, optionName) => {
+    if (!item || !optionName) return null;
+    const name = optionName.toLowerCase();
+
+    // 1) selected_options: [{ name: 'Color', value: 'Red' }]
+    if (Array.isArray(item.selected_options)) {
+      const found = item.selected_options.find((o) => (o?.name || "").toLowerCase() === name);
+      if (found) return found.value ?? found.val ?? found.option ?? found.name;
+    }
+
+    // 2) options / attributes arrays: [{ option: 'Size', value: 'M' }, { name:'size', value:'M' }]
+    if (Array.isArray(item.options)) {
+      const found = item.options.find((o) => ((o?.name || o?.option) || "").toLowerCase() === name);
+      if (found) return found.value ?? found.val ?? found.option ?? found.name;
+    }
+    if (Array.isArray(item.attributes)) {
+      const found = item.attributes.find((o) => ((o?.name || o?.key) || "").toLowerCase() === name);
+      if (found) return found.value ?? found.val ?? found.option ?? found.name;
+    }
+
+    // 3) variant object might contain options or attributes
+    if (item.variant) {
+      if (Array.isArray(item.variant.options)) {
+        const found = item.variant.options.find((o) => (o?.name || "").toLowerCase() === name);
+        if (found) return found.value ?? found.val ?? found.option ?? found.name;
+      }
+      if (Array.isArray(item.variant.attributes)) {
+        const found = item.variant.attributes.find((o) => (o?.name || o?.key || "").toLowerCase() === name);
+        if (found) return found.value ?? found.val ?? found.option ?? found.name;
+      }
+      // sometimes variant stores color/size directly
+      if (item.variant[name]) return item.variant[name];
+    }
+
+    // 4) flat fields
+    if (item[name]) return item[name];
+    if (item.selectedColor && name === "color") return item.selectedColor;
+    if (item.selected_size && name === "size") return item.selected_size;
+    if (item.color && name === "color") return item.color;
+    if (item.size && name === "size") return item.size;
+
+    // 5) metadata / meta
+    if (item.meta && typeof item.meta === "object") {
+      const k = Object.keys(item.meta).find((k) => k.toLowerCase().includes(name));
+      if (k) return item.meta[k];
+    }
+
+    return null;
+  };
 
   // fetch orders
   const fetchOrders = async () => {
@@ -528,7 +606,12 @@ export default function OrdersSection() {
                   <article key={order.id} className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden bg-white dark:bg-gray-900">
                     <div className="p-4 flex gap-4">
                       <div className="flex-shrink-0 w-28 h-36 bg-gray-50 dark:bg-gray-800 rounded overflow-hidden">
-                        <img src={(order.items && order.items[0] && (order.items[0].image || order.items[0].thumbnail)) || "/placeholder.jpg"} alt={order.items?.[0]?.name || "item"} className="w-full h-full object-cover" />
+                        <img
+                          src={getImageFromItem(order.items && order.items[0])}
+                          alt={order.items?.[0]?.name || `order-${order.id}`}
+                          className="w-full h-full object-cover"
+                          onError={(e) => { e.currentTarget.src = "/placeholder.jpg"; }}
+                        />
                       </div>
 
                       <div className="flex-1 flex flex-col">
@@ -625,18 +708,30 @@ export default function OrdersSection() {
               <div>
                 <h4 className="text-sm font-semibold mb-2">Items</h4>
                 <ul className="space-y-3">
-                  {selectedOrder.items?.map((it) => (
-                    <li key={it.id ?? it.sku} className="flex items-center gap-3">
-                      <div className="w-16 h-16 rounded overflow-hidden bg-gray-50 dark:bg-gray-800">
-                        <img src={it.image || it.thumbnail || "/placeholder.jpg"} alt={it.name} className="w-full h-full object-cover" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-medium">{it.name}</div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400">Qty: {it.quantity} • {fmtCurrency(it.price)}</div>
-                      </div>
-                      <div className="text-right font-semibold">{fmtCurrency((it.price || 0) * (it.quantity || 1))}</div>
-                    </li>
-                  ))}
+                  {selectedOrder.items?.map((it) => {
+                    const key = it.id ?? it.sku ?? `${it.name}-${Math.random().toString(36).slice(2,6)}`;
+                    const img = getImageFromItem(it);
+                    const color = getOptionFromItem(it, "color") || getOptionFromItem(it, "colour");
+                    const size = getOptionFromItem(it, "size");
+                    const qty = it.quantity ?? it.qty ?? it.count ?? 1;
+                    const price = it.price ?? it.unit_price ?? it.price_per_unit ?? 0;
+                    return (
+                      <li key={key} className="flex items-center gap-3">
+                        <div className="w-16 h-16 rounded overflow-hidden bg-gray-50 dark:bg-gray-800">
+                          <img src={img} alt={it.name || "item"} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = "/placeholder.jpg"; }} />
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-medium">{it.name || it.title || "Item"}</div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                            {color && <span className="mr-3">Color: <strong>{color}</strong></span>}
+                            {size && <span>Size: <strong>{size}</strong></span>}
+                          </div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">Qty: <strong>{qty}</strong></div>
+                        </div>
+                        <div className="text-right font-semibold">{fmtCurrency(Number(price) * Number(qty))}</div>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
 
