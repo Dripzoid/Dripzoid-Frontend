@@ -129,7 +129,14 @@ const normalizeOrder = (o = {}) => {
 
 /**
  * Try many common places to get an image URL for an order item/variant
+ * - if a comma-separated string is provided, returns the first trimmed URL
  */
+const firstFromCommaString = (s) => {
+  if (!s) return null;
+  if (typeof s !== "string") return null;
+  return s.split(",").map((x) => x.trim()).filter(Boolean)[0] ?? null;
+};
+
 const getImageFromItem = (item) => {
   if (!item) return "/placeholder.jpg";
 
@@ -148,7 +155,11 @@ const getImageFromItem = (item) => {
   ];
   for (const k of singleFields) {
     const v = item[k];
-    if (typeof v === "string" && v) return v;
+    if (typeof v === "string" && v) {
+      const first = firstFromCommaString(v);
+      if (first) return first;
+      return v;
+    }
     if (v && v.url) return v.url;
   }
 
@@ -156,43 +167,78 @@ const getImageFromItem = (item) => {
   if (item.images) {
     if (Array.isArray(item.images) && item.images.length > 0) {
       const first = item.images[0];
-      if (typeof first === "string") return first;
+      if (typeof first === "string") {
+        const f = firstFromCommaString(first);
+        if (f) return f;
+        return first;
+      }
       if (first?.url) return first.url;
+    } else if (typeof item.images === "string") {
+      const f = firstFromCommaString(item.images);
+      if (f) return f;
+      return item.images;
     } else if (item.images?.url) return item.images.url;
   }
 
   // media array
   if (item.media && Array.isArray(item.media) && item.media[0]) {
-    if (typeof item.media[0] === "string") return item.media[0];
+    if (typeof item.media[0] === "string") {
+      const f = firstFromCommaString(item.media[0]);
+      if (f) return f;
+      return item.media[0];
+    }
     if (item.media[0]?.url) return item.media[0].url;
   }
 
   // variant / product nested
   if (item.variant) {
-    if (typeof item.variant === "string" && item.variant.startsWith("http")) return item.variant;
-    if (item.variant.image) return item.variant.image;
+    if (typeof item.variant === "string" && item.variant.startsWith("http"))
+      return item.variant;
+    if (item.variant.image) {
+      const f = firstFromCommaString(item.variant.image);
+      if (f) return f;
+      return item.variant.image;
+    }
     if (Array.isArray(item.variant.images) && item.variant.images[0]) {
       const v = item.variant.images[0];
-      if (typeof v === "string") return v;
+      if (typeof v === "string") {
+        const f = firstFromCommaString(v);
+        if (f) return f;
+        return v;
+      }
       if (v?.url) return v.url;
     }
   }
   if (item.product) {
-    if (item.product.image) return item.product.image;
+    if (item.product.image) {
+      const f = firstFromCommaString(item.product.image);
+      if (f) return f;
+      return item.product.image;
+    }
     if (Array.isArray(item.product.images) && item.product.images[0]) {
       const v = item.product.images[0];
-      if (typeof v === "string") return v;
+      if (typeof v === "string") {
+        const f = firstFromCommaString(v);
+        if (f) return f;
+        return v;
+      }
       if (v?.url) return v.url;
     }
-    if (item.product.thumbnail) return item.product.thumbnail;
+    if (item.product.thumbnail) {
+      const f = firstFromCommaString(item.product.thumbnail);
+      if (f) return f;
+      return item.product.thumbnail;
+    }
   }
 
+  // fallback: some APIs put image directly on item as 'image' (handled above),
+  // or on item.picture/photo etc which we handled. If nothing, placeholder:
   return "/placeholder.jpg";
 };
 
 /**
  * Try to get a named option/property (Color, Size, etc.)
- * Looks at several common shapes vendors use: selected_options, options, attributes, variant.options
+ * Looks at several common shapes vendors use: selected_options, options, attributes, variant.options, or options as object
  */
 const getOptionFromItem = (item, optionName) => {
   if (!item || !optionName) return null;
@@ -204,6 +250,19 @@ const getOptionFromItem = (item, optionName) => {
       (o) => (o?.name || "").toLowerCase() === name
     );
     if (found) return found.value ?? found.val ?? found.option ?? null;
+  }
+
+  // 1b) options as object: { color: 'White', size: 'M' }
+  if (item.options && typeof item.options === "object" && !Array.isArray(item.options)) {
+    // try exact match keys (case-insensitive)
+    const keys = Object.keys(item.options);
+    const exact = keys.find((k) => k.toLowerCase() === name);
+    if (exact) return item.options[exact];
+    // try includes
+    const includes = keys.find((k) => k.toLowerCase().includes(name));
+    if (includes) return item.options[includes];
+    // direct access
+    if (item.options[name] != null) return item.options[name];
   }
 
   // 2) options / attributes arrays: [{ option: 'Size', value: 'M' }, { name:'size', value:'M' }]
@@ -858,11 +917,17 @@ export default function OrdersSection() {
                 <ul className="space-y-4">
                   {(selectedOrder.items || []).map((it, idx) => {
                     const key = it?.id ?? it?.sku ?? `item-${idx}`;
-                    const img = getImageFromItem(it);
+                    // support both `image` (string) and richer shapes
+                    const imgItemShape = { ...it, image: it.image ?? it.img ?? it.picture ?? it.photo };
+                    const img = getImageFromItem(imgItemShape);
+                    // color/size: check options object first (common in your backend), then other shapes
                     const color =
-                      getOptionFromItem(it, "color") ||
+                      (it.options && (it.options.color ?? it.options.colour)) ??
+                      getOptionFromItem(it, "color") ??
                       getOptionFromItem(it, "colour");
-                    const size = getOptionFromItem(it, "size");
+                    const size =
+                      (it.options && (it.options.size ?? it.options.s)) ??
+                      getOptionFromItem(it, "size");
                     const qty = it.quantity ?? it.qty ?? it.count ?? 1;
                     const price = Number(it.price ?? it.unit_price ?? it.price_per_unit ?? 0);
                     const totalLine = Number(price) * Number(qty);
