@@ -47,6 +47,24 @@ const fmtDate = (iso) => {
 };
 const fmtCurrency = (n) => `₹${Number(Number(n || 0)).toLocaleString()}`;
 
+/* Invoice-specific currency formatting with two decimals and Indian grouping */
+const fmtCurrencyInvoice = (n) =>
+  `₹${Number(n || 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+/* escape HTML to avoid accidental injection from data */
+const escapeHtml = (str) => {
+  if (str == null) return "";
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+};
+
 const statusColor = (s) => {
   switch ((s || "").toLowerCase()) {
     case "delivered":
@@ -313,6 +331,232 @@ const getOptionFromItem = (item, optionName) => {
   }
 
   return null;
+};
+
+/* ---------- invoice builder (HTML) ---------- */
+const buildInvoiceHTML = (order) => {
+  const orderId = escapeHtml(order.id ?? "");
+  const orderDate = escapeHtml(fmtDate(order.created_at));
+  // Estimate delivery date as +4 days if created_at is parseable
+  let deliveryDate = "—";
+  try {
+    const d = new Date(order.created_at);
+    if (!Number.isNaN(d.getTime())) {
+      d.setDate(d.getDate() + 4);
+      deliveryDate = d.toLocaleDateString();
+    }
+  } catch {}
+  deliveryDate = escapeHtml(deliveryDate);
+
+  // Shipping / Bill To
+  const ship = order.shipping_address || {};
+  const billName = escapeHtml(ship.name ?? order.customer_name ?? "Customer");
+  const billEmail = escapeHtml(ship.email ?? "");
+  const billPhone = escapeHtml(ship.phone ?? ship.mobile ?? "");
+  const billAddressParts = [];
+  if (ship.line1) billAddressParts.push(escapeHtml(ship.line1));
+  if (ship.line2) billAddressParts.push(escapeHtml(ship.line2));
+  if (ship.city) billAddressParts.push(escapeHtml(ship.city));
+  if (ship.state) billAddressParts.push(escapeHtml(ship.state));
+  if (ship.postcode || ship.pincode) billAddressParts.push(escapeHtml(ship.postcode ?? ship.pincode));
+  const billAddress = billAddressParts.join(", ") || "Street Address";
+
+  // Payment
+  const paymentMode = escapeHtml(order.payment_method ?? order.payment ?? "Cash on Delivery");
+  const amountDue = fmtCurrencyInvoice(order.total ?? 0);
+
+  // Items table rows
+  const items = Array.isArray(order.items) ? order.items : [];
+  const rowsHtml = items.map((it) => {
+    const name = escapeHtml(it.name ?? it.title ?? "Item");
+    const desc = escapeHtml(it.description ?? it.desc ?? "");
+    const color =
+      escapeHtml((it.options && (it.options.color ?? it.options.colour)) ??
+      getOptionFromItem(it, "color") ??
+      getOptionFromItem(it, "colour") ??
+      "");
+    const size =
+      escapeHtml((it.options && (it.options.size ?? it.options.s)) ??
+      getOptionFromItem(it, "size") ??
+      "");
+    const qty = Number(it.quantity ?? it.qty ?? it.count ?? 1);
+    const price = Number(it.price ?? it.unit_price ?? it.price_per_unit ?? 0);
+    const amount = price * qty;
+    return `<tr>
+      <td>${name}</td>
+      <td>${desc}</td>
+      <td>${color || "—"}</td>
+      <td>${size || "—"}</td>
+      <td>${qty}</td>
+      <td class="amount">${fmtCurrencyInvoice(price)}</td>
+      <td class="amount">${fmtCurrencyInvoice(amount)}</td>
+    </tr>`;
+  }).join("\n");
+
+  // Totals
+  const subtotal = Number(order.subtotal ?? items.reduce((acc, it) => acc + (Number(it.price ?? 0) * Number(it.quantity ?? 1)), 0) ?? order.total ?? 0);
+  const shipping = Number(order.shipping ?? 0);
+  const totalDue = Number(order.total ?? subtotal + shipping);
+
+  // Barcode URL
+  const barcodeUrl = `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(orderId)}&code=Code128&dpi=96`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Customer Invoice - DRIPZOID</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 40px;
+      color: #333;
+      background-color: #fafafa;
+    }
+    .header, .footer {
+      width: 100%;
+      margin-bottom: 20px;
+    }
+    .header .left {
+      float: left;
+    }
+    .header .right {
+      float: right;
+      text-align: right;
+    }
+    .clearfix::after {
+      content: "";
+      display: table;
+      clear: both;
+    }
+    h2, h4 {
+      margin: 10px 0;
+    }
+    .section {
+      margin: 20px 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    table, th, td {
+      border: 1px solid #ddd;
+    }
+    th, td {
+      padding: 12px;
+      text-align: left;
+    }
+    th {
+      background-color: #f5f5f5;
+    }
+    .total {
+      text-align: right;
+      font-weight: bold;
+    }
+    .amount {
+      text-align: right;
+    }
+    .barcode {
+      margin-top: 10px;
+    }
+    .footer {
+      margin-top: 50px;
+      font-size: 14px;
+      color: #666;
+      border-top: 1px solid #ddd;
+      padding-top: 15px;
+      text-align: center;
+    }
+    .highlight {
+      color: #d32f2f;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header clearfix">
+    <div class="left">
+      <h2>DRIPZOID</h2>
+      <p>Pithapuram, Kakinada, Andhra Pradesh, India<br>533 450</p>
+    </div>
+    <div class="right">
+      <p><strong>Order ID:</strong> ${orderId}</p>
+      <p><strong>Order Date:</strong> ${escapeHtml(orderDate)}</p>
+      <p><strong>Delivery Date:</strong> ${deliveryDate}</p>
+      <!-- Barcode -->
+      <div class="barcode">
+        <img src="${barcodeUrl}" alt="Order Barcode">
+      </div>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- Business Name -->
+  <h2>Customer Invoice</h2>
+  <p>Thank you for shopping with <span class="highlight">DRIPZOID</span>! Your satisfaction is our priority.</p>
+
+  <!-- Details -->
+  <div class="section clearfix">
+    <div style="float:left; width:40%;">
+      <h4>Bill To</h4>
+      <p>${billName}${billEmail ? `<br>Email: ${billEmail}` : ""}${billPhone ? `<br>Phone: ${billPhone}` : ""}<br>${billAddress}</p>
+    </div>
+    <div style="float:right; width:40%; text-align:right;">
+      <h4>Payment</h4>
+      <p>Payment Mode: ${paymentMode}<br>Amount Due: ${amountDue}</p>
+    </div>
+  </div>
+
+  <!-- Items Table -->
+  <table>
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>Description</th>
+        <th>Color</th>
+        <th>Size</th>
+        <th>Qty</th>
+        <th>Price (INR)</th>
+        <th>Amount (INR)</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml || `<tr><td colspan="7" style="text-align:center;">No items</td></tr>`}
+    </tbody>
+  </table>
+
+  <!-- Totals -->
+  <table style="margin-top:20px; border:none;">
+    <tr>
+      <td style="border:none;"></td>
+      <td style="border:none;" class="total">Subtotal</td>
+      <td style="border:none;" class="amount">${fmtCurrencyInvoice(subtotal)}</td>
+    </tr>
+    <tr>
+      <td style="border:none;"></td>
+      <td style="border:none;" class="total">Shipping</td>
+      <td style="border:none;" class="amount">${fmtCurrencyInvoice(shipping)}</td>
+    </tr>
+    <tr>
+      <td style="border:none;"></td>
+      <td style="border:none;" class="total">Total Due</td>
+      <td style="border:none;" class="amount"><strong>${fmtCurrencyInvoice(totalDue)}</strong></td>
+    </tr>
+  </table>
+
+  <!-- Footer -->
+  <div class="footer">
+    <p>For any queries regarding your order, contact us at <strong>support@dripzoid.com</strong> or call <strong>+91-9494038163</strong>.</p>
+    <p>Returns accepted within 7 days of delivery as per our return policy.</p>
+    <p>Thank you for choosing <span class="highlight">DRIPZOID</span> ❤️</p>
+  </div>
+</body>
+</html>`;
+
+  return html;
 };
 
 /* ---------- main component ---------- */
@@ -673,51 +917,63 @@ export default function OrdersSection() {
     }
   };
 
-  // download invoice: try user scoped then general endpoint
+  // download invoice: use client-side PDF generation (html2canvas + jspdf)
   const downloadInvoice = async (order) => {
     if (!order?.id) return;
-    const endpoints = [
-      `${API_BASE}/api/user/orders/${order.id}/invoice`,
-      `${API_BASE}/api/orders/${order.id}/invoice`,
-    ];
-    let lastError = null;
 
     try {
-      for (const url of endpoints) {
-        try {
-          const res = await fetch(url, {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-          });
+      // Build HTML invoice using template builder
+      const html = buildInvoiceHTML(order);
 
-          if (!res.ok) {
-            const txt = await res.text().catch(() => "");
-            try {
-              const j = txt ? JSON.parse(txt) : null;
-              throw new Error(j?.message || j?.error || `Invoice failed (status ${res.status})`);
-            } catch {
-              throw new Error(txt || `Invoice failed (status ${res.status})`);
-            }
-          }
+      // Create hidden container to render HTML
+      const container = document.createElement("div");
+      container.style.position = "fixed";
+      container.style.left = "-9999px";
+      container.style.top = "0";
+      container.style.width = "210mm"; // A4 width for consistent rendering
+      container.innerHTML = html;
+      document.body.appendChild(container);
 
-          const blob = await res.blob();
-          const urlObj = window.URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = urlObj;
-          a.download = `invoice-${order.id}.pdf`;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          window.URL.revokeObjectURL(urlObj);
-          return;
-        } catch (err) {
-          lastError = err;
-          // try next endpoint
-        }
+      // Dynamically import html2canvas and jspdf (requires you to install them)
+      let html2canvasModule, jsPDFModule;
+      try {
+        html2canvasModule = (await import("html2canvas")).default;
+        jsPDFModule = await import("jspdf");
+      } catch (e) {
+        // Cleanup container
+        document.body.removeChild(container);
+        console.error("Missing dependencies for PDF generation:", e);
+        alert(
+          "To download PDF invoices you need to install dependencies:\n\nnpm install html2canvas jspdf\n\nThen reload the app."
+        );
+        return;
       }
-      throw lastError || new Error("Invoice download failed");
+
+      // Render container to canvas (useCORS to attempt cross-origin images)
+      const canvas = await html2canvasModule(container, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+      });
+
+      // Convert canvas to image and add to PDF
+      const imgData = canvas.toDataURL("image/png");
+
+      const { jsPDF } = jsPDFModule;
+      const pdf = new jsPDF("p", "mm", "a4");
+
+      const pdfWidth = 210; // mm
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      const pdfHeight = (imgHeight * pdfWidth) / imgWidth;
+
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`invoice-${order.id}.pdf`);
+      document.body.removeChild(container);
     } catch (err) {
-      console.error("Invoice download error:", err);
-      alert(err.message || "Unable to download invoice.");
+      console.error("Invoice PDF generation error:", err);
+      alert("Unable to generate invoice PDF. See console for details.");
     }
   };
 
