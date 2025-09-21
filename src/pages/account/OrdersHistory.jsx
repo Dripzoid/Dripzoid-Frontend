@@ -96,6 +96,147 @@ function SkeletonCard() {
   );
 }
 
+/* ---------- helper functions added to fix ESLint no-undef ---------- */
+
+/**
+ * getImageFromItem
+ * Attempts to extract an image URL from multiple common shapes.
+ * Returns a fallback placeholder when none found.
+ */
+const getImageFromItem = (item) => {
+  if (!item) return "/placeholder.jpg";
+
+  // If item itself is a string and looks like URL
+  if (typeof item === "string" && item.startsWith("http")) return item;
+
+  // try common direct fields
+  const directFields = ["image", "image_url", "img", "picture", "photo", "thumbnail", "thumbnail_url"];
+  for (const f of directFields) {
+    const v = item[f];
+    if (typeof v === "string" && v.trim()) {
+      // sometimes it's comma separated
+      const first = v.split(",").map((s) => s.trim()).find(Boolean);
+      if (first) return first;
+    }
+    if (v && typeof v === "object" && v.url) return v.url;
+  }
+
+  // images array
+  if (item.images) {
+    if (Array.isArray(item.images) && item.images.length > 0) {
+      const first = item.images[0];
+      if (typeof first === "string") return first.split(",").map((s) => s.trim()).find(Boolean) || first;
+      if (first && first.url) return first.url;
+    } else if (typeof item.images === "string") {
+      return item.images.split(",").map((s) => s.trim()).find(Boolean) || item.images;
+    } else if (item.images.url) {
+      return item.images.url;
+    }
+  }
+
+  // media array
+  if (item.media && Array.isArray(item.media) && item.media[0]) {
+    const m = item.media[0];
+    if (typeof m === "string") return m.split(",").map((s) => s.trim()).find(Boolean) || m;
+    if (m.url) return m.url;
+  }
+
+  // variant nested
+  if (item.variant) {
+    if (typeof item.variant === "string" && item.variant.startsWith("http")) return item.variant;
+    if (item.variant.image) {
+      return Array.isArray(item.variant.image) ? item.variant.image[0] : item.variant.image;
+    }
+    if (Array.isArray(item.variant.images) && item.variant.images[0]) {
+      const v = item.variant.images[0];
+      if (typeof v === "string") return v;
+      if (v.url) return v.url;
+    }
+  }
+
+  // product nested
+  if (item.product) {
+    if (item.product.image) {
+      return Array.isArray(item.product.image) ? item.product.image[0] : item.product.image;
+    }
+    if (Array.isArray(item.product.images) && item.product.images[0]) {
+      const v = item.product.images[0];
+      if (typeof v === "string") return v;
+      if (v.url) return v.url;
+    }
+    if (item.product.thumbnail) return item.product.thumbnail;
+  }
+
+  // fallback placeholder
+  return "/placeholder.jpg";
+};
+
+/**
+ * getOptionFromItem
+ * Attempts to extract a named option (color/size) from many shapes:
+ * selected_options, options (array/object), attributes, variant, flat fields, meta.
+ */
+const getOptionFromItem = (item, optionName) => {
+  if (!item || !optionName) return null;
+  const name = optionName.toLowerCase();
+
+  // selected_options: [{ name, value }]
+  if (Array.isArray(item.selected_options)) {
+    const found = item.selected_options.find((o) => ((o?.name || "")).toLowerCase() === name);
+    if (found) return found.value ?? found.val ?? found.option ?? null;
+  }
+
+  // options object: { color: 'Red', size: 'M' }
+  if (item.options && typeof item.options === "object" && !Array.isArray(item.options)) {
+    const keys = Object.keys(item.options);
+    const exact = keys.find((k) => k.toLowerCase() === name);
+    if (exact) return item.options[exact];
+    const includes = keys.find((k) => k.toLowerCase().includes(name));
+    if (includes) return item.options[includes];
+    if (item.options[name] != null) return item.options[name];
+  }
+
+  // options array: [{ name/option, value }]
+  if (Array.isArray(item.options)) {
+    const found = item.options.find((o) => (((o?.name || o?.option) || "").toLowerCase()) === name);
+    if (found) return found.value ?? found.val ?? found.option ?? null;
+  }
+
+  // attributes array
+  if (Array.isArray(item.attributes)) {
+    const found = item.attributes.find((o) => (((o?.name || o?.key) || "").toLowerCase()) === name);
+    if (found) return found.value ?? found.val ?? found.option ?? null;
+  }
+
+  // variant options/attributes
+  if (item.variant) {
+    if (Array.isArray(item.variant.options)) {
+      const found = item.variant.options.find((o) => ((o?.name || "").toLowerCase()) === name);
+      if (found) return found.value ?? found.val ?? found.option ?? null;
+    }
+    if (Array.isArray(item.variant.attributes)) {
+      const found = item.variant.attributes.find((o) => ((o?.name || o?.key) || "").toLowerCase() === name);
+      if (found) return found.value ?? found.val ?? found.option ?? null;
+    }
+    if (item.variant[name]) return item.variant[name];
+  }
+
+  // flat fields
+  if (item[name]) return item[name];
+  if (item.selectedColor && name === "color") return item.selectedColor;
+  if ((item.selected_size || item.selectedSize) && name === "size") return item.selected_size ?? item.selectedSize;
+  if (item.color && name === "color") return item.color;
+  if (item.size && name === "size") return item.size;
+
+  // meta objects
+  if (item.meta && typeof item.meta === "object") {
+    const k = Object.keys(item.meta).find((k) => k.toLowerCase().includes(name));
+    if (k) return item.meta[k];
+  }
+
+  return null;
+};
+
 /* ---------- normalization & extraction helpers ---------- */
 const normalizeOrder = (o = {}) => {
   const total =
@@ -826,7 +967,7 @@ export default function OrdersSection() {
   return (
     <div className="p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header + Filters */} 
+        {/* Header + Filters */}
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-6">
           <div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">My Orders</h2>
@@ -1123,7 +1264,7 @@ export default function OrdersSection() {
                       ? (
                         <>
                           {selectedOrder.shipping_address.line1 || ""}{selectedOrder.shipping_address.line2 ? `, ${selectedOrder.shipping_address.line2}` : ""}<br />
-                          {(selectedOrder.shipping_address.city ? `${selectedOrder.shipping_address.city}, ` : "")}{selectedOrder.shipping_address.state || ""}{" "}{selectedOrder.shipping_address.pincode || ""}<br />
+                          {(selectedOrder.shipping_address.city ? `${selectedOrder.shipping_address.city}, ` : "")}{selectedOrder.shipping_address.state || ""}{" "}{selectedOrder.shipping_address.pincode || selectedOrder.shipping_address.postcode || ""}<br />
                           {selectedOrder.shipping_address.country || ""}<br />
                           {selectedOrder.shipping_address.phone ? `Phone: ${selectedOrder.shipping_address.phone}` : ""}
                         </>
