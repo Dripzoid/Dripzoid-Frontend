@@ -35,7 +35,19 @@ export default function CheckoutPage() {
   const [promoCode, setPromoCode] = useState("");
   const [promoApplied, setPromoApplied] = useState(null);
 
-  const emptyShipping = { name: "", address: "", phone: "", pincode: "", state: "", country: "" };
+  // Normalized shipping shape used everywhere
+  const emptyShipping = {
+    id: null,
+    label: "",
+    name: "",
+    line1: "",
+    line2: "",
+    city: "",
+    state: "",
+    pincode: "",
+    country: "India",
+    phone: "",
+  };
   const [shipping, setShipping] = useState(emptyShipping);
   const [saveAddress, setSaveAddress] = useState(false);
   const [savedAddresses, setSavedAddresses] = useState([]);
@@ -53,7 +65,10 @@ export default function CheckoutPage() {
     { name: "BHIM", id: "bhim" },
   ];
 
-  // Load saved addresses/payments (same as before)
+  const isBuyNowMode = location.state?.mode === "buy-now" || location.state?.fromBuyNow === true;
+  const fromCartDefault = typeof location.state?.fromCart === "boolean" ? location.state.fromCart : !isBuyNowMode;
+
+  // Load saved addresses/payments
   useEffect(() => {
     try {
       const raw = localStorage.getItem("savedAddresses");
@@ -62,66 +77,70 @@ export default function CheckoutPage() {
 
     if (!token) return;
 
-   const fetchSaved = async () => {
-  try {
-    // Fetch addresses
-    const aRes = await fetch(`${API_BASE}/api/addresses`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const fetchSaved = async () => {
+      try {
+        // Fetch addresses
+        const aRes = await fetch(`${API_BASE}/api/addresses`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
 
-    if (aRes.ok) {
-      const addresses = await aRes.json();
-      if (Array.isArray(addresses)) {
-        const mapped = addresses.map((a) => ({
-          id: a.id ?? null,
-          label: a.label ?? null,
-          line1: a.line1 ?? null,
-          line2: a.line2 ?? null,
-          city: a.city ?? null,
-          state: a.state ?? null,
-          pincode: a.pincode ?? null,
-          country: a.country ?? "India",
-          phone: a.phone ?? null,
-        }));
+        if (aRes.ok) {
+          const addresses = await aRes.json();
+          if (Array.isArray(addresses)) {
+            // Map into our normalized shape
+            const mapped = addresses.map((a) => ({
+              id: a.id ?? null,
+              label: a.label ?? "",
+              name: a.name ?? a.label ?? "",
+              line1: a.line1 ?? "",
+              line2: a.line2 ?? "",
+              city: a.city ?? "",
+              state: a.state ?? "",
+              pincode: a.pincode ?? "",
+              country: a.country ?? "India",
+              phone: a.phone ?? "",
+              is_default: Boolean(a.is_default),
+            }));
 
-        setSavedAddresses(mapped);
+            setSavedAddresses(mapped);
 
-        // Find default address
-        const def = mapped.find((x) => x.is_default);
-        if (def) {
-          setShipping({
-            id: def.id,
-            label: def.label,
-            line1: def.line1,
-            line2: def.line2,
-            city: def.city,
-            state: def.state,
-            pincode: def.pincode,
-            country: def.country ?? "India",
-            phone: def.phone,
-          });
+            // Find default address
+            const def = mapped.find((x) => x.is_default);
+            if (def) {
+              setShipping({
+                id: def.id,
+                label: def.label,
+                name: def.name || "",
+                line1: def.line1 || "",
+                line2: def.line2 || "",
+                city: def.city || "",
+                state: def.state || "",
+                pincode: def.pincode || "",
+                country: def.country || "India",
+                phone: def.phone || "",
+              });
+            }
+          }
         }
+
+        // Fetch payments
+        const pRes = await fetch(`${API_BASE}/api/payments`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (pRes.ok) {
+          const payments = await pRes.json();
+          if (Array.isArray(payments)) setSavedPayments(payments);
+        }
+      } catch (e) {
+        console.error("Failed to fetch saved addresses/payments:", e);
       }
-    }
+    };
 
-    // Fetch payments
-    const pRes = await fetch(`${API_BASE}/api/payments`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (pRes.ok) {
-      const payments = await pRes.json();
-      if (Array.isArray(payments)) setSavedPayments(payments);
-    }
-  } catch (e) {
-    console.error("Failed to fetch saved addresses/payments:", e);
-  }
-};
+    fetchSaved();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
-fetchSaved();
-    }, [token]);
-
-
-  // --- NORMALIZATION ---
+  // --- NORMALIZATION for checkout items ---
   // Ensure selectedColor/selectedSize/variantId are available at top-level of each checkout item
   const checkoutItems = useMemo(() => {
     const incoming = Array.isArray(location.state?.items) ? location.state.items : cart;
@@ -133,6 +152,7 @@ fetchSaved();
       const name = prod.name ?? it.name ?? "Unnamed";
       const price = Number(prod.price ?? it.price ?? 0);
       const quantity = Number(it.quantity ?? it.qty ?? 1);
+      // images: convert arrays to comma list, keep strings as-is
       const images = Array.isArray(prod.images) ? prod.images.join(",") : prod.images ?? it.images ?? it.image ?? "";
 
       // Resolve selected color/size from several possible shapes (top-level item, product snapshot or variant)
@@ -165,7 +185,12 @@ fetchSaved();
   const discount = promoApplied?.amount ?? 0;
   const grandTotal = Math.max(0, itemsTotal + shippingCost + codCharge - discount);
 
-  const isShippingValid = () => shipping.name.trim() && shipping.address.trim() && shipping.phone.trim() && shipping.pincode.trim();
+  // Validate shipping: require name, line1, phone, pincode
+  const isShippingValid = () =>
+    (shipping.name || "").toString().trim() &&
+    (shipping.line1 || "").toString().trim() &&
+    (shipping.phone || "").toString().trim() &&
+    (shipping.pincode || "").toString().trim();
 
   // Payment validation: accept saved payment OR razorpay OR cod
   const isPaymentValid = () => {
@@ -175,56 +200,85 @@ fetchSaved();
     return false;
   };
 
-const applyPromo = () => {
-  if (!promoCode) return alert("Enter a promo code (demo)");
+  const applyPromo = () => {
+    if (!promoCode) return alert("Enter a promo code (demo)");
 
-  const code = promoCode.toUpperCase();
+    const code = promoCode.toUpperCase();
 
-  if (code === "SAVE50") {
-    setPromoApplied({ code: "SAVE50", amount: 50 });
-    alert("Promo applied: ₹50 off (demo)");
-  } else if (code === "RAJU200") {
-    setPromoApplied({ code: "RAJU200", amount: 200 });
-    alert("Promo applied: ₹200 off (demo)");
-  } else {
-    setPromoApplied(null);
-    alert("Invalid/expired promo (demo)");
-  }
-};
+    if (code === "SAVE50") {
+      setPromoApplied({ code: "SAVE50", amount: 50 });
+      alert("Promo applied: ₹50 off (demo)");
+    } else if (code === "RAJU200") {
+      setPromoApplied({ code: "RAJU200", amount: 200 });
+      alert("Promo applied: ₹200 off (demo)");
+    } else {
+      setPromoApplied(null);
+      alert("Invalid/expired promo (demo)");
+    }
+  };
 
-
-  // Address save/delete/select functions unchanged (kept for brevity in this file)
+  // Save / delete addresses
   const handleSaveAddress = async () => {
     if (!isShippingValid()) return alert("Please fill required shipping fields before saving.");
     if (!token) {
       try {
-        const next = [...savedAddresses, { ...shipping, id: Date.now() }];
+        const next = [
+          {
+            ...shipping,
+            id: Date.now(),
+            is_default: false,
+          },
+          ...savedAddresses,
+        ];
         localStorage.setItem("savedAddresses", JSON.stringify(next));
         setSavedAddresses(next);
         setSaveAddress(false);
         alert("Address saved locally (demo).");
       } catch (e) {
         console.error(e);
+        alert("Failed to save locally.");
       }
       return;
     }
+
+    // Build payload from normalized shipping shape
     const payload = {
-      label: shipping.name || "",
-      line1: shipping.address || "",
-      line2: "",
-      city: shipping.state || shipping.address || "City",
+      label: shipping.label || shipping.name || "",
+      line1: shipping.line1 || "",
+      line2: shipping.line2 || "",
+      city: shipping.city || "",
       state: shipping.state || "",
       pincode: shipping.pincode || "",
       country: shipping.country || "India",
       phone: shipping.phone || "",
       is_default: false,
     };
-    if (!payload.line1 || !payload.city || !payload.state || !payload.pincode) return alert("To save to your account please ensure Address, State and Pincode are filled.");
+
+    if (!payload.line1 || !payload.city || !payload.state || !payload.pincode) {
+      return alert("To save to your account please ensure Address (line1), City, State and Pincode are filled.");
+    }
+
     try {
-      const res = await fetch(`${API_BASE}/api/addresses`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
+      const res = await fetch(`${API_BASE}/api/addresses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      });
       if (res.ok) {
         const newAddr = await res.json();
-        const mapped = { ...newAddr, name: newAddr.label || `${newAddr.line1}${newAddr.line2 ? ", " + newAddr.line2 : ""}`, address: newAddr.line1 ? `${newAddr.line1}${newAddr.line2 ? ", " + newAddr.line2 : ""}` : newAddr.address || "" };
+        const mapped = {
+          id: newAddr.id ?? null,
+          label: newAddr.label ?? payload.label,
+          name: newAddr.name ?? newAddr.label ?? payload.label,
+          line1: newAddr.line1 ?? payload.line1,
+          line2: newAddr.line2 ?? payload.line2,
+          city: newAddr.city ?? payload.city,
+          state: newAddr.state ?? payload.state,
+          pincode: newAddr.pincode ?? payload.pincode,
+          country: newAddr.country ?? payload.country,
+          phone: newAddr.phone ?? payload.phone,
+          is_default: Boolean(newAddr.is_default),
+        };
         setSavedAddresses((s) => [mapped, ...s]);
         setSaveAddress(false);
         alert("Address saved to your account.");
@@ -246,43 +300,57 @@ const applyPromo = () => {
       return;
     }
     try {
-      const res = await fetch(`${API_BASE}/api/addresses/${addrId}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API_BASE}/api/addresses/${addrId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (res.ok) setSavedAddresses((s) => s.filter((s) => s.id !== addrId));
-      else { const err = await res.json().catch(() => null); alert(err?.message || "Failed to delete address"); }
-    } catch (e) { console.error(e); alert("Failed to delete address"); }
+      else {
+        const err = await res.json().catch(() => null);
+        alert(err?.message || "Failed to delete address");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Failed to delete address");
+    }
   };
 
   const handleSelectSavedAddress = (addr) => {
     const mappedShipping = {
-      name: addr.label ?? addr.name ?? "",
-      address: addr.line1 ? `${addr.line1}${addr.line2 ? ", " + addr.line2 : ""}` : addr.address ?? "",
-      phone: addr.phone ?? "",
-      pincode: addr.pincode ?? "",
+      id: addr.id ?? null,
+      label: addr.label ?? addr.name ?? "",
+      name: addr.name ?? addr.label ?? "",
+      line1: addr.line1 ?? "",
+      line2: addr.line2 ?? "",
+      city: addr.city ?? "",
       state: addr.state ?? "",
+      pincode: addr.pincode ?? "",
       country: addr.country ?? "India",
+      phone: addr.phone ?? "",
     };
     setShipping(mappedShipping);
     setStep(3);
   };
 
   const goNext = () => {
-    if (step === 2 && !isShippingValid()) { alert("Please provide Name, Address, Phone and Pincode."); return; }
+    if (step === 2 && !isShippingValid()) {
+      alert("Please provide Name, Address (line1), Phone and Pincode.");
+      return;
+    }
     setStep((s) => Math.min(3, s + 1));
   };
 
-  const isBuyNowMode = location.state?.mode === "buy-now" || location.state?.fromBuyNow === true;
-  const fromCartDefault = typeof location.state?.fromCart === "boolean" ? location.state.fromCart : !isBuyNowMode;
-
   // ---------------- RAZORPAY HELPERS ----------------
-  const loadRazorpayScript = () => new Promise((resolve) => {
-    const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
-    if (existing) return resolve(true);
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.body.appendChild(script);
-  });
+  const loadRazorpayScript = () =>
+    new Promise((resolve) => {
+      const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+      if (existing) return resolve(true);
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
 
   const createRazorpayOrderOnServer = async (orderPayload) => {
     const res = await fetch(`${API_BASE}/api/payments/razorpay/create-order`, {
@@ -310,91 +378,108 @@ const applyPromo = () => {
     return res.json();
   };
 
-  // Main payment handler: directs to Razorpay flow for online payments or posts order for COD
+  // Main payment handler
   const handlePayment = async ({ fromCart = fromCartDefault } = {}) => {
-    if (!isPaymentValid()) { alert("Please complete the payment selection."); return; }
-    if (!token) { alert("Please log in to place an order."); navigate("/login"); return; }
+    if (!isPaymentValid()) {
+      alert("Please complete the payment selection.");
+      return;
+    }
+    if (!token) {
+      alert("Please log in to place an order.");
+      navigate("/login");
+      return;
+    }
+
+    if (!isShippingValid()) {
+      alert("Please fill shipping details before placing the order.");
+      setStep(2);
+      return;
+    }
 
     setLoading(true);
 
-    // Build a robust items payload that includes selectedColor/selectedSize/variantId for each item
     try {
-      const itemsPayload = checkoutItems.map((it) => {
-        return {
-          cart_id: it.cart_id ?? null,
-          product_id: it.product_id ?? it.original?.id ?? null,
-          quantity: Number(it.quantity || 1),
-          price: Number(it.price || 0),
-          selectedColor: it.selectedColor ?? null,
-          selectedSize: it.selectedSize ?? null,
-          variantId: it.variantId ?? null,
-          product_snapshot: it.original ?? null,
-        };
-      }).filter(Boolean);
+      // Build items payload for backend (safe mapping)
+      const itemsPayload = checkoutItems
+        .map((it) => {
+          const pid = it.product_id ?? it.original?.id ?? null;
+          if (!pid) return null;
+          return {
+            cart_id: it.cart_id ?? null,
+            product_id: pid,
+            quantity: Number(it.quantity || 1),
+            price: Number(it.price || 0),
+            selectedColor: it.selectedColor ?? null,
+            selectedSize: it.selectedSize ?? null,
+            variantId: it.variantId ?? null,
+            product_snapshot: it.original ?? null,
+          };
+        })
+        .filter(Boolean);
+
+      // Normalize shipping address for server
+      const shippingNormalized = {
+        id: shipping.id ?? null,
+        label: shipping.label || shipping.name || "",
+        name: shipping.name || "",
+        line1: shipping.line1 || "",
+        line2: shipping.line2 || "",
+        city: shipping.city || "",
+        state: shipping.state || "",
+        pincode: shipping.pincode || "",
+        country: shipping.country || "India",
+        phone: shipping.phone || "",
+      };
 
       const orderPayload = {
+        buyNow: isBuyNowMode,
         fromCart: Boolean(fromCart),
         items: itemsPayload,
         totalAmount: Math.round(grandTotal),
         paymentMethod: paymentType || "razorpay",
-        shippingAddress: shipping,
+        shippingAddress: shippingNormalized,
       };
 
-      // If COD, use existing place-order endpoint (server will mark payment as COD)
-     if (paymentType === "cod") {
-  const res = await fetch(`${API_BASE}/api/orders/place-order`, {
-    method: "POST",
-    headers: { 
-      "Content-Type": "application/json", 
-      Authorization: `Bearer ${token}` 
-    },
-    body: JSON.stringify({ 
-      buyNow: true,   // 🔥 important for backend
-      items: checkoutItems.map(it => ({
-        product_id: it.product_id ?? it.id,   // safe mapping
-        quantity: Number(it.quantity) || 1,
-        price: Number(it.price) || 0,
-        selectedColor: it.selectedColor ?? null,
-        selectedSize: it.selectedSize ?? null
-      })),
-      shippingAddress: shipping,
-      paymentMethod: "cod",
-      paymentDetails: { cod: true },
-      totalAmount: Math.round(grandTotal)
-    }),
-  });
+      // COD flow: call place-order backend (backend will mark as COD)
+      if (paymentType === "cod") {
+        const res = await fetch(`${API_BASE}/api/orders/place-order`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(orderPayload),
+        });
 
-  const data = await res.json().catch(() => null);
-  if (!res.ok) {
-    alert((data && (data.error || data.message)) || `Failed to place order (status ${res.status})`);
-    setLoading(false);
-    return;
-  }
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          alert((data && (data.error || data.message)) || `Failed to place order (status ${res.status})`);
+          setLoading(false);
+          return;
+        }
 
-  // Save order locally
-  const order = { 
-    orderId: data?.orderId ?? data?.order?.id ?? null, 
-    items: checkoutItems, 
-    total: grandTotal, 
-    paymentMethod: "cod", 
-    customerName: shipping.name || user?.name || "Guest", 
-    shipping, 
-    orderDate: new Date().toISOString() 
-  };
-  try { 
-    localStorage.setItem("lastOrder", JSON.stringify(order)); 
-    if (fromCart && typeof fetchCart === "function") await fetchCart(); 
-  } catch (e) { 
-    console.warn("Local storage save failed", e); 
-  }
-  navigate("/order-confirmation", { state: { order } });
-  return;
-}
+        // Save order locally and navigate
+        const order = {
+          orderId: data?.orderId ?? data?.order?.id ?? null,
+          items: checkoutItems,
+          total: grandTotal,
+          paymentMethod: "cod",
+          customerName: shippingNormalized.name || user?.name || "Guest",
+          shipping: shippingNormalized,
+          orderDate: new Date().toISOString(),
+        };
+        try {
+          localStorage.setItem("lastOrder", JSON.stringify(order));
+          if (fromCart && typeof fetchCart === "function") await fetchCart();
+        } catch (e) {
+          console.warn("Local storage save failed", e);
+        }
+        navigate("/order-confirmation", { state: { order } });
+        return;
+      }
 
-
-      // For Razorpay online flow
+      // Razorpay: create server order, open checkout
       const serverResp = await createRazorpayOrderOnServer(orderPayload);
-      // expected serverResp: { razorpayOrderId, amount, currency, internalOrderId }
       const ok = await loadRazorpayScript();
       if (!ok) throw new Error("Failed to load Razorpay SDK");
 
@@ -407,20 +492,31 @@ const applyPromo = () => {
 
       const options = {
         key: RAZORPAY_KEY,
-        amount: (amount * 100) || Math.round(grandTotal * 100), // ensure paise (server should already give paise but we guard)
+        amount: (amount * 100) || Math.round(grandTotal * 100),
         currency,
         name: "Your Store",
         description: "Order Payment",
         order_id: rOrderId,
-        prefill: { name: shipping.name || user?.name || "", email: user?.email || "", contact: shipping.phone || "" },
+        prefill: { name: shippingNormalized.name || user?.name || "", email: user?.email || "", contact: shippingNormalized.phone || "" },
         handler: async function (response) {
-          // response contains: razorpay_payment_id, razorpay_order_id, razorpay_signature
           try {
             const verifyResp = await verifyRazorpayPayment({ ...response, internalOrderId, orderPayload });
-            // server should mark order paid and return order info
             const orderInfo = verifyResp?.order || { orderId: internalOrderId };
-            const order = { orderId: orderInfo?.id ?? orderInfo?.orderId ?? internalOrderId, items: checkoutItems, total: grandTotal, paymentMethod: 'razorpay', customerName: shipping.name || user?.name || 'Guest', shipping, orderDate: new Date().toISOString() };
-            try { localStorage.setItem("lastOrder", JSON.stringify(order)); if (fromCart && typeof fetchCart === "function") await fetchCart(); } catch (e) { console.warn("Local storage save failed", e); }
+            const order = {
+              orderId: orderInfo?.id ?? orderInfo?.orderId ?? internalOrderId,
+              items: checkoutItems,
+              total: grandTotal,
+              paymentMethod: "razorpay",
+              customerName: shippingNormalized.name || user?.name || "Guest",
+              shipping: shippingNormalized,
+              orderDate: new Date().toISOString(),
+            };
+            try {
+              localStorage.setItem("lastOrder", JSON.stringify(order));
+              if (fromCart && typeof fetchCart === "function") await fetchCart();
+            } catch (e) {
+              console.warn("Local storage save failed", e);
+            }
             navigate("/order-confirmation", { state: { order } });
           } catch (err) {
             console.error("Verification failed", err);
@@ -429,14 +525,12 @@ const applyPromo = () => {
         },
         modal: {
           ondismiss: function () {
-            // user closed modal
             setLoading(false);
           },
         },
       };
 
       if (!window || !window.Razorpay) {
-        // Fallback: try to create instance after script loads (but loadRazorpayScript should make it available)
         throw new Error("Razorpay SDK not available");
       }
 
@@ -450,114 +544,124 @@ const applyPromo = () => {
     }
   };
 
-  const formatCardNumber = (v) => { const digits = v.replace(/\D/g, "").slice(0, 19); return digits.replace(/(.{4})/g, "$1 ").trim(); };
-  const formatExpiry = (v) => { const digits = v.replace(/\D/g, "").slice(0, 4); if (digits.length <= 2) return digits; return digits.slice(0, 2) + "/" + digits.slice(2); };
-
-  useEffect(() => {}, []);
+  const formatCardNumber = (v) => {
+    const digits = v.replace(/\D/g, "").slice(0, 19);
+    return digits.replace(/(.{4})/g, "$1 ").trim();
+  };
+  const formatExpiry = (v) => {
+    const digits = v.replace(/\D/g, "").slice(0, 4);
+    if (digits.length <= 2) return digits;
+    return digits.slice(0, 2) + "/" + digits.slice(2);
+  };
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 text-gray-900 dark:text-gray-100">
       {/* Step Indicator */}
       <div className="flex items-center gap-4 mb-6">
-        { ["Review", "Shipping", "Payment"].map((label, idx) => {
-            const i = idx + 1;
-            const active = step === i;
-            const done = step > i;
-            return (
-              <div key={label} className="flex-1">
-                <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition ${done ? "bg-green-500 text-white" : active ? "bg-black text-white dark:bg-white dark:text-black" : "border border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-400 bg-white dark:bg-gray-900"}`} aria-hidden>
-                    {done ? <Check size={16} /> : i}
-                  </div>
-                  <div className="text-sm">
-                    <div className={`font-medium ${active ? "text-gray-900 dark:text-white" : "text-gray-600 dark:text-gray-300"}`}>{label}</div>
-                  </div>
+        {["Review", "Shipping", "Payment"].map((label, idx) => {
+          const i = idx + 1;
+          const active = step === i;
+          const done = step > i;
+          return (
+            <div key={label} className="flex-1">
+              <div className="flex items-center gap-4">
+                <div
+                  className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition ${done ? "bg-green-500 text-white" : active ? "bg-black text-white dark:bg-white dark:text-black" : "border border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-400 bg-white dark:bg-gray-900"}`}
+                  aria-hidden
+                >
+                  {done ? <Check size={16} /> : i}
+                </div>
+                <div className="text-sm">
+                  <div className={`font-medium ${active ? "text-gray-900 dark:text-white" : "text-gray-600 dark:text-gray-300"}`}>{label}</div>
                 </div>
               </div>
-            );
+            </div>
+          );
         })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main content */}
         <div className="lg:col-span-2 space-y-6">
-    {/* Step 1: Review */}
-{step === 1 && (
-  <section className="bg-white dark:bg-gray-900 rounded-xl shadow p-6">
-    <h3 className="text-xl font-semibold mb-4">Order Summary</h3>
-    <div className="space-y-3">
-      {checkoutItems.length === 0 ? (
-        <div className="text-center text-gray-500 py-8">
-          <ShoppingCart className="mx-auto mb-3" />
-          <div>Your cart is empty</div>
-        </div>
-      ) : (
-        checkoutItems.map((it) => {
-          const colorName = it.selectedColor ?? it.original?.selectedColor ?? null;
-          const sizeName = it.selectedSize ?? it.original?.selectedSize ?? null;
+          {/* Step 1: Review */}
+          {step === 1 && (
+            <section className="bg-white dark:bg-gray-900 rounded-xl shadow p-6">
+              <h3 className="text-xl font-semibold mb-4">Order Summary</h3>
+              <div className="space-y-3">
+                {checkoutItems.length === 0 ? (
+                  <div className="text-center text-gray-500 py-8">
+                    <ShoppingCart className="mx-auto mb-3" />
+                    <div>Your cart is empty</div>
+                  </div>
+                ) : (
+                  checkoutItems.map((it) => {
+                    const colorName = it.selectedColor ?? it.original?.selectedColor ?? null;
+                    const sizeName = it.selectedSize ?? it.original?.selectedSize ?? null;
 
-          // Quick CSS color validity check (browser)
-          let showColorDot = false;
-          if (colorName) {
-            try {
-              const s = new Option().style;
-              s.color = colorName;
-              showColorDot = s.color !== "";
-            } catch (e) {
-              showColorDot = false;
-            }
-          }
+                    // Quick CSS color validity check (browser)
+                    let showColorDot = false;
+                    if (colorName) {
+                      try {
+                        const s = new Option().style;
+                        s.color = colorName;
+                        showColorDot = s.color !== "";
+                      } catch (e) {
+                        showColorDot = false;
+                      }
+                    }
 
-          return (
-            <div key={it.id} className="flex items-start gap-4">
-              <img
-                src={it.images?.split?.(",")?.[0] ?? "/placeholder.jpg"}
-                alt={it.name}
-                className="w-20 h-20 object-cover rounded-md"
-              />
-              <div className="flex-1">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="font-medium text-gray-900 dark:text-white">
-                      {it.name}
-                    </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      {it.original?.category ?? ""}
-                    </div>
+                    return (
+                      <div key={it.id} className="flex items-start gap-4">
+                        <img src={it.images?.split?.(",")?.[0] ?? "/placeholder.jpg"} alt={it.name} className="w-20 h-20 object-cover rounded-md" />
+                        <div className="flex-1">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="font-medium text-gray-900 dark:text-white">{it.name}</div>
+                              <div className="text-sm text-gray-500 dark:text-gray-400">{it.original?.category ?? ""}</div>
 
-                    {/* Show selected color & size (prefer normalized fields) */}
-                    {(colorName || sizeName) && (
-                      <div className="mt-1 text-xs text-gray-600 dark:text-gray-300 flex items-center gap-3">
-                        {colorName && (
-                          <span className="flex items-center gap-2">
-                            <span>Color: {colorName}</span>
-                            {showColorDot && <span className="w-3 h-3 rounded-full border" style={{ backgroundColor: colorName }} />}
-                          </span>
-                        )}
-                        {sizeName && <span>Size: {sizeName}</span>}
+                              {/* Show selected color & size (prefer normalized fields) */}
+                              {(colorName || sizeName) && (
+                                <div className="mt-1 text-xs text-gray-600 dark:text-gray-300 flex items-center gap-3">
+                                  {colorName && (
+                                    <span className="flex items-center gap-2">
+                                      <span>Color: {colorName}</span>
+                                      {showColorDot && <span className="w-3 h-3 rounded-full border" style={{ backgroundColor: colorName }} />}
+                                    </span>
+                                  )}
+                                  {sizeName && <span>Size: {sizeName}</span>}
+                                </div>
+                              )}
+
+                              <div className="mt-2 text-sm font-semibold">₹{fmt(it.price)}</div>
+                            </div>
+                            <div className="text-sm text-gray-600 dark:text-gray-300">Qty {it.quantity}</div>
+                          </div>
+                        </div>
                       </div>
-                    )}
-
-                    <div className="mt-2 text-sm font-semibold">
-                      ₹{fmt(it.price)}
-                    </div>
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-300">
-                    Qty {it.quantity}
-                  </div>
-                </div>
+                    );
+                  })
+                )}
               </div>
-            </div>
-          );
-        })
-      )}
-    </div>
 
               <div className="mt-6 border-t pt-4 space-y-3">
-                <div className="flex justify-between text-sm"><span>Items total</span><span>₹{fmt(itemsTotal)}</span></div>
-                <div className="flex justify-between text-sm"><span>Shipping</span><span>{shippingCost === 0 ? "Free" : `₹${fmt(shippingCost)}`}</span></div>
-                {promoApplied && (<div className="flex justify-between text-sm text-green-600"><span>Promo ({promoApplied.code})</span><span>-₹{fmt(promoApplied.amount)}</span></div>)}
-                <div className="flex justify-between text-lg font-bold pt-2"><span>Order Total</span><span>₹{fmt(itemsTotal + shippingCost - (promoApplied?.amount ?? 0))}</span></div>
+                <div className="flex justify-between text-sm">
+                  <span>Items total</span>
+                  <span>₹{fmt(itemsTotal)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Shipping</span>
+                  <span>{shippingCost === 0 ? "Free" : `₹${fmt(shippingCost)}`}</span>
+                </div>
+                {promoApplied && (
+                  <div className="flex justify-between text-sm text-green-600">
+                    <span>Promo ({promoApplied.code})</span>
+                    <span>-₹{fmt(promoApplied.amount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-lg font-bold pt-2">
+                  <span>Order Total</span>
+                  <span>₹{fmt(itemsTotal + shippingCost - (promoApplied?.amount ?? 0))}</span>
+                </div>
                 <div className="mt-4 flex gap-2">
                   <input aria-label="Promo code" placeholder="Promo code (demo)" value={promoCode} onChange={(e) => setPromoCode(e.target.value)} className="flex-1 border px-3 py-2 rounded dark:bg-gray-800" />
                   <button onClick={applyPromo} className="px-4 py-2 rounded bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition">Apply</button>
@@ -580,7 +684,7 @@ const applyPromo = () => {
                     <div key={addr.id} className="border rounded-2xl p-4 bg-white dark:bg-black text-gray-900 dark:text-gray-100 shadow-sm">
                       <div className="flex justify-between items-start">
                         <div>
-                          <div className="text-sm font-semibold">{addr.label || addr.name || (addr.name && addr.name.trim()) || "Address"}</div>
+                          <div className="text-sm font-semibold">{addr.label || addr.name || "Address"}</div>
                           <div className="mt-1 text-xs text-gray-600 dark:text-gray-300">{addr.line1 ? `${addr.line1}${addr.line2 ? ", " + addr.line2 : ""}` : addr.address}</div>
                           <div className="mt-1 text-xs text-gray-600 dark:text-gray-300">{addr.city ? `${addr.city}, ${addr.state}` : addr.state} • {addr.pincode ?? ""}</div>
                           <div className="mt-1 text-xs text-gray-600 dark:text-gray-300">{addr.phone}</div>
@@ -599,9 +703,20 @@ const applyPromo = () => {
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                {Object.keys(shipping).map((field) => (
-                  <input key={field} aria-label={field} placeholder={field.charAt(0).toUpperCase() + field.slice(1)} value={shipping[field]} onChange={(e) => setShipping({ ...shipping, [field]: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
-                ))}
+                {/* Explicit inputs for normalized shipping */}
+                <input aria-label="Name" placeholder="Name" value={shipping.name} onChange={(e) => setShipping({ ...shipping, name: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
+                <input aria-label="Label" placeholder="Label (Home / Office)" value={shipping.label} onChange={(e) => setShipping({ ...shipping, label: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
+
+                <input aria-label="Line1" placeholder="Address line 1" value={shipping.line1} onChange={(e) => setShipping({ ...shipping, line1: e.target.value })} className="col-span-1 md:col-span-2 border rounded px-3 py-2 dark:bg-gray-800" />
+                <input aria-label="Line2" placeholder="Address line 2 (optional)" value={shipping.line2} onChange={(e) => setShipping({ ...shipping, line2: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
+
+                <input aria-label="City" placeholder="City" value={shipping.city} onChange={(e) => setShipping({ ...shipping, city: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
+                <input aria-label="State" placeholder="State" value={shipping.state} onChange={(e) => setShipping({ ...shipping, state: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
+
+                <input aria-label="Pincode" placeholder="Pincode" value={shipping.pincode} onChange={(e) => setShipping({ ...shipping, pincode: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
+                <input aria-label="Phone" placeholder="Phone" value={shipping.phone} onChange={(e) => setShipping({ ...shipping, phone: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
+
+                <input aria-label="Country" placeholder="Country" value={shipping.country} onChange={(e) => setShipping({ ...shipping, country: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
               </div>
 
               <div className="mt-4 flex items-center gap-3">
@@ -610,7 +725,9 @@ const applyPromo = () => {
                   <span className="text-sm">Save this address for future</span>
                 </label>
 
-                {saveAddress && (<button onClick={handleSaveAddress} className="ml-2 px-3 py-1 rounded border bg-black text-white dark:bg-white dark:text-black">Save</button>)}
+                {saveAddress && (
+                  <button onClick={handleSaveAddress} className="ml-2 px-3 py-1 rounded border bg-black text-white dark:bg-white dark:text-black">Save</button>
+                )}
               </div>
             </section>
           )}
