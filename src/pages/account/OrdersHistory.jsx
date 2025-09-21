@@ -335,182 +335,217 @@ const getOptionFromItem = (item, optionName) => {
 
 /* ---------- invoice builder (HTML) ---------- */
 const buildInvoiceHTML = (order) => {
-  const orderId = escapeHtml(order.id ?? "");
-  const orderDate = escapeHtml(fmtDate(order.created_at));
-  // Estimate delivery date as +4 days if created_at is parseable
+  // --- helpers local to this function (safe & self-contained) ---
+  const escapeHtml = (str) => {
+    if (str == null) return "";
+    return String(str)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  };
+
+  // currency formatter: INR with two decimals
+  const formatCurrency = (num) => {
+    const n = Number(num || 0);
+    try {
+      // Use en-IN formatting with two fraction digits
+      return "₹" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    } catch {
+      return "₹" + n.toFixed(2);
+    }
+  };
+
+  // date formatter: prefer global fmtDate if present; fall back to safe formatting
+  const formatDate = (value) => {
+    try {
+      if (typeof fmtDate === "function") {
+        return fmtDate(value);
+      }
+    } catch {}
+    if (!value) return "—";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value);
+    return d.toLocaleString();
+  };
+
+  // safe helper to get option from item; prefer existing global function if available
+  const callGetOption = (item, name) => {
+    try {
+      if (typeof getOptionFromItem === "function") {
+        const v = getOptionFromItem(item, name);
+        return v ?? null;
+      }
+    } catch {}
+    // local fallback checks
+    if (!item) return null;
+    // options object
+    if (item.options && typeof item.options === "object" && !Array.isArray(item.options)) {
+      const keys = Object.keys(item.options);
+      const exact = keys.find((k) => k.toLowerCase() === name.toLowerCase());
+      if (exact) return item.options[exact];
+      const include = keys.find((k) => k.toLowerCase().includes(name.toLowerCase()));
+      if (include) return item.options[include];
+    }
+    // flat fields
+    if (item[name]) return item[name];
+    if (name.toLowerCase() === "color") {
+      return item.color ?? item.selectedColor ?? item.colour ?? null;
+    }
+    if (name.toLowerCase() === "size") {
+      return item.size ?? item.selected_size ?? item.s ?? null;
+    }
+    return null;
+  };
+
+  // --- compute main values ---
+  const rawOrderId = String(order?.id ?? "");
+  const orderIdEscaped = escapeHtml(rawOrderId);
+  const orderDate = escapeHtml(formatDate(order?.created_at));
+  // delivery estimate +4 days if possible
   let deliveryDate = "—";
   try {
-    const d = new Date(order.created_at);
+    const d = new Date(order?.created_at);
     if (!Number.isNaN(d.getTime())) {
       d.setDate(d.getDate() + 4);
       deliveryDate = d.toLocaleDateString();
     }
   } catch {}
-  deliveryDate = escapeHtml(deliveryDate);
+  const deliveryDateEscaped = escapeHtml(deliveryDate);
 
   // Shipping / Bill To
-  const ship = order.shipping_address || {};
-  const billName = escapeHtml(ship.name ?? order.customer_name ?? "Customer");
-  const billEmail = escapeHtml(ship.email ?? "");
-  const billPhone = escapeHtml(ship.phone ?? ship.mobile ?? "");
+  const ship = order?.shipping_address ?? {};
+  const billName = escapeHtml(ship?.name ?? order?.customer_name ?? "Customer");
+  const billEmail = escapeHtml(ship?.email ?? "");
+  const billPhone = escapeHtml(ship?.phone ?? ship?.mobile ?? "");
   const billAddressParts = [];
-  if (ship.line1) billAddressParts.push(escapeHtml(ship.line1));
-  if (ship.line2) billAddressParts.push(escapeHtml(ship.line2));
-  if (ship.city) billAddressParts.push(escapeHtml(ship.city));
-  if (ship.state) billAddressParts.push(escapeHtml(ship.state));
-  if (ship.postcode || ship.pincode) billAddressParts.push(escapeHtml(ship.postcode ?? ship.pincode));
+  if (ship?.line1) billAddressParts.push(escapeHtml(String(ship.line1)));
+  if (ship?.line2) billAddressParts.push(escapeHtml(String(ship.line2)));
+  if (ship?.city) billAddressParts.push(escapeHtml(String(ship.city)));
+  if (ship?.state) billAddressParts.push(escapeHtml(String(ship.state)));
+  if (ship?.postcode || ship?.pincode) billAddressParts.push(escapeHtml(String(ship.postcode ?? ship.pincode)));
   const billAddress = billAddressParts.join(", ") || "Street Address";
 
-  // Payment
-  const paymentMode = escapeHtml(order.payment_method ?? order.payment ?? "Cash on Delivery");
-  const amountDue = fmtCurrencyInvoice(order.total ?? 0);
+  // Payment & items
+  const paymentMode = escapeHtml(order?.payment_method ?? order?.payment ?? "Cash on Delivery");
+  const items = Array.isArray(order?.items) ? order.items : [];
 
-  // Items table rows
-  const items = Array.isArray(order.items) ? order.items : [];
-  const rowsHtml = items.map((it) => {
-    const name = escapeHtml(it.name ?? it.title ?? "Item");
-    const desc = escapeHtml(it.description ?? it.desc ?? "");
-    const color =
-      escapeHtml((it.options && (it.options.color ?? it.options.colour)) ??
-      getOptionFromItem(it, "color") ??
-      getOptionFromItem(it, "colour") ??
-      "");
-    const size =
-      escapeHtml((it.options && (it.options.size ?? it.options.s)) ??
-      getOptionFromItem(it, "size") ??
-      "");
-    const qty = Number(it.quantity ?? it.qty ?? it.count ?? 1);
-    const price = Number(it.price ?? it.unit_price ?? it.price_per_unit ?? 0);
-    const amount = price * qty;
-    return `<tr>
-      <td>${name}</td>
-      <td>${desc}</td>
-      <td>${color || "—"}</td>
-      <td>${size || "—"}</td>
-      <td>${qty}</td>
-      <td class="amount">${fmtCurrencyInvoice(price)}</td>
-      <td class="amount">${fmtCurrencyInvoice(amount)}</td>
-    </tr>`;
-  }).join("\n");
+  // compute subtotal robustly (prefer order.subtotal when present)
+  const calcSubtotalFromItems = () =>
+    items.reduce((acc, it) => {
+      const price = Number(it?.price ?? it?.unit_price ?? 0);
+      const qty = Number(it?.quantity ?? it?.qty ?? it?.count ?? 1);
+      return acc + price * qty;
+    }, 0);
 
-  // Totals
-  const subtotal = Number(order.subtotal ?? items.reduce((acc, it) => acc + (Number(it.price ?? 0) * Number(it.quantity ?? 1)), 0) ?? order.total ?? 0);
-  const shipping = Number(order.shipping ?? 0);
-  const totalDue = Number(order.total ?? subtotal + shipping);
+  const subtotal = Number(order?.subtotal ?? calcSubtotalFromItems() ?? 0);
+  const shipping = Number(order?.shipping ?? 0);
+  const tax = Number(order?.tax ?? 0);
+  const discount = Number(order?.discount ?? 0);
+  // If order.total is explicitly provided prefer it, otherwise sum up
+  const totalDue = Number(order?.total ?? Math.max(0, subtotal + shipping + tax - discount));
 
-  // Barcode URL
-  const barcodeUrl = `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(orderId)}&code=Code128&dpi=96`;
+  // Build item rows (escaped)
+  const rowsHtml = items.length
+    ? items
+        .map((it) => {
+          const name = escapeHtml(it?.name ?? it?.title ?? "Item");
+          const desc = escapeHtml(it?.description ?? it?.desc ?? "");
+          const colorRaw = (it?.options && (it.options.color ?? it.options.colour)) ?? callGetOption(it, "color") ?? "";
+          const sizeRaw = (it?.options && (it.options.size ?? it.options.s)) ?? callGetOption(it, "size") ?? "";
+          const color = escapeHtml(colorRaw ?? "");
+          const size = escapeHtml(sizeRaw ?? "");
+          const qty = Number(it?.quantity ?? it?.qty ?? it?.count ?? 1);
+          const price = Number(it?.price ?? it?.unit_price ?? it?.price_per_unit ?? 0);
+          const amount = price * qty;
+          return `<tr>
+            <td>${name}</td>
+            <td>${desc || "—"}</td>
+            <td>${color || "—"}</td>
+            <td>${size || "—"}</td>
+            <td style="text-align:center">${escapeHtml(String(qty))}</td>
+            <td class="amount">${formatCurrency(price)}</td>
+            <td class="amount">${formatCurrency(amount)}</td>
+          </tr>`;
+        })
+        .join("\n")
+    : `<tr><td colspan="7" style="text-align:center;">No items</td></tr>`;
 
+  // barcode (use raw id for encoding)
+  const barcodeUrl = `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(rawOrderId)}&code=Code128&dpi=96`;
+
+  // --- HTML with improved contrast & print friendliness ---
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Customer Invoice - DRIPZOID</title>
   <style>
+    /* Strong contrast for PDF / printing */
+    html, body { margin: 0; padding: 0; }
     body {
-      font-family: Arial, sans-serif;
-      margin: 40px;
-      color: #333;
-      background-color: #fafafa;
-    }
-    .header, .footer {
-      width: 100%;
-      margin-bottom: 20px;
-    }
-    .header .left {
-      float: left;
-    }
-    .header .right {
-      float: right;
-      text-align: right;
-    }
-    .clearfix::after {
-      content: "";
-      display: table;
-      clear: both;
-    }
-    h2, h4 {
-      margin: 10px 0;
-    }
-    .section {
-      margin: 20px 0;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 10px;
-    }
-    table, th, td {
-      border: 1px solid #ddd;
-    }
-    th, td {
-      padding: 12px;
-      text-align: left;
-    }
-    th {
-      background-color: #f5f5f5;
-    }
-    .total {
-      text-align: right;
-      font-weight: bold;
-    }
-    .amount {
-      text-align: right;
-    }
-    .barcode {
-      margin-top: 10px;
-    }
-    .footer {
-      margin-top: 50px;
+      font-family: Arial, Helvetica, sans-serif;
+      margin: 24px;
+      color: #111;         /* darker text for contrast */
+      background: #ffffff; /* white background for printable PDF */
       font-size: 14px;
-      color: #666;
-      border-top: 1px solid #ddd;
-      padding-top: 15px;
-      text-align: center;
+      line-height: 1.4;
     }
-    .highlight {
-      color: #d32f2f;
-      font-weight: bold;
+    .header, .footer { width: 100%; margin-bottom: 12px; }
+    .header .left { float: left; }
+    .header .right { float: right; text-align: right; }
+    .clearfix::after { content: ""; display: table; clear: both; }
+    h2, h4 { margin: 6px 0; color: #111; }
+    .section { margin: 16px 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+    table, th, td { border: 1px solid #bbb; } /* stronger border */
+    th, td { padding: 10px; text-align: left; vertical-align: middle; }
+    th { background-color: #f0f0f0; font-weight: 600; color: #111; }
+    .total { text-align: right; font-weight: 700; }
+    .amount { text-align: right; white-space: nowrap; }
+    .barcode { margin-top: 6px; }
+    .footer { margin-top: 28px; font-size: 13px; color: #444; border-top: 1px solid #ddd; padding-top: 12px; text-align: center; }
+    .highlight { color: #d32f2f; font-weight: bold; }
+    /* Ensure header/footer elements are visible even if print background disabled */
+    hr { border: none; border-top: 1px solid #ddd; margin: 12px 0; }
+    @media print {
+      body { margin: 8mm; }
     }
   </style>
 </head>
 <body>
-  <!-- Header -->
   <div class="header clearfix">
     <div class="left">
       <h2>DRIPZOID</h2>
-      <p>Pithapuram, Kakinada, Andhra Pradesh, India<br>533 450</p>
+      <div>Pithapuram, Kakinada, Andhra Pradesh, India<br/>533 450</div>
     </div>
     <div class="right">
-      <p><strong>Order ID:</strong> ${orderId}</p>
-      <p><strong>Order Date:</strong> ${escapeHtml(orderDate)}</p>
-      <p><strong>Delivery Date:</strong> ${deliveryDate}</p>
-      <!-- Barcode -->
+      <div><strong>Order ID:</strong> ${orderIdEscaped}</div>
+      <div><strong>Order Date:</strong> ${orderDate}</div>
+      <div><strong>Delivery Date:</strong> ${deliveryDateEscaped}</div>
       <div class="barcode">
-        <img src="${barcodeUrl}" alt="Order Barcode">
+        <img src="${escapeHtml(barcodeUrl)}" alt="Order Barcode" style="max-width:220px; height:auto;" />
       </div>
     </div>
   </div>
 
-  <hr>
+  <hr/>
 
-  <!-- Business Name -->
   <h2>Customer Invoice</h2>
   <p>Thank you for shopping with <span class="highlight">DRIPZOID</span>! Your satisfaction is our priority.</p>
 
-  <!-- Details -->
   <div class="section clearfix">
-    <div style="float:left; width:40%;">
+    <div style="float:left; width:48%;">
       <h4>Bill To</h4>
-      <p>${billName}${billEmail ? `<br>Email: ${billEmail}` : ""}${billPhone ? `<br>Phone: ${billPhone}` : ""}<br>${billAddress}</p>
+      <div>${billName}${billEmail ? `<br/>Email: ${billEmail}` : ""}${billPhone ? `<br/>Phone: ${billPhone}` : ""}<br/>${escapeHtml(billAddress)}</div>
     </div>
-    <div style="float:right; width:40%; text-align:right;">
+    <div style="float:right; width:48%; text-align:right;">
       <h4>Payment</h4>
-      <p>Payment Mode: ${paymentMode}<br>Amount Due: ${amountDue}</p>
+      <div>Payment Mode: ${paymentMode}<br/>Amount Due: <strong>${formatCurrency(totalDue)}</strong></div>
     </div>
   </div>
 
-  <!-- Items Table -->
   <table>
     <thead>
       <tr>
@@ -518,46 +553,47 @@ const buildInvoiceHTML = (order) => {
         <th>Description</th>
         <th>Color</th>
         <th>Size</th>
-        <th>Qty</th>
-        <th>Price (INR)</th>
-        <th>Amount (INR)</th>
+        <th style="text-align:center">Qty</th>
+        <th style="text-align:right">Price (INR)</th>
+        <th style="text-align:right">Amount (INR)</th>
       </tr>
     </thead>
     <tbody>
-      ${rowsHtml || `<tr><td colspan="7" style="text-align:center;">No items</td></tr>`}
+      ${rowsHtml}
     </tbody>
   </table>
 
-  <!-- Totals -->
-  <table style="margin-top:20px; border:none;">
+  <table style="margin-top:16px; border:none;">
     <tr>
       <td style="border:none;"></td>
       <td style="border:none;" class="total">Subtotal</td>
-      <td style="border:none;" class="amount">${fmtCurrencyInvoice(subtotal)}</td>
+      <td style="border:none;" class="amount">${formatCurrency(subtotal)}</td>
     </tr>
     <tr>
       <td style="border:none;"></td>
       <td style="border:none;" class="total">Shipping</td>
-      <td style="border:none;" class="amount">${fmtCurrencyInvoice(shipping)}</td>
+      <td style="border:none;" class="amount">${formatCurrency(shipping)}</td>
     </tr>
+    ${tax ? `<tr><td style="border:none;"></td><td style="border:none;" class="total">Tax</td><td style="border:none;" class="amount">${formatCurrency(tax)}</td></tr>` : ""}
+    ${discount ? `<tr><td style="border:none;"></td><td style="border:none;" class="total">Discount</td><td style="border:none;" class="amount">-${formatCurrency(discount)}</td></tr>` : ""}
     <tr>
       <td style="border:none;"></td>
       <td style="border:none;" class="total">Total Due</td>
-      <td style="border:none;" class="amount"><strong>${fmtCurrencyInvoice(totalDue)}</strong></td>
+      <td style="border:none;" class="amount"><strong>${formatCurrency(totalDue)}</strong></td>
     </tr>
   </table>
 
-  <!-- Footer -->
   <div class="footer">
-    <p>For any queries regarding your order, contact us at <strong>support@dripzoid.com</strong> or call <strong>+91-9494038163</strong>.</p>
-    <p>Returns accepted within 7 days of delivery as per our return policy.</p>
-    <p>Thank you for choosing <span class="highlight">DRIPZOID</span> ❤️</p>
+    <div>For any queries regarding your order, contact us at <strong>support@dripzoid.com</strong> or call <strong>+91-9494038163</strong>.</div>
+    <div>Returns accepted within 7 days of delivery as per our return policy.</div>
+    <div>Thank you for choosing <span class="highlight">DRIPZOID</span> ❤️</div>
   </div>
 </body>
 </html>`;
 
   return html;
 };
+
 
 /* ---------- main component ---------- */
 export default function OrdersSection() {
@@ -917,65 +953,72 @@ export default function OrdersSection() {
     }
   };
 
-  // download invoice: use client-side PDF generation (html2canvas + jspdf)
-  const downloadInvoice = async (order) => {
-    if (!order?.id) return;
+// download invoice: use client-side PDF generation (html2canvas + jspdf)
+const downloadInvoice = async (order) => {
+  if (!order?.id) return;
 
+  try {
+    // Build HTML invoice using template builder
+    const html = buildInvoiceHTML(order);
+
+    // Create hidden container to render HTML
+    const container = document.createElement("div");
+    container.style.position = "fixed";
+    container.style.left = "-9999px";
+    container.style.top = "0";
+    container.style.width = "210mm"; // A4 width for consistent rendering
+    container.style.background = "#ffffff"; // ✅ force solid white background
+    container.style.color = "#000000"; // ✅ ensure text is crisp black
+    container.style.padding = "10mm"; // optional: padding for cleaner layout
+    container.innerHTML = html;
+    document.body.appendChild(container);
+
+    // Dynamically import html2canvas and jspdf (requires you to install them)
+    let html2canvasModule, jsPDFModule;
     try {
-      // Build HTML invoice using template builder
-      const html = buildInvoiceHTML(order);
-
-      // Create hidden container to render HTML
-      const container = document.createElement("div");
-      container.style.position = "fixed";
-      container.style.left = "-9999px";
-      container.style.top = "0";
-      container.style.width = "210mm"; // A4 width for consistent rendering
-      container.innerHTML = html;
-      document.body.appendChild(container);
-
-      // Dynamically import html2canvas and jspdf (requires you to install them)
-      let html2canvasModule, jsPDFModule;
-      try {
-        html2canvasModule = (await import("html2canvas")).default;
-        jsPDFModule = await import("jspdf");
-      } catch (e) {
-        // Cleanup container
-        document.body.removeChild(container);
-        console.error("Missing dependencies for PDF generation:", e);
-        alert(
-          "To download PDF invoices you need to install dependencies:\n\nnpm install html2canvas jspdf\n\nThen reload the app."
-        );
-        return;
-      }
-
-      // Render container to canvas (useCORS to attempt cross-origin images)
-      const canvas = await html2canvasModule(container, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: false,
-        logging: false,
-      });
-
-      // Convert canvas to image and add to PDF
-      const imgData = canvas.toDataURL("image/png");
-
-      const { jsPDF } = jsPDFModule;
-      const pdf = new jsPDF("p", "mm", "a4");
-
-      const pdfWidth = 210; // mm
-      const imgWidth = canvas.width;
-      const imgHeight = canvas.height;
-      const pdfHeight = (imgHeight * pdfWidth) / imgWidth;
-
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`invoice-${order.id}.pdf`);
+      html2canvasModule = (await import("html2canvas")).default;
+      jsPDFModule = await import("jspdf");
+    } catch (e) {
+      // Cleanup container
       document.body.removeChild(container);
-    } catch (err) {
-      console.error("Invoice PDF generation error:", err);
-      alert("Unable to generate invoice PDF. See console for details.");
+      console.error("Missing dependencies for PDF generation:", e);
+      alert(
+        "To download PDF invoices you need to install dependencies:\n\nnpm install html2canvas jspdf\n\nThen reload the app."
+      );
+      return;
     }
-  };
+
+    // Render container to canvas (useCORS to attempt cross-origin images)
+    const canvas = await html2canvasModule(container, {
+      scale: 2, // increase if you want sharper text (2–3 is fine)
+      useCORS: true,
+      allowTaint: false,
+      logging: false,
+      backgroundColor: "#ffffff", // ✅ fixes transparency issue
+    });
+
+    // Convert canvas to image and add to PDF
+    const imgData = canvas.toDataURL("image/png");
+
+    const { jsPDF } = jsPDFModule;
+    const pdf = new jsPDF("p", "mm", "a4");
+
+    const pdfWidth = 210; // mm
+    const imgWidth = canvas.width;
+    const imgHeight = canvas.height;
+    const pdfHeight = (imgHeight * pdfWidth) / imgWidth;
+
+    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+    pdf.save(`invoice-${order.id}.pdf`);
+
+    // Cleanup
+    document.body.removeChild(container);
+  } catch (err) {
+    console.error("Invoice PDF generation error:", err);
+    alert("Unable to generate invoice PDF. See console for details.");
+  }
+};
+
 
   // Render
   return (
