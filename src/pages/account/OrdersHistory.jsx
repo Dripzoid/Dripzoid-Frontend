@@ -100,12 +100,7 @@ function SkeletonCard() {
 const normalizeOrder = (o = {}) => {
   const total =
     Number(
-      o.total ??
-        o.total_amount ??
-        o.total_price ??
-        o.order_total ??
-        o.amount ??
-        0
+      o.total ?? o.total_amount ?? o.total_price ?? o.order_total ?? o.amount ?? 0
     ) || 0;
 
   // items: harmonize several common shapes
@@ -145,350 +140,162 @@ const normalizeOrder = (o = {}) => {
   };
 };
 
-/**
- * Try many common places to get an image URL for an order item/variant
- * - if a comma-separated string is provided, returns the first trimmed URL
- */
-const firstFromCommaString = (s) => {
-  if (!s) return null;
-  if (typeof s !== "string") return null;
-  return s.split(",").map((x) => x.trim()).filter(Boolean)[0] ?? null;
-};
-
-const getImageFromItem = (item) => {
-  if (!item) return "/placeholder.jpg";
-
-  // if item itself is a string (some APIs return image string)
-  if (typeof item === "string" && item.startsWith("http")) return item;
-
-  // common single-field urls
-  const singleFields = [
-    "image",
-    "image_url",
-    "thumbnail",
-    "thumbnail_url",
-    "img",
-    "picture",
-    "photo",
-  ];
-  for (const k of singleFields) {
-    const v = item[k];
-    if (typeof v === "string" && v) {
-      const first = firstFromCommaString(v);
-      if (first) return first;
-      return v;
-    }
-    if (v && v.url) return v.url;
-  }
-
-  // images array or object
-  if (item.images) {
-    if (Array.isArray(item.images) && item.images.length > 0) {
-      const first = item.images[0];
-      if (typeof first === "string") {
-        const f = firstFromCommaString(first);
-        if (f) return f;
-        return first;
-      }
-      if (first?.url) return first.url;
-    } else if (typeof item.images === "string") {
-      const f = firstFromCommaString(item.images);
-      if (f) return f;
-      return item.images;
-    } else if (item.images?.url) return item.images.url;
-  }
-
-  // media array
-  if (item.media && Array.isArray(item.media) && item.media[0]) {
-    if (typeof item.media[0] === "string") {
-      const f = firstFromCommaString(item.media[0]);
-      if (f) return f;
-      return item.media[0];
-    }
-    if (item.media[0]?.url) return item.media[0].url;
-  }
-
-  // variant / product nested
-  if (item.variant) {
-    if (typeof item.variant === "string" && item.variant.startsWith("http"))
-      return item.variant;
-    if (item.variant.image) {
-      const f = firstFromCommaString(item.variant.image);
-      if (f) return f;
-      return item.variant.image;
-    }
-    if (Array.isArray(item.variant.images) && item.variant.images[0]) {
-      const v = item.variant.images[0];
-      if (typeof v === "string") {
-        const f = firstFromCommaString(v);
-        if (f) return f;
-        return v;
-      }
-      if (v?.url) return v.url;
-    }
-  }
-  if (item.product) {
-    if (item.product.image) {
-      const f = firstFromCommaString(item.product.image);
-      if (f) return f;
-      return item.product.image;
-    }
-    if (Array.isArray(item.product.images) && item.product.images[0]) {
-      const v = item.product.images[0];
-      if (typeof v === "string") {
-        const f = firstFromCommaString(v);
-        if (f) return f;
-        return v;
-      }
-      if (v?.url) return v.url;
-    }
-    if (item.product.thumbnail) {
-      const f = firstFromCommaString(item.product.thumbnail);
-      if (f) return f;
-      return item.product.thumbnail;
-    }
-  }
-
-  // fallback: some APIs put image directly on item as 'image' (handled above),
-  // or on item.picture/photo etc which we handled. If nothing, placeholder:
-  return "/placeholder.jpg";
-};
-
-/**
- * Try to get a named option/property (Color, Size, etc.)
- * Looks at several common shapes vendors use: selected_options, options, attributes, variant.options, or options as object
- */
-const getOptionFromItem = (item, optionName) => {
-  if (!item || !optionName) return null;
-  const name = optionName.toLowerCase();
-
-  // 1) selected_options: [{ name: 'Color', value: 'Red' }]
-  if (Array.isArray(item.selected_options)) {
-    const found = item.selected_options.find(
-      (o) => (o?.name || "").toLowerCase() === name
-    );
-    if (found) return found.value ?? found.val ?? found.option ?? null;
-  }
-
-  // 1b) options as object: { color: 'White', size: 'M' }
-  if (item.options && typeof item.options === "object" && !Array.isArray(item.options)) {
-    // try exact match keys (case-insensitive)
-    const keys = Object.keys(item.options);
-    const exact = keys.find((k) => k.toLowerCase() === name);
-    if (exact) return item.options[exact];
-    // try includes
-    const includes = keys.find((k) => k.toLowerCase().includes(name));
-    if (includes) return item.options[includes];
-    // direct access
-    if (item.options[name] != null) return item.options[name];
-  }
-
-  // 2) options / attributes arrays: [{ option: 'Size', value: 'M' }, { name:'size', value:'M' }]
-  if (Array.isArray(item.options)) {
-    const found = item.options.find(
-      (o) => ((o?.name || o?.option) || "").toLowerCase() === name
-    );
-    if (found) return found.value ?? found.val ?? found.option ?? null;
-  }
-  if (Array.isArray(item.attributes)) {
-    const found = item.attributes.find(
-      (o) => ((o?.name || o?.key) || "").toLowerCase() === name
-    );
-    if (found) return found.value ?? found.val ?? found.option ?? null;
-  }
-
-  // 3) variant object might contain options or attributes
-  if (item.variant) {
-    if (Array.isArray(item.variant.options)) {
-      const found = item.variant.options.find(
-        (o) => (o?.name || "").toLowerCase() === name
-      );
-      if (found) return found.value ?? found.val ?? found.option ?? null;
-    }
-    if (Array.isArray(item.variant.attributes)) {
-      const found = item.variant.attributes.find(
-        (o) => (o?.name || o?.key || "").toLowerCase() === name
-      );
-      if (found) return found.value ?? found.val ?? found.option ?? null;
-    }
-    // sometimes variant stores color/size directly
-    if (item.variant[name]) return item.variant[name];
-  }
-
-  // 4) flat fields
-  if (item[name]) return item[name];
-  if (item.selectedColor && name === "color") return item.selectedColor;
-  if (item.selected_size && name === "size") return item.selected_size;
-  if (item.color && name === "color") return item.color;
-  if (item.size && name === "size") return item.size;
-
-  // 5) metadata / meta
-  if (item.meta && typeof item.meta === "object") {
-    const k = Object.keys(item.meta).find((k) =>
-      k.toLowerCase().includes(name)
-    );
-    if (k) return item.meta[k];
-  }
-
-  return null;
+/* utility used in rendering addresses */
+const formatAddressLines = (addr) => {
+  if (!addr) return "—";
+  // Prefer structured fields
+  const parts = [];
+  if (addr.line1) parts.push(addr.line1);
+  if (addr.line2) parts.push(addr.line2);
+  // city, state, pincode
+  const cityState = [addr.city, addr.state].filter(Boolean).join(", ");
+  if (cityState) parts.push(cityState);
+  if (addr.pincode || addr.postcode) parts.push(addr.pincode ?? addr.postcode);
+  if (addr.country) parts.push(addr.country);
+  return parts.join(", ");
 };
 
 /* ---------- invoice builder (HTML) ---------- */
 const buildInvoiceHTML = (order) => {
-  // --- helpers local to this function (safe & self-contained) ---
-  const escapeHtml = (str) => {
-    if (str == null) return "";
-    return String(str)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
-  };
-
-  // currency formatter: INR with two decimals
-  const formatCurrency = (num) => {
-    const n = Number(num || 0);
+  // local helpers
+  const esc = (s) => escapeHtml(s == null ? "" : String(s));
+  // dd/mm/yyyy formatting
+  const formatDateDDMMYYYY = (v) => {
+    if (!v) return "—";
     try {
-      // Use en-IN formatting with two fraction digits
-      return "₹" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const d = new Date(v);
+      if (Number.isNaN(d.getTime())) return esc(v);
+      const dd = String(d.getDate()).padStart(2, "0");
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const yyyy = d.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
     } catch {
-      return "₹" + n.toFixed(2);
+      return esc(v);
     }
   };
 
-  // date formatter: prefer global fmtDate if present; fall back to safe formatting
-  const formatDate = (value) => {
-    try {
-      if (typeof fmtDate === "function") {
-        return fmtDate(value);
-      }
-    } catch {}
-    if (!value) return "—";
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return String(value);
-    return d.toLocaleString();
-  };
+  // currency for invoice
+  const formatCurrency = (num) =>
+    `₹${Number(num || 0).toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
 
-  // safe helper to get option from item; prefer existing global function if available
-  const callGetOption = (item, name) => {
-    try {
-      if (typeof getOptionFromItem === "function") {
-        const v = getOptionFromItem(item, name);
-        return v ?? null;
-      }
-    } catch {}
-    // local fallback checks
-    if (!item) return null;
-    // options object
-    if (item.options && typeof item.options === "object" && !Array.isArray(item.options)) {
-      const keys = Object.keys(item.options);
-      const exact = keys.find((k) => k.toLowerCase() === name.toLowerCase());
-      if (exact) return item.options[exact];
-      const include = keys.find((k) => k.toLowerCase().includes(name.toLowerCase()));
-      if (include) return item.options[include];
-    }
-    // flat fields
-    if (item[name]) return item[name];
-    if (name.toLowerCase() === "color") {
-      return item.color ?? item.selectedColor ?? item.colour ?? null;
-    }
-    if (name.toLowerCase() === "size") {
-      return item.size ?? item.selected_size ?? item.s ?? null;
-    }
-    return null;
-  };
-
-  // --- compute main values ---
   const rawOrderId = String(order?.id ?? "");
-  const orderIdEscaped = escapeHtml(rawOrderId);
-  const orderDate = escapeHtml(formatDate(order?.created_at));
+  const orderIdEscaped = esc(rawOrderId);
+  const orderDate = formatDateDDMMYYYY(order?.created_at);
+
   // delivery estimate +4 days if possible
   let deliveryDate = "—";
   try {
     const d = new Date(order?.created_at);
     if (!Number.isNaN(d.getTime())) {
       d.setDate(d.getDate() + 4);
-      deliveryDate = d.toLocaleDateString();
+      deliveryDate = formatDateDDMMYYYY(d);
     }
   } catch {}
-  const deliveryDateEscaped = escapeHtml(deliveryDate);
 
-  // Shipping / Bill To
+  // shipping / customer
   const ship = order?.shipping_address ?? {};
-  const billName = escapeHtml(ship?.name ?? order?.customer_name ?? "Customer");
-  const billEmail = escapeHtml(ship?.email ?? "");
-  const billPhone = escapeHtml(ship?.phone ?? ship?.mobile ?? "");
-  const billAddressParts = [];
-  if (ship?.line1) billAddressParts.push(escapeHtml(String(ship.line1)));
-  if (ship?.line2) billAddressParts.push(escapeHtml(String(ship.line2)));
-  if (ship?.city) billAddressParts.push(escapeHtml(String(ship.city)));
-  if (ship?.state) billAddressParts.push(escapeHtml(String(ship.state)));
-  if (ship?.postcode || ship?.pincode) billAddressParts.push(escapeHtml(String(ship.postcode ?? ship.pincode)));
-  const billAddress = billAddressParts.join(", ") || "Street Address";
+  // allow either shipping.name or shipping.full_name or order.customer_name
+  const customerName = esc(ship?.name ?? ship?.full_name ?? order?.customer_name ?? "Customer");
+  const customerPhone = esc(ship?.phone ?? ship?.mobile ?? "");
+  const addressLines = (() => {
+    const lines = [];
+    if (ship?.line1) lines.push(esc(ship.line1));
+    if (ship?.line2) lines.push(esc(ship.line2));
+    // city/state/pincode inline
+    const cityState = [ship?.city, ship?.state].filter(Boolean).map(esc).join(", ");
+    if (cityState) lines.push(cityState);
+    if (ship?.pincode || ship?.postcode) lines.push(esc(ship.pincode ?? ship.postcode));
+    if (ship?.country) lines.push(esc(ship.country));
+    // If no structured fields, maybe shipping is a flat string
+    if (lines.length === 0 && typeof ship === "string" && ship.trim()) {
+      return esc(ship);
+    }
+    if (lines.length === 0 && order?.raw?.shipping_address) {
+      const raw = order.raw.shipping_address;
+      if (typeof raw === "string" && raw.trim()) return esc(raw);
+    }
+    return lines.join("<br/>") || "Street Address";
+  })();
 
-  // Payment & items
-  const paymentMode = escapeHtml(order?.payment_method ?? order?.payment ?? "Cash on Delivery");
+  // items and totals
   const items = Array.isArray(order?.items) ? order.items : [];
 
-  // compute subtotal robustly (prefer order.subtotal when present)
-  const calcSubtotalFromItems = () =>
+  const calcItemsTotal = () =>
     items.reduce((acc, it) => {
       const price = Number(it?.price ?? it?.unit_price ?? 0);
       const qty = Number(it?.quantity ?? it?.qty ?? it?.count ?? 1);
       return acc + price * qty;
     }, 0);
 
-  const subtotal = Number(order?.subtotal ?? calcSubtotalFromItems() ?? 0);
+  const itemsTotal = calcItemsTotal();
   const shipping = Number(order?.shipping ?? 0);
   const tax = Number(order?.tax ?? 0);
+  // discount field if present on order
   const discount = Number(order?.discount ?? 0);
-  // If order.total is explicitly provided prefer it, otherwise sum up
-  const totalDue = Number(order?.total ?? Math.max(0, subtotal + shipping + tax - discount));
 
-  // Build item rows (escaped)
-  const rowsHtml = items.length
-    ? items
-        .map((it) => {
-          const name = escapeHtml(it?.name ?? it?.title ?? "Item");
-          const desc = escapeHtml(it?.description ?? it?.desc ?? "");
-          const colorRaw = (it?.options && (it.options.color ?? it.options.colour)) ?? callGetOption(it, "color") ?? "";
-          const sizeRaw = (it?.options && (it.options.size ?? it.options.s)) ?? callGetOption(it, "size") ?? "";
-          const color = escapeHtml(colorRaw ?? "");
-          const size = escapeHtml(sizeRaw ?? "");
-          const qty = Number(it?.quantity ?? it?.qty ?? it?.count ?? 1);
-          const price = Number(it?.price ?? it?.unit_price ?? it?.price_per_unit ?? 0);
-          const amount = price * qty;
-          return `<tr>
-            <td>${name}</td>
-            <td>${desc || "—"}</td>
-            <td>${color || "—"}</td>
-            <td>${size || "—"}</td>
-            <td style="text-align:center">${escapeHtml(String(qty))}</td>
-            <td class="amount">${formatCurrency(price)}</td>
-            <td class="amount">${formatCurrency(amount)}</td>
-          </tr>`;
-        })
-        .join("\n")
-    : `<tr><td colspan="7" style="text-align:center;">No items</td></tr>`;
+  // computed pre-discount total (items + shipping + tax)
+  const computedPreCoupon = Number(itemsTotal + shipping + tax);
+  // order.total (explicit) preferred
+  const totalDue = Number(order?.total ?? order?.total_amount ?? computedPreCoupon - discount);
 
-  // barcode (use raw id for encoding)
+  // If computedPreCoupon differs from totalDue, attribute the difference to coupon discount
+  // couponDiscount is positive number representing reduction
+  let couponDiscount = 0;
+  if (computedPreCoupon > totalDue) {
+    couponDiscount = Number((computedPreCoupon - totalDue) || 0);
+  }
+
+  // Build rows (no description column)
+  const rowsHtml =
+    items.length > 0
+      ? items
+          .map((it) => {
+            const name = esc(it?.name ?? it?.title ?? "Item");
+            const colorRaw = (it?.options && (it.options.color ?? it.options.colour)) ?? (it?.selectedColor ?? it?.colour ?? "");
+            const sizeRaw = (it?.options && (it.options.size ?? it.options.s)) ?? (it?.selectedSize ?? it?.size ?? "");
+            const color = esc(colorRaw || "");
+            const size = esc(sizeRaw || "");
+            const qty = Number(it?.quantity ?? it?.qty ?? it?.count ?? 1);
+            const price = Number(it?.price ?? it?.unit_price ?? it?.price_per_unit ?? 0);
+            const amount = price * qty;
+            return `<tr>
+              <td>${name}</td>
+              <td>${color || "—"}</td>
+              <td>${size || "—"}</td>
+              <td style="text-align:center">${escapeHtml(String(qty))}</td>
+              <td class="amount">${formatCurrency(price)}</td>
+              <td class="amount">${formatCurrency(amount)}</td>
+            </tr>`;
+          })
+          .join("\n")
+      : `<tr><td colspan="6" style="text-align:center;">No items</td></tr>`;
+
   const barcodeUrl = `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(rawOrderId)}&code=Code128&dpi=96`;
 
-  // --- HTML with improved contrast & print friendliness ---
+  // build totals rows with coupon if present
+  const couponRowHtml =
+    couponDiscount > 0
+      ? `<tr><td style="border:none;"></td><td style="border:none;" class="total">Coupon Discount</td><td style="border:none;" class="amount">-${formatCurrency(couponDiscount)}</td></tr>`
+      : "";
+
+  const subtotalForDisplay = itemsTotal;
+
+  // final HTML
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <title>Customer Invoice - DRIPZOID</title>
   <style>
-    /* Strong contrast for PDF / printing */
     html, body { margin: 0; padding: 0; }
     body {
       font-family: Arial, Helvetica, sans-serif;
       margin: 24px;
-      color: #111;         /* darker text for contrast */
-      background: #ffffff; /* white background for printable PDF */
+      color: #111;
+      background: #ffffff;
       font-size: 14px;
       line-height: 1.4;
     }
@@ -499,7 +306,7 @@ const buildInvoiceHTML = (order) => {
     h2, h4 { margin: 6px 0; color: #111; }
     .section { margin: 16px 0; }
     table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
-    table, th, td { border: 1px solid #bbb; } /* stronger border */
+    table, th, td { border: 1px solid #bbb; }
     th, td { padding: 10px; text-align: left; vertical-align: middle; }
     th { background-color: #f0f0f0; font-weight: 600; color: #111; }
     .total { text-align: right; font-weight: 700; }
@@ -507,11 +314,8 @@ const buildInvoiceHTML = (order) => {
     .barcode { margin-top: 6px; }
     .footer { margin-top: 28px; font-size: 13px; color: #444; border-top: 1px solid #ddd; padding-top: 12px; text-align: center; }
     .highlight { color: #d32f2f; font-weight: bold; }
-    /* Ensure header/footer elements are visible even if print background disabled */
     hr { border: none; border-top: 1px solid #ddd; margin: 12px 0; }
-    @media print {
-      body { margin: 8mm; }
-    }
+    @media print { body { margin: 8mm; } }
   </style>
 </head>
 <body>
@@ -522,10 +326,10 @@ const buildInvoiceHTML = (order) => {
     </div>
     <div class="right">
       <div><strong>Order ID:</strong> ${orderIdEscaped}</div>
-      <div><strong>Order Date:</strong> ${orderDate}</div>
-      <div><strong>Delivery Date:</strong> ${deliveryDateEscaped}</div>
+      <div><strong>Order Date:</strong> ${esc(orderDate)}</div>
+      <div><strong>Delivery Date:</strong> ${esc(deliveryDate)}</div>
       <div class="barcode">
-        <img src="${escapeHtml(barcodeUrl)}" alt="Order Barcode" style="max-width:220px; height:auto;" />
+        <img src="${esc(barcodeUrl)}" alt="Order Barcode" style="max-width:220px; height:auto;" />
       </div>
     </div>
   </div>
@@ -538,11 +342,11 @@ const buildInvoiceHTML = (order) => {
   <div class="section clearfix">
     <div style="float:left; width:48%;">
       <h4>Bill To</h4>
-      <div>${billName}${billEmail ? `<br/>Email: ${billEmail}` : ""}${billPhone ? `<br/>Phone: ${billPhone}` : ""}<br/>${escapeHtml(billAddress)}</div>
+      <div><strong>${customerName}</strong><br/>${addressLines}${customerPhone ? `<br/>Phone: ${customerPhone}` : ""}</div>
     </div>
     <div style="float:right; width:48%; text-align:right;">
       <h4>Payment</h4>
-      <div>Payment Mode: ${paymentMode}<br/>Amount Due: <strong>${formatCurrency(totalDue)}</strong></div>
+      <div>Payment Mode: ${esc(order?.payment_method ?? order?.payment ?? "Cash on Delivery")}<br/>Amount Due: <strong>${formatCurrency(totalDue)}</strong></div>
     </div>
   </div>
 
@@ -550,7 +354,6 @@ const buildInvoiceHTML = (order) => {
     <thead>
       <tr>
         <th>Item</th>
-        <th>Description</th>
         <th>Color</th>
         <th>Size</th>
         <th style="text-align:center">Qty</th>
@@ -567,7 +370,7 @@ const buildInvoiceHTML = (order) => {
     <tr>
       <td style="border:none;"></td>
       <td style="border:none;" class="total">Subtotal</td>
-      <td style="border:none;" class="amount">${formatCurrency(subtotal)}</td>
+      <td style="border:none;" class="amount">${formatCurrency(subtotalForDisplay)}</td>
     </tr>
     <tr>
       <td style="border:none;"></td>
@@ -575,7 +378,8 @@ const buildInvoiceHTML = (order) => {
       <td style="border:none;" class="amount">${formatCurrency(shipping)}</td>
     </tr>
     ${tax ? `<tr><td style="border:none;"></td><td style="border:none;" class="total">Tax</td><td style="border:none;" class="amount">${formatCurrency(tax)}</td></tr>` : ""}
-    ${discount ? `<tr><td style="border:none;"></td><td style="border:none;" class="total">Discount</td><td style="border:none;" class="amount">-${formatCurrency(discount)}</td></tr>` : ""}
+    ${couponRowHtml}
+    ${discount && couponDiscount <= 0 ? `<tr><td style="border:none;"></td><td style="border:none;" class="total">Discount</td><td style="border:none;" class="amount">-${formatCurrency(discount)}</td></tr>` : ""}
     <tr>
       <td style="border:none;"></td>
       <td style="border:none;" class="total">Total Due</td>
@@ -593,7 +397,6 @@ const buildInvoiceHTML = (order) => {
 
   return html;
 };
-
 
 /* ---------- main component ---------- */
 export default function OrdersSection() {
@@ -953,78 +756,77 @@ export default function OrdersSection() {
     }
   };
 
-// download invoice: use client-side PDF generation (html2canvas + jspdf)
-const downloadInvoice = async (order) => {
-  if (!order?.id) return;
+  // download invoice: use client-side PDF generation (html2canvas + jspdf)
+  const downloadInvoice = async (order) => {
+    if (!order?.id) return;
 
-  try {
-    // Build HTML invoice using template builder
-    const html = buildInvoiceHTML(order);
-
-    // Create hidden container to render HTML
-    const container = document.createElement("div");
-    container.style.position = "fixed";
-    container.style.left = "-9999px";
-    container.style.top = "0";
-    container.style.width = "210mm"; // A4 width for consistent rendering
-    container.style.background = "#ffffff"; // ✅ force solid white background
-    container.style.color = "#000000"; // ✅ ensure text is crisp black
-    container.style.padding = "10mm"; // optional: padding for cleaner layout
-    container.innerHTML = html;
-    document.body.appendChild(container);
-
-    // Dynamically import html2canvas and jspdf (requires you to install them)
-    let html2canvasModule, jsPDFModule;
     try {
-      html2canvasModule = (await import("html2canvas")).default;
-      jsPDFModule = await import("jspdf");
-    } catch (e) {
-      // Cleanup container
+      // Build HTML invoice using template builder
+      const html = buildInvoiceHTML(order);
+
+      // Create hidden container to render HTML
+      const container = document.createElement("div");
+      container.style.position = "fixed";
+      container.style.left = "-9999px";
+      container.style.top = "0";
+      container.style.width = "210mm"; // A4 width for consistent rendering
+      container.style.background = "#ffffff"; // force solid white background
+      container.style.color = "#000000"; // ensure text is crisp black
+      container.style.padding = "10mm"; // optional: padding for cleaner layout
+      container.innerHTML = html;
+      document.body.appendChild(container);
+
+      // Dynamically import html2canvas and jspdf (requires you to install them)
+      let html2canvasModule, jsPDFModule;
+      try {
+        html2canvasModule = (await import("html2canvas")).default;
+        jsPDFModule = await import("jspdf");
+      } catch (e) {
+        // Cleanup container
+        document.body.removeChild(container);
+        console.error("Missing dependencies for PDF generation:", e);
+        alert(
+          "To download PDF invoices you need to install dependencies:\n\nnpm install html2canvas jspdf\n\nThen reload the app."
+        );
+        return;
+      }
+
+      // Render container to canvas (useCORS to attempt cross-origin images)
+      const canvas = await html2canvasModule(container, {
+        scale: 2, // increase if you want sharper text (2–3 is fine)
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+        backgroundColor: "#ffffff", // fixes transparency issue
+      });
+
+      // Convert canvas to image and add to PDF
+      const imgData = canvas.toDataURL("image/png");
+
+      const { jsPDF } = jsPDFModule;
+      const pdf = new jsPDF("p", "mm", "a4");
+
+      const pdfWidth = 210; // mm
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      const pdfHeight = (imgHeight * pdfWidth) / imgWidth;
+
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`invoice-${order.id}.pdf`);
+
+      // Cleanup
       document.body.removeChild(container);
-      console.error("Missing dependencies for PDF generation:", e);
-      alert(
-        "To download PDF invoices you need to install dependencies:\n\nnpm install html2canvas jspdf\n\nThen reload the app."
-      );
-      return;
+    } catch (err) {
+      console.error("Invoice PDF generation error:", err);
+      alert("Unable to generate invoice PDF. See console for details.");
     }
-
-    // Render container to canvas (useCORS to attempt cross-origin images)
-    const canvas = await html2canvasModule(container, {
-      scale: 2, // increase if you want sharper text (2–3 is fine)
-      useCORS: true,
-      allowTaint: false,
-      logging: false,
-      backgroundColor: "#ffffff", // ✅ fixes transparency issue
-    });
-
-    // Convert canvas to image and add to PDF
-    const imgData = canvas.toDataURL("image/png");
-
-    const { jsPDF } = jsPDFModule;
-    const pdf = new jsPDF("p", "mm", "a4");
-
-    const pdfWidth = 210; // mm
-    const imgWidth = canvas.width;
-    const imgHeight = canvas.height;
-    const pdfHeight = (imgHeight * pdfWidth) / imgWidth;
-
-    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-    pdf.save(`invoice-${order.id}.pdf`);
-
-    // Cleanup
-    document.body.removeChild(container);
-  } catch (err) {
-    console.error("Invoice PDF generation error:", err);
-    alert("Unable to generate invoice PDF. See console for details.");
-  }
-};
-
+  };
 
   // Render
   return (
     <div className="p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header + Filters */}
+        {/* Header + Filters */} 
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-6">
           <div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">My Orders</h2>
@@ -1312,16 +1114,22 @@ const downloadInvoice = async (order) => {
                 {/* Delivery */}
                 <div className="mt-6">
                   <h4 className="text-sm font-semibold mb-2">Delivery</h4>
-                  <div className="text-sm text-gray-600 dark:text-gray-300">
-                    {selectedOrder.shipping_address?.name ||
-                      selectedOrder.customer_name ||
-                      "—"}
+                  <div className="text-sm text-gray-600 dark:text-gray-300 font-medium">
+                    {selectedOrder.shipping_address?.name || selectedOrder.customer_name || "—"}
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
-                    {selectedOrder.shipping_address?.line1 ||
-                      selectedOrder.shipping_address?.address ||
-                      selectedOrder.address ||
-                      "—"}
+                    {/* show fully formatted address */}
+                    {selectedOrder.shipping_address
+                      ? (
+                        <>
+                          {selectedOrder.shipping_address.line1 || ""}{selectedOrder.shipping_address.line2 ? `, ${selectedOrder.shipping_address.line2}` : ""}<br />
+                          {(selectedOrder.shipping_address.city ? `${selectedOrder.shipping_address.city}, ` : "")}{selectedOrder.shipping_address.state || ""}{" "}{selectedOrder.shipping_address.pincode || ""}<br />
+                          {selectedOrder.shipping_address.country || ""}<br />
+                          {selectedOrder.shipping_address.phone ? `Phone: ${selectedOrder.shipping_address.phone}` : ""}
+                        </>
+                      )
+                      : (selectedOrder.shipping_address?.address || "—")
+                    }
                   </div>
                 </div>
 
