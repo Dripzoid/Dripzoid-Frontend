@@ -62,45 +62,64 @@ export default function CheckoutPage() {
 
     if (!token) return;
 
-    const fetchSaved = async () => {
-      try {
-        const aRes = await fetch(`${API_BASE}/api/addresses`, { headers: { Authorization: `Bearer ${token}` } });
-        if (aRes.ok) {
-          const addresses = await aRes.json();
-          if (Array.isArray(addresses)) {
-            const mapped = addresses.map((a) => ({
-              ...a,
-              name: a.label || a.name || `${a.line1 || ""}${a.line2 ? ", " + a.line2 : ""}`,
-              address: a.line1 ? `${a.line1}${a.line2 ? ", " + a.line2 : ""}` : a.address || "",
-            }));
-            setSavedAddresses(mapped);
-            const def = mapped.find((x) => x.is_default);
-            if (def) {
-              setShipping({
-                name: def.label || def.name || "",
-                address: def.line1 ? `${def.line1}${def.line2 ? ", " + def.line2 : ""}` : def.address || "",
-                phone: def.phone || "",
-                pincode: def.pincode || "",
-                state: def.state || "",
-                country: def.country || "India",
-              });
-            }
-          }
-        }
+   const fetchSaved = async () => {
+  try {
+    // Fetch addresses
+    const aRes = await fetch(`${API_BASE}/api/addresses`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-        const pRes = await fetch(`${API_BASE}/api/payments`, { headers: { Authorization: `Bearer ${token}` } });
-        if (pRes.ok) {
-          const payments = await pRes.json();
-          if (Array.isArray(payments)) setSavedPayments(payments);
+    if (aRes.ok) {
+      const addresses = await aRes.json();
+      if (Array.isArray(addresses)) {
+        const mapped = addresses.map((a) => ({
+          id: a.id ?? null,
+          label: a.label ?? null,
+          line1: a.line1 ?? null,
+          line2: a.line2 ?? null,
+          city: a.city ?? null,
+          state: a.state ?? null,
+          pincode: a.pincode ?? null,
+          country: a.country ?? "India",
+          phone: a.phone ?? null,
+        }));
+
+        setSavedAddresses(mapped);
+
+        // Find default address
+        const def = mapped.find((x) => x.is_default);
+        if (def) {
+          setShipping({
+            id: def.id,
+            label: def.label,
+            line1: def.line1,
+            line2: def.line2,
+            city: def.city,
+            state: def.state,
+            pincode: def.pincode,
+            country: def.country ?? "India",
+            phone: def.phone,
+          });
         }
-      } catch (e) {
-        console.error("Failed to fetch saved addresses/payments:", e);
       }
-    };
+    }
 
-    fetchSaved();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+    // Fetch payments
+    const pRes = await fetch(`${API_BASE}/api/payments`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (pRes.ok) {
+      const payments = await pRes.json();
+      if (Array.isArray(payments)) setSavedPayments(payments);
+    }
+  } catch (e) {
+    console.error("Failed to fetch saved addresses/payments:", e);
+  }
+};
+
+fetchSaved();
+    }, [token]);
+
 
   // --- NORMALIZATION ---
   // Ensure selectedColor/selectedSize/variantId are available at top-level of each checkout item
