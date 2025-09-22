@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Search,
@@ -9,14 +9,8 @@ import {
   Settings,
   Check,
   X,
-  ChevronDown,
-  Calendar,
-  Zap,
-  Shuffle,
   Activity,
   BarChart2,
-  Sun,
-  Moon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -30,16 +24,10 @@ import {
 
 /**
  * CouponManager
- * - Single-file React component for admin coupon management
- * - Tailwind-driven UI with black & white design and dark/light support
- * - Features: list, create/edit modal, bulk actions, import/export CSV, generator,
- *   filters, analytics chart, preview, soft-delete, audit notes (local history)
- * - Uses localStorage (coupons_v1) as mock persistence. Replace persistence
- *   functions with real API calls when integrating.
- *
- * Usage:
- * - Drop this file into your admin React app and import <CouponManager />
- * - Tailwind configured in project + dark mode class strategy
+ * - Updated UI & Tailwind utility classes for better contrast and accessibility
+ * - Removed local theme toggle (assumes global theme toggle in nav using `dark` class)
+ * - Centralized button/input classes, improved focus states, hover states, and
+ *   action affordances (active toggle is rendered as a visible button)
  */
 
 const STORAGE_KEY = "coupons_v1";
@@ -72,7 +60,7 @@ function loadFromStorage(key, fallback) {
 function generateCode({ prefix = "", length = 6, pattern = "alnum" } = {}) {
   const alph = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   const nums = "0123456789";
-  const pool = (pattern === "alpha") ? alph : (pattern === "num") ? nums : (alph + nums);
+  const pool = pattern === "alpha" ? alph : pattern === "num" ? nums : alph + nums;
   let s = "";
   for (let i = 0; i < length; i++) s += pool[Math.floor(Math.random() * pool.length)];
   return (prefix ? `${prefix}-` : "") + s;
@@ -138,7 +126,23 @@ export default function CouponManager() {
   const perPage = 10;
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [theme, setTheme] = useState(() => document.documentElement.classList.contains("dark") ? "dark" : "light");
+
+  // Centralized, modern Tailwind classes for consistent UX
+  const inputCls =
+    "w-full px-3 py-2 rounded-lg border text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 transition-shadow shadow-sm dark:placeholder-gray-500" +
+    " border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 focus:ring-gray-300 dark:focus:ring-gray-700";
+
+  const selectCls =
+    "px-3 py-2 rounded-lg border text-sm transition shadow-sm border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300 dark:focus:ring-gray-700";
+
+  const btnPrimary =
+    "inline-flex items-center gap-2 bg-black text-white px-4 py-2 rounded-lg shadow-md hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300 dark:focus:ring-gray-700";
+
+  const btnGhost =
+    "inline-flex items-center gap-2 bg-transparent px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200 dark:focus:ring-gray-700";
+
+  const actionBtn =
+    "p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200 dark:focus:ring-gray-700";
 
   useEffect(() => {
     saveToStorage(STORAGE_KEY, coupons);
@@ -147,10 +151,6 @@ export default function CouponManager() {
   useEffect(() => {
     saveToStorage(AUDIT_KEY, audit);
   }, [audit]);
-
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
-  }, [theme]);
 
   /* Derived */
   const filtered = useMemo(() => {
@@ -319,7 +319,6 @@ export default function CouponManager() {
 
   /* ---------- Mock analytics ---------- */
   const analyticsData = useMemo(() => {
-    // produce last 14 days redemption data
     const days = 14;
     const arr = [];
     for (let i = days - 1; i >= 0; i--) {
@@ -338,22 +337,16 @@ export default function CouponManager() {
           <h1 className="text-2xl font-semibold">Coupon Management</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">Create, edit and analyze discount coupons</p>
         </div>
+
         <div className="flex items-center gap-3">
-          <button
-            title="Toggle theme"
-            onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-            className="p-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 hover:scale-105 transition-transform"
-          >
-            {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
           <div className="flex gap-2">
-            <button onClick={openCreate} className="btn-primary inline-flex items-center gap-2">
+            <button onClick={openCreate} className={btnPrimary} aria-label="Create coupon">
               <Plus size={16} /> Create coupon
             </button>
             <div className="relative inline-flex">
               <button
                 onClick={() => exportCSV(filtered)}
-                className="btn-ghost inline-flex items-center gap-2"
+                className={btnGhost}
                 title="Export filtered coupons"
               >
                 <Download size={16} /> Export
@@ -368,32 +361,24 @@ export default function CouponManager() {
         <div className="col-span-1 space-y-4">
           <div className="p-4 rounded-2xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
             <div className="flex items-center gap-3">
-              <Search size={16} />
+              <Search size={16} className="text-gray-500" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search by code or description"
-                className="bg-transparent outline-none flex-1 text-sm"
+                className="bg-transparent outline-none flex-1 text-sm placeholder-gray-500 dark:placeholder-gray-400"
               />
               <button onClick={clearFilters} className="text-sm text-gray-500 dark:text-gray-400">
                 Clear
               </button>
             </div>
             <div className="mt-3 flex gap-2 flex-wrap">
-              <select
-                value={filterActive}
-                onChange={(e) => setFilterActive(e.target.value)}
-                className="px-3 py-2 rounded-md bg-white dark:bg-black border border-gray-200 dark:border-gray-700 text-sm"
-              >
+              <select value={filterActive} onChange={(e) => setFilterActive(e.target.value)} className={selectCls}>
                 <option value="all">All status</option>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
-              <select
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value)}
-                className="px-3 py-2 rounded-md bg-white dark:bg-black border border-gray-200 dark:border-gray-700 text-sm"
-              >
+              <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className={selectCls}>
                 <option value="all">All types</option>
                 <option value="percentage">Percentage</option>
                 <option value="fixed">Fixed amount</option>
@@ -406,7 +391,7 @@ export default function CouponManager() {
                   file.onchange = (e) => importCSV(e.target.files[0]);
                   file.click();
                 }}
-                className="px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 text-sm"
+                className="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm bg-white dark:bg-gray-900"
               >
                 Import CSV
               </button>
@@ -465,26 +450,23 @@ export default function CouponManager() {
               </div>
 
               <div className="flex items-center gap-2">
-                <select
-                  onChange={(e) => bulkAction(e.target.value)}
-                  className="px-3 py-2 rounded-md bg-white dark:bg-black border border-gray-200 dark:border-gray-700 text-sm"
-                >
+                <select onChange={(e) => bulkAction(e.target.value)} className={selectCls}>
                   <option>Bulk actions</option>
                   <option value="enable">Enable</option>
                   <option value="disable">Disable</option>
                   <option value="delete">Delete</option>
                 </select>
-                <button onClick={() => exportCSV(Array.from(selected).length ? coupons.filter((c) => selected.has(c.id)) : coupons)} className="btn-ghost inline-flex items-center gap-2">
+                <button onClick={() => exportCSV(Array.from(selected).length ? coupons.filter((c) => selected.has(c.id)) : coupons)} className={btnGhost}>
                   <Download size={16} /> Export
                 </button>
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-md">
               <table className="w-full table-auto border-collapse">
                 <thead>
                   <tr className="text-left text-sm text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800">
-                    <th className="py-3 pl-1 w-6"><input type="checkbox" checked={pageData.every((c) => selected.has(c.id)) && pageData.length > 0} onChange={(e) => {
+                    <th className="py-3 pl-1 w-6"><input type="checkbox" aria-label="Select page" checked={pageData.every((c) => selected.has(c.id)) && pageData.length > 0} onChange={(e) => {
                       if (e.target.checked) {
                         const next = new Set(selected);
                         pageData.forEach((c) => next.add(c.id));
@@ -505,33 +487,37 @@ export default function CouponManager() {
                 </thead>
                 <tbody>
                   {pageData.map((c) => (
-                    <tr key={c.id} className="border-b border-gray-100 dark:border-gray-800">
-                      <td className="py-3 pl-1"><input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleSelect(c.id)} /></td>
+                    <tr key={c.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                      <td className="py-3 pl-1"><input type="checkbox" aria-label={`Select ${c.code}`} checked={selected.has(c.id)} onChange={() => toggleSelect(c.id)} /></td>
                       <td className="py-3">
                         <div className="font-medium">{c.code}</div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">{c.metadata?.description || "—"}</div>
                       </td>
-                      <td className="py-3 text-sm">{c.type}</td>
+                      <td className="py-3 text-sm capitalize">{c.type}</td>
                       <td className="py-3 text-sm">{c.type === "percentage" ? `${c.amount}%` : `₹${c.amount}`}</td>
                       <td className="py-3 text-sm">{c.used}/{c.usage_limit || "—"}</td>
                       <td className="py-3 text-sm">
-                        <div className={`inline-flex items-center gap-2 px-2 py-1 rounded-full text-xs ${c.active ? "bg-green-100 text-green-800 dark:bg-green-900/30" : "bg-gray-100 text-gray-600 dark:bg-gray-800"}`}>
+                        <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium ${c.active ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-800/30" : "bg-gray-100 text-gray-600 dark:bg-gray-800"}`}>
                           {c.active ? <Check size={12} /> : <X size={12} />}
                           <span>{c.active ? "Active" : "Inactive"}</span>
                         </div>
                       </td>
                       <td className="py-3">
                         <div className="flex items-center gap-2">
-                          <button onClick={() => { navigator.clipboard.writeText(c.code); pushAudit(c.id, `Copied code ${c.code}`); }} className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
+                          <button onClick={() => { navigator.clipboard.writeText(c.code); pushAudit(c.id, `Copied code ${c.code}`); }} className={actionBtn} title="Copy code">
                             <Copy size={14} />
                           </button>
-                          <button onClick={() => openEdit(c)} className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
+
+                          <button onClick={() => openEdit(c)} className={actionBtn} title="Edit coupon">
                             <Edit3 size={14} />
                           </button>
-                          <button onClick={() => toggleActive(c.id)} className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800">
-                            <Settings size={14} />
+
+                          {/* Active toggle presented as a clear button for UX */}
+                          <button onClick={() => toggleActive(c.id)} className={`px-3 py-1 rounded-full text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 ${c.active ? "bg-emerald-700 text-white dark:bg-emerald-600" : "bg-gray-100 text-gray-700 dark:bg-gray-800"}`} title={c.active ? "Disable" : "Enable"}>
+                            {c.active ? "Enabled" : "Enable"}
                           </button>
-                          <button onClick={() => softDelete(c.id)} className="p-2 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20">
+
+                          <button onClick={() => softDelete(c.id)} className={`${actionBtn} text-red-600`} title="Delete coupon">
                             <Trash2 size={14} />
                           </button>
                         </div>
@@ -572,7 +558,7 @@ export default function CouponManager() {
             <div className="space-y-2 text-sm text-gray-500 dark:text-gray-400 max-h-48 overflow-y-auto">
               {audit.map((a) => (
                 <div key={a.id} className="flex items-start gap-2">
-                  <div className="text-xs w-24 text-gray-400">{a.at.slice(0, 19).replace("T", " ")}</div>
+                  <div className="text-xs w-28 text-gray-400">{a.at.slice(0, 19).replace("T", " ")}</div>
                   <div>{a.message}</div>
                 </div>
               ))}
@@ -586,11 +572,7 @@ export default function CouponManager() {
       <AnimatePresence>
         {showModal && (
           <Modal onClose={() => setShowModal(false)}>
-            <CouponForm
-              editing={editing}
-              onCancel={() => setShowModal(false)}
-              onSave={saveCoupon}
-            />
+            <CouponForm editing={editing} onCancel={() => setShowModal(false)} onSave={saveCoupon} />
           </Modal>
         )}
       </AnimatePresence>
@@ -602,14 +584,9 @@ export default function CouponManager() {
 
 function Modal({ children, onClose }) {
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-6"
-    >
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center p-6">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <motion.div initial={{ y: 20 }} animate={{ y: 0 }} exit={{ y: 20 }} className="relative w-full max-w-2xl bg-white dark:bg-black border border-gray-100 dark:border-gray-800 rounded-2xl p-6">
+      <motion.div initial={{ y: 20 }} animate={{ y: 0 }} exit={{ y: 20 }} className="relative w-full max-w-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl p-6 shadow-xl">
         {children}
       </motion.div>
     </motion.div>
@@ -671,11 +648,11 @@ function CouponForm({ editing, onCancel, onSave }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
           <label className="text-sm">Code</label>
-          <input value={code} onChange={(e) => setCode(e.target.value)} className="w-full px-3 py-2 rounded-md border bg-white dark:bg-black" />
+          <input value={code} onChange={(e) => setCode(e.target.value)} className={inputCls} />
         </div>
         <div>
           <label className="text-sm">Type</label>
-          <select value={type} onChange={(e) => setType(e.target.value)} className="w-full px-3 py-2 rounded-md border bg-white dark:bg-black">
+          <select value={type} onChange={(e) => setType(e.target.value)} className={selectCls}>
             <option value="percentage">Percentage</option>
             <option value="fixed">Fixed amount</option>
           </select>
@@ -683,22 +660,22 @@ function CouponForm({ editing, onCancel, onSave }) {
 
         <div>
           <label className="text-sm">Amount</label>
-          <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full px-3 py-2 rounded-md border bg-white dark:bg-black" />
+          <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className={inputCls} />
         </div>
 
         <div>
           <label className="text-sm">Minimum purchase</label>
-          <input type="number" value={min} onChange={(e) => setMin(e.target.value)} className="w-full px-3 py-2 rounded-md border bg-white dark:bg-black" />
+          <input type="number" value={min} onChange={(e) => setMin(e.target.value)} className={inputCls} />
         </div>
 
         <div>
           <label className="text-sm">Usage limit</label>
-          <input type="number" value={limit} onChange={(e) => setLimit(e.target.value)} className="w-full px-3 py-2 rounded-md border bg-white dark:bg-black" />
+          <input type="number" value={limit} onChange={(e) => setLimit(e.target.value)} className={inputCls} />
         </div>
 
         <div>
           <label className="text-sm">Applies to</label>
-          <select value={appliesTo} onChange={(e) => setAppliesTo(e.target.value)} className="w-full px-3 py-2 rounded-md border bg-white dark:bg-black">
+          <select value={appliesTo} onChange={(e) => setAppliesTo(e.target.value)} className={selectCls}>
             <option value="all">All products</option>
             <option value="shipping">Shipping</option>
             <option value="category">Category</option>
@@ -708,33 +685,33 @@ function CouponForm({ editing, onCancel, onSave }) {
 
         <div>
           <label className="text-sm">Starts</label>
-          <input type="date" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} className="w-full px-3 py-2 rounded-md border bg-white dark:bg-black" />
+          <input type="date" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} className={inputCls} />
         </div>
 
         <div>
           <label className="text-sm">Ends</label>
-          <input type="date" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} className="w-full px-3 py-2 rounded-md border bg-white dark:bg-black" />
+          <input type="date" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} className={inputCls} />
         </div>
 
         <div className="col-span-1 md:col-span-2">
           <label className="text-sm">Description</label>
-          <input value={desc} onChange={(e) => setDesc(e.target.value)} className="w-full px-3 py-2 rounded-md border bg-white dark:bg-black" />
+          <input value={desc} onChange={(e) => setDesc(e.target.value)} className={inputCls} />
         </div>
 
-        <div className="col-span-1 md:col-span-2 p-3 rounded-md border bg-white dark:bg-black">
+        <div className="col-span-1 md:col-span-2 p-3 rounded-lg border bg-white dark:bg-gray-900">
           <div className="flex items-center justify-between mb-2">
             <div className="text-sm font-medium">Generator</div>
             <div className="text-xs text-gray-500 dark:text-gray-400">Quickly create a randomized code</div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-            <input placeholder="prefix (eg: SALE)" value={prefix} onChange={(e) => setPrefix(e.target.value)} className="px-3 py-2 rounded-md border bg-white dark:bg-black" />
-            <input type="number" value={length} onChange={(e) => setLength(e.target.value)} className="px-3 py-2 rounded-md border bg-white dark:bg-black" />
-            <select value={pattern} onChange={(e) => setPattern(e.target.value)} className="px-3 py-2 rounded-md border bg-white dark:bg-black">
+            <input placeholder="prefix (eg: SALE)" value={prefix} onChange={(e) => setPrefix(e.target.value)} className={inputCls} />
+            <input type="number" value={length} onChange={(e) => setLength(e.target.value)} className={inputCls} />
+            <select value={pattern} onChange={(e) => setPattern(e.target.value)} className={selectCls}>
               <option value="alnum">AlphaNumeric</option>
               <option value="alpha">Alphabetic</option>
               <option value="num">Numeric</option>
             </select>
-            <button type="button" onClick={handleGenerate} className="px-3 py-2 rounded-md border">Generate</button>
+            <button type="button" onClick={handleGenerate} className="px-3 py-2 rounded-lg border">Generate</button>
           </div>
         </div>
       </div>
@@ -746,13 +723,5 @@ function CouponForm({ editing, onCancel, onSave }) {
     </form>
   );
 }
-
-/* ----------------- Styles (tailwind utilities & small helpers) ----------------- */
-
-/* Note: we prefer utility classes. Below are a couple of helper classes you might want to add to your global CSS
-
-.btn-primary { @apply inline-flex items-center gap-2 bg-black text-white px-3 py-2 rounded-lg } 
-.btn-ghost { @apply inline-flex items-center gap-2 bg-transparent px-3 py-2 rounded-lg }
-*/
 
 /* ----------------- End of file ----------------- */
