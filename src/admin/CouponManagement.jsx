@@ -6,7 +6,6 @@ import {
   Edit3,
   Download,
   Copy,
-  Settings,
   Check,
   X,
   Activity,
@@ -69,12 +68,18 @@ function generateCode({ prefix = "", length = 6, pattern = "alnum" } = {}) {
 function csvEscape(val) {
   if (val == null) return "";
   const s = String(val);
-  if (s.includes(",") || s.includes("
-") || s.includes('"')) {
+  if (s.includes(",") || s.includes("\n") || s.includes('"')) {
     return '"' + s.replace(/"/g, '""') + '"';
   }
   return s;
 }
+
+/* ---------- Shared style helpers (module scope so Form + Manager can use them) ---------- */
+const inputCls =
+  "w-full px-3 py-2 rounded-lg border text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 transition-shadow shadow-sm dark:placeholder-gray-500 border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 focus:ring-gray-300 dark:focus:ring-gray-700";
+
+const selectCls =
+  "px-3 py-2 rounded-lg border text-sm transition shadow-sm border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300 dark:focus:ring-gray-700";
 
 /* ---------- Mock sample data on first load ---------- */
 function seedCoupons() {
@@ -128,14 +133,7 @@ export default function CouponManager() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
 
-  // Centralized, modern Tailwind classes for consistent UX
-  const inputCls =
-    "w-full px-3 py-2 rounded-lg border text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 transition-shadow shadow-sm dark:placeholder-gray-500" +
-    " border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 focus:ring-gray-300 dark:focus:ring-gray-700";
-
-  const selectCls =
-    "px-3 py-2 rounded-lg border text-sm transition shadow-sm border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300 dark:focus:ring-gray-700";
-
+  // Buttons only used here (kept inside component)
   const btnPrimary =
     "inline-flex items-center gap-2 bg-black text-white px-4 py-2 rounded-lg shadow-md hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300 dark:focus:ring-gray-700";
 
@@ -254,8 +252,7 @@ export default function CouponManager() {
           .join(",")
       );
     }
-    const blob = new Blob([rows.join("
-")], { type: "text/csv" });
+    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -269,9 +266,7 @@ export default function CouponManager() {
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target.result;
-      const lines = text.split(/
-?
-/).filter(Boolean);
+      const lines = text.split(/\r?\n/).filter(Boolean);
       if (lines.length < 2) return;
       const headers = lines[0].split(",").map((h) => h.trim());
       const parsed = lines.slice(1).map((line) => {
