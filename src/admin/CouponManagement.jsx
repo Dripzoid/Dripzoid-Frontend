@@ -317,6 +317,20 @@ export default function CouponManager() {
     setFilterType("all");
   }
 
+  // Input / control classes — centralized for consistency & accessibility
+const inputCls =
+  "w-full px-3 py-2 rounded-md border text-sm placeholder-gray-400 " +
+  "focus:outline-none focus:ring-2 focus:ring-offset-0 transition " +
+  "border-gray-200 bg-gray-50 text-gray-900 " +
+  "dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 " +
+  "dark:placeholder-gray-500 dark:focus:ring-gray-700 focus:ring-gray-300";
+
+const selectCls =
+  "px-3 py-2 rounded-md border text-sm transition " +
+  "border-gray-200 bg-white text-gray-900 " +
+  "dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100";
+
+
   /* ---------- Mock analytics ---------- */
   const analyticsData = useMemo(() => {
     const days = 14;
