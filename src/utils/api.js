@@ -36,6 +36,9 @@ async function request(path, opts = {}, auth = false) {
     throw err;
   }
 
+  // Return blob if requested
+  if (opts.isBlob) return await res.blob();
+
   try {
     return await res.json();
   } catch {
@@ -44,11 +47,11 @@ async function request(path, opts = {}, auth = false) {
 }
 
 export default {
-  get: (path, { params = {}, signal } = {}, auth = false) => {
+  get: (path, { params = {}, signal } = {}, auth = false, isBlob = false) => {
     const qs = new URLSearchParams(params).toString();
     return request(
       `${path}${qs ? `?${qs}` : ""}`,
-      { method: "GET", signal },
+      { method: "GET", signal, isBlob },
       auth
     );
   },
