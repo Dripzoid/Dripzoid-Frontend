@@ -82,24 +82,40 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range, date, month, week]);
 
-  const handleExportData = async () => {
-    try {
-      const res = await api.get("/api/admin/data-export", {}, true, { responseType: "blob" });
-      const blob = new Blob([res], { type: "application/octet-stream" });
-      const url = window.URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `dripzoid-backup-${new Date().toISOString().split("T")[0]}.db`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("Export data failed:", err);
-      alert("Failed to export database file");
+const handleExportData = async () => {
+  try {
+    // Get the token from localStorage (or wherever you store it)
+    const token = localStorage.getItem("token");
+    if (!token) {
+      alert("You are not logged in.");
+      return;
     }
-  };
+
+    // Make the API request with Authorization header and responseType 'blob'
+    const res = await api.get("/api/admin/data-export", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      responseType: "blob",
+    });
+
+    // Create a Blob from the response
+    const blob = new Blob([res.data || res], { type: "application/octet-stream" });
+    const url = window.URL.createObjectURL(blob);
+
+    // Trigger download
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `dripzoid-backup-${new Date().toISOString().split("T")[0]}.db`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error("Export data failed:", err);
+    alert("Failed to export database file");
+  }
+};
 
   const statCards = [
     { label: "Total Users", value: stats.totalUsers || 0, icon: Users, color: "bg-blue-500" },
