@@ -84,26 +84,11 @@ export default function Dashboard() {
 
 const handleExportData = async () => {
   try {
-    // Get the token from localStorage (or wherever you store it)
-    const token = localStorage.getItem("token");
-    if (!token) {
-      alert("You are not logged in.");
-      return;
-    }
+    // Request .db file with auth token and blob response
+    const blob = await api.get("/api/admin/data-export", {}, true, true);
 
-    // Make the API request with Authorization header and responseType 'blob'
-    const res = await api.get("/api/admin/data-export", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      responseType: "blob",
-    });
-
-    // Create a Blob from the response
-    const blob = new Blob([res.data || res], { type: "application/octet-stream" });
+    // Create a URL and trigger download
     const url = window.URL.createObjectURL(blob);
-
-    // Trigger download
     const a = document.createElement("a");
     a.href = url;
     a.download = `dripzoid-backup-${new Date().toISOString().split("T")[0]}.db`;
@@ -111,11 +96,13 @@ const handleExportData = async () => {
     a.click();
     a.remove();
     window.URL.revokeObjectURL(url);
+
   } catch (err) {
     console.error("Export data failed:", err);
     alert("Failed to export database file");
   }
 };
+
 
   const statCards = [
     { label: "Total Users", value: stats.totalUsers || 0, icon: Users, color: "bg-blue-500" },
