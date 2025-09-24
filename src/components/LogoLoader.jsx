@@ -3,17 +3,24 @@ import React from "react";
 const LogoBorderLoader = () => {
   return (
     <>
-      <div className="logo-loader"></div>
+      <div className="logo-loader-wrapper">
+        <div className="logo-loader"></div>
+      </div>
 
       <style>{`
+        .logo-loader-wrapper {
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          z-index: 9999;
+        }
+
         .logo-loader {
-          width: 160px;
-          height: 160px;
-
-          /* Use logo as mask */
-          -webkit-mask: url("https://i.ibb.co/sdD2z336/logo.png") no-repeat center/contain;
-          mask: url("https://i.ibb.co/sdD2z336/logo.png") no-repeat center/contain;
-
+          width: 80px;  /* smaller size */
+          height: 80px;
+          -webkit-mask: url("https://res.cloudinary.com/dvid0uzwo/image/upload/v1758687457/my_project/rwo0kukija1ny3dxq2am.png") no-repeat center/contain;
+          mask: url("https://res.cloudinary.com/dvid0uzwo/image/upload/v1758687457/my_project/rwo0kukija1ny3dxq2am.png") no-repeat center/contain;
           background: none;
           position: relative;
         }
@@ -22,9 +29,8 @@ const LogoBorderLoader = () => {
           content: "";
           position: absolute;
           inset: 0;
-          -webkit-mask: url("https://i.ibb.co/sdD2z336/logo.png") no-repeat center/contain;
-          mask: url("https://i.ibb.co/sdD2z336/logo.png") no-repeat center/contain;
-
+          -webkit-mask: url("https://res.cloudinary.com/dvid0uzwo/image/upload/v1758687457/my_project/rwo0kukija1ny3dxq2am.png") no-repeat center/contain;
+          mask: url("https://res.cloudinary.com/dvid0uzwo/image/upload/v1758687457/my_project/rwo0kukija1ny3dxq2am.png") no-repeat center/contain;
           background: linear-gradient(
             90deg,
             rgba(255,255,255,0) 20%,
@@ -32,9 +38,7 @@ const LogoBorderLoader = () => {
             rgba(255,255,255,0) 80%
           );
           background-size: 200% 100%;
-
-          /* Only shimmer animation */
-          animation: border-shine 4s infinite linear;
+          animation: border-shine 4s infinite linear; /* slower speed */
         }
 
         @keyframes border-shine {
