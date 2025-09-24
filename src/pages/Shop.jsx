@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import ProductCard from "../components/ProductCard";
 import FilterSidebar from "../components/FiltersSidebar"; // ensure file is named FilterSidebar.jsx
+import LogoBorderLoader from "../components/LogoLoader";
 const API_BASE = process.env.REACT_APP_API_BASE || "";
 
 const MIN = 0;
@@ -22,7 +23,8 @@ const Shop = () => {
   // Products + pagination
   const [products, setProducts] = useState([]);
   const [meta, setMeta] = useState({ total: 0, page: 1, pages: 1, limit: 0 });
-  const [loading, setLoading] = useState(false);
+  // start loading true so loader shows immediately on mount
+  const [loading, setLoading] = useState(true);
 
   const perPageOptions = ["12", "24", "36", "all"];
   const [perPage, setPerPage] = useState("12");
@@ -82,6 +84,10 @@ const Shop = () => {
   // --- Fetch products
   const fetchProducts = async () => {
     setLoading(true);
+
+    // 2s dummy delay to let the loader show (for demo/testing)
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
     try {
       const params = new URLSearchParams();
 
@@ -221,7 +227,10 @@ const Shop = () => {
         </div>
 
         {loading ? (
-          <p>Loading...</p>
+          // centered loader while fetching
+          <div className="flex items-center justify-center w-full h-72">
+            <LogoBorderLoader />
+          </div>
         ) : products.length === 0 ? (
           <p>No products found</p>
         ) : (
