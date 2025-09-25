@@ -150,10 +150,8 @@ function UserViewModal({ user, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <<div
-  className="absolute inset-0 bg-black/40 dark:bg-white/20 backdrop-blur-sm"
-  onClick={onClose}
-/>
+    <div className="absolute inset-0 bg-black/40 dark:bg-white/20 backdrop-blur-sm" onClick={onClose} />
+
 
       <div className="relative z-10 w-full max-w-5xl bg-white dark:bg-[#05111a] rounded-2xl p-6 shadow-2xl border border-gray-300 dark:border-gray-800 max-h-[92vh] overflow-auto text-gray-900 dark:text-gray-100">
         <div className="flex items-start justify-between gap-4">
@@ -324,10 +322,7 @@ function UserEditModal({ user, onClose, onSave }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-     <div
-  className="absolute inset-0 bg-black/40 dark:bg-white/20 backdrop-blur-sm"
-  onClick={onClose}
-/>
+    <div className="absolute inset-0 bg-black/40 dark:bg-white/20 backdrop-blur-sm" onClick={onClose} />
 
       <div className="relative z-10 w-full max-w-xl bg-white dark:bg-[#05111a] rounded-2xl p-6 shadow-2xl border border-gray-300 dark:border-gray-800">
         <div className="flex items-center justify-between mb-4">
