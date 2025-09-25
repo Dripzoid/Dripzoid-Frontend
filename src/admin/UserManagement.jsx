@@ -1,16 +1,15 @@
 /**
  * UserManagement.jsx
  *
- * Backend-integrated version
- * - Fetch /api/users for user list
- * - Fetch /api/admin/stats for top stat cards
- * - Fetch individual user's orders/cart/wishlist for UserViewModal
- * - Edit role/status via PUT /api/users/:id
- * - Delete user via DELETE /api/users/:id
+ * Backend-integrated version (uses REACT_APP_API_BASE)
+ * - All API calls routed through API_BASE (from .env REACT_APP_API_BASE)
+ * - Uses cache: "no-store" for GETs to avoid 304/no-body issues
+ * - Fetch /api/users, /api/admin/stats, /api/admin/orders/user/:id, /api/cart/:id, /api/wishlist/:id
+ * - PUT /api/users/:id for updates, DELETE /api/users/:id for deletion
  *
  * Notes:
- * - Search/sort/pagination remain client-side
- * - Active/inactive badge is derived from recent activity (last 7 days)
+ * - If REACT_APP_API_BASE is not set, falls back to relative paths (e.g. "/api/users")
+ * - No change to UI/styling — just wiring of API base
  */
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -22,6 +21,17 @@ import {
   Box,
   Trash2,
 } from "lucide-react";
+
+/* ===== API BASE helper (reads from .env) ===== */
+const RAW_API_BASE = process.env.REACT_APP_API_BASE || "";
+// normalize: remove trailing slash if present
+const API_BASE = RAW_API_BASE ? RAW_API_BASE.replace(/\/$/, "") : "";
+
+/** helper to build full url; if API_BASE is empty, returns the relative path */
+function buildUrl(path) {
+  // path should start with '/'
+  return API_BASE ? `${API_BASE}${path}` : path;
+}
 
 /* ===== STYLE CONSTANTS ===== */
 const inputCls =
@@ -39,7 +49,7 @@ const btnDark =
 const btnSmallDark =
   `${btnBase} px-3 py-1 text-sm bg-black text-white border border-gray-800 shadow-sm hover:brightness-110 dark:bg-white dark:text-black dark:border-gray-200`;
 const btnSmallWhite =
-  `${btnBase} px-3 py-1 text-sm bg-white text-slate-900 border border-gray-200 shadow-sm hover:brightness-95 dark:bg-gray-700 dark:text-white dark:border-gray-700`;
+  `${btnBase} px-3 py-1 text-sm bg-white text-slate-900 border border-gray-200 shadow-sm hover:brightness-95 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-700`;
 const btnDanger =
   `${btnBase} px-3 py-1 text-sm bg-red-600 text-white border border-red-700 shadow-sm hover:bg-red-700`;
 const btnToggle =
@@ -93,9 +103,9 @@ function UserViewModal({ user, onClose }) {
       setLoading(true);
       try {
         const [ordersRes, cartRes, wishRes] = await Promise.all([
-          fetch(`/api/admin/orders/user/${user.id}`),
-          fetch(`/api/cart/${user.id}`),
-          fetch(`/api/wishlist/${user.id}`),
+          fetch(buildUrl(`/api/admin/orders/user/${user.id}`), { cache: "no-store" }),
+          fetch(buildUrl(`/api/cart/${user.id}`), { cache: "no-store" }),
+          fetch(buildUrl(`/api/wishlist/${user.id}`), { cache: "no-store" }),
         ]);
 
         const [ordersData, cartData, wishData] = await Promise.all([
@@ -270,7 +280,7 @@ function UserEditModal({ user, onClose, onSave }) {
   const save = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`/api/users/${user.id}`, {
+      const res = await fetch(buildUrl(`/api/users/${user.id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role: local.role, status: local.status }),
@@ -349,7 +359,10 @@ export default function UserManagementPanel() {
   async function refreshAll() {
     setLoading(true);
     try {
-      const [usersRes, statsRes] = await Promise.all([fetch("/api/users"), fetch("/api/admin/stats")]);
+      const [usersRes, statsRes] = await Promise.all([
+        fetch(buildUrl("/api/users"), { cache: "no-store" }),
+        fetch(buildUrl("/api/admin/stats"), { cache: "no-store" }),
+      ]);
       const usersData = usersRes.ok ? await usersRes.json() : [];
       const statsData = statsRes.ok ? await statsRes.json() : {};
       setUsers(usersData || []);
@@ -406,7 +419,7 @@ export default function UserManagementPanel() {
   const handleDelete = async (id) => {
     if (!window.confirm("Delete user?")) return;
     try {
-      const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
+      const res = await fetch(buildUrl(`/api/users/${id}`), { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
       setUsers((prev) => prev.filter((u) => u.id !== id));
     } catch (err) {
@@ -422,7 +435,7 @@ export default function UserManagementPanel() {
 
   const handleInlineRoleUpdate = async (id, role) => {
     try {
-      const res = await fetch(`/api/users/${id}`, {
+      const res = await fetch(buildUrl(`/api/users/${id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role }),
