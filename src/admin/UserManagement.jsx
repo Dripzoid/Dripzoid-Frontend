@@ -1,174 +1,271 @@
-/*
-UserManagementPanel.jsx
-Rewritten to match the look-and-feel, conventions and utility constants used in `ProductsAdmin.jsx`.
+/**
+ * UserManagementPanel.jsx
+ *
+ * - Shows only these 6 stats: Total Users, Active Users, Inactive Users,
+ *   Male Users, Female Users, Other Users
+ * - Theme friendly (Tailwind light/dark using `dark:` utilities)
+ * - Orders / Cart / Wishlist are rendered inside the User View Modal **only**
+ *   when their respective tab is clicked
+ * - Browse / Update / Bulk buttons toggle the appropriate sections
+ *
+ * Dependencies:
+ *   react, lucide-react, tailwindcss (dark mode via `class` strategy recommended)
+ */
 
-Features implemented:
-- Top-level stats grid (total, active, inactive, admins etc.) with motion animations
-- Users list with search, pagination, sort, filters and an actions column
-- Admins section showing admin accounts and placeholder admin actions
-- Update Users section with search-by-name/ID, role filter, sort and inline role update
-- User view modal (complete details + six requested stats)
-- User edit modal for updating role/status
-
-Notes:
-- Uses the same Tailwind utility constants as ProductsAdmin.jsx for consistent theming
-- Uses `api` helper (assumes ../utils/api exists and works like ProductsAdmin)
-- Expects endpoints: /api/admin/users (list), /api/admin/users/:id (single), /api/admin/users/:id (PUT), /api/admin/stats (users-related stats). Adjust endpoints if your backend differs.
-- Dark mode and B/W theme styling follow the pattern used in ProductsAdmin.jsx
-*/
-
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import api from "../utils/api";
-import { motion } from "framer-motion";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  Plus,
-  Search,
   Eye,
   Edit,
-  Trash2,
   Users as UsersIcon,
   Shield,
   Key,
+  RefreshCw,
+  Heart,
+  Box,
+  Trash2,
 } from "lucide-react";
 
-/* ======= STYLE CONSTANTS (copied from ProductsAdmin.jsx for consistency) ======= */
+/* ===== STYLE CONSTANTS ===== */
 const inputCls =
-  "w-full p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-black dark:focus:ring-white transition";
-const textareaCls = inputCls + " resize-none";
-const btnPrimaryCls =
-  "px-4 py-2 rounded-lg shadow-sm bg-black text-white dark:bg-white dark:text-black hover:scale-[1.02] transition-transform disabled:opacity-60";
-const btnSecondaryCls =
-  "px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 transition";
-const cardCls =
-  "p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-sm hover:shadow-lg transition";
+  "w-full p-3 rounded-lg border border-gray-300 dark:border-gray-800 bg-white dark:bg-[#0b1220] text-gray-900 dark:text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-0 transition";
+const btnPillWhite =
+  "px-4 py-2 rounded-full bg-white text-black shadow-sm border border-gray-200 hover:brightness-95 transition";
+const btnPillBlack =
+  "px-4 py-2 rounded-full bg-[#0b1220] text-white border border-gray-800 hover:brightness-95 transition";
 
-/* ======= Helpers ======= */
-const normalizeResponse = (res) => {
-  if (!res) return {};
-  if (res.data && typeof res.data === "object") {
-    if (res.data.data || typeof res.data.total !== "undefined") return res.data;
-    return res.data;
-  }
-  return res;
-};
+/* ===== DEMO DATA ===== */
+const DEMO_USERS = [
+  {
+    id: "U1001",
+    name: "Asha Rao",
+    email: "asha.rao@example.com",
+    gender: "Female",
+    role: "customer",
+    status: "active",
+    totalSpend: 1299.5,
+    totalOrders: 14,
+    successfulOrders: 12,
+    cancelledOrders: 1,
+    inProgressOrders: 1,
+    couponSavings: 45.0,
+    createdAt: "2024-09-12",
+    lastActive: "2025-09-20",
+    orders: [
+      { id: "O2001", item: "White T-shirt", amount: 499, status: "Delivered", date: "2025-04-01" },
+      { id: "O2002", item: "Running Shoes", amount: 800, status: "In progress", date: "2025-09-18" },
+    ],
+    cart: [
+      { id: "C1", item: "Blue Jeans", amount: 1200 },
+      { id: "C2", item: "Analog Watch", amount: 2500 },
+    ],
+    wishlist: [
+      { id: "W1", item: "Leather Bag", amount: 999 },
+      { id: "W2", item: "Wireless Headphones", amount: 1999 },
+    ],
+  },
+  {
+    id: "U1002",
+    name: "Ravi Kumar",
+    email: "ravi.kumar@example.com",
+    gender: "Male",
+    role: "admin",
+    status: "active",
+    totalSpend: 2350,
+    totalOrders: 8,
+    successfulOrders: 7,
+    cancelledOrders: 0,
+    inProgressOrders: 1,
+    couponSavings: 120,
+    createdAt: "2023-11-03",
+    lastActive: "2025-09-22",
+    orders: [{ id: "O2101", item: "Office Chair", amount: 2350, status: "Delivered", date: "2025-01-12" }],
+    cart: [],
+    wishlist: [],
+  },
+  {
+    id: "U1003",
+    name: "Priya Sen",
+    email: "priya.sen@example.com",
+    gender: "Female",
+    role: "seller",
+    status: "inactive",
+    totalSpend: 0,
+    totalOrders: 3,
+    successfulOrders: 3,
+    cancelledOrders: 0,
+    inProgressOrders: 0,
+    couponSavings: 0,
+    createdAt: "2022-05-30",
+    lastActive: "2024-12-11",
+    orders: [{ id: "O2201", item: "Handmade Vase", amount: 450, status: "Delivered", date: "2024-03-05" }],
+    cart: [{ id: "C3", item: "Artist Brushes", amount: 350 }],
+    wishlist: [{ id: "W3", item: "Studio Lamp", amount: 1500 }],
+  },
+];
 
+/* ===== Helper ===== */
 const fmt = (n) => (typeof n === "number" ? n.toLocaleString() : n);
 
-/* ======= User View Modal ======= */
+/* ===== User View Modal (orders/cart/wishlist only when tab active) ===== */
 function UserViewModal({ user, onClose }) {
+  const [tab, setTab] = useState("orders");
+  useEffect(() => setTab("orders"), [user]);
+
   if (!user) return null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-3xl bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-2xl border border-gray-100 dark:border-gray-800 max-h-[92vh] overflow-auto">
-        <div className="flex items-start justify-between">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-5xl bg-white dark:bg-[#05111a] rounded-2xl p-6 shadow-2xl border border-gray-300 dark:border-gray-800 max-h-[92vh] overflow-auto text-gray-900 dark:text-gray-100">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-xl font-semibold">{user.name}</div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">{user.email}</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">Joined: {user.createdAt ?? user.created_at ?? "—"}</div>
+            <div className="text-2xl font-semibold">{user.name}</div>
+            <div className="text-sm text-gray-600 dark:text-gray-300">{user.email}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Joined: {user.createdAt}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Last active: {user.lastActive}</div>
           </div>
-          <div>
-            <button onClick={onClose} className="px-3 py-1 rounded border border-gray-200 dark:border-gray-700">Close</button>
+
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="px-3 py-1 rounded border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200">
+              Close
+            </button>
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="md:col-span-2 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 border border-gray-100 dark:border-gray-800 rounded">
-                <div className="text-xs text-gray-500 dark:text-gray-400">User ID</div>
-                <div className="font-medium mt-1">{user.id}</div>
-              </div>
-              <div className="p-3 border border-gray-100 dark:border-gray-800 rounded">
-                <div className="text-xs text-gray-500 dark:text-gray-400">Gender</div>
-                <div className="font-medium mt-1">{user.gender ?? "—"}</div>
-              </div>
-
-              <div className="p-3 border border-gray-100 dark:border-gray-800 rounded col-span-2">
-                <div className="text-xs text-gray-500 dark:text-gray-400">Email</div>
-                <div className="font-medium mt-1">{user.email}</div>
-              </div>
-
-              <div className="p-3 border border-gray-100 dark:border-gray-800 rounded">
-                <div className="text-xs text-gray-500 dark:text-gray-400">Role</div>
-                <div className="font-medium mt-1 capitalize">{user.role}</div>
-              </div>
-
-              <div className="p-3 border border-gray-100 dark:border-gray-800 rounded">
-                <div className="text-xs text-gray-500 dark:text-gray-400">Status</div>
-                <div className="font-medium mt-1">{user.status}</div>
-              </div>
+        {/* small stat tiles */}
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="p-3 rounded-lg bg-gray-100 dark:bg-[#071226] flex items-center justify-between">
+            <div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Total Spend</div>
+              <div className="text-lg font-semibold">₹ {fmt(user.totalSpend ?? 0)}</div>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-green-600 grid place-items-center">
+              <Box className="w-4 h-4 text-white" />
             </div>
           </div>
 
-          <div>
-            <div className="text-sm font-semibold mb-3">Key Stats</div>
-            <div className="space-y-3">
-              <div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Total Spend</div>
-                <div className="text-lg font-bold">₹ {fmt(user.totalSpend ?? user.total_spend ?? 0)}</div>
-              </div>
+          <div className="p-3 rounded-lg bg-gray-100 dark:bg-[#071226] flex items-center justify-between">
+            <div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Total Orders</div>
+              <div className="text-lg font-semibold">{fmt(user.totalOrders ?? 0)}</div>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-blue-600 grid place-items-center">
+              <UsersIcon className="w-4 h-4 text-white" />
+            </div>
+          </div>
 
-              <div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Total Orders</div>
-                <div className="text-lg font-bold">{fmt(user.totalOrders ?? user.total_orders ?? 0)}</div>
-              </div>
-
-              <div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Successful Orders</div>
-                <div className="text-lg font-bold">{fmt(user.successfulOrders ?? user.successful_orders ?? 0)}</div>
-              </div>
-
-              <div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Cancelled / Returns</div>
-                <div className="text-lg font-bold">{fmt(user.cancelledOrders ?? user.cancelled_orders ?? 0)}</div>
-              </div>
-
-              <div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">In-progress Orders</div>
-                <div className="text-lg font-bold">{fmt(user.inProgressOrders ?? user.in_progress_orders ?? 0)}</div>
-              </div>
-
-              <div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Coupon Savings</div>
-                <div className="text-lg font-bold">₹ {fmt(user.couponSavings ?? user.coupon_savings ?? 0)}</div>
-              </div>
+          <div className="p-3 rounded-lg bg-gray-100 dark:bg-[#071226] flex items-center justify-between">
+            <div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Coupon Savings</div>
+              <div className="text-lg font-semibold">₹ {fmt(user.couponSavings ?? 0)}</div>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-yellow-500 grid place-items-center">
+              <Heart className="w-4 h-4 text-white" />
             </div>
           </div>
         </div>
 
-        {/* Additional details (if any) */}
-        <div className="mt-6">
-          <div className="text-sm text-gray-500 dark:text-gray-400">Last active: {user.lastActive ?? user.last_active ?? "—"}</div>
+        {/* tabs to show orders/cart/wishlist only on click */}
+        <div className="mt-6 border-b border-gray-200 dark:border-gray-800">
+          <div className="flex gap-4">
+            <button
+              className={`py-3 ${tab === "orders" ? "border-b-2 border-black dark:border-white" : "text-gray-500 dark:text-gray-300"}`}
+              onClick={() => setTab("orders")}
+            >
+              View Orders
+            </button>
+            <button
+              className={`py-3 ${tab === "cart" ? "border-b-2 border-black dark:border-white" : "text-gray-500 dark:text-gray-300"}`}
+              onClick={() => setTab("cart")}
+            >
+              View Cart
+            </button>
+            <button
+              className={`py-3 ${tab === "wishlist" ? "border-b-2 border-black dark:border-white" : "text-gray-500 dark:text-gray-300"}`}
+              onClick={() => setTab("wishlist")}
+            >
+              View Wishlist
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {tab === "orders" && (
+            <>
+              {(!user.orders || user.orders.length === 0) ? (
+                <div className="text-sm text-gray-500 dark:text-gray-400">No orders for this user.</div>
+              ) : (
+                user.orders.map((o) => (
+                  <div key={o.id} className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center">
+                    <div>
+                      <div className="font-medium">{o.item}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Order ID: {o.id} • {o.date}</div>
+                    </div>
+                    <div className="text-sm">₹{o.amount} • {o.status}</div>
+                  </div>
+                ))
+              )}
+            </>
+          )}
+
+          {tab === "cart" && (
+            <>
+              {(!user.cart || user.cart.length === 0) ? (
+                <div className="text-sm text-gray-500 dark:text-gray-400">Cart is empty.</div>
+              ) : (
+                user.cart.map((c) => (
+                  <div key={c.id} className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center">
+                    <div className="font-medium">{c.item}</div>
+                    <div className="text-sm">₹{c.amount}</div>
+                  </div>
+                ))
+              )}
+            </>
+          )}
+
+          {tab === "wishlist" && (
+            <>
+              {(!user.wishlist || user.wishlist.length === 0) ? (
+                <div className="text-sm text-gray-500 dark:text-gray-400">Wishlist is empty.</div>
+              ) : (
+                user.wishlist.map((w) => (
+                  <div key={w.id} className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center">
+                    <div className="font-medium">{w.item}</div>
+                    <div className="text-sm">₹{w.amount}</div>
+                  </div>
+                ))
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-/* ======= User Edit Modal (role/status) ======= */
+/* ===== User Edit Modal (client-side demo update) ===== */
 function UserEditModal({ user, onClose, onSave }) {
   const [local, setLocal] = useState(user || {});
   useEffect(() => setLocal(user || {}), [user]);
 
   if (!user) return null;
 
-  const handleSave = async () => {
-    if (typeof onSave === "function") await onSave(local);
+  const save = () => {
+    onSave && onSave(local);
     onClose && onClose();
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-xl bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-2xl border border-gray-100 dark:border-gray-800">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-xl bg-white dark:bg-[#05111a] rounded-2xl p-6 shadow-2xl border border-gray-300 dark:border-gray-800">
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="text-lg font-semibold">Edit user: {user.name}</div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">Change role or status</div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Change role & status (demo only)</div>
           </div>
           <div>
-            <button onClick={onClose} className="px-3 py-1 rounded border border-gray-200 dark:border-gray-700">Close</button>
+            <button onClick={onClose} className="px-3 py-1 rounded border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200">Close</button>
           </div>
         </div>
 
@@ -192,245 +289,225 @@ function UserEditModal({ user, onClose, onSave }) {
         </div>
 
         <div className="flex items-center justify-end gap-3 mt-6">
-          <button onClick={onClose} className={btnSecondaryCls}>Cancel</button>
-          <button onClick={handleSave} className={btnPrimaryCls}>Save</button>
+          <button onClick={onClose} className={btnPillBlack}>Cancel</button>
+          <button onClick={save} className={btnPillWhite}>Save</button>
         </div>
       </div>
     </div>
   );
 }
 
-/* ======= Main Component ======= */
+/* ===== Main Component ===== */
 export default function UserManagementPanel() {
-  const [users, setUsers] = useState([]);
-  const [admins, setAdmins] = useState([]);
-  const [stats, setStats] = useState({ total: 0, active: 0, inactive: 0, admins: 0 });
-
-  // controls
-  const [showUsers, setShowUsers] = useState(true);
-  const [showAdmins, setShowAdmins] = useState(false);
-  const [showUpdate, setShowUpdate] = useState(false);
-
-  const [q, setQ] = useState("");
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(20);
-  const [totalPages, setTotalPages] = useState(1);
-  const [loading, setLoading] = useState(false);
-
+  const [users, setUsers] = useState(DEMO_USERS);
   const [viewUser, setViewUser] = useState(null);
   const [editUser, setEditUser] = useState(null);
 
+  // which main section to show
+  const [section, setSection] = useState("users"); // "users" | "admins" | "update"
+
+  const [q, setQ] = useState("");
+  const [limit, setLimit] = useState(20);
   const [sortBy, setSortBy] = useState("newest");
-
-  /* ======= Fetchers ======= */
-  const fetchUsers = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await api.get("/api/admin/users", { search: q, page, limit, sort: sortBy }, true);
-      const body = normalizeResponse(res);
-
-      let list = [];
-      let total = 0;
-      if (Array.isArray(body)) list = body;
-      else if (Array.isArray(body.data)) {
-        list = body.data;
-        total = Number(body.total ?? body.totalCount ?? 0);
-      } else if (Array.isArray(body.users)) {
-        list = body.users;
-        total = Number(body.total ?? 0);
-      } else {
-        const arr = Object.values(body).find((v) => Array.isArray(v));
-        if (arr) list = arr;
-      }
-
-      setUsers(list || []);
-      setTotalPages(limit === 999999 ? 1 : Math.max(1, Math.ceil((total || list.length || 0) / (limit || 20))));
-    } catch (err) {
-      console.error("fetchUsers error:", err);
-      setUsers([]);
-      setTotalPages(1);
-    } finally {
-      setLoading(false);
-    }
-  }, [q, page, limit, sortBy]);
-
-  const fetchAdmins = useCallback(async () => {
-    try {
-      const res = await api.get("/api/admin/users?role=admin", {}, true);
-      const body = normalizeResponse(res);
-      const list = Array.isArray(body) ? body : Array.isArray(body.data) ? body.data : body.users ?? [];
-      setAdmins(list || []);
-    } catch (err) {
-      console.error("fetchAdmins error:", err);
-      setAdmins([]);
-    }
-  }, []);
-
-  const fetchStats = useCallback(async () => {
-    try {
-      const res = await api.get("/api/admin/stats/users", {}, true);
-      const body = normalizeResponse(res);
-      const total = Number(body.total ?? body.totalUsers ?? 0);
-      const active = Number(body.active ?? body.activeUsers ?? 0);
-      const inactive = Number(body.inactive ?? body.inactiveUsers ?? 0);
-      const adminsCount = Number(body.admins ?? body.totalAdmins ?? 0);
-      setStats({ total, active, inactive, admins: adminsCount });
-    } catch (err) {
-      console.error("fetchStats error:", err);
-      setStats({ total: 0, active: 0, inactive: 0, admins: 0 });
-    }
-  }, []);
+  const [range, setRange] = useState("overall");
 
   useEffect(() => {
-    fetchStats();
-    fetchAdmins();
-  }, [fetchStats, fetchAdmins]);
+    // placeholder for future fetch logic
+  }, []);
 
-  useEffect(() => {
-    if (showUsers) fetchUsers();
-  }, [fetchUsers, showUsers]);
+  const stats = useMemo(() => {
+    const total = users.length;
+    const active = users.filter((u) => u.status === "active").length;
+    const inactive = users.filter((u) => u.status === "inactive").length;
+    const male = users.filter((u) => (u.gender || "").toLowerCase() === "male").length;
+    const female = users.filter((u) => (u.gender || "").toLowerCase() === "female").length;
+    const other = total - male - female;
+    return { total, active, inactive, male, female, other };
+  }, [users]);
 
-  /* ======= Actions ======= */
-  const openView = async (u) => {
-    // if we have only id, fetch full user
-    if (u && u.id && (!u.email || !u.totalOrders)) {
-      try {
-        const res = await api.get(`/api/admin/users/${u.id}`, {}, true);
-        const body = normalizeResponse(res);
-        const fetched = body.data && typeof body.data === "object" ? body.data : body;
-        setViewUser(fetched);
-      } catch (err) {
-        console.error("fetch user details failed:", err);
-        setViewUser(u);
-      }
-    } else {
-      setViewUser(u);
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (!window.confirm("Delete user? This will remove the user permanently.")) return;
-    try {
-      await api.delete(`/api/admin/users/${id}`, true);
-      await Promise.all([fetchUsers(), fetchStats(), fetchAdmins()]);
-    } catch (err) {
-      console.error("delete user failed:", err);
-      alert("Failed to delete. See console.");
-    }
-  };
-
-  const handleUpdateUser = async (u) => {
-    try {
-      const payload = { role: u.role, status: u.status };
-      await api.put(`/api/admin/users/${u.id}`, payload, true);
-      await Promise.all([fetchUsers(), fetchStats(), fetchAdmins()]);
-    } catch (err) {
-      console.error("update user failed:", err);
-      alert("Failed to update user. See console.");
-    }
-  };
-
-  /* ======= Derived values ======= */
   const filtered = useMemo(() => {
     let list = [...users];
     if (q) {
       const qq = q.toLowerCase();
-      list = list.filter((u) => (u.name || "").toLowerCase().includes(qq) || (u.id || "").toLowerCase().includes(qq) || (u.email || "").toLowerCase().includes(qq));
+      list = list.filter(
+        (u) =>
+          (u.name || "").toLowerCase().includes(qq) ||
+          (u.id || "").toLowerCase().includes(qq) ||
+          (u.email || "").toLowerCase().includes(qq)
+      );
     }
-    return list;
-  }, [users, q]);
+
+    if (sortBy === "name_asc") list.sort((a, b) => a.name.localeCompare(b.name));
+    if (sortBy === "name_desc") list.sort((a, b) => b.name.localeCompare(a.name));
+    if (sortBy === "most_spend") list.sort((a, b) => (b.totalSpend || 0) - (a.totalSpend || 0));
+
+    return list.slice(0, limit === 999999 ? list.length : limit);
+  }, [users, q, limit, sortBy]);
+
+  const admins = useMemo(() => users.filter((u) => u.role === "admin"), [users]);
+
+  /* Actions */
+  const handleDelete = (id) => {
+    if (!window.confirm("Delete user? (demo only)")) return;
+    setUsers((prev) => prev.filter((u) => u.id !== id));
+  };
+
+  const handleSaveEdit = (updated) => {
+    setUsers((prev) => prev.map((u) => (u.id === updated.id ? { ...u, ...updated } : u)));
+  };
+
+  const handleInlineRoleUpdate = (id, role) => {
+    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u)));
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {[
-          { label: "Total Users", value: stats.total, icon: UsersIcon },
-          { label: "Active", value: stats.active, icon: Shield },
-          { label: "Inactive", value: stats.inactive, icon: Key },
-          { label: "Admins", value: stats.admins, icon: UsersIcon },
-        ].map((s, i) => (
-          <motion.div key={s.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.28, delay: i * 0.05 }} className="p-4 rounded-xl bg-white dark:bg-gray-900 shadow-sm hover:shadow-md transition">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-full bg-black text-white">
-                <s.icon className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">{s.label}</p>
-                <p className="text-2xl font-semibold text-gray-900 dark:text-white">{fmt(s.value)}</p>
-              </div>
-            </div>
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Tabs + Actions */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-3">
-          <button onClick={() => { setShowUsers(true); setShowAdmins(false); setShowUpdate(false); }} className={`px-3 py-2 rounded ${showUsers ? "border border-black dark:border-white" : ""}`}>Users</button>
-          <button onClick={() => { setShowUsers(false); setShowAdmins(true); setShowUpdate(false); }} className={`px-3 py-2 rounded ${showAdmins ? "border border-black dark:border-white" : ""}`}>Admins</button>
-          <button onClick={() => { setShowUsers(false); setShowAdmins(false); setShowUpdate(true); }} className={`px-3 py-2 rounded ${showUpdate ? "border border-black dark:border-white" : ""}`}>Update Users</button>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="text-sm text-gray-500 dark:text-gray-400">Total: {stats.total}</div>
-        </div>
-      </div>
-
-      {/* Users List */}
-      {showUsers && (
-        <div className={cardCls}>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-            <div className="relative w-full sm:w-64">
-              <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search by name, id or email..." className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
-            </div>
-
-            <div className="flex items-center gap-3">
-              <select value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }} className="pl-3 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
-                {[10, 20, 50, 100].map((s) => <option key={s} value={s}>{s} per page</option>)}
-                <option value={999999}>Show All</option>
-              </select>
-
-              <select value={sortBy} onChange={(e) => { setSortBy(e.target.value); setPage(1); }} className="pl-3 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
-                <option value="newest">Newest</option>
-                <option value="name_asc">Name A → Z</option>
-                <option value="name_desc">Name Z → A</option>
-                <option value="most_spend">Top spenders</option>
-              </select>
-            </div>
+    <div className="p-6">
+      <div className="rounded-2xl bg-white dark:bg-[#051023] border border-gray-300 dark:border-gray-800 p-6 space-y-6">
+        {/* Top row: Range tabs + Refresh */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setRange("overall")} className={range === "overall" ? btnPillWhite : btnPillBlack}>
+              <span className="text-sm">📊 Overall</span>
+            </button>
+            <button onClick={() => setRange("monthly")} className={range === "monthly" ? btnPillWhite : btnPillBlack}>
+              <span className="text-sm">📅 Monthly</span>
+            </button>
+            <button onClick={() => setRange("weekly")} className={range === "weekly" ? btnPillWhite : btnPillBlack}>
+              <span className="text-sm">🗓 Weekly</span>
+            </button>
+            <button onClick={() => setRange("daywise")} className={range === "daywise" ? btnPillWhite : btnPillBlack}>
+              <span className="text-sm">📆 Day Wise</span>
+            </button>
           </div>
 
-          <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-800">
+          <div>
+            <button className="px-4 py-2 rounded-full bg-[#0b1220] text-white border border-gray-800">Refresh</button>
+          </div>
+        </div>
+
+        {/* Stats grid: 6 required stats only */}
+        <div className="rounded-xl border border-gray-300 dark:border-gray-800 p-6 bg-gray-50 dark:bg-[#071426]">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <StatCard label="Total Users" value={stats.total} color="bg-green-500" />
+            <StatCard label="Active Users" value={stats.active} color="bg-blue-500" />
+            <StatCard label="Inactive Users" value={stats.inactive} color="bg-yellow-500" />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <StatCard label="Male Users" value={stats.male} color="bg-indigo-500" />
+            <StatCard label="Female Users" value={stats.female} color="bg-pink-500" />
+            <StatCard label="Other Users" value={stats.other} color="bg-gray-500" />
+          </div>
+        </div>
+
+        {/* Action pills (now toggle sections) */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              className={section === "users" ? btnPillWhite : btnPillBlack}
+              onClick={() => setSection("users")}
+            >
+              <Eye className="inline-block w-4 h-4 mr-2" /> Browse Users
+            </button>
+
+            <button
+              className={section === "update" ? btnPillWhite : btnPillBlack}
+              onClick={() => setSection("update")}
+            >
+              <Edit className="inline-block w-4 h-4 mr-2" /> Update Users
+            </button>
+
+            <button
+              className={btnPillBlack}
+              onClick={() => {
+                // Bulk update placeholder — keep section or trigger real action
+                alert("Bulk update (demo) - implement backend action");
+              }}
+            >
+              <RefreshCw className="inline-block w-4 h-4 mr-2" /> Bulk Update
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="w-[420px]">
+              <input
+                placeholder="Search users (id / name / email)"
+                className={inputCls}
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </div>
+
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="p-3 rounded-lg bg-white dark:bg-[#0b1220] border border-gray-300 dark:border-gray-800 text-gray-900 dark:text-gray-200">
+              <option value="newest">Newest</option>
+              <option value="name_asc">Name A → Z</option>
+              <option value="name_desc">Name Z → A</option>
+              <option value="most_spend">Top spenders</option>
+            </select>
+
+            <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="p-3 rounded-lg bg-white dark:bg-[#0b1220] border border-gray-300 dark:border-gray-800 text-gray-900 dark:text-gray-200">
+              {[10, 20, 50, 100].map((s) => (
+                <option key={s} value={s}>
+                  {s} / page
+                </option>
+              ))}
+              <option value={999999}>Show All</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Sections: Users / Admins / Update */}
+        {section === "users" && (
+          <div className="mt-4 overflow-auto rounded-lg border border-gray-300 dark:border-gray-800 bg-white dark:bg-[#061122]">
             <table className="min-w-full text-left">
-              <thead className="bg-gray-50 dark:bg-gray-900">
+              <thead className="bg-gray-100 dark:bg-[#071426]">
                 <tr>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500">User ID</th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500">Name</th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500">Gender</th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500">Role</th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500">Status</th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500">Actions</th>
+                  <th className="px-6 py-4 text-xs text-gray-600 dark:text-gray-400">User ID</th>
+                  <th className="px-6 py-4 text-xs text-gray-600 dark:text-gray-400">Name</th>
+                  <th className="px-6 py-4 text-xs text-gray-600 dark:text-gray-400">Gender</th>
+                  <th className="px-6 py-4 text-xs text-gray-600 dark:text-gray-400">Status</th>
+                  <th className="px-6 py-4 text-xs text-gray-600 dark:text-gray-400">Actions</th>
                 </tr>
               </thead>
+
               <tbody>
-                {loading ? (
-                  <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-500">Loading...</td></tr>
-                ) : filtered.length === 0 ? (
-                  <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-500">No users found</td></tr>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                      No users found
+                    </td>
+                  </tr>
                 ) : (
                   filtered.map((u) => (
-                    <tr key={u.id} className="border-t border-gray-100 dark:border-gray-800">
-                      <td className="px-4 py-3 text-sm">{u.id}</td>
-                      <td className="px-4 py-3 text-sm">{u.name}</td>
-                      <td className="px-4 py-3 text-sm">{u.gender ?? "—"}</td>
-                      <td className="px-4 py-3 text-sm capitalize">{u.role}</td>
-                      <td className="px-4 py-3 text-sm">{u.status}</td>
-                      <td className="px-4 py-3 text-sm">
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => openView(u)} className="p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800"><Eye className="w-4 h-4" /></button>
-                          <button onClick={() => setEditUser(u)} className="p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800"><Edit className="w-4 h-4" /></button>
-                          <button onClick={() => handleDelete(u.id)} className="p-2 rounded hover:bg-red-50 dark:hover:bg-red-900 text-red-600"><Trash2 className="w-4 h-4" /></button>
+                    <tr key={u.id} className="border-t border-gray-200 dark:border-gray-800">
+                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">{u.id}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">{u.name}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">{u.gender}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">{u.status}</td>
+                      <td className="px-6 py-4 text-sm">
+                        <div className="flex items-center gap-2 justify-end">
+                          <button
+                            onClick={() => setViewUser(u)}
+                            className="flex items-center gap-2 px-3 py-1 rounded-full bg-black text-white dark:bg-white dark:text-black border border-gray-700"
+                          >
+                            <Eye className="w-4 h-4" /> View
+                          </button>
+
+                          <button
+                            onClick={() => setEditUser(u)}
+                            className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 text-white border border-gray-700"
+                          >
+                            <Edit className="w-4 h-4" /> Edit
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              if (window.confirm("Delete user? (demo)")) handleDelete(u.id);
+                            }}
+                            className="flex items-center gap-2 px-3 py-1 rounded-full bg-red-600 text-white border border-red-700"
+                          >
+                            <Trash2 className="w-4 h-4" /> Delete
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -439,90 +516,60 @@ export default function UserManagementPanel() {
               </tbody>
             </table>
           </div>
+        )}
 
-          {/* Pagination */}
-          {totalPages > 1 && limit !== 999999 && (
-            <div className="flex justify-center items-center gap-4 pt-4">
-              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-40">Prev</button>
-              <span className="text-gray-700 dark:text-gray-300">Page {page} of {totalPages}</span>
-              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-40">Next</button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Admins */}
-      {showAdmins && (
-        <div className={cardCls}>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="text-lg font-semibold">Admin Management</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">List of admin users and actions</div>
-            </div>
-            <div>
-              <button className={`${btnSecondaryCls}`} onClick={() => setShowAdmins(false)}>
-                Close
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {admins.length === 0 && <div className="md:col-span-3 text-sm text-gray-500">No admin users found.</div>}
-            {admins.map((a) => (
-              <div key={a.id} className="p-4 border border-gray-100 dark:border-gray-800 rounded">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium">{a.name}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">{a.email}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">{a.id}</div>
+        {section === "admins" && (
+          <div className="mt-4 rounded-lg border border-gray-300 dark:border-gray-800 bg-white dark:bg-[#061122] p-4">
+            <div className="text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100">Admin Management</div>
+            {admins.length === 0 ? (
+              <div className="text-sm text-gray-600 dark:text-gray-300">No admin users found.</div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {admins.map((a) => (
+                  <div key={a.id} className="p-4 rounded-lg bg-gray-50 dark:bg-[#071226] border border-gray-200 dark:border-gray-800">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{a.name}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{a.email}</div>
+                        <div className="text-xs text-gray-400">{a.id}</div>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <button onClick={() => setEditUser(a)} className="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 text-sm">Edit</button>
+                        <button onClick={() => alert("Disable admin (demo)")} className="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 text-sm">Disable</button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="space-y-2 text-right">
-                    <button onClick={() => setEditUser(a)} className="px-2 py-1 rounded border border-gray-200 dark:border-gray-700 text-xs">Edit</button>
-                    <button className="px-2 py-1 rounded border border-gray-200 dark:border-gray-700 text-xs">Disable</button>
-                  </div>
-                </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Update Users */}
-      {showUpdate && (
-        <div className={cardCls}>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="text-lg font-semibold">Update Users</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Search, sort and update user roles</div>
-            </div>
-            <div className="flex items-center gap-2">
-              <input placeholder="Search by name or ID" className={inputCls} onChange={(e) => setQ(e.target.value)} />
-              <select onChange={(e) => setSortBy(e.target.value)} className={inputCls}>
-                <option value="name">Sort: Name</option>
-                <option value="role">Sort: Role</option>
-                <option value="status">Sort: Status</option>
-              </select>
-            </div>
-          </div>
+        {section === "update" && (
+          <div className="mt-4 overflow-auto rounded-lg border border-gray-300 dark:border-gray-800 bg-white dark:bg-[#061122] p-4">
+            <div className="text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100">Update Users</div>
 
-          <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-800">
             <table className="min-w-full text-left">
-              <thead className="bg-gray-50 dark:bg-gray-900">
+              <thead className="bg-gray-100 dark:bg-[#071426]">
                 <tr>
-                  <th className="px-4 py-3 text-xs text-gray-500">User ID</th>
-                  <th className="px-4 py-3 text-xs text-gray-500">Name</th>
-                  <th className="px-4 py-3 text-xs text-gray-500">Role</th>
-                  <th className="px-4 py-3 text-xs text-gray-500">Update Role</th>
+                  <th className="px-6 py-3 text-xs text-gray-600 dark:text-gray-400">User ID</th>
+                  <th className="px-6 py-3 text-xs text-gray-600 dark:text-gray-400">Name</th>
+                  <th className="px-6 py-3 text-xs text-gray-600 dark:text-gray-400">Role</th>
+                  <th className="px-6 py-3 text-xs text-gray-600 dark:text-gray-400">Update Role</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((u) => (
-                  <tr key={u.id} className="border-t border-gray-100 dark:border-gray-800">
-                    <td className="px-4 py-3 text-sm">{u.id}</td>
-                    <td className="px-4 py-3 text-sm">{u.name}</td>
-                    <td className="px-4 py-3 text-sm capitalize">{u.role}</td>
-                    <td className="px-4 py-3 text-sm">
-                      <select defaultValue={u.role} onChange={async (e) => { const role = e.target.value; await handleUpdateUser({ ...u, role }); }} className="px-2 py-1 border border-gray-200 dark:border-gray-800 rounded bg-transparent">
+                  <tr key={u.id} className="border-t border-gray-200 dark:border-gray-800">
+                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">{u.id}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">{u.name}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">{u.role}</td>
+                    <td className="px-6 py-4 text-sm">
+                      <select
+                        value={u.role}
+                        onChange={(e) => handleInlineRoleUpdate(u.id, e.target.value)}
+                        className="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#071226] text-gray-900 dark:text-gray-100"
+                      >
                         <option value="customer">customer</option>
                         <option value="seller">seller</option>
                         <option value="admin">admin</option>
@@ -533,12 +580,27 @@ export default function UserManagementPanel() {
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Modals */}
       <UserViewModal user={viewUser} onClose={() => setViewUser(null)} />
-      <UserEditModal user={editUser} onClose={() => setEditUser(null)} onSave={handleUpdateUser} />
+      <UserEditModal user={editUser} onClose={() => setEditUser(null)} onSave={handleSaveEdit} />
+    </div>
+  );
+}
+
+/* ===== StatCard Component ===== */
+function StatCard({ label, value, color }) {
+  return (
+    <div className="p-6 rounded-lg bg-gray-50 dark:bg-[#071226] flex items-center justify-between">
+      <div>
+        <div className="text-xs text-gray-600 dark:text-gray-400">{label}</div>
+        <div className="text-3xl font-bold mt-2">{value}</div>
+      </div>
+      <div className={`w-12 h-12 rounded-full ${color} grid place-items-center`}>
+        <UsersIcon className="w-5 h-5 text-white" />
+      </div>
     </div>
   );
 }
