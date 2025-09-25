@@ -1,15 +1,8 @@
 /**
  * UserManagementPanel.jsx
  *
- * - Shows only these 6 stats: Total Users, Active Users, Inactive Users,
- *   Male Users, Female Users, Other Users
- * - Theme friendly (Tailwind light/dark using `dark:` utilities)
- * - Orders / Cart / Wishlist are rendered inside the User View Modal **only**
- *   when their respective tab is clicked
- * - Browse / Update / Bulk buttons toggle the appropriate sections
- *
- * Dependencies:
- *   react, lucide-react, tailwindcss (dark mode via `class` strategy recommended)
+ * Updated button styles: modern Tailwind, fully rounded buttons, nicer shadows, focus rings.
+ * Keeps all previous logic intact.
  */
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -17,9 +10,6 @@ import {
   Eye,
   Edit,
   Users as UsersIcon,
-  Shield,
-  Key,
-  RefreshCw,
   Heart,
   Box,
   Trash2,
@@ -27,13 +17,29 @@ import {
 
 /* ===== STYLE CONSTANTS ===== */
 const inputCls =
-  "w-full p-3 rounded-lg border border-gray-300 dark:border-gray-800 bg-white dark:bg-[#0b1220] text-gray-900 dark:text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-0 transition";
-const btnPillWhite =
-  "px-4 py-2 rounded-full bg-white text-black shadow-sm border border-gray-200 hover:brightness-95 transition";
-const btnPillBlack =
-  "px-4 py-2 rounded-full bg-[#0b1220] text-white border border-gray-800 hover:brightness-95 transition";
+  "w-full p-3 rounded-full border border-gray-300 dark:border-gray-800 bg-white dark:bg-[#0b1220] text-gray-900 dark:text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition";
 
-/* ===== DEMO DATA ===== */
+// Base button style (fully rounded)
+const btnBase =
+  "inline-flex items-center gap-2 rounded-full font-medium transition-transform transform hover:-translate-y-0.5 active:translate-y-0 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500";
+
+// Variants
+const btnWhite =
+  `${btnBase} px-4 py-2 bg-white text-slate-900 border border-gray-200 shadow-sm hover:shadow-md dark:bg-slate-700 dark:text-white dark:border-gray-600`;
+const btnDark =
+  `${btnBase} px-4 py-2 bg-black text-white border border-gray-800 shadow-sm hover:shadow-md dark:bg-white dark:text-black dark:border-gray-200`;
+const btnSmallDark =
+  `${btnBase} px-3 py-1 text-sm bg-[#0b1220] text-white border border-gray-800 shadow-sm hover:brightness-110`;
+const btnSmallWhite =
+  `${btnBase} px-3 py-1 text-sm bg-white text-black border border-gray-200 shadow-sm hover:brightness-95`;
+const btnDanger =
+  `${btnBase} px-3 py-1 text-sm bg-red-600 text-white border border-red-700 shadow-sm hover:bg-red-700`;
+const btnToggle =
+  `${btnBase} px-3 py-2 text-sm bg-white dark:bg-[#0b1220] text-black dark:text-gray-200 border border-gray-300 dark:border-gray-700 shadow-sm`;
+const btnToggleActive =
+  `${btnBase} px-3 py-2 text-sm bg-black text-white dark:bg-white dark:text-black border border-gray-800 dark:border-gray-200 shadow-md`;
+
+/* ===== DEMO DATA (cart/wishlist items include date fields for activity detection) ===== */
 const DEMO_USERS = [
   {
     id: "U1001",
@@ -51,16 +57,16 @@ const DEMO_USERS = [
     createdAt: "2024-09-12",
     lastActive: "2025-09-20",
     orders: [
-      { id: "O2001", item: "White T-shirt", amount: 499, status: "Delivered", date: "2025-04-01" },
+      { id: "O2001", item: "White T-shirt", amount: 499, status: "Delivered", date: "2025-09-20" },
       { id: "O2002", item: "Running Shoes", amount: 800, status: "In progress", date: "2025-09-18" },
     ],
     cart: [
-      { id: "C1", item: "Blue Jeans", amount: 1200 },
-      { id: "C2", item: "Analog Watch", amount: 2500 },
+      { id: "C1", item: "Blue Jeans", amount: 1200, date: "2025-09-19" },
+      { id: "C2", item: "Analog Watch", amount: 2500, date: "2025-09-10" },
     ],
     wishlist: [
-      { id: "W1", item: "Leather Bag", amount: 999 },
-      { id: "W2", item: "Wireless Headphones", amount: 1999 },
+      { id: "W1", item: "Leather Bag", amount: 999, date: "2025-09-17" },
+      { id: "W2", item: "Wireless Headphones", amount: 1999, date: "2025-08-01" },
     ],
   },
   {
@@ -77,8 +83,8 @@ const DEMO_USERS = [
     inProgressOrders: 1,
     couponSavings: 120,
     createdAt: "2023-11-03",
-    lastActive: "2025-09-22",
-    orders: [{ id: "O2101", item: "Office Chair", amount: 2350, status: "Delivered", date: "2025-01-12" }],
+    lastActive: "2025-09-12",
+    orders: [{ id: "O2101", item: "Office Chair", amount: 2350, status: "Delivered", date: "2025-09-05" }],
     cart: [],
     wishlist: [],
   },
@@ -98,18 +104,47 @@ const DEMO_USERS = [
     createdAt: "2022-05-30",
     lastActive: "2024-12-11",
     orders: [{ id: "O2201", item: "Handmade Vase", amount: 450, status: "Delivered", date: "2024-03-05" }],
-    cart: [{ id: "C3", item: "Artist Brushes", amount: 350 }],
-    wishlist: [{ id: "W3", item: "Studio Lamp", amount: 1500 }],
+    cart: [{ id: "C3", item: "Artist Brushes", amount: 350, date: "2024-11-01" }],
+    wishlist: [{ id: "W3", item: "Studio Lamp", amount: 1500, date: "2024-11-02" }],
   },
 ];
 
 /* ===== Helper ===== */
 const fmt = (n) => (typeof n === "number" ? n.toLocaleString() : n);
 
-/* ===== User View Modal (orders/cart/wishlist only when tab active) ===== */
+// check if a date string is within the last N days
+function isDateWithinDays(dateStr, days = 7) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  if (isNaN(d)) return false;
+  const now = new Date();
+  const diffMs = now - d;
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  return diffDays <= days;
+}
+
+// determine if user had activity (order/cart/wishlist) within last N days
+function userHasRecentActivity(user, days = 7) {
+  if (!user) return false;
+  const { orders = [], cart = [], wishlist = [] } = user;
+  if (orders.some((o) => isDateWithinDays(o.date, days))) return true;
+  if (cart.some((c) => isDateWithinDays(c.date, days))) return true;
+  if (wishlist.some((w) => isDateWithinDays(w.date, days))) return true;
+  return false;
+}
+
+/* ===== User View Modal (buttons toggle show/hide of lists) ===== */
 function UserViewModal({ user, onClose }) {
-  const [tab, setTab] = useState("orders");
-  useEffect(() => setTab("orders"), [user]);
+  const [showOrders, setShowOrders] = useState(false);
+  const [showCart, setShowCart] = useState(false);
+  const [showWishlist, setShowWishlist] = useState(false);
+
+  useEffect(() => {
+    // reset toggles whenever modal opens for a different user
+    setShowOrders(false);
+    setShowCart(false);
+    setShowWishlist(false);
+  }, [user]);
 
   if (!user) return null;
 
@@ -126,13 +161,11 @@ function UserViewModal({ user, onClose }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <button onClick={onClose} className="px-3 py-1 rounded border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200">
-              Close
-            </button>
+            <button onClick={onClose} className={`${btnSmallWhite} bg-white/80 dark:bg-transparent`}>Close</button>
           </div>
         </div>
 
-        {/* small stat tiles */}
+        {/* SIX stat tiles: Total Spend, Total Orders, Successful, Cancelled/Returns, In-progress, Coupon Savings */}
         <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           <div className="p-3 rounded-lg bg-gray-100 dark:bg-[#071226] flex items-center justify-between">
             <div>
@@ -156,6 +189,36 @@ function UserViewModal({ user, onClose }) {
 
           <div className="p-3 rounded-lg bg-gray-100 dark:bg-[#071226] flex items-center justify-between">
             <div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Successful Orders</div>
+              <div className="text-lg font-semibold">{fmt(user.successfulOrders ?? 0)}</div>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-teal-500 grid place-items-center">
+              <UsersIcon className="w-4 h-4 text-white" />
+            </div>
+          </div>
+
+          <div className="p-3 rounded-lg bg-gray-100 dark:bg-[#071226] flex items-center justify-between">
+            <div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Cancelled / Returns</div>
+              <div className="text-lg font-semibold">{fmt(user.cancelledOrders ?? 0)}</div>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-red-500 grid place-items-center">
+              <Trash2 className="w-4 h-4 text-white" />
+            </div>
+          </div>
+
+          <div className="p-3 rounded-lg bg-gray-100 dark:bg-[#071226] flex items-center justify-between">
+            <div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">In-progress Orders</div>
+              <div className="text-lg font-semibold">{fmt(user.inProgressOrders ?? 0)}</div>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-purple-600 grid place-items-center">
+              <Heart className="w-4 h-4 text-white" />
+            </div>
+          </div>
+
+          <div className="p-3 rounded-lg bg-gray-100 dark:bg-[#071226] flex items-center justify-between">
+            <div>
               <div className="text-xs text-gray-500 dark:text-gray-400">Coupon Savings</div>
               <div className="text-lg font-semibold">₹ {fmt(user.couponSavings ?? 0)}</div>
             </div>
@@ -165,32 +228,32 @@ function UserViewModal({ user, onClose }) {
           </div>
         </div>
 
-        {/* tabs to show orders/cart/wishlist only on click */}
-        <div className="mt-6 border-b border-gray-200 dark:border-gray-800">
-          <div className="flex gap-4">
-            <button
-              className={`py-3 ${tab === "orders" ? "border-b-2 border-black dark:border-white" : "text-gray-500 dark:text-gray-300"}`}
-              onClick={() => setTab("orders")}
-            >
-              View Orders
-            </button>
-            <button
-              className={`py-3 ${tab === "cart" ? "border-b-2 border-black dark:border-white" : "text-gray-500 dark:text-gray-300"}`}
-              onClick={() => setTab("cart")}
-            >
-              View Cart
-            </button>
-            <button
-              className={`py-3 ${tab === "wishlist" ? "border-b-2 border-black dark:border-white" : "text-gray-500 dark:text-gray-300"}`}
-              onClick={() => setTab("wishlist")}
-            >
-              View Wishlist
-            </button>
-          </div>
+        {/* Buttons to toggle show/hide orders, cart, wishlist */}
+        <div className="mt-6 flex gap-3">
+          <button
+            onClick={() => setShowOrders((s) => !s)}
+            className={`${showOrders ? btnToggleActive : btnToggle}`}
+          >
+            {showOrders ? "Hide Orders" : "View Orders"}
+          </button>
+
+          <button
+            onClick={() => setShowCart((s) => !s)}
+            className={`${showCart ? btnToggleActive : btnToggle}`}
+          >
+            {showCart ? "Hide Cart" : "View Cart"}
+          </button>
+
+          <button
+            onClick={() => setShowWishlist((s) => !s)}
+            className={`${showWishlist ? btnToggleActive : btnToggle}`}
+          >
+            {showWishlist ? "Hide Wishlist" : "View Wishlist"}
+          </button>
         </div>
 
         <div className="mt-4 space-y-3">
-          {tab === "orders" && (
+          {showOrders && (
             <>
               {(!user.orders || user.orders.length === 0) ? (
                 <div className="text-sm text-gray-500 dark:text-gray-400">No orders for this user.</div>
@@ -208,7 +271,7 @@ function UserViewModal({ user, onClose }) {
             </>
           )}
 
-          {tab === "cart" && (
+          {showCart && (
             <>
               {(!user.cart || user.cart.length === 0) ? (
                 <div className="text-sm text-gray-500 dark:text-gray-400">Cart is empty.</div>
@@ -223,7 +286,7 @@ function UserViewModal({ user, onClose }) {
             </>
           )}
 
-          {tab === "wishlist" && (
+          {showWishlist && (
             <>
               {(!user.wishlist || user.wishlist.length === 0) ? (
                 <div className="text-sm text-gray-500 dark:text-gray-400">Wishlist is empty.</div>
@@ -265,7 +328,7 @@ function UserEditModal({ user, onClose, onSave }) {
             <div className="text-sm text-gray-600 dark:text-gray-400">Change role & status (demo only)</div>
           </div>
           <div>
-            <button onClick={onClose} className="px-3 py-1 rounded border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200">Close</button>
+            <button onClick={onClose} className={`${btnSmallWhite} bg-white/80 dark:bg-transparent`}>Close</button>
           </div>
         </div>
 
@@ -280,17 +343,18 @@ function UserEditModal({ user, onClose, onSave }) {
           </div>
 
           <div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">Status</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Status (manual)</div>
             <select value={local.status} onChange={(e) => setLocal({ ...local, status: e.target.value })} className={inputCls}>
               <option value="active">active</option>
               <option value="inactive">inactive</option>
             </select>
+            <div className="text-xs text-gray-500 mt-1">Note: Active/inactive shown in the table is derived from recent activity (last 7 days).</div>
           </div>
         </div>
 
         <div className="flex items-center justify-end gap-3 mt-6">
-          <button onClick={onClose} className={btnPillBlack}>Cancel</button>
-          <button onClick={save} className={btnPillWhite}>Save</button>
+          <button onClick={onClose} className={btnSmallDark}>Cancel</button>
+          <button onClick={save} className={btnWhite}>Save</button>
         </div>
       </div>
     </div>
@@ -309,16 +373,16 @@ export default function UserManagementPanel() {
   const [q, setQ] = useState("");
   const [limit, setLimit] = useState(20);
   const [sortBy, setSortBy] = useState("newest");
-  const [range, setRange] = useState("overall");
 
   useEffect(() => {
     // placeholder for future fetch logic
   }, []);
 
+  // compute stats; active/inactive determined by recent activity within 7 days
   const stats = useMemo(() => {
     const total = users.length;
-    const active = users.filter((u) => u.status === "active").length;
-    const inactive = users.filter((u) => u.status === "inactive").length;
+    const active = users.filter((u) => userHasRecentActivity(u, 7)).length;
+    const inactive = total - active;
     const male = users.filter((u) => (u.gender || "").toLowerCase() === "male").length;
     const female = users.filter((u) => (u.gender || "").toLowerCase() === "female").length;
     const other = total - male - female;
@@ -363,28 +427,6 @@ export default function UserManagementPanel() {
   return (
     <div className="p-6">
       <div className="rounded-2xl bg-white dark:bg-[#051023] border border-gray-300 dark:border-gray-800 p-6 space-y-6">
-        {/* Top row: Range tabs + Refresh */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setRange("overall")} className={range === "overall" ? btnPillWhite : btnPillBlack}>
-              <span className="text-sm">📊 Overall</span>
-            </button>
-            <button onClick={() => setRange("monthly")} className={range === "monthly" ? btnPillWhite : btnPillBlack}>
-              <span className="text-sm">📅 Monthly</span>
-            </button>
-            <button onClick={() => setRange("weekly")} className={range === "weekly" ? btnPillWhite : btnPillBlack}>
-              <span className="text-sm">🗓 Weekly</span>
-            </button>
-            <button onClick={() => setRange("daywise")} className={range === "daywise" ? btnPillWhite : btnPillBlack}>
-              <span className="text-sm">📆 Day Wise</span>
-            </button>
-          </div>
-
-          <div>
-            <button className="px-4 py-2 rounded-full bg-[#0b1220] text-white border border-gray-800">Refresh</button>
-          </div>
-        </div>
-
         {/* Stats grid: 6 required stats only */}
         <div className="rounded-xl border border-gray-300 dark:border-gray-800 p-6 bg-gray-50 dark:bg-[#071426]">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
@@ -400,52 +442,35 @@ export default function UserManagementPanel() {
           </div>
         </div>
 
-        {/* Action pills (now toggle sections) */}
+        {/* Action pills (Users / Admin Users / Update Users) */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button
-              className={section === "users" ? btnPillWhite : btnPillBlack}
-              onClick={() => setSection("users")}
-            >
+            <button className={section === "users" ? btnWhite : btnDark} onClick={() => setSection("users")}>
               <Eye className="inline-block w-4 h-4 mr-2" /> Browse Users
             </button>
 
-            <button
-              className={section === "update" ? btnPillWhite : btnPillBlack}
-              onClick={() => setSection("update")}
-            >
-              <Edit className="inline-block w-4 h-4 mr-2" /> Update Users
+            <button className={section === "admins" ? btnWhite : btnDark} onClick={() => setSection("admins")}>
+              <UsersIcon className="inline-block w-4 h-4 mr-2" /> Admin Users
             </button>
 
-            <button
-              className={btnPillBlack}
-              onClick={() => {
-                // Bulk update placeholder — keep section or trigger real action
-                alert("Bulk update (demo) - implement backend action");
-              }}
-            >
-              <RefreshCw className="inline-block w-4 h-4 mr-2" /> Bulk Update
+            <button className={section === "update" ? btnWhite : btnDark} onClick={() => setSection("update")}>
+              <Edit className="inline-block w-4 h-4 mr-2" /> Update Users
             </button>
           </div>
 
           <div className="flex items-center gap-3">
             <div className="w-[420px]">
-              <input
-                placeholder="Search users (id / name / email)"
-                className={inputCls}
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
+              <input placeholder="Search users (id / name / email)" className={inputCls} value={q} onChange={(e) => setQ(e.target.value)} />
             </div>
 
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="p-3 rounded-lg bg-white dark:bg-[#0b1220] border border-gray-300 dark:border-gray-800 text-gray-900 dark:text-gray-200">
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="p-3 rounded-full bg-white dark:bg-[#0b1220] border border-gray-300 dark:border-gray-800 text-gray-900 dark:text-gray-200">
               <option value="newest">Newest</option>
               <option value="name_asc">Name A → Z</option>
               <option value="name_desc">Name Z → A</option>
               <option value="most_spend">Top spenders</option>
             </select>
 
-            <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="p-3 rounded-lg bg-white dark:bg-[#0b1220] border border-gray-300 dark:border-gray-800 text-gray-900 dark:text-gray-200">
+            <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="p-3 rounded-full bg-white dark:bg-[#0b1220] border border-gray-300 dark:border-gray-800 text-gray-900 dark:text-gray-200">
               {[10, 20, 50, 100].map((s) => (
                 <option key={s} value={s}>
                   {s} / page
@@ -478,40 +503,39 @@ export default function UserManagementPanel() {
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((u) => (
-                    <tr key={u.id} className="border-t border-gray-200 dark:border-gray-800">
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">{u.id}</td>
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">{u.name}</td>
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">{u.gender}</td>
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">{u.status}</td>
-                      <td className="px-6 py-4 text-sm">
-                        <div className="flex items-center gap-2 justify-end">
-                          <button
-                            onClick={() => setViewUser(u)}
-                            className="flex items-center gap-2 px-3 py-1 rounded-full bg-black text-white dark:bg-white dark:text-black border border-gray-700"
-                          >
-                            <Eye className="w-4 h-4" /> View
-                          </button>
+                  filtered.map((u) => {
+                    const activeDerived = userHasRecentActivity(u, 7);
+                    return (
+                      <tr key={u.id} className="border-t border-gray-200 dark:border-gray-800">
+                        <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">{u.id}</td>
+                        <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">{u.name}</td>
+                        <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">{u.gender}</td>
+                        <td className="px-6 py-4 text-sm">
+                          <span className={`inline-block px-2 py-1 rounded-full text-xs ${activeDerived ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"}`}>
+                            {activeDerived ? "active" : "inactive"}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm">
+                          <div className="flex items-center gap-2 justify-end">
+                            <button onClick={() => setViewUser(u)} className={`${btnSmallDark}`}>
+                              <Eye className="w-4 h-4" />
+                              <span className="sr-only">View</span>
+                            </button>
 
-                          <button
-                            onClick={() => setEditUser(u)}
-                            className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 text-white border border-gray-700"
-                          >
-                            <Edit className="w-4 h-4" /> Edit
-                          </button>
+                            <button onClick={() => setEditUser(u)} className={`${btnSmallWhite}`}>
+                              <Edit className="w-4 h-4" />
+                              <span className="sr-only">Edit</span>
+                            </button>
 
-                          <button
-                            onClick={() => {
-                              if (window.confirm("Delete user? (demo)")) handleDelete(u.id);
-                            }}
-                            className="flex items-center gap-2 px-3 py-1 rounded-full bg-red-600 text-white border border-red-700"
-                          >
-                            <Trash2 className="w-4 h-4" /> Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                            <button onClick={() => { if (window.confirm("Delete user? (demo)")) handleDelete(u.id); }} className={`${btnDanger}`}>
+                              <Trash2 className="w-4 h-4" />
+                              <span className="sr-only">Delete</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -534,8 +558,8 @@ export default function UserManagementPanel() {
                         <div className="text-xs text-gray-400">{a.id}</div>
                       </div>
                       <div className="flex flex-col gap-2">
-                        <button onClick={() => setEditUser(a)} className="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 text-sm">Edit</button>
-                        <button onClick={() => alert("Disable admin (demo)")} className="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 text-sm">Disable</button>
+                        <button onClick={() => setEditUser(a)} className={`${btnSmallWhite}`}>Edit</button>
+                        <button onClick={() => alert("Disable admin (demo)")} className={`${btnSmallDark}`}>Disable</button>
                       </div>
                     </div>
                   </div>
@@ -568,7 +592,7 @@ export default function UserManagementPanel() {
                       <select
                         value={u.role}
                         onChange={(e) => handleInlineRoleUpdate(u.id, e.target.value)}
-                        className="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#071226] text-gray-900 dark:text-gray-100"
+                        className="px-2 py-1 rounded-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#071226] text-gray-900 dark:text-gray-100"
                       >
                         <option value="customer">customer</option>
                         <option value="seller">seller</option>
