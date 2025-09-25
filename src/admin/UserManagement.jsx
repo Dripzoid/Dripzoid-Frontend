@@ -1,10 +1,16 @@
 /**
- * UserManagementPanel.jsx
+ * UserManagement.jsx
  *
- * - Theme-supportive buttons (light/dark) — fully rounded
- * - Modal backdrop adapts to theme
- * - Close buttons updated so they remain visible in both themes
- * - Keeps previous logic: 6 stat cards, View modal shows 6 stats and toggles for Orders/Cart/Wishlist
+ * Backend-integrated version
+ * - Fetch /api/users for user list
+ * - Fetch /api/admin/stats for top stat cards
+ * - Fetch individual user's orders/cart/wishlist for UserViewModal
+ * - Edit role/status via PUT /api/users/:id
+ * - Delete user via DELETE /api/users/:id
+ *
+ * Notes:
+ * - Search/sort/pagination remain client-side
+ * - Active/inactive badge is derived from recent activity (last 7 days)
  */
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -41,76 +47,6 @@ const btnToggle =
 const btnToggleActive =
   `${btnBase} px-3 py-2 text-sm bg-black dark:bg-white text-white dark:text-black border border-gray-800 dark:border-gray-200 shadow-md`;
 
-/* ===== DEMO DATA (cart/wishlist items include date fields for activity detection) ===== */
-const DEMO_USERS = [
-  {
-    id: "U1001",
-    name: "Asha Rao",
-    email: "asha.rao@example.com",
-    gender: "Female",
-    role: "customer",
-    status: "active",
-    totalSpend: 1299.5,
-    totalOrders: 14,
-    successfulOrders: 12,
-    cancelledOrders: 1,
-    inProgressOrders: 1,
-    couponSavings: 45.0,
-    createdAt: "2024-09-12",
-    lastActive: "2025-09-20",
-    orders: [
-      { id: "O2001", item: "White T-shirt", amount: 499, status: "Delivered", date: "2025-09-20" },
-      { id: "O2002", item: "Running Shoes", amount: 800, status: "In progress", date: "2025-09-18" },
-    ],
-    cart: [
-      { id: "C1", item: "Blue Jeans", amount: 1200, date: "2025-09-19" },
-      { id: "C2", item: "Analog Watch", amount: 2500, date: "2025-09-10" },
-    ],
-    wishlist: [
-      { id: "W1", item: "Leather Bag", amount: 999, date: "2025-09-17" },
-      { id: "W2", item: "Wireless Headphones", amount: 1999, date: "2025-08-01" },
-    ],
-  },
-  {
-    id: "U1002",
-    name: "Ravi Kumar",
-    email: "ravi.kumar@example.com",
-    gender: "Male",
-    role: "admin",
-    status: "active",
-    totalSpend: 2350,
-    totalOrders: 8,
-    successfulOrders: 7,
-    cancelledOrders: 0,
-    inProgressOrders: 1,
-    couponSavings: 120,
-    createdAt: "2023-11-03",
-    lastActive: "2025-09-12",
-    orders: [{ id: "O2101", item: "Office Chair", amount: 2350, status: "Delivered", date: "2025-09-05" }],
-    cart: [],
-    wishlist: [],
-  },
-  {
-    id: "U1003",
-    name: "Priya Sen",
-    email: "priya.sen@example.com",
-    gender: "Female",
-    role: "seller",
-    status: "inactive",
-    totalSpend: 0,
-    totalOrders: 3,
-    successfulOrders: 3,
-    cancelledOrders: 0,
-    inProgressOrders: 0,
-    couponSavings: 0,
-    createdAt: "2022-05-30",
-    lastActive: "2024-12-11",
-    orders: [{ id: "O2201", item: "Handmade Vase", amount: 450, status: "Delivered", date: "2024-03-05" }],
-    cart: [{ id: "C3", item: "Artist Brushes", amount: 350, date: "2024-11-01" }],
-    wishlist: [{ id: "W3", item: "Studio Lamp", amount: 1500, date: "2024-11-02" }],
-  },
-];
-
 /* ===== Helper ===== */
 const fmt = (n) => (typeof n === "number" ? n.toLocaleString() : n);
 
@@ -135,26 +71,61 @@ function userHasRecentActivity(user, days = 7) {
   return false;
 }
 
-/* ===== User View Modal (buttons toggle show/hide of lists) ===== */
+/* ===== User View Modal (fetches orders/cart/wishlist on open) ===== */
 function UserViewModal({ user, onClose }) {
+  const [orders, setOrders] = useState([]);
+  const [cart, setCart] = useState([]);
+  const [wishlist, setWishlist] = useState([]);
+  const [loading, setLoading] = useState(false);
+
   const [showOrders, setShowOrders] = useState(false);
   const [showCart, setShowCart] = useState(false);
   const [showWishlist, setShowWishlist] = useState(false);
 
   useEffect(() => {
-    // reset toggles whenever modal opens for a different user
+    if (!user) return;
     setShowOrders(false);
     setShowCart(false);
     setShowWishlist(false);
+
+    let mounted = true;
+    async function load() {
+      setLoading(true);
+      try {
+        const [ordersRes, cartRes, wishRes] = await Promise.all([
+          fetch(`/api/admin/orders/user/${user.id}`),
+          fetch(`/api/cart/${user.id}`),
+          fetch(`/api/wishlist/${user.id}`),
+        ]);
+
+        const [ordersData, cartData, wishData] = await Promise.all([
+          ordersRes.ok ? ordersRes.json() : [],
+          cartRes.ok ? cartRes.json() : [],
+          wishRes.ok ? wishRes.json() : [],
+        ]);
+
+        if (!mounted) return;
+        setOrders(ordersData || []);
+        setCart(cartData || []);
+        setWishlist(wishData || []);
+      } catch (err) {
+        console.error("Error fetching user details", err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      mounted = false;
+    };
   }, [user]);
 
   if (!user) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* theme-supportive backdrop */}
       <div className="absolute inset-0 bg-black/40 dark:bg-white/20 backdrop-blur-sm" onClick={onClose} />
-
       <div className="relative z-10 w-full max-w-5xl bg-white dark:bg-[#05111a] rounded-2xl p-6 shadow-2xl border border-gray-300 dark:border-gray-800 max-h-[92vh] overflow-auto text-gray-900 dark:text-gray-100">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -163,20 +134,10 @@ function UserViewModal({ user, onClose }) {
             <div className="text-xs text-gray-500 dark:text-gray-400">Joined: {user.createdAt}</div>
             <div className="text-xs text-gray-500 dark:text-gray-400">Last active: {user.lastActive}</div>
           </div>
-
-          <div className="flex items-center gap-2">
-            {/* Close button — now theme-supportive and visible */}
-            <button
-              onClick={onClose}
-              className={`${btnSmallWhite}`}
-              aria-label="Close modal"
-            >
-              Close
-            </button>
-          </div>
+          <button onClick={onClose} className={btnSmallWhite}>Close</button>
         </div>
 
-        {/* SIX stat tiles: Total Spend, Total Orders, Successful, Cancelled/Returns, In-progress, Coupon Savings */}
+        {/* SIX stat tiles */}
         <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           <div className="p-3 rounded-lg bg-gray-100 dark:bg-[#071226] flex items-center justify-between">
             <div>
@@ -239,7 +200,7 @@ function UserViewModal({ user, onClose }) {
           </div>
         </div>
 
-        {/* Buttons to toggle show/hide orders, cart, wishlist */}
+        {/* toggles */}
         <div className="mt-6 flex gap-3">
           <button onClick={() => setShowOrders((s) => !s)} className={`${showOrders ? btnToggleActive : btnToggle}`}>
             {showOrders ? "Hide Orders" : "View Orders"}
@@ -254,86 +215,89 @@ function UserViewModal({ user, onClose }) {
           </button>
         </div>
 
+        {loading && <div className="mt-4 text-sm text-gray-500">Loading data...</div>}
+
         <div className="mt-4 space-y-3">
-          {showOrders && (
-            <>
-              {(!user.orders || user.orders.length === 0) ? (
-                <div className="text-sm text-gray-500 dark:text-gray-400">No orders for this user.</div>
-              ) : (
-                user.orders.map((o) => (
-                  <div key={o.id} className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center">
-                    <div>
-                      <div className="font-medium">{o.item}</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">Order ID: {o.id} • {o.date}</div>
-                    </div>
-                    <div className="text-sm">₹{o.amount} • {o.status}</div>
-                  </div>
-                ))
-              )}
-            </>
-          )}
+          {showOrders && (orders.length === 0 ? (
+            <div className="text-sm text-gray-500">No orders for this user.</div>
+          ) : (
+            orders.map((o) => (
+              <div key={o.id} className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center">
+                <div>
+                  <div className="font-medium">{o.item}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Order ID: {o.id} • {o.date}</div>
+                </div>
+                <div className="text-sm">₹{o.amount} • {o.status}</div>
+              </div>
+            ))
+          ))}
 
-          {showCart && (
-            <>
-              {(!user.cart || user.cart.length === 0) ? (
-                <div className="text-sm text-gray-500 dark:text-gray-400">Cart is empty.</div>
-              ) : (
-                user.cart.map((c) => (
-                  <div key={c.id} className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center">
-                    <div className="font-medium">{c.item}</div>
-                    <div className="text-sm">₹{c.amount}</div>
-                  </div>
-                ))
-              )}
-            </>
-          )}
+          {showCart && (cart.length === 0 ? (
+            <div className="text-sm text-gray-500">Cart is empty.</div>
+          ) : (
+            cart.map((c) => (
+              <div key={c.id} className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center">
+                <div className="font-medium">{c.item}</div>
+                <div className="text-sm">₹{c.amount}</div>
+              </div>
+            ))
+          ))}
 
-          {showWishlist && (
-            <>
-              {(!user.wishlist || user.wishlist.length === 0) ? (
-                <div className="text-sm text-gray-500 dark:text-gray-400">Wishlist is empty.</div>
-              ) : (
-                user.wishlist.map((w) => (
-                  <div key={w.id} className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center">
-                    <div className="font-medium">{w.item}</div>
-                    <div className="text-sm">₹{w.amount}</div>
-                  </div>
-                ))
-              )}
-            </>
-          )}
+          {showWishlist && (wishlist.length === 0 ? (
+            <div className="text-sm text-gray-500">Wishlist is empty.</div>
+          ) : (
+            wishlist.map((w) => (
+              <div key={w.id} className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center">
+                <div className="font-medium">{w.item}</div>
+                <div className="text-sm">₹{w.amount}</div>
+              </div>
+            ))
+          ))}
         </div>
       </div>
     </div>
   );
 }
 
-/* ===== User Edit Modal (client-side demo update) ===== */
+/* ===== User Edit Modal (calls PUT /api/users/:id) ===== */
 function UserEditModal({ user, onClose, onSave }) {
   const [local, setLocal] = useState(user || {});
+  const [saving, setSaving] = useState(false);
   useEffect(() => setLocal(user || {}), [user]);
 
   if (!user) return null;
 
-  const save = () => {
-    onSave && onSave(local);
-    onClose && onClose();
+  const save = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: local.role, status: local.status }),
+      });
+      if (!res.ok) throw new Error("Failed to update user");
+      const updated = await res.json();
+      onSave && onSave(updated);
+      onClose && onClose();
+    } catch (err) {
+      console.error("Update failed", err);
+      alert("Failed to update user. See console for details.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 dark:bg-white/20 backdrop-blur-sm" onClick={onClose} />
-
       <div className="relative z-10 w-full max-w-xl bg-white dark:bg-[#05111a] rounded-2xl p-6 shadow-2xl border border-gray-300 dark:border-gray-800">
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="text-lg font-semibold">Edit user: {user.name}</div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Change role & status (demo only)</div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Change role & status</div>
           </div>
           <div>
-            <button onClick={onClose} className={`${btnSmallWhite}`} aria-label="Close edit modal">
-              Close
-            </button>
+            <button onClick={onClose} className={`${btnSmallWhite}`} aria-label="Close edit modal">Close</button>
           </div>
         </div>
 
@@ -348,7 +312,7 @@ function UserEditModal({ user, onClose, onSave }) {
           </div>
 
           <div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">Status (manual)</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Status</div>
             <select value={local.status} onChange={(e) => setLocal({ ...local, status: e.target.value })} className={inputCls}>
               <option value="active">active</option>
               <option value="inactive">inactive</option>
@@ -359,7 +323,7 @@ function UserEditModal({ user, onClose, onSave }) {
 
         <div className="flex items-center justify-end gap-3 mt-6">
           <button onClick={onClose} className={btnSmallDark}>Cancel</button>
-          <button onClick={save} className={btnWhite}>Save</button>
+          <button onClick={save} className={btnWhite} disabled={saving}>{saving ? "Saving..." : "Save"}</button>
         </div>
       </div>
     </div>
@@ -368,8 +332,9 @@ function UserEditModal({ user, onClose, onSave }) {
 
 /* ===== Main Component ===== */
 export default function UserManagementPanel() {
-  const [users, setUsers] = useState(DEMO_USERS);
-  const [viewUser, setViewUser] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [stats, setStats] = useState({});
+  const [viewUser, setViewUser] = useState(null); // object
   const [editUser, setEditUser] = useState(null);
 
   // which main section to show
@@ -379,20 +344,42 @@ export default function UserManagementPanel() {
   const [limit, setLimit] = useState(20);
   const [sortBy, setSortBy] = useState("newest");
 
+  const [loading, setLoading] = useState(false);
+
+  async function refreshAll() {
+    setLoading(true);
+    try {
+      const [usersRes, statsRes] = await Promise.all([fetch("/api/users"), fetch("/api/admin/stats")]);
+      const usersData = usersRes.ok ? await usersRes.json() : [];
+      const statsData = statsRes.ok ? await statsRes.json() : {};
+      setUsers(usersData || []);
+      setStats(statsData || {});
+    } catch (err) {
+      console.error("Error loading data", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
-    // placeholder for future fetch logic
+    refreshAll();
   }, []);
 
   // compute stats; active/inactive determined by recent activity within 7 days
-  const stats = useMemo(() => {
+  const computedStats = useMemo(() => {
     const total = users.length;
     const active = users.filter((u) => userHasRecentActivity(u, 7)).length;
     const inactive = total - active;
-    const male = users.filter((u) => (u.gender || "").toLowerCase() === "male").length;
-    const female = users.filter((u) => (u.gender || "").toLowerCase() === "female").length;
-    const other = total - male - female;
-    return { total, active, inactive, male, female, other };
-  }, [users]);
+
+    return {
+      total: stats.totalUsers ?? total,
+      active: stats.activeUsers ?? active,
+      inactive: stats.inactiveUsers ?? inactive,
+      male: stats.maleUsers ?? stats.male ?? users.filter((u) => (u.gender || "").toLowerCase() === "male").length,
+      female: stats.femaleUsers ?? stats.female ?? users.filter((u) => (u.gender || "").toLowerCase() === "female").length,
+      other: stats.otherUsers ?? stats.other ?? total - (users.filter((u) => (u.gender || "").toLowerCase() === "male").length + users.filter((u) => (u.gender || "").toLowerCase() === "female").length),
+    };
+  }, [users, stats]);
 
   const filtered = useMemo(() => {
     let list = [...users];
@@ -416,17 +403,37 @@ export default function UserManagementPanel() {
   const admins = useMemo(() => users.filter((u) => u.role === "admin"), [users]);
 
   /* Actions */
-  const handleDelete = (id) => {
-    if (!window.confirm("Delete user? (demo only)")) return;
-    setUsers((prev) => prev.filter((u) => u.id !== id));
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete user?")) return;
+    try {
+      const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+      setUsers((prev) => prev.filter((u) => u.id !== id));
+    } catch (err) {
+      console.error("Delete failed", err);
+      alert("Delete failed. See console for details.");
+    }
   };
 
   const handleSaveEdit = (updated) => {
+    // updated should be the server response, but allow partial
     setUsers((prev) => prev.map((u) => (u.id === updated.id ? { ...u, ...updated } : u)));
   };
 
-  const handleInlineRoleUpdate = (id, role) => {
-    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u)));
+  const handleInlineRoleUpdate = async (id, role) => {
+    try {
+      const res = await fetch(`/api/users/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      if (!res.ok) throw new Error("Update failed");
+      const updated = await res.json();
+      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...updated } : u)));
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update role. See console for details.");
+    }
   };
 
   return (
@@ -435,15 +442,15 @@ export default function UserManagementPanel() {
         {/* Stats grid: 6 required stats only */}
         <div className="rounded-xl border border-gray-300 dark:border-gray-800 p-6 bg-gray-50 dark:bg-[#071426]">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-            <StatCard label="Total Users" value={stats.total} color="bg-green-500" />
-            <StatCard label="Active Users" value={stats.active} color="bg-blue-500" />
-            <StatCard label="Inactive Users" value={stats.inactive} color="bg-yellow-500" />
+            <StatCard label="Total Users" value={computedStats.total} color="bg-green-500" />
+            <StatCard label="Active Users" value={computedStats.active} color="bg-blue-500" />
+            <StatCard label="Inactive Users" value={computedStats.inactive} color="bg-yellow-500" />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <StatCard label="Male Users" value={stats.male} color="bg-indigo-500" />
-            <StatCard label="Female Users" value={stats.female} color="bg-pink-500" />
-            <StatCard label="Other Users" value={stats.other} color="bg-gray-500" />
+            <StatCard label="Male Users" value={computedStats.male} color="bg-indigo-500" />
+            <StatCard label="Female Users" value={computedStats.female} color="bg-pink-500" />
+            <StatCard label="Other Users" value={computedStats.other} color="bg-gray-500" />
           </div>
         </div>
 
@@ -503,9 +510,7 @@ export default function UserManagementPanel() {
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
-                      No users found
-                    </td>
+                    <td colSpan={5} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">No users found</td>
                   </tr>
                 ) : (
                   filtered.map((u) => {
@@ -532,7 +537,7 @@ export default function UserManagementPanel() {
                               <span className="sr-only">Edit</span>
                             </button>
 
-                            <button onClick={() => { if (window.confirm("Delete user? (demo)")) handleDelete(u.id); }} className={`${btnDanger}`}>
+                            <button onClick={() => handleDelete(u.id)} className={`${btnDanger}`}>
                               <Trash2 className="w-4 h-4" />
                               <span className="sr-only">Delete</span>
                             </button>
@@ -613,8 +618,8 @@ export default function UserManagementPanel() {
       </div>
 
       {/* Modals */}
-      <UserViewModal user={viewUser} onClose={() => setViewUser(null)} />
-      <UserEditModal user={editUser} onClose={() => setEditUser(null)} onSave={handleSaveEdit} />
+      {viewUser && <UserViewModal user={viewUser} onClose={() => setViewUser(null)} />}
+      {editUser && <UserEditModal user={editUser} onClose={() => setEditUser(null)} onSave={handleSaveEdit} />}
     </div>
   );
 }
