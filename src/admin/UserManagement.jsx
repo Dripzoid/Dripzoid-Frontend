@@ -9,7 +9,7 @@
  *
  * Notes:
  * - If REACT_APP_API_BASE is not set, falls back to relative paths (e.g. "/api/users")
- * - No change to UI/styling — just wiring of API base
+ * - Sends Authorization header from localStorage or cookie and uses credentials: "include"
  */
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -24,24 +24,89 @@ import {
 
 /* ===== API BASE helper (reads from .env) ===== */
 const RAW_API_BASE = process.env.REACT_APP_API_BASE || "";
-// normalize: remove trailing slash if present
 const API_BASE = RAW_API_BASE ? RAW_API_BASE.replace(/\/$/, "") : "";
 
-/** helper to build full url; if API_BASE is empty, returns the relative path */
 function buildUrl(path) {
   // path should start with '/'
   return API_BASE ? `${API_BASE}${path}` : path;
+}
+
+/* ===== Auth helpers ===== */
+// try localStorage first, fallback to cookie named "token"
+function getTokenFromLocalstorageOrCookie() {
+  try {
+    const tokenLS = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (tokenLS) return tokenLS;
+
+    // read cookie
+    if (typeof document !== "undefined" && document.cookie) {
+      const match = document.cookie.split(";").map((c) => c.trim()).find((c) => c.startsWith("token="));
+      if (match) return decodeURIComponent(match.split("=")[1] || "");
+    }
+    return null;
+  } catch (e) {
+    console.warn("getToken error", e);
+    return null;
+  }
+}
+
+function getAuthHeaders(extra = {}) {
+  const token = getTokenFromLocalstorageOrCookie();
+  const headers = { ...extra };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return headers;
+}
+
+/* Small centralized fetch wrapper for JSON responses */
+async function fetchJson(url, opts = {}) {
+  // default options: use credentials so cookie auth works, and no-store for GETs to avoid 304 issues
+  const method = (opts.method || "GET").toUpperCase();
+  const baseOpts = {
+    credentials: "include", // include cookies (httpOnly token) as fallback
+    cache: opts.cache ?? (method === "GET" ? "no-store" : "no-cache"),
+  };
+
+  // merge headers, and apply Authorization if missing
+  const userHeaders = opts.headers || {};
+  const headers = { ...getAuthHeaders(userHeaders), ...userHeaders };
+  const merged = { ...baseOpts, ...opts, headers };
+
+  const res = await fetch(url, merged);
+  // handle common auth errors with clearer message
+  if (res.status === 401 || res.status === 403) {
+    const text = await res.text().catch(() => "");
+    const message = text || res.statusText || "Unauthorized";
+    const err = new Error(`Auth error: ${message}`);
+    err.status = res.status;
+    throw err;
+  }
+
+  // no content
+  if (res.status === 204) return null;
+
+  // attempt JSON parse; if fails, return raw text
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("application/json")) {
+    return await res.json();
+  } else {
+    const txt = await res.text().catch(() => "");
+    // if server responded with empty body but ok, return null
+    if (!txt) return null;
+    try {
+      return JSON.parse(txt);
+    } catch {
+      return txt;
+    }
+  }
 }
 
 /* ===== STYLE CONSTANTS ===== */
 const inputCls =
   "w-full p-3 rounded-full border border-gray-300 dark:border-gray-800 bg-white dark:bg-[#0b1220] text-gray-900 dark:text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition";
 
-// Base button style (fully rounded)
 const btnBase =
   "inline-flex items-center gap-2 rounded-full font-medium transition-transform transform hover:-translate-y-0.5 active:translate-y-0 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500";
 
-// Variants (theme-aware)
 const btnWhite =
   `${btnBase} px-4 py-2 bg-white text-slate-900 border border-gray-200 shadow-sm hover:shadow-md dark:bg-gray-800 dark:text-white dark:border-gray-700`;
 const btnDark =
@@ -60,7 +125,6 @@ const btnToggleActive =
 /* ===== Helper ===== */
 const fmt = (n) => (typeof n === "number" ? n.toLocaleString() : n);
 
-// check if a date string is within the last N days
 function isDateWithinDays(dateStr, days = 7) {
   if (!dateStr) return false;
   const d = new Date(dateStr);
@@ -71,7 +135,6 @@ function isDateWithinDays(dateStr, days = 7) {
   return diffDays <= days;
 }
 
-// determine if user had activity (order/cart/wishlist) within last N days
 function userHasRecentActivity(user, days = 7) {
   if (!user) return false;
   const { orders = [], cart = [], wishlist = [] } = user;
@@ -102,22 +165,25 @@ function UserViewModal({ user, onClose }) {
     async function load() {
       setLoading(true);
       try {
-        const [ordersRes, cartRes, wishRes] = await Promise.all([
-          fetch(buildUrl(`/api/admin/orders/user/${user.id}`), { cache: "no-store" }),
-          fetch(buildUrl(`/api/cart/${user.id}`), { cache: "no-store" }),
-          fetch(buildUrl(`/api/wishlist/${user.id}`), { cache: "no-store" }),
-        ]);
-
         const [ordersData, cartData, wishData] = await Promise.all([
-          ordersRes.ok ? ordersRes.json() : [],
-          cartRes.ok ? cartRes.json() : [],
-          wishRes.ok ? wishRes.json() : [],
+          fetchJson(buildUrl(`/api/admin/orders/user/${user.id}`), { method: "GET" }).catch((e) => {
+            console.warn("orders fetch error:", e);
+            return [];
+          }),
+          fetchJson(buildUrl(`/api/cart/${user.id}`), { method: "GET" }).catch((e) => {
+            console.warn("cart fetch error:", e);
+            return [];
+          }),
+          fetchJson(buildUrl(`/api/wishlist/${user.id}`), { method: "GET" }).catch((e) => {
+            console.warn("wishlist fetch error:", e);
+            return [];
+          }),
         ]);
 
         if (!mounted) return;
-        setOrders(ordersData || []);
-        setCart(cartData || []);
-        setWishlist(wishData || []);
+        setOrders(Array.isArray(ordersData) ? ordersData : []);
+        setCart(Array.isArray(cartData) ? cartData : []);
+        setWishlist(Array.isArray(wishData) ? wishData : []);
       } catch (err) {
         console.error("Error fetching user details", err);
       } finally {
@@ -280,18 +346,21 @@ function UserEditModal({ user, onClose, onSave }) {
   const save = async () => {
     setSaving(true);
     try {
-      const res = await fetch(buildUrl(`/api/users/${user.id}`), {
+      const payload = { role: local.role, status: local.status, name: local.name, phone: local.phone };
+      const updated = await fetchJson(buildUrl(`/api/users/${user.id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role: local.role, status: local.status }),
+        body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Failed to update user");
-      const updated = await res.json();
-      onSave && onSave(updated);
+      onSave && onSave(updated || { id: user.id, ...payload });
       onClose && onClose();
     } catch (err) {
       console.error("Update failed", err);
-      alert("Failed to update user. See console for details.");
+      if (err.status === 401 || err.status === 403) {
+        alert("Not authorized. Please sign in.");
+      } else {
+        alert("Failed to update user. See console for details.");
+      }
     } finally {
       setSaving(false);
     }
@@ -314,7 +383,7 @@ function UserEditModal({ user, onClose, onSave }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <div className="text-xs text-gray-500 dark:text-gray-400">Role</div>
-            <select value={local.role} onChange={(e) => setLocal({ ...local, role: e.target.value })} className={inputCls}>
+            <select value={local.role || "customer"} onChange={(e) => setLocal({ ...local, role: e.target.value })} className={inputCls}>
               <option value="customer">customer</option>
               <option value="seller">seller</option>
               <option value="admin">admin</option>
@@ -323,7 +392,7 @@ function UserEditModal({ user, onClose, onSave }) {
 
           <div>
             <div className="text-xs text-gray-500 dark:text-gray-400">Status</div>
-            <select value={local.status} onChange={(e) => setLocal({ ...local, status: e.target.value })} className={inputCls}>
+            <select value={local.status || "active"} onChange={(e) => setLocal({ ...local, status: e.target.value })} className={inputCls}>
               <option value="active">active</option>
               <option value="inactive">inactive</option>
             </select>
@@ -359,13 +428,18 @@ export default function UserManagementPanel() {
   async function refreshAll() {
     setLoading(true);
     try {
-      const [usersRes, statsRes] = await Promise.all([
-        fetch(buildUrl("/api/users"), { cache: "no-store" }),
-        fetch(buildUrl("/api/admin/stats"), { cache: "no-store" }),
+      const [usersData, statsData] = await Promise.all([
+        fetchJson(buildUrl("/api/users"), { method: "GET" }).catch((e) => {
+          console.error("/api/users error", e);
+          return [];
+        }),
+        fetchJson(buildUrl("/api/admin/stats"), { method: "GET" }).catch((e) => {
+          console.error("/api/admin/stats error", e);
+          return {};
+        }),
       ]);
-      const usersData = usersRes.ok ? await usersRes.json() : [];
-      const statsData = statsRes.ok ? await statsRes.json() : {};
-      setUsers(usersData || []);
+
+      setUsers(Array.isArray(usersData) ? usersData : []);
       setStats(statsData || {});
     } catch (err) {
       console.error("Error loading data", err);
@@ -401,51 +475,57 @@ export default function UserManagementPanel() {
       list = list.filter(
         (u) =>
           (u.name || "").toLowerCase().includes(qq) ||
-          (u.id || "").toLowerCase().includes(qq) ||
+          String(u.id || "").toLowerCase().includes(qq) ||
           (u.email || "").toLowerCase().includes(qq)
       );
     }
 
-    if (sortBy === "name_asc") list.sort((a, b) => a.name.localeCompare(b.name));
-    if (sortBy === "name_desc") list.sort((a, b) => b.name.localeCompare(a.name));
+    if (sortBy === "name_asc") list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    if (sortBy === "name_desc") list.sort((a, b) => (b.name || "").localeCompare(a.name || ""));
     if (sortBy === "most_spend") list.sort((a, b) => (b.totalSpend || 0) - (a.totalSpend || 0));
 
     return list.slice(0, limit === 999999 ? list.length : limit);
   }, [users, q, limit, sortBy]);
 
-  const admins = useMemo(() => users.filter((u) => u.role === "admin"), [users]);
+  const admins = useMemo(() => users.filter((u) => u.role === "admin" || u.is_admin === 1), [users]);
 
   /* Actions */
   const handleDelete = async (id) => {
     if (!window.confirm("Delete user?")) return;
     try {
-      const res = await fetch(buildUrl(`/api/users/${id}`), { method: "DELETE" });
-      if (!res.ok) throw new Error("Delete failed");
+      await fetchJson(buildUrl(`/api/users/${id}`), { method: "DELETE" });
       setUsers((prev) => prev.filter((u) => u.id !== id));
     } catch (err) {
       console.error("Delete failed", err);
-      alert("Delete failed. See console for details.");
+      if (err.status === 401 || err.status === 403) {
+        alert("Not authorized. Please sign in.");
+      } else {
+        alert("Delete failed. See console for details.");
+      }
     }
   };
 
   const handleSaveEdit = (updated) => {
-    // updated should be the server response, but allow partial
+    // server might return a partial user; merge by id
     setUsers((prev) => prev.map((u) => (u.id === updated.id ? { ...u, ...updated } : u)));
   };
 
   const handleInlineRoleUpdate = async (id, role) => {
     try {
-      const res = await fetch(buildUrl(`/api/users/${id}`), {
+      const payload = { role };
+      const updated = await fetchJson(buildUrl(`/api/users/${id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role }),
+        body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Update failed");
-      const updated = await res.json();
       setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...updated } : u)));
     } catch (err) {
       console.error(err);
-      alert("Failed to update role. See console for details.");
+      if (err.status === 401 || err.status === 403) {
+        alert("Not authorized. Please sign in.");
+      } else {
+        alert("Failed to update role. See console for details.");
+      }
     }
   };
 
