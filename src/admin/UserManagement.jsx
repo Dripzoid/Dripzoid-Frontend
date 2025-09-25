@@ -1,8 +1,10 @@
 /**
  * UserManagementPanel.jsx
  *
- * Updated button styles: modern Tailwind, fully rounded buttons, nicer shadows, focus rings.
- * Keeps all previous logic intact.
+ * - Theme-supportive buttons (light/dark) — fully rounded
+ * - Modal backdrop adapts to theme
+ * - Close buttons updated so they remain visible in both themes
+ * - Keeps previous logic: 6 stat cards, View modal shows 6 stats and toggles for Orders/Cart/Wishlist
  */
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -23,21 +25,21 @@ const inputCls =
 const btnBase =
   "inline-flex items-center gap-2 rounded-full font-medium transition-transform transform hover:-translate-y-0.5 active:translate-y-0 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500";
 
-// Variants
+// Variants (theme-aware)
 const btnWhite =
-  `${btnBase} px-4 py-2 bg-white text-slate-900 border border-gray-200 shadow-sm hover:shadow-md dark:bg-slate-700 dark:text-white dark:border-gray-600`;
+  `${btnBase} px-4 py-2 bg-white text-slate-900 border border-gray-200 shadow-sm hover:shadow-md dark:bg-gray-800 dark:text-white dark:border-gray-700`;
 const btnDark =
   `${btnBase} px-4 py-2 bg-black text-white border border-gray-800 shadow-sm hover:shadow-md dark:bg-white dark:text-black dark:border-gray-200`;
 const btnSmallDark =
-  `${btnBase} px-3 py-1 text-sm bg-[#0b1220] text-white border border-gray-800 shadow-sm hover:brightness-110`;
+  `${btnBase} px-3 py-1 text-sm bg-black text-white border border-gray-800 shadow-sm hover:brightness-110 dark:bg-white dark:text-black dark:border-gray-200`;
 const btnSmallWhite =
-  `${btnBase} px-3 py-1 text-sm bg-white text-black border border-gray-200 shadow-sm hover:brightness-95`;
+  `${btnBase} px-3 py-1 text-sm bg-white text-slate-900 border border-gray-200 shadow-sm hover:brightness-95 dark:bg-gray-700 dark:text-white dark:border-gray-700`;
 const btnDanger =
   `${btnBase} px-3 py-1 text-sm bg-red-600 text-white border border-red-700 shadow-sm hover:bg-red-700`;
 const btnToggle =
-  `${btnBase} px-3 py-2 text-sm bg-white dark:bg-[#0b1220] text-black dark:text-gray-200 border border-gray-300 dark:border-gray-700 shadow-sm`;
+  `${btnBase} px-3 py-2 text-sm bg-white dark:bg-gray-800 text-slate-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 shadow-sm`;
 const btnToggleActive =
-  `${btnBase} px-3 py-2 text-sm bg-black text-white dark:bg-white dark:text-black border border-gray-800 dark:border-gray-200 shadow-md`;
+  `${btnBase} px-3 py-2 text-sm bg-black dark:bg-white text-white dark:text-black border border-gray-800 dark:border-gray-200 shadow-md`;
 
 /* ===== DEMO DATA (cart/wishlist items include date fields for activity detection) ===== */
 const DEMO_USERS = [
@@ -150,8 +152,8 @@ function UserViewModal({ user, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div className="absolute inset-0 bg-black/40 dark:bg-white/20 backdrop-blur-sm" onClick={onClose} />
-
+      {/* theme-supportive backdrop */}
+      <div className="absolute inset-0 bg-black/40 dark:bg-white/20 backdrop-blur-sm" onClick={onClose} />
 
       <div className="relative z-10 w-full max-w-5xl bg-white dark:bg-[#05111a] rounded-2xl p-6 shadow-2xl border border-gray-300 dark:border-gray-800 max-h-[92vh] overflow-auto text-gray-900 dark:text-gray-100">
         <div className="flex items-start justify-between gap-4">
@@ -163,7 +165,14 @@ function UserViewModal({ user, onClose }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <button onClick={onClose} className={`${btnSmallWhite} bg-white/80 dark:bg-transparent`}>Close</button>
+            {/* Close button — now theme-supportive and visible */}
+            <button
+              onClick={onClose}
+              className={`${btnSmallWhite}`}
+              aria-label="Close modal"
+            >
+              Close
+            </button>
           </div>
         </div>
 
@@ -232,24 +241,15 @@ function UserViewModal({ user, onClose }) {
 
         {/* Buttons to toggle show/hide orders, cart, wishlist */}
         <div className="mt-6 flex gap-3">
-          <button
-            onClick={() => setShowOrders((s) => !s)}
-            className={`${showOrders ? btnToggleActive : btnToggle}`}
-          >
+          <button onClick={() => setShowOrders((s) => !s)} className={`${showOrders ? btnToggleActive : btnToggle}`}>
             {showOrders ? "Hide Orders" : "View Orders"}
           </button>
 
-          <button
-            onClick={() => setShowCart((s) => !s)}
-            className={`${showCart ? btnToggleActive : btnToggle}`}
-          >
+          <button onClick={() => setShowCart((s) => !s)} className={`${showCart ? btnToggleActive : btnToggle}`}>
             {showCart ? "Hide Cart" : "View Cart"}
           </button>
 
-          <button
-            onClick={() => setShowWishlist((s) => !s)}
-            className={`${showWishlist ? btnToggleActive : btnToggle}`}
-          >
+          <button onClick={() => setShowWishlist((s) => !s)} className={`${showWishlist ? btnToggleActive : btnToggle}`}>
             {showWishlist ? "Hide Wishlist" : "View Wishlist"}
           </button>
         </div>
@@ -322,7 +322,7 @@ function UserEditModal({ user, onClose, onSave }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div className="absolute inset-0 bg-black/40 dark:bg-white/20 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/40 dark:bg-white/20 backdrop-blur-sm" onClick={onClose} />
 
       <div className="relative z-10 w-full max-w-xl bg-white dark:bg-[#05111a] rounded-2xl p-6 shadow-2xl border border-gray-300 dark:border-gray-800">
         <div className="flex items-center justify-between mb-4">
@@ -331,7 +331,9 @@ function UserEditModal({ user, onClose, onSave }) {
             <div className="text-sm text-gray-600 dark:text-gray-400">Change role & status (demo only)</div>
           </div>
           <div>
-            <button onClick={onClose} className={`${btnSmallWhite} bg-white/80 dark:bg-transparent`}>Close</button>
+            <button onClick={onClose} className={`${btnSmallWhite}`} aria-label="Close edit modal">
+              Close
+            </button>
           </div>
         </div>
 
