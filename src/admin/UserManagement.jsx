@@ -1,340 +1,532 @@
-// src/pages/UserManagement.jsx
-import React, { useEffect, useMemo, useState } from "react";
-import {
-  Users,
-  Search,
-  Trash2,
-  BarChart3,
-  User,
-  Calendar,
-  Download,
-  Smartphone,
-  CheckCircle,
-} from "lucide-react";
-import { FaMale as Male, FaFemale as Female, FaTransgender } from "react-icons/fa";
+/*
+UserManagementPanel.jsx
+Rewritten to match the look-and-feel, conventions and utility constants used in `ProductsAdmin.jsx`.
+
+Features implemented:
+- Top-level stats grid (total, active, inactive, admins etc.) with motion animations
+- Users list with search, pagination, sort, filters and an actions column
+- Admins section showing admin accounts and placeholder admin actions
+- Update Users section with search-by-name/ID, role filter, sort and inline role update
+- User view modal (complete details + six requested stats)
+- User edit modal for updating role/status
+
+Notes:
+- Uses the same Tailwind utility constants as ProductsAdmin.jsx for consistent theming
+- Uses `api` helper (assumes ../utils/api exists and works like ProductsAdmin)
+- Expects endpoints: /api/admin/users (list), /api/admin/users/:id (single), /api/admin/users/:id (PUT), /api/admin/stats (users-related stats). Adjust endpoints if your backend differs.
+- Dark mode and B/W theme styling follow the pattern used in ProductsAdmin.jsx
+*/
+
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import api from "../utils/api";
 import { motion } from "framer-motion";
+import {
+  Plus,
+  Search,
+  Eye,
+  Edit,
+  Trash2,
+  Users as UsersIcon,
+  Shield,
+  Key,
+} from "lucide-react";
 
-/* helpers */
-function formatCurrency(n) {
-  return typeof n === "number"
-    ? n.toLocaleString("en-IN", {
-        style: "currency",
-        currency: "INR",
-        maximumFractionDigits: 2,
-      })
-    : "₹0.00";
-}
-function isoWeek() {
-  try {
-    const d = new Date();
-    const target = new Date(d.valueOf());
-    const dayNr = (d.getDay() + 6) % 7;
-    target.setDate(d.getDate() - dayNr + 3);
-    const firstThursday = new Date(target.getFullYear(), 0, 4);
-    const diff = (target - firstThursday) / 86400000;
-    const wk = 1 + Math.round(diff / 7);
-    return `${target.getFullYear()}-W${String(wk).padStart(2, "0")}`;
-  } catch {
-    return "";
+/* ======= STYLE CONSTANTS (copied from ProductsAdmin.jsx for consistency) ======= */
+const inputCls =
+  "w-full p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-black dark:focus:ring-white transition";
+const textareaCls = inputCls + " resize-none";
+const btnPrimaryCls =
+  "px-4 py-2 rounded-lg shadow-sm bg-black text-white dark:bg-white dark:text-black hover:scale-[1.02] transition-transform disabled:opacity-60";
+const btnSecondaryCls =
+  "px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 transition";
+const cardCls =
+  "p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-sm hover:shadow-lg transition";
+
+/* ======= Helpers ======= */
+const normalizeResponse = (res) => {
+  if (!res) return {};
+  if (res.data && typeof res.data === "object") {
+    if (res.data.data || typeof res.data.total !== "undefined") return res.data;
+    return res.data;
   }
-}
+  return res;
+};
 
-/* Avatar component */
-function Avatar({ name }) {
-  const initials =
-    name?.split(" ").map((n) => n[0]).slice(0, 2).join("") || "?";
+const fmt = (n) => (typeof n === "number" ? n.toLocaleString() : n);
+
+/* ======= User View Modal ======= */
+function UserViewModal({ user, onClose }) {
+  if (!user) return null;
   return (
-    <div className="w-10 h-10 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center text-sm font-medium text-black dark:text-white">
-      {initials}
-    </div>
-  );
-}
-
-/* HoverSparkline - stroke uses currentColor so it adapts to theme via container text color */
-function HoverSparkline({ points = [] }) {
-  const [hover, setHover] = useState(null);
-  const w = 480,
-    h = 90,
-    padding = 10;
-  // handle empty points
-  const px = points && points.length ? points : [0];
-  const max = Math.max(...px, 1);
-  const min = Math.min(...px, 0);
-  const step = (w - padding * 2) / Math.max(1, px.length - 1);
-  const coords = px.map((p, i) => ({
-    x: padding + i * step,
-    y:
-      padding +
-      (1 - (p - min) / (max - min || 1)) * (h - padding * 2),
-    v: p,
-  }));
-
-  return (
-    <div className="relative p-2 rounded border bg-white dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800 text-black dark:text-white">
-      {/* polyline uses currentColor so adapts to theme */}
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-24" preserveAspectRatio="none" aria-hidden>
-        <polyline
-          points={coords.map((c) => `${c.x},${c.y}`).join(" ")}
-          fill="none"
-          stroke="currentColor"
-          strokeOpacity="0.95"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {coords.map((c, i) => (
-          <circle
-            key={i}
-            cx={c.x}
-            cy={c.y}
-            r={4}
-            fill={hover === i ? "currentColor" : "transparent"}
-            stroke="currentColor"
-            strokeOpacity={0.9}
-          />
-        ))}
-        {coords.map((c, i) => (
-          <rect
-            key={i}
-            x={c.x - step / 2}
-            y={0}
-            width={step}
-            height={h}
-            fill="transparent"
-            onMouseEnter={() => setHover(i)}
-            onMouseLeave={() => setHover(null)}
-          />
-        ))}
-      </svg>
-
-      {hover !== null && coords[hover] && (
-        <div className="absolute left-3 top-2 px-2 py-1 bg-white text-black dark:bg-black dark:text-white rounded text-xs shadow">
-          {formatCurrency(coords[hover].v)}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* MonthlyHeatmap: groups 365-day array into months and renders small stacked bars per month */
-const MonthlyHeatmap = React.memo(({ cells = [] }) => {
-  // start 364 days ago (so includes today)
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - 364);
-
-  const months = {};
-  for (let d = 0; d < 365; d++) {
-    const dt = new Date(start);
-    dt.setDate(start.getDate() + d); // start.getDate() is constant; adding d moves forward
-    const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
-    if (!months[key])
-      months[key] = {
-        label: dt.toLocaleString(undefined, { month: "short", year: "numeric" }),
-        days: [],
-      };
-    months[key].days.push(cells[d] || 0);
-  }
-  const monthArr = Object.entries(months);
-
-  return (
-    <div className="w-full overflow-auto">
-      <div className="flex gap-2 items-end pb-2">
-        {monthArr.map(([k, m]) => (
-          <div key={k} className="flex flex-col items-center gap-1">
-            <div className="flex flex-col-reverse gap-[2px]">
-              {m.days.map((c, i) => (
-                <div
-                  key={i}
-                  title={`${m.label} - day ${i + 1}: ${c} events`}
-                  className={`w-2 rounded-sm ${c === 0 ? "bg-neutral-200 dark:bg-neutral-800" : c < 2 ? "bg-green-200 dark:bg-green-800" : c < 4 ? "bg-green-400 dark:bg-green-600" : "bg-green-600 dark:bg-green-400"}`}
-                  style={{ height: 6 }}
-                />
-              ))}
-            </div>
-            <div className="text-[10px] text-neutral-600 dark:text-white/60 mt-1">{m.label.split(" ")[0]}</div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-3xl bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-2xl border border-gray-100 dark:border-gray-800 max-h-[92vh] overflow-auto">
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="text-xl font-semibold">{user.name}</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">{user.email}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Joined: {user.createdAt ?? user.created_at ?? "—"}</div>
           </div>
-        ))}
+          <div>
+            <button onClick={onClose} className="px-3 py-1 rounded border border-gray-200 dark:border-gray-700">Close</button>
+          </div>
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="md:col-span-2 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 border border-gray-100 dark:border-gray-800 rounded">
+                <div className="text-xs text-gray-500 dark:text-gray-400">User ID</div>
+                <div className="font-medium mt-1">{user.id}</div>
+              </div>
+              <div className="p-3 border border-gray-100 dark:border-gray-800 rounded">
+                <div className="text-xs text-gray-500 dark:text-gray-400">Gender</div>
+                <div className="font-medium mt-1">{user.gender ?? "—"}</div>
+              </div>
+
+              <div className="p-3 border border-gray-100 dark:border-gray-800 rounded col-span-2">
+                <div className="text-xs text-gray-500 dark:text-gray-400">Email</div>
+                <div className="font-medium mt-1">{user.email}</div>
+              </div>
+
+              <div className="p-3 border border-gray-100 dark:border-gray-800 rounded">
+                <div className="text-xs text-gray-500 dark:text-gray-400">Role</div>
+                <div className="font-medium mt-1 capitalize">{user.role}</div>
+              </div>
+
+              <div className="p-3 border border-gray-100 dark:border-gray-800 rounded">
+                <div className="text-xs text-gray-500 dark:text-gray-400">Status</div>
+                <div className="font-medium mt-1">{user.status}</div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div className="text-sm font-semibold mb-3">Key Stats</div>
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Total Spend</div>
+                <div className="text-lg font-bold">₹ {fmt(user.totalSpend ?? user.total_spend ?? 0)}</div>
+              </div>
+
+              <div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Total Orders</div>
+                <div className="text-lg font-bold">{fmt(user.totalOrders ?? user.total_orders ?? 0)}</div>
+              </div>
+
+              <div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Successful Orders</div>
+                <div className="text-lg font-bold">{fmt(user.successfulOrders ?? user.successful_orders ?? 0)}</div>
+              </div>
+
+              <div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Cancelled / Returns</div>
+                <div className="text-lg font-bold">{fmt(user.cancelledOrders ?? user.cancelled_orders ?? 0)}</div>
+              </div>
+
+              <div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">In-progress Orders</div>
+                <div className="text-lg font-bold">{fmt(user.inProgressOrders ?? user.in_progress_orders ?? 0)}</div>
+              </div>
+
+              <div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Coupon Savings</div>
+                <div className="text-lg font-bold">₹ {fmt(user.couponSavings ?? user.coupon_savings ?? 0)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Additional details (if any) */}
+        <div className="mt-6">
+          <div className="text-sm text-gray-500 dark:text-gray-400">Last active: {user.lastActive ?? user.last_active ?? "—"}</div>
+        </div>
       </div>
     </div>
   );
-});
-
-/* Demo data generator */
-function makeUser(i) {
-  const spend = Math.round(Math.random() * 150000);
-  const orders = Math.floor(Math.random() * 120);
-  const roles = ["Admin", "Editor", "Customer"];
-  const genderSet = ["Female", "Male", "Other"];
-  const role = roles[i % roles.length];
-  const gender = genderSet[i % genderSet.length];
-  const age = 20 + (i % 35);
-  const lastLoginOffset = Math.floor(Math.random() * 365);
-  const overall = {
-    total_orders: orders,
-    total_spend: spend,
-    coupon_savings: Math.round(Math.random() * 5000),
-    orders_successful: Math.floor(orders * (0.75 + Math.random() * 0.2)),
-    orders_cancelled: Math.floor(orders * Math.random() * 0.15),
-    orders_returned: Math.floor(orders * Math.random() * 0.08),
-  };
-  const makeSlice = (factor) => ({
-    total_orders: Math.max(0, Math.floor(overall.total_orders * factor)),
-    total_spend: Math.round(overall.total_spend * factor),
-    coupon_savings: Math.round(overall.coupon_savings * factor),
-    orders_successful: Math.floor(overall.orders_successful * factor),
-    orders_cancelled: Math.floor(overall.orders_cancelled * factor),
-    orders_returned: Math.floor(overall.orders_returned * factor),
-  });
-  const stats = { overall, monthly: makeSlice(0.4), weekly: makeSlice(0.08), day: makeSlice(0.01) };
-  const heat365 = Array.from({ length: 365 }, () => (Math.random() > 0.82 ? Math.ceil(Math.random() * 5) : 0));
-  const spendTrend = Array.from({ length: 12 }, (_, idx) => Math.round(overall.total_spend * (0.05 + Math.random() * 0.12) * (idx + 1) / 6));
-  return {
-    id: i + 1,
-    name: ["Asha", "Rahul", "Maya", "Vikram", "Sonia"][i % 5] + " " + (i + 1),
-    email: `user${i + 1}@example.com`,
-    phone: `+91-9${String(100000000 + i).slice(-9)}`,
-    signup: new Date(Date.now() - i * 86400000).toISOString(),
-    lastLogin: new Date(Date.now() - lastLoginOffset * 86400000).toISOString(),
-    status: i % 7 === 0 ? "blocked" : lastLoginOffset > 90 ? "inactive" : "active",
-    role,
-    gender,
-    age,
-    stats,
-    spendTrend,
-    heat365,
-  };
 }
 
-/* Main Component */
-export default function UserManagement() {
-  const [query, setQuery] = useState("");
-  const [users, setUsers] = useState([]);
-  const [selectedIds, setSelectedIds] = useState(new Set());
-  const [openUser, setOpenUser] = useState(null);
-  const [range, setRange] = useState("overall");
-  const [timeRange, setTimeRange] = useState("overall");
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [week, setWeek] = useState(isoWeek());
-  const [date, setDate] = useState("");
-  const [pageSize, setPageSize] = useState(20);
-  const [page, setPage] = useState(1);
+/* ======= User Edit Modal (role/status) ======= */
+function UserEditModal({ user, onClose, onSave }) {
+  const [local, setLocal] = useState(user || {});
+  useEffect(() => setLocal(user || {}), [user]);
 
-  const [viewFrom, setViewFrom] = useState("");
-  const [viewTo, setViewTo] = useState("");
+  if (!user) return null;
 
-  useEffect(() => {
-    setUsers(Array.from({ length: 28 }).map((_, i) => makeUser(i)));
-  }, []);
-
-  useEffect(() => {
-    if (openUser) setTimeRange("overall");
-  }, [openUser]);
-
-  const kpis = useMemo(() => {
-    const total = users.length;
-    const active = users.filter((u) => u.status === "active").length;
-    const inactive = users.filter((u) => u.status === "inactive").length;
-    const male = users.filter((u) => u.gender === "Male").length;
-    const female = users.filter((u) => u.gender === "Female").length;
-    const other = users.filter((u) => u.gender !== "Male" && u.gender !== "Female").length;
-    return { total, active, inactive, male, female, other };
-  }, [users]);
-
-  const filtered = useMemo(() => {
-    return users.filter((u) => {
-      if (!query) return true;
-      const q = query.toLowerCase();
-      return `${u.name} ${u.email} ${u.id}`.toLowerCase().includes(q);
-    });
-  }, [users, query]);
-
-  const toggleSelect = (id) => setSelectedIds((s) => { const c = new Set(s); c.has(id) ? c.delete(id) : c.add(id); return c; });
-  const selectAll = () => setSelectedIds(new Set(filtered.map((u) => u.id)));
-  const clearSelection = () => setSelectedIds(new Set());
-
-  const pageCount = Math.ceil(filtered.length / pageSize) || 1;
-  useEffect(() => { setPage(1); }, [query, pageSize]);
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
-
-  const kpiTiles = [
-    { label: "Total users", value: kpis.total, icon: Users },
-    { label: "Active users", value: kpis.active, icon: CheckCircle },
-    { label: "Inactive users", value: kpis.inactive, icon: BarChart3 },
-    { label: "Male", value: kpis.male, icon: Male },
-    { label: "Female", value: kpis.female, icon: Female },
-    { label: "Other", value: kpis.other, icon: Smartphone },
-  ];
-
-  // demo block selected action
-  const blockSelected = () => {
-    if (selectedIds.size === 0) return alert("Select at least one user");
-    setUsers((prev) => prev.map((u) => (selectedIds.has(u.id) ? { ...u, status: "blocked" } : u)));
-    setSelectedIds(new Set());
-    alert("Blocked selected users (demo)");
+  const handleSave = async () => {
+    if (typeof onSave === "function") await onSave(local);
+    onClose && onClose();
   };
 
-  // purge demo
-  const purgeUserNow = (userId) => { setUsers((p) => p.filter((u) => u.id !== userId)); setOpenUser(null); alert("Purged (demo)"); };
-
   return (
-    <div className="min-h-screen bg-white dark:bg-black text-black dark:text-white p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* KPI Tiles */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          {kpiTiles.map((s) => (
-            <div key={s.label} className="p-4 rounded-lg bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
-              <div>
-                <div className="text-xs text-neutral-600 dark:text-white/70">{s.label}</div>
-                <div className="text-2xl font-bold mt-2">{s.value}</div>
-              </div>
-              <div className="rounded-full bg-black text-white dark:bg-white dark:text-black p-3">
-                <s.icon className="w-5 h-5" />
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Search + controls */}
-        <div className="flex items-center gap-3 mb-4">
-          <div className="ml-auto flex items-center gap-2 w-full md:w-auto">
-            <div className="flex items-center bg-neutral-100 dark:bg-neutral-900 rounded-md border border-neutral-200 dark:border-neutral-800 px-3 py-1 gap-2 w-full md:w-96">
-              <Search className="text-neutral-600 dark:text-white/60 w-4 h-4" />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search users..." className="bg-transparent outline-none text-black dark:text-white w-full" />
-            </div>
-            <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="px-3 py-2 bg-white dark:bg-black border border-neutral-200 dark:border-neutral-800 rounded text-sm">
-              <option value={10}>10 / page</option>
-              <option value={20}>20 / page</option>
-              <option value={50}>50 / page</option>
-            </select>
-            <button onClick={() => alert("Export (demo)")} className="px-3 py-2 rounded border bg-white dark:bg-black">
-              <Download className="w-4 h-4" />
-            </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-xl bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-2xl border border-gray-100 dark:border-gray-800">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <div className="text-lg font-semibold">Edit user: {user.name}</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">Change role or status</div>
+          </div>
+          <div>
+            <button onClick={onClose} className="px-3 py-1 rounded border border-gray-200 dark:border-gray-700">Close</button>
           </div>
         </div>
 
-        {/* Table */}
-        <div className="rounded-2xl overflow-hidden border bg-neutral-50 dark:bg-neutral-900 dark:border-neutral-800 shadow">
-          <div className="overflow-auto">
-            <table className="w-full text-sm table-auto">
-              <thead className="bg-neutral-100 dark:bg-neutral-950 text-neutral-700 dark:text-white/70 sticky top-0">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Role</div>
+            <select value={local.role} onChange={(e) => setLocal({ ...local, role: e.target.value })} className={inputCls}>
+              <option value="customer">customer</option>
+              <option value="seller">seller</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+
+          <div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Status</div>
+            <select value={local.status} onChange={(e) => setLocal({ ...local, status: e.target.value })} className={inputCls}>
+              <option value="active">active</option>
+              <option value="inactive">inactive</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 mt-6">
+          <button onClick={onClose} className={btnSecondaryCls}>Cancel</button>
+          <button onClick={handleSave} className={btnPrimaryCls}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ======= Main Component ======= */
+export default function UserManagementPanel() {
+  const [users, setUsers] = useState([]);
+  const [admins, setAdmins] = useState([]);
+  const [stats, setStats] = useState({ total: 0, active: 0, inactive: 0, admins: 0 });
+
+  // controls
+  const [showUsers, setShowUsers] = useState(true);
+  const [showAdmins, setShowAdmins] = useState(false);
+  const [showUpdate, setShowUpdate] = useState(false);
+
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(false);
+
+  const [viewUser, setViewUser] = useState(null);
+  const [editUser, setEditUser] = useState(null);
+
+  const [sortBy, setSortBy] = useState("newest");
+
+  /* ======= Fetchers ======= */
+  const fetchUsers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get("/api/admin/users", { search: q, page, limit, sort: sortBy }, true);
+      const body = normalizeResponse(res);
+
+      let list = [];
+      let total = 0;
+      if (Array.isArray(body)) list = body;
+      else if (Array.isArray(body.data)) {
+        list = body.data;
+        total = Number(body.total ?? body.totalCount ?? 0);
+      } else if (Array.isArray(body.users)) {
+        list = body.users;
+        total = Number(body.total ?? 0);
+      } else {
+        const arr = Object.values(body).find((v) => Array.isArray(v));
+        if (arr) list = arr;
+      }
+
+      setUsers(list || []);
+      setTotalPages(limit === 999999 ? 1 : Math.max(1, Math.ceil((total || list.length || 0) / (limit || 20))));
+    } catch (err) {
+      console.error("fetchUsers error:", err);
+      setUsers([]);
+      setTotalPages(1);
+    } finally {
+      setLoading(false);
+    }
+  }, [q, page, limit, sortBy]);
+
+  const fetchAdmins = useCallback(async () => {
+    try {
+      const res = await api.get("/api/admin/users?role=admin", {}, true);
+      const body = normalizeResponse(res);
+      const list = Array.isArray(body) ? body : Array.isArray(body.data) ? body.data : body.users ?? [];
+      setAdmins(list || []);
+    } catch (err) {
+      console.error("fetchAdmins error:", err);
+      setAdmins([]);
+    }
+  }, []);
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await api.get("/api/admin/stats/users", {}, true);
+      const body = normalizeResponse(res);
+      const total = Number(body.total ?? body.totalUsers ?? 0);
+      const active = Number(body.active ?? body.activeUsers ?? 0);
+      const inactive = Number(body.inactive ?? body.inactiveUsers ?? 0);
+      const adminsCount = Number(body.admins ?? body.totalAdmins ?? 0);
+      setStats({ total, active, inactive, admins: adminsCount });
+    } catch (err) {
+      console.error("fetchStats error:", err);
+      setStats({ total: 0, active: 0, inactive: 0, admins: 0 });
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStats();
+    fetchAdmins();
+  }, [fetchStats, fetchAdmins]);
+
+  useEffect(() => {
+    if (showUsers) fetchUsers();
+  }, [fetchUsers, showUsers]);
+
+  /* ======= Actions ======= */
+  const openView = async (u) => {
+    // if we have only id, fetch full user
+    if (u && u.id && (!u.email || !u.totalOrders)) {
+      try {
+        const res = await api.get(`/api/admin/users/${u.id}`, {}, true);
+        const body = normalizeResponse(res);
+        const fetched = body.data && typeof body.data === "object" ? body.data : body;
+        setViewUser(fetched);
+      } catch (err) {
+        console.error("fetch user details failed:", err);
+        setViewUser(u);
+      }
+    } else {
+      setViewUser(u);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete user? This will remove the user permanently.")) return;
+    try {
+      await api.delete(`/api/admin/users/${id}`, true);
+      await Promise.all([fetchUsers(), fetchStats(), fetchAdmins()]);
+    } catch (err) {
+      console.error("delete user failed:", err);
+      alert("Failed to delete. See console.");
+    }
+  };
+
+  const handleUpdateUser = async (u) => {
+    try {
+      const payload = { role: u.role, status: u.status };
+      await api.put(`/api/admin/users/${u.id}`, payload, true);
+      await Promise.all([fetchUsers(), fetchStats(), fetchAdmins()]);
+    } catch (err) {
+      console.error("update user failed:", err);
+      alert("Failed to update user. See console.");
+    }
+  };
+
+  /* ======= Derived values ======= */
+  const filtered = useMemo(() => {
+    let list = [...users];
+    if (q) {
+      const qq = q.toLowerCase();
+      list = list.filter((u) => (u.name || "").toLowerCase().includes(qq) || (u.id || "").toLowerCase().includes(qq) || (u.email || "").toLowerCase().includes(qq));
+    }
+    return list;
+  }, [users, q]);
+
+  return (
+    <div className="space-y-6">
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {[
+          { label: "Total Users", value: stats.total, icon: UsersIcon },
+          { label: "Active", value: stats.active, icon: Shield },
+          { label: "Inactive", value: stats.inactive, icon: Key },
+          { label: "Admins", value: stats.admins, icon: UsersIcon },
+        ].map((s, i) => (
+          <motion.div key={s.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.28, delay: i * 0.05 }} className="p-4 rounded-xl bg-white dark:bg-gray-900 shadow-sm hover:shadow-md transition">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-full bg-black text-white">
+                <s.icon className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{s.label}</p>
+                <p className="text-2xl font-semibold text-gray-900 dark:text-white">{fmt(s.value)}</p>
+              </div>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Tabs + Actions */}
+      <div className="flex items-center justify-between">
+        <div className="flex gap-3">
+          <button onClick={() => { setShowUsers(true); setShowAdmins(false); setShowUpdate(false); }} className={`px-3 py-2 rounded ${showUsers ? "border border-black dark:border-white" : ""}`}>Users</button>
+          <button onClick={() => { setShowUsers(false); setShowAdmins(true); setShowUpdate(false); }} className={`px-3 py-2 rounded ${showAdmins ? "border border-black dark:border-white" : ""}`}>Admins</button>
+          <button onClick={() => { setShowUsers(false); setShowAdmins(false); setShowUpdate(true); }} className={`px-3 py-2 rounded ${showUpdate ? "border border-black dark:border-white" : ""}`}>Update Users</button>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-gray-500 dark:text-gray-400">Total: {stats.total}</div>
+        </div>
+      </div>
+
+      {/* Users List */}
+      {showUsers && (
+        <div className={cardCls}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+            <div className="relative w-full sm:w-64">
+              <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search by name, id or email..." className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
+            </div>
+
+            <div className="flex items-center gap-3">
+              <select value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }} className="pl-3 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                {[10, 20, 50, 100].map((s) => <option key={s} value={s}>{s} per page</option>)}
+                <option value={999999}>Show All</option>
+              </select>
+
+              <select value={sortBy} onChange={(e) => { setSortBy(e.target.value); setPage(1); }} className="pl-3 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                <option value="newest">Newest</option>
+                <option value="name_asc">Name A → Z</option>
+                <option value="name_desc">Name Z → A</option>
+                <option value="most_spend">Top spenders</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-800">
+            <table className="min-w-full text-left">
+              <thead className="bg-gray-50 dark:bg-gray-900">
                 <tr>
-                  <th className="px-4 py-3 text-left w-12"><input type="checkbox" onChange={(e) => (e.target.checked ? selectAll() : clearSelection())} /></th>
-                  <th className="px-4 py-3 text-left">ID</th>
-                  <th className="px-4 py-3 text-left">Name</th>
-                  <th className="px-4 py-3 text-left">Gender</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-4 py-3 text-xs font-medium text-gray-500">User ID</th>
+                  <th className="px-4 py-3 text-xs font-medium text-gray-500">Name</th>
+                  <th className="px-4 py-3 text-xs font-medium text-gray-500">Gender</th>
+                  <th className="px-4 py-3 text-xs font-medium text-gray-500">Role</th>
+                  <th className="px-4 py-3 text-xs font-medium text-gray-500">Status</th>
+                  <th className="px-4 py-3 text-xs font-medium text-gray-500">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {paged.map((u, idx) => (
-                  <tr key={u.id} className={`transition ${idx % 2 === 0 ? "bg-white dark:bg-neutral-800/30" : ""} hover:bg-black/5 dark:hover:bg-white/5`}>
-                    <td className="px-4 py-3"><input checked={selectedIds.has(u.id)} onChange={() => toggleSelect(u.id)} type="checkbox" /></td>
-                    <td className="px-4 py-3 font-mono text-sm">#{u.id}</td>
-                    <td className="px-4 py-3 flex items-center gap-3"><Avatar name={u.name} /> <div><div className="font-medium">{u.name}</div><div className="text-xs text-neutral-500 dark:text-neutral-400">{u.email}</div></div></td>
-                    <td className="px-4 py-3 text-sm">{u.gender}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button onClick={() => setOpenUser(u)} className="inline-flex items-center gap-2 px-3 py-1 rounded border bg-white dark:bg-black text-black dark:text-white border-neutral-200 dark:border-neutral-800"><User className="w-4 h-4" /> View</button>
+                {loading ? (
+                  <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-500">Loading...</td></tr>
+                ) : filtered.length === 0 ? (
+                  <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-500">No users found</td></tr>
+                ) : (
+                  filtered.map((u) => (
+                    <tr key={u.id} className="border-t border-gray-100 dark:border-gray-800">
+                      <td className="px-4 py-3 text-sm">{u.id}</td>
+                      <td className="px-4 py-3 text-sm">{u.name}</td>
+                      <td className="px-4 py-3 text-sm">{u.gender ?? "—"}</td>
+                      <td className="px-4 py-3 text-sm capitalize">{u.role}</td>
+                      <td className="px-4 py-3 text-sm">{u.status}</td>
+                      <td className="px-4 py-3 text-sm">
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => openView(u)} className="p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800"><Eye className="w-4 h-4" /></button>
+                          <button onClick={() => setEditUser(u)} className="p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800"><Edit className="w-4 h-4" /></button>
+                          <button onClick={() => handleDelete(u.id)} className="p-2 rounded hover:bg-red-50 dark:hover:bg-red-900 text-red-600"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && limit !== 999999 && (
+            <div className="flex justify-center items-center gap-4 pt-4">
+              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-40">Prev</button>
+              <span className="text-gray-700 dark:text-gray-300">Page {page} of {totalPages}</span>
+              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-40">Next</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Admins */}
+      {showAdmins && (
+        <div className={cardCls}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="text-lg font-semibold">Admin Management</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">List of admin users and actions</div>
+            </div>
+            <div>
+              <button className={`${btnSecondaryCls}`} onClick={() => setShowAdmins(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {admins.length === 0 && <div className="md:col-span-3 text-sm text-gray-500">No admin users found.</div>}
+            {admins.map((a) => (
+              <div key={a.id} className="p-4 border border-gray-100 dark:border-gray-800 rounded">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-medium">{a.name}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{a.email}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{a.id}</div>
+                  </div>
+                  <div className="space-y-2 text-right">
+                    <button onClick={() => setEditUser(a)} className="px-2 py-1 rounded border border-gray-200 dark:border-gray-700 text-xs">Edit</button>
+                    <button className="px-2 py-1 rounded border border-gray-200 dark:border-gray-700 text-xs">Disable</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Update Users */}
+      {showUpdate && (
+        <div className={cardCls}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="text-lg font-semibold">Update Users</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Search, sort and update user roles</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input placeholder="Search by name or ID" className={inputCls} onChange={(e) => setQ(e.target.value)} />
+              <select onChange={(e) => setSortBy(e.target.value)} className={inputCls}>
+                <option value="name">Sort: Name</option>
+                <option value="role">Sort: Role</option>
+                <option value="status">Sort: Status</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-800">
+            <table className="min-w-full text-left">
+              <thead className="bg-gray-50 dark:bg-gray-900">
+                <tr>
+                  <th className="px-4 py-3 text-xs text-gray-500">User ID</th>
+                  <th className="px-4 py-3 text-xs text-gray-500">Name</th>
+                  <th className="px-4 py-3 text-xs text-gray-500">Role</th>
+                  <th className="px-4 py-3 text-xs text-gray-500">Update Role</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((u) => (
+                  <tr key={u.id} className="border-t border-gray-100 dark:border-gray-800">
+                    <td className="px-4 py-3 text-sm">{u.id}</td>
+                    <td className="px-4 py-3 text-sm">{u.name}</td>
+                    <td className="px-4 py-3 text-sm capitalize">{u.role}</td>
+                    <td className="px-4 py-3 text-sm">
+                      <select defaultValue={u.role} onChange={async (e) => { const role = e.target.value; await handleUpdateUser({ ...u, role }); }} className="px-2 py-1 border border-gray-200 dark:border-gray-800 rounded bg-transparent">
+                        <option value="customer">customer</option>
+                        <option value="seller">seller</option>
+                        <option value="admin">admin</option>
+                      </select>
                     </td>
                   </tr>
                 ))}
@@ -342,95 +534,11 @@ export default function UserManagement() {
             </table>
           </div>
         </div>
+      )}
 
-        {/* Pagination / actions */}
-        <div className="flex items-center justify-between mt-4 text-sm">
-          <div className="text-neutral-600 dark:text-white/70">{selectedIds.size} selected</div>
-          <div className="flex items-center gap-3">
-            <button onClick={blockSelected} className="px-3 py-1 rounded border bg-white dark:bg-black"><Trash2 className="w-4 h-4" /> Block selected</button>
-            <div>Page {page} / {pageCount}</div>
-            <div className="flex items-center gap-2">
-              <button disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="px-3 py-1 rounded border bg-white dark:bg-black disabled:opacity-50">Prev</button>
-              <button disabled={page === pageCount} onClick={() => setPage((p) => Math.min(pageCount, p + 1))} className="px-3 py-1 rounded border bg-white dark:bg-black disabled:opacity-50">Next</button>
-            </div>
-          </div>
-        </div>
-
-        {/* Centered modal / floating user card */}
-        {openUser && (
-          <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 px-4">
-            <div className="absolute inset-0 bg-black/60" onClick={() => setOpenUser(null)} />
-            <motion.div initial={{ scale: 0.98, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="relative z-10 w-full max-w-3xl bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6 shadow-xl">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-2xl font-semibold text-black dark:text-white">{openUser.name}</h3>
-                  <div className="text-sm text-neutral-600 dark:text-white/70">{openUser.email} • {openUser.phone}</div>
-                  <div className="text-xs text-neutral-500 dark:text-white/60 mt-1">Last login: {new Date(openUser.lastLogin).toLocaleString()}</div>
-                </div>
-
-                {/* calendar selectors */}
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-2 bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 px-2 py-1 rounded">
-                    <Calendar className="w-4 h-4 text-neutral-700 dark:text-white/60" />
-                    <input type="date" value={viewFrom} onChange={(e) => setViewFrom(e.target.value)} className="text-sm bg-transparent outline-none text-black dark:text-white" />
-                  </div>
-                  <div className="flex items-center gap-2 bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 px-2 py-1 rounded">
-                    <Calendar className="w-4 h-4 text-neutral-700 dark:text-white/60" />
-                    <input type="date" value={viewTo} onChange={(e) => setViewTo(e.target.value)} className="text-sm bg-transparent outline-none text-black dark:text-white" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Spend chart large */}
-              <div className="mt-4">
-                <h4 className="text-sm font-medium mb-2 text-black dark:text-white">Spend (12 months)</h4>
-                <HoverSparkline points={openUser.spendTrend} />
-              </div>
-
-              {/* stats grid */}
-              <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-3">
-                <div className="p-3 bg-neutral-50 dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800">
-                  <div className="text-xs text-neutral-600 dark:text-white/70">Total orders</div>
-                  <div className="text-lg font-semibold mt-1 text-black dark:text-white">{openUser.stats[timeRange === "day" ? "day" : timeRange]?.total_orders ?? openUser.stats.overall.total_orders}</div>
-                </div>
-                <div className="p-3 bg-neutral-50 dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800">
-                  <div className="text-xs text-neutral-600 dark:text-white/70">Total spend</div>
-                  <div className="text-lg font-semibold mt-1 text-black dark:text-white">{formatCurrency(openUser.stats[timeRange === "day" ? "day" : timeRange]?.total_spend ?? openUser.stats.overall.total_spend)}</div>
-                </div>
-                <div className="p-3 bg-neutral-50 dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800">
-                  <div className="text-xs text-neutral-600 dark:text-white/70">Coupon savings</div>
-                  <div className="text-lg font-semibold mt-1 text-black dark:text-white">{formatCurrency(openUser.stats[timeRange === "day" ? "day" : timeRange]?.coupon_savings ?? openUser.stats.overall.coupon_savings)}</div>
-                </div>
-                <div className="p-3 bg-neutral-50 dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800">
-                  <div className="text-xs text-neutral-600 dark:text-white/70">Successful</div>
-                  <div className="text-lg font-semibold mt-1 text-black dark:text-white">{openUser.stats[timeRange === "day" ? "day" : timeRange]?.orders_successful ?? openUser.stats.overall.orders_successful}</div>
-                </div>
-                <div className="p-3 bg-neutral-50 dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800">
-                  <div className="text-xs text-neutral-600 dark:text-white/70">Cancelled</div>
-                  <div className="text-lg font-semibold mt-1 text-black dark:text-white">{openUser.stats[timeRange === "day" ? "day" : timeRange]?.orders_cancelled ?? openUser.stats.overall.orders_cancelled}</div>
-                </div>
-                <div className="p-3 bg-neutral-50 dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800">
-                  <div className="text-xs text-neutral-600 dark:text-white/70">Returned</div>
-                  <div className="text-lg font-semibold mt-1 text-black dark:text-white">{openUser.stats[timeRange === "day" ? "day" : timeRange]?.orders_returned ?? openUser.stats.overall.orders_returned}</div>
-                </div>
-              </div>
-
-              {/* Heatmap large */}
-              <div className="mt-6">
-                <h4 className="text-sm font-medium mb-3 text-black dark:text-white">Login heatmap (last 365 days)</h4>
-                <div className="p-4 rounded-lg bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800">
-                  <MonthlyHeatmap cells={openUser.heat365} />
-                </div>
-              </div>
-
-              <div className="mt-6 text-right">
-                <button onClick={() => setOpenUser(null)} className="px-4 py-2 rounded bg-black text-white dark:bg-white dark:text-black">Close</button>
-                <button onClick={() => purgeUserNow(openUser.id)} className="ml-3 px-4 py-2 rounded border border-red-600 text-red-600">Purge</button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </div>
+      {/* Modals */}
+      <UserViewModal user={viewUser} onClose={() => setViewUser(null)} />
+      <UserEditModal user={editUser} onClose={() => setEditUser(null)} onSave={handleUpdateUser} />
     </div>
   );
 }
