@@ -357,24 +357,34 @@ function UserViewModal({ user, onClose }) {
           )}
 
           {/* CART */}
-          {showCart && (
-            cart.length === 0 ? (
-              <div className="text-sm text-gray-500">Cart is empty.</div>
-            ) : (
-              cart.map((c) => (
-                <div key={c.id} className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center">
-                  <div>
-                    <div className="font-medium">{c.product_name ?? c.name ?? c.title ?? "Untitled product"}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                      Qty: {c.quantity ?? c.qty ?? 1} • Size: {c.size ?? c.selectedSize ?? c.selected_size ?? "—"}
-                    </div>
-                  </div>
+         {showCart && (
+  cart.length === 0 ? (
+    <div className="text-sm text-gray-500">Cart is empty.</div>
+  ) : (
+    cart.map((c) => (
+      <div
+        key={c.id}
+        className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center"
+      >
+        <div>
+          <div className="font-medium">
+            {c.product_name ?? c.name ?? c.title ?? "Untitled product"}
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            Qty: {c.quantity ?? c.qty ?? 1} • 
+            Size: {c.size ?? c.selectedSize ?? c.selected_size ?? "—"} • 
+            Color: {c.color ?? c.selectedColor ?? c.selected_color ?? "—"}
+          </div>
+        </div>
 
-                  <div className="text-sm font-semibold">{fmtCurrency(c.price ?? c.unit_price ?? c.amount ?? 0)}</div>
-                </div>
-              ))
-            )
-          )}
+        <div className="text-sm font-semibold">
+          {fmtCurrency(c.price ?? c.unit_price ?? c.amount ?? 0)}
+        </div>
+      </div>
+    ))
+  )
+)}
+
 
           {/* WISHLIST */}
           {showWishlist && (
