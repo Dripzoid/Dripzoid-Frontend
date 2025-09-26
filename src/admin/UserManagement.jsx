@@ -136,14 +136,11 @@ function isDateWithinDays(dateStr, days = 7) {
   return diffDays <= days;
 }
 
-function userHasRecentActivity(user, days = 7) {
+function userHasRecentActivity(user) {
   if (!user) return false;
-  const { orders = [], cart = [], wishlist = [] } = user;
-  if (orders.some((o) => isDateWithinDays(o.date, days))) return true;
-  if (cart.some((c) => isDateWithinDays(c.date, days))) return true;
-  if (wishlist.some((w) => isDateWithinDays(w.date, days))) return true;
-  return false;
+  return user.status === "active";
 }
+
 
 /* ===== User View Modal (fetches orders/cart/wishlist on open) ===== */
 function UserViewModal({ user, onClose }) {
@@ -532,7 +529,7 @@ export default function UserManagementPanel() {
 
   const computedStats = useMemo(() => {
     const total = users.length;
-    const active = users.filter((u) => userHasRecentActivity(u, 7)).length;
+    const active = users.filter((u) => u.status === "active").length;
     const inactive = total - active;
 
     return {
@@ -702,7 +699,7 @@ export default function UserManagementPanel() {
                   </tr>
                 ) : (
                   filtered.map((u) => {
-                    const activeDerived = userHasRecentActivity(u, 7);
+                    const activeDerived = u.status === "active";
                     return (
                       <tr key={u.id} className="border-t border-gray-200 dark:border-gray-800">
                         <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">{u.id}</td>
