@@ -13,41 +13,33 @@
  */
 
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  Eye,
-  Edit,
-  Users as UsersIcon,
-  Heart,
-  Box,
-  Trash2,
-} from "lucide-react";
+import { Eye, Edit, Users as UsersIcon, Heart, Box, Trash2 } from "lucide-react";
 
 /* ===== API BASE helper (reads from .env) ===== */
 const RAW_API_BASE = process.env.REACT_APP_API_BASE || "";
 const API_BASE = RAW_API_BASE ? RAW_API_BASE.replace(/\/$/, "") : "";
-
 function buildUrl(path) {
-  // path should start with '/'
   return API_BASE ? `${API_BASE}${path}` : path;
 }
 
 /* ===== Auth helpers ===== */
-// try localStorage first, fallback to cookie named "token"
 function getTokenFromLocalstorageOrCookie() {
   try {
-    const tokenLS = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    if (tokenLS) return tokenLS;
-
-    // read cookie
+    if (typeof window !== "undefined" && window.localStorage) {
+      const tokenLS = localStorage.getItem("token");
+      if (tokenLS) return tokenLS;
+    }
     if (typeof document !== "undefined" && document.cookie) {
-      const match = document.cookie.split(";").map((c) => c.trim()).find((c) => c.startsWith("token="));
+      const match = document.cookie
+        .split(";")
+        .map((c) => c.trim())
+        .find((c) => c.startsWith("token="));
       if (match) return decodeURIComponent(match.split("=")[1] || "");
     }
-    return null;
   } catch (e) {
     console.warn("getToken error", e);
-    return null;
   }
+  return null;
 }
 
 function getAuthHeaders(extra = {}) {
@@ -59,38 +51,47 @@ function getAuthHeaders(extra = {}) {
 
 /* Small centralized fetch wrapper for JSON responses */
 async function fetchJson(url, opts = {}) {
-  // default options: use credentials so cookie auth works, and no-store for GETs to avoid 304 issues
   const method = (opts.method || "GET").toUpperCase();
   const baseOpts = {
-    credentials: "include", // include cookies (httpOnly token) as fallback
+    credentials: "include",
     cache: opts.cache ?? (method === "GET" ? "no-store" : "no-cache"),
   };
 
-  // merge headers, and apply Authorization if missing
   const userHeaders = opts.headers || {};
   const headers = { ...getAuthHeaders(userHeaders), ...userHeaders };
   const merged = { ...baseOpts, ...opts, headers };
 
   const res = await fetch(url, merged);
-  // handle common auth errors with clearer message
+
+  // handle auth errors explicitly
   if (res.status === 401 || res.status === 403) {
     const text = await res.text().catch(() => "");
-    const message = text || res.statusText || "Unauthorized";
-    const err = new Error(`Auth error: ${message}`);
+    const err = new Error(text || res.statusText || "Unauthorized");
     err.status = res.status;
+    err.body = text;
     throw err;
   }
 
-  // no content
   if (res.status === 204) return null;
 
-  // attempt JSON parse; if fails, return raw text
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) {
-    return await res.json();
+    const data = await res.json();
+    if (!res.ok) {
+      const e = new Error(data?.message || `Request failed: ${res.status}`);
+      e.status = res.status;
+      e.body = data;
+      throw e;
+    }
+    return data;
   } else {
     const txt = await res.text().catch(() => "");
-    // if server responded with empty body but ok, return null
+    if (!res.ok) {
+      const e = new Error(txt || `Request failed: ${res.status}`);
+      e.status = res.status;
+      e.body = txt;
+      throw e;
+    }
     if (!txt) return null;
     try {
       return JSON.parse(txt);
@@ -337,29 +338,56 @@ function UserViewModal({ user, onClose }) {
 
 /* ===== User Edit Modal (calls PUT /api/users/:id) ===== */
 function UserEditModal({ user, onClose, onSave }) {
-  const [local, setLocal] = useState(user || {});
+  const makeLocalFromUser = (u) => {
+    if (!u) return {};
+    const isAdminFlag = Number(u.is_admin) === 1 || u.is_admin === true || (u.role === "admin");
+    return {
+      id: u.id,
+      name: u.name || "",
+      phone: u.phone || "",
+      gender: u.gender || "",
+      dob: u.dob || (u.createdAt ? String(u.createdAt).split("T")[0] : ""),
+      role: isAdminFlag ? "admin" : "customer",
+    };
+  };
+
+  const [local, setLocal] = useState(() => makeLocalFromUser(user));
   const [saving, setSaving] = useState(false);
-  useEffect(() => setLocal(user || {}), [user]);
+
+  useEffect(() => {
+    setLocal(makeLocalFromUser(user));
+  }, [user]);
 
   if (!user) return null;
 
   const save = async () => {
     setSaving(true);
     try {
-      const payload = { role: local.role, status: local.status, name: local.name, phone: local.phone };
-      const updated = await fetchJson(buildUrl(`/api/users/${user.id}`), {
+      const payload = {
+        name: (local.name || "").trim() || null,
+        phone: (local.phone || "").trim() || null,
+        gender: local.gender || null,
+        dob: local.dob || null,
+        is_admin: local.role === "admin" ? 1 : 0,
+      };
+
+      const resp = await fetchJson(buildUrl(`/api/users/${user.id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      onSave && onSave(updated || { id: user.id, ...payload });
+
+      // backend returns { message: "User updated" } — create a UI-friendly object
+      const updatedForUi = resp && resp.user ? resp.user : { id: user.id, ...payload, role: payload.is_admin === 1 ? "admin" : "customer" };
+      onSave && onSave(updatedForUi);
       onClose && onClose();
     } catch (err) {
       console.error("Update failed", err);
-      if (err.status === 401 || err.status === 403) {
+      if (err && (err.status === 401 || err.status === 403)) {
         alert("Not authorized. Please sign in.");
       } else {
-        alert("Failed to update user. See console for details.");
+        const msg = (err && err.body && (err.body.message || err.body)) || err.message || "Failed to update user. See console.";
+        alert(msg);
       }
     } finally {
       setSaving(false);
@@ -373,30 +401,74 @@ function UserEditModal({ user, onClose, onSave }) {
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="text-lg font-semibold">Edit user: {user.name}</div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Change role & status</div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Change role & profile fields</div>
           </div>
           <div>
             <button onClick={onClose} className={`${btnSmallWhite}`} aria-label="Close edit modal">Close</button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3">
           <div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">Role</div>
-            <select value={local.role || "customer"} onChange={(e) => setLocal({ ...local, role: e.target.value })} className={inputCls}>
-              <option value="customer">customer</option>
-              <option value="seller">seller</option>
-              <option value="admin">admin</option>
-            </select>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Full name</div>
+            <input
+              className={inputCls}
+              value={local.name || ""}
+              onChange={(e) => setLocal({ ...local, name: e.target.value })}
+              placeholder="Full name"
+            />
           </div>
 
-          <div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">Status</div>
-            <select value={local.status || "active"} onChange={(e) => setLocal({ ...local, status: e.target.value })} className={inputCls}>
-              <option value="active">active</option>
-              <option value="inactive">inactive</option>
-            </select>
-            <div className="text-xs text-gray-500 mt-1">Note: Active/inactive shown in the table is derived from recent activity (last 7 days).</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Phone</div>
+              <input
+                className={inputCls}
+                value={local.phone || ""}
+                onChange={(e) => setLocal({ ...local, phone: e.target.value })}
+                placeholder="Phone number"
+              />
+            </div>
+
+            <div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Gender</div>
+              <select
+                value={local.gender || ""}
+                onChange={(e) => setLocal({ ...local, gender: e.target.value })}
+                className={inputCls}
+              >
+                <option value="">— Not set —</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+                <option value="Prefer not to say">Prefer not to say</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Date of birth</div>
+              <input
+                type="date"
+                className={inputCls}
+                value={local.dob ? String(local.dob).split("T")[0] : ""}
+                onChange={(e) => setLocal({ ...local, dob: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Role</div>
+              <select
+                value={local.role || "customer"}
+                onChange={(e) => setLocal({ ...local, role: e.target.value })}
+                className={inputCls}
+              >
+                <option value="customer">Customer</option>
+                <option value="admin">Admin</option>
+              </select>
+              <div className="text-xs text-gray-500 mt-1">Note: Roles permitted: customer / admin.</div>
+            </div>
           </div>
         </div>
 
@@ -413,17 +485,23 @@ function UserEditModal({ user, onClose, onSave }) {
 export default function UserManagementPanel() {
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState({});
-  const [viewUser, setViewUser] = useState(null); // object
+  const [viewUser, setViewUser] = useState(null);
   const [editUser, setEditUser] = useState(null);
 
-  // which main section to show
-  const [section, setSection] = useState("users"); // "users" | "admins" | "update"
-
+  const [section, setSection] = useState("users");
   const [q, setQ] = useState("");
   const [limit, setLimit] = useState(20);
   const [sortBy, setSortBy] = useState("newest");
-
   const [loading, setLoading] = useState(false);
+
+  // normalize server user -> add role property
+  function normalizeUsersList(list) {
+    if (!Array.isArray(list)) return [];
+    return list.map((u) => {
+      const isAdminFlag = Number(u.is_admin) === 1 || u.is_admin === true;
+      return { ...u, role: isAdminFlag ? "admin" : (u.role || "customer") };
+    });
+  }
 
   async function refreshAll() {
     setLoading(true);
@@ -439,7 +517,7 @@ export default function UserManagementPanel() {
         }),
       ]);
 
-      setUsers(Array.isArray(usersData) ? usersData : []);
+      setUsers(normalizeUsersList(usersData));
       setStats(statsData || {});
     } catch (err) {
       console.error("Error loading data", err);
@@ -452,7 +530,6 @@ export default function UserManagementPanel() {
     refreshAll();
   }, []);
 
-  // compute stats; active/inactive determined by recent activity within 7 days
   const computedStats = useMemo(() => {
     const total = users.length;
     const active = users.filter((u) => userHasRecentActivity(u, 7)).length;
@@ -487,7 +564,7 @@ export default function UserManagementPanel() {
     return list.slice(0, limit === 999999 ? list.length : limit);
   }, [users, q, limit, sortBy]);
 
-  const admins = useMemo(() => users.filter((u) => u.role === "admin" || u.is_admin === 1), [users]);
+  const admins = useMemo(() => users.filter((u) => u.role === "admin" || Number(u.is_admin) === 1), [users]);
 
   /* Actions */
   const handleDelete = async (id) => {
@@ -506,19 +583,37 @@ export default function UserManagementPanel() {
   };
 
   const handleSaveEdit = (updated) => {
-    // server might return a partial user; merge by id
-    setUsers((prev) => prev.map((u) => (u.id === updated.id ? { ...u, ...updated } : u)));
+    // merge updated fields into user by id and ensure role property is set
+    setUsers((prev) =>
+      prev.map((u) => {
+        if (u.id !== updated.id) return u;
+        const isAdminFlag = Number(updated.is_admin) === 1 || updated.role === "admin" || Number(u.is_admin) === 1;
+        return { ...u, ...updated, is_admin: updated.is_admin ?? u.is_admin, role: isAdminFlag ? "admin" : "customer" };
+      })
+    );
   };
 
   const handleInlineRoleUpdate = async (id, role) => {
     try {
-      const payload = { role };
-      const updated = await fetchJson(buildUrl(`/api/users/${id}`), {
+      // preserve other profile fields to avoid overwriting them with null
+      const existing = users.find((x) => x.id === id);
+      const payload = {
+        name: existing?.name ?? null,
+        phone: existing?.phone ?? null,
+        gender: existing?.gender ?? null,
+        dob: existing?.dob ?? null,
+        is_admin: role === "admin" ? 1 : 0,
+      };
+
+      await fetchJson(buildUrl(`/api/users/${id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...updated } : u)));
+
+      setUsers((prev) =>
+        prev.map((u) => (u.id === id ? { ...u, ...payload, role: payload.is_admin === 1 ? "admin" : "customer" } : u))
+      );
     } catch (err) {
       console.error(err);
       if (err.status === 401 || err.status === 403) {
@@ -698,7 +793,6 @@ export default function UserManagementPanel() {
                         className="px-2 py-1 rounded-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#071226] text-gray-900 dark:text-gray-100"
                       >
                         <option value="customer">customer</option>
-                        <option value="seller">seller</option>
                         <option value="admin">admin</option>
                       </select>
                     </td>
