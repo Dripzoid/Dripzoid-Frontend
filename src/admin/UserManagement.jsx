@@ -1,15 +1,6 @@
 /**
  * UserManagement.jsx
- *
- * Backend-integrated version (uses REACT_APP_API_BASE)
- * - All API calls routed through API_BASE (from .env REACT_APP_API_BASE)
- * - Uses cache: "no-store" for GETs to avoid 304/no-body issues
- * - Fetch /api/users, /api/admin/stats, /api/admin/orders/user/:id, /api/cart/:id, /api/wishlist/:id
- * - PUT /api/users/:id for updates, DELETE /api/users/:id for deletion
- *
- * Notes:
- * - If REACT_APP_API_BASE is not set, falls back to relative paths (e.g. "/api/users")
- * - Sends Authorization header from localStorage or cookie and uses credentials: "include"
+ * (updated UserViewModal and helpers)
  */
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -126,6 +117,35 @@ const btnToggleActive =
 /* ===== Helper ===== */
 const fmt = (n) => (typeof n === "number" ? n.toLocaleString() : n);
 
+const fmtCurrency = (v) => {
+  const n = Number(v ?? 0);
+  if (Number.isNaN(n)) return `₹ ${v}`;
+  return `₹ ${n.toLocaleString("en-IN")}`;
+};
+
+// parse "YYYY-MM-DD HH:mm:ss" safely and format to readable
+const fmtDate = (s) => {
+  if (!s) return "n/a";
+  // if it's already an ISO string, new Date can parse; otherwise replace space with T
+  const iso = String(s).trim().replace(" ", "T");
+  const d = new Date(iso);
+  if (isNaN(d)) return String(s);
+  return d.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+};
+
+const capitalize = (str = "") => {
+  if (!str) return "";
+  return String(str).charAt(0).toUpperCase() + String(str).slice(1).toLowerCase();
+};
+
+const statusBadgeClass = (status = "") => {
+  const s = String(status || "").toLowerCase();
+  if (s === "delivered") return "text-green-800 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded-full text-xs";
+  if (s === "cancelled" || s === "returned") return "text-red-800 bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded-full text-xs";
+  if (s === "confirmed" || s === "processing" || s === "shipped") return "text-blue-800 bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 rounded-full text-xs";
+  return "text-gray-800 bg-gray-100 dark:bg-gray-900/30 px-2 py-0.5 rounded-full text-xs";
+};
+
 function isDateWithinDays(dateStr, days = 7) {
   if (!dateStr) return false;
   const d = new Date(dateStr);
@@ -170,7 +190,7 @@ function UserViewModal({ user, onClose }) {
           }),
           fetchJson(buildUrl(`/api/cart/${user.id}`), { method: "GET" }).catch((e) => {
             console.warn("cart fetch error:", e);
-            return [];
+            return { cartItems: [] };
           }),
           fetchJson(buildUrl(`/api/wishlist/${user.id}`), { method: "GET" }).catch((e) => {
             console.warn("wishlist fetch error:", e);
@@ -179,9 +199,26 @@ function UserViewModal({ user, onClose }) {
         ]);
 
         if (!mounted) return;
-        setOrders(Array.isArray(ordersData) ? ordersData : []);
-        setCart(Array.isArray(cartData) ? cartData : []);
-        setWishlist(Array.isArray(wishData) ? wishData : []);
+
+        // orders: sometimes API returns { rows: [...] } or array — normalize
+        const normalizedOrders = Array.isArray(ordersData)
+          ? ordersData
+          : ordersData && Array.isArray(ordersData.rows)
+          ? ordersData.rows
+          : [];
+
+        // cart may be returned as { cartItems: [...] } (per your sample) or an array
+        const normalizedCart = Array.isArray(cartData)
+          ? cartData
+          : cartData && Array.isArray(cartData.cartItems)
+          ? cartData.cartItems
+          : [];
+
+        const normalizedWish = Array.isArray(wishData) ? wishData : wishData && Array.isArray(wishData.rows) ? wishData.rows : [];
+
+        setOrders(normalizedOrders);
+        setCart(normalizedCart);
+        setWishlist(normalizedWish);
       } catch (err) {
         console.error("Error fetching user details", err);
       } finally {
@@ -197,6 +234,10 @@ function UserViewModal({ user, onClose }) {
 
   if (!user) return null;
 
+  // header fields fallback: support created_at and last_active (backend) or createdAt/lastActive (frontend)
+  const joined = user.created_at ?? user.createdAt ?? "n/a";
+  const lastActive = user.last_active ?? user.lastActive ?? "n/a";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 dark:bg-white/20 backdrop-blur-sm" onClick={onClose} />
@@ -205,8 +246,8 @@ function UserViewModal({ user, onClose }) {
           <div>
             <div className="text-2xl font-semibold">{user.name}</div>
             <div className="text-sm text-gray-600 dark:text-gray-300">{user.email}</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">Joined: {user.createdAt}</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">Last active: {user.lastActive}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Joined: {fmtDate(joined)}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Last active: {fmtDate(lastActive)}</div>
           </div>
           <button onClick={onClose} className={btnSmallWhite}>Close</button>
         </div>
@@ -292,48 +333,69 @@ function UserViewModal({ user, onClose }) {
         {loading && <div className="mt-4 text-sm text-gray-500">Loading data...</div>}
 
         <div className="mt-4 space-y-3">
-          {showOrders && (orders.length === 0 ? (
-            <div className="text-sm text-gray-500">No orders for this user.</div>
-          ) : (
-            orders.map((o) => (
-              <div key={o.id} className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center">
-                <div>
-                  <div className="font-medium">{o.item}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">Order ID: {o.id} • {o.date}</div>
+          {/* ORDERS */}
+          {showOrders && (
+            orders.length === 0 ? (
+              <div className="text-sm text-gray-500">No orders for this user.</div>
+            ) : (
+              orders.map((o) => (
+                <div key={o.id} className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center">
+                  <div>
+                    <div className="font-medium">Order #{o.id}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      {Number(o.items_count ?? 0)} item{(Number(o.items_count ?? 0) !== 1) ? "s" : ""} • {fmtDate(o.created_at)}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    <div className="text-sm font-semibold">{fmtCurrency(o.total_amount ?? o.total ?? 0)}</div>
+                    <div className={statusBadgeClass(o.status)}>{capitalize(o.status)}</div>
+                  </div>
                 </div>
-                <div className="text-sm">₹{o.amount} • {o.status}</div>
-              </div>
-            ))
-          ))}
+              ))
+            )
+          )}
 
-          {showCart && (cart.length === 0 ? (
-            <div className="text-sm text-gray-500">Cart is empty.</div>
-          ) : (
-            cart.map((c) => (
-              <div key={c.id} className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center">
-                <div className="font-medium">{c.item}</div>
-                <div className="text-sm">₹{c.amount}</div>
-              </div>
-            ))
-          ))}
+          {/* CART */}
+          {showCart && (
+            cart.length === 0 ? (
+              <div className="text-sm text-gray-500">Cart is empty.</div>
+            ) : (
+              cart.map((c) => (
+                <div key={c.id} className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center">
+                  <div>
+                    <div className="font-medium">{c.product_name ?? c.name ?? c.title ?? "Untitled product"}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Qty: {c.quantity ?? c.qty ?? 1} • Size: {c.size ?? c.selectedSize ?? c.selected_size ?? "—"}
+                    </div>
+                  </div>
 
-          {showWishlist && (wishlist.length === 0 ? (
-            <div className="text-sm text-gray-500">Wishlist is empty.</div>
-          ) : (
-            wishlist.map((w) => (
-              <div key={w.id} className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center">
-                <div className="font-medium">{w.item}</div>
-                <div className="text-sm">₹{w.amount}</div>
-              </div>
-            ))
-          ))}
+                  <div className="text-sm font-semibold">{fmtCurrency(c.price ?? c.unit_price ?? c.amount ?? 0)}</div>
+                </div>
+              ))
+            )
+          )}
+
+          {/* WISHLIST */}
+          {showWishlist && (
+            wishlist.length === 0 ? (
+              <div className="text-sm text-gray-500">Wishlist is empty.</div>
+            ) : (
+              wishlist.map((w) => (
+                <div key={w.id} className="p-4 rounded-lg bg-gray-100 dark:bg-[#071226] flex justify-between items-center">
+                  <div className="font-medium">{w.name ?? w.product_name ?? w.title ?? "Untitled"}</div>
+                  <div className="text-sm font-semibold">{fmtCurrency(w.price ?? w.amount ?? 0)}</div>
+                </div>
+              ))
+            )
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-/* ===== User Edit Modal (calls PUT /api/users/:id) ===== */
+/* ===== User Edit Modal (unchanged except small fallback) ===== */
 function UserEditModal({ user, onClose, onSave }) {
   const makeLocalFromUser = (u) => {
     if (!u) return {};
@@ -343,7 +405,7 @@ function UserEditModal({ user, onClose, onSave }) {
       name: u.name || "",
       phone: u.phone || "",
       gender: u.gender || "",
-      dob: u.dob || (u.createdAt ? String(u.createdAt).split("T")[0] : ""),
+      dob: u.dob || (u.created_at ? String(u.created_at).split("T")[0] : ""),
       role: isAdminFlag ? "admin" : "customer",
     };
   };
@@ -374,7 +436,6 @@ function UserEditModal({ user, onClose, onSave }) {
         body: JSON.stringify(payload),
       });
 
-      // backend returns { message: "User updated" } — create a UI-friendly object
       const updatedForUi = resp && resp.user ? resp.user : { id: user.id, ...payload, role: payload.is_admin === 1 ? "admin" : "customer" };
       onSave && onSave(updatedForUi);
       onClose && onClose();
@@ -478,7 +539,7 @@ function UserEditModal({ user, onClose, onSave }) {
   );
 }
 
-/* ===== Main Component ===== */
+/* ===== Main Component (unchanged except it uses the updated modal) ===== */
 export default function UserManagementPanel() {
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState({});
