@@ -101,7 +101,7 @@ export default function Auth() {
       if (res.ok && data.token) {
         // store known data immediately via UserContext
         await login(data.user, data.token, data.sessionId);
-        navigate("/account");
+        navigate("/");
       } else if (res.status === 404) {
         alert("Email not found. Please register.");
         setIsLogin(false);
@@ -217,7 +217,7 @@ export default function Auth() {
         if (json.token) {
           await login(json.user, json.token, json.sessionId);
           localStorage.removeItem("reg_email");
-          navigate("/account");
+          navigate("/");
           return;
         }
         alert("Registration successful — please login.");
