@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 
 import { SketchPicker } from "react-color";
-
 import nearestColor from "nearest-color";
 
 import ProductCard from "./ProductCard";
@@ -28,10 +27,10 @@ import Reviews from "./Reviews";
 
 import { useCart } from "../contexts/CartContext.jsx";
 import { useWishlist } from "../contexts/WishlistContext.jsx";
-import { UserContext } from "../contexts/UserContext.js"; // uses same context as CartContext expects
+import { UserContext } from "../contexts/UserContext.js";
 
 // --------- CONFIG ----------
-const API_BASE = process.env.REACT_APP_API_BASE;
+const API_BASE = process.env.REACT_APP_API_BASE || "";
 
 /* ---------- Helpers ---------- */
 function normalizeColorString(str) {
@@ -56,12 +55,11 @@ function normalizeVariantValue(v) {
 // --- nearest-color setup ---
 const CUSTOM_NAMED_COLORS = {
   black: "#000000",
-  cornsilk: "#FFF8DC", // standard CSS cornsilk
-  "irish green": "#009A44", // common 'irish green' approximation
-  azalea: "#F7C6D9", // azalea / azalea pink approximation
-  "heather royal": "#307FE2", // Gildan Heather Royal approx
-  "heather sapphire": "#0076A8", // Gildan Heather Sapphire approx
-  // add other friendly names as needed
+  cornsilk: "#FFF8DC",
+  "irish green": "#009A44",
+  azalea: "#F7C6D9",
+  "heather royal": "#307FE2",
+  "heather sapphire": "#0076A8",
 };
 
 let nearest = null;
@@ -72,13 +70,12 @@ try {
 }
 
 function detectColorTextName(color) {
-  if (!color && color !== 0) return "";
+  if (color === null || color === undefined) return "";
   if (typeof color === "object") {
     if (color.label) return String(color.label);
     if (color.name) return String(color.name);
     if (color.hex) return String(color.hex).toUpperCase();
     if (color.value) return String(color.value);
-    // attempt stringify
     return String(color).replace(/\s+/g, " ").trim();
   }
   const s = String(color).trim();
@@ -116,7 +113,7 @@ function detectColorTextName(color) {
             } catch {}
           }
         } catch {}
-        return s; // browser accepts the name
+        return s;
       }
     }
   } catch {}
@@ -190,7 +187,7 @@ function resolveColor(c) {
   const sanitized = sanitizeColorNameForLookup(s);
   const fromName = nameToHex(sanitized) || nameToHex(s);
   if (fromName) return fromName;
-  // try DOM accept (some names like 'light blue' might not work, but safer to try original)
+  // try DOM accept
   try {
     if (typeof document !== "undefined") {
       const st = document.createElement("span").style;
@@ -431,11 +428,15 @@ export default function ProductDetailsPage() {
 
         let qjson = [];
         if (qRes.ok) {
-          const qdata = await qRes.json();
-          if (Array.isArray(qdata)) qjson = qdata;
-          else if (Array.isArray(qdata.questions)) qjson = qdata.questions;
-          else if (Array.isArray(qdata.data)) qjson = qdata.data;
-          else qjson = [];
+          try {
+            const qdata = await qRes.json();
+            if (Array.isArray(qdata)) qjson = qdata;
+            else if (Array.isArray(qdata.questions)) qjson = qdata.questions;
+            else if (Array.isArray(qdata.data)) qjson = qdata.data;
+            else qjson = [];
+          } catch {
+            qjson = [];
+          }
         }
 
         if (!mounted) return;
@@ -591,7 +592,6 @@ export default function ProductDetailsPage() {
   }
 
   /* ---------- gallery (color-aware) ---------- */
-  // Determine whether the product requires color
   const requiresColor = Array.isArray(product?.colors) && product.colors.length > 0;
   const requiresSize = Array.isArray(product?.sizes) && product.sizes.length > 0;
 
@@ -614,7 +614,6 @@ export default function ProductDetailsPage() {
     const nImgs = imgs.length;
     const nColors = colors.length;
 
-    // If fewer images than colors, assign one image each to the first nImgs colors
     if (nImgs <= nColors) {
       for (let i = 0; i < nColors; i++) {
         const key = sanitizeColorNameForLookup(String(colors[i] || ""));
@@ -656,10 +655,8 @@ export default function ProductDetailsPage() {
     }
 
     const key = sanitizeColorNameForLookup(String(selectedColor || ""));
-    // Try exact match
     let imgs = colorImageMap[key];
 
-    // If not found, try to find by matching to any color by sanitized string
     if (!imgs) {
       const colors = Array.isArray(product?.colors) ? product.colors : [];
       const firstColorKey = sanitizeColorNameForLookup(String(colors[0] || ""));
@@ -676,7 +673,6 @@ export default function ProductDetailsPage() {
     setSelectedImage((s) => (s + 1) % galleryImages.length);
   }
 
-  // whenever gallery images or selected color changes, reset selectedImage to 0
   useEffect(() => {
     setSelectedImage(0);
   }, [galleryImages.length, selectedColor]);
@@ -747,7 +743,6 @@ export default function ProductDetailsPage() {
     const pid = String(item.product_id ?? item.productId ?? item.product?.id ?? item.product?._id ?? item.id ?? "");
     if (!pid || String(pid) !== String(prodKey)) return false;
 
-    // Gather color candidates from the item (may be stored in different keys and formats)
     const itemColorCandidates = [
       item.selectedColor,
       item.selected_color,
@@ -760,7 +755,6 @@ export default function ProductDetailsPage() {
       item.color_name,
     ].filter((c) => c !== undefined && c !== null && String(c).trim() !== "");
 
-    // Gather size candidates likewise
     const itemSizeCandidates = [
       item.selectedSize,
       item.selected_size,
@@ -773,40 +767,33 @@ export default function ProductDetailsPage() {
       item.size_name,
     ].filter((s) => s !== undefined && s !== null && String(s).trim() !== "");
 
-    // Gather variant id candidates
     const itemVariantCandidates = [item.variantId, item.variant?.id, item.variant_id, item.variant?._id].filter(
       (v) => v !== undefined && v !== null && String(v).trim() !== ""
     );
 
-    // If variant id is available on both sides, prefer exact match
     if (selVariantId && itemVariantCandidates.length > 0) {
       if (itemVariantCandidates.some((iv) => String(iv).trim() === String(selVariantId).trim())) return true;
     }
 
-    // Compare colors: if either side has ANY candidate matching, accept
     const colorMatches =
       (!selColor && itemColorCandidates.length === 0) ||
       (selColor &&
         itemColorCandidates.length > 0 &&
         itemColorCandidates.some((ic) => colorEquals(ic, selColor)));
 
-    // Compare sizes similarly
     const sizeMatches =
       (!selSize && itemSizeCandidates.length === 0) ||
       (selSize &&
         itemSizeCandidates.length > 0 &&
         itemSizeCandidates.some((isize) => sizeEquals(isize, selSize)));
 
-    // If product has both color & size requirements, both must match.
     if (requiresColor && requiresSize) return Boolean(colorMatches && sizeMatches);
     if (requiresColor) return Boolean(colorMatches);
     if (requiresSize) return Boolean(sizeMatches);
 
-    // if neither required, product match is enough
     return true;
   }
 
-  // whenever product or cart updates, detect whether this product+selection exists in cart
   useEffect(() => {
     try {
       if (!product) {
@@ -814,12 +801,11 @@ export default function ProductDetailsPage() {
         return;
       }
 
-      const prodKey = String(product.id ?? product._id ?? product.productId ?? product.product_id ?? "");
+      const prodKey = String(product.id ?? product._id ?? product.productId ?? product.product_id ?? productId ?? "");
       const selColorNormalized = selectedColor ? selectedColor : "";
       const selSizeNormalized = selectedSize ? selectedSize : "";
       const selVariantId = selectedVariant?.id || selectedVariant?._id || null;
 
-      // First try to find a matching item in the cart array
       if (Array.isArray(cart) && cart.length > 0) {
         const found = cart.some((it) => cartItemMatchesSelection(it, prodKey, selColorNormalized, selSizeNormalized, selVariantId));
         if (found) {
@@ -830,7 +816,6 @@ export default function ProductDetailsPage() {
           return;
         }
 
-        // not found: try localStorage fallback keys that include color/size/variant
         try {
           const colorToken = sanitizeColorNameForLookup(String(selColorNormalized || "")).replace(/\s+/g, "_");
           const sizeToken = String(selSizeNormalized || "").replace(/\s+/g, "_");
@@ -846,7 +831,6 @@ export default function ProductDetailsPage() {
         return;
       }
 
-      // fallback to localStorage when cart array is empty or not provided
       try {
         const colorToken = sanitizeColorNameForLookup(String(selColorNormalized || "")).replace(/\s+/g, "_");
         const sizeToken = String(selSizeNormalized || "").replace(/\s+/g, "_");
@@ -897,7 +881,13 @@ export default function ProductDetailsPage() {
         try {
           await addToCart(itemForCart);
         } catch (err) {
-          await addToCart(product, Number(quantity || 1), selectedSize, selectedColor, variantInfo);
+          // backward compatibility: older addToCart signature
+          try {
+            await addToCart(product, Number(quantity || 1), selectedSize, selectedColor, variantInfo);
+          } catch (err2) {
+            // ignore and rethrow
+            throw err2;
+          }
         }
       }
 
@@ -970,10 +960,8 @@ export default function ProductDetailsPage() {
       if (!res.ok) throw new Error("Failed to submit vote");
       const data = await res.json();
 
-      // optimistic/local UI update: mark user vote
       setUserVotes((prev) => ({ ...prev, [String(entityId)]: voteType }));
 
-      // if API returned updated counts, update the question/answer likes/dislikes
       if (data && (data.like !== undefined || data.likes !== undefined || data.dislike !== undefined || data.dislikes !== undefined)) {
         const id = String(data.entityId ?? entityId);
         const likes = Number(data.like ?? data.likes ?? 0);
@@ -1021,7 +1009,6 @@ export default function ProductDetailsPage() {
         dislikes: Number(saved.dislikes || saved.dislike || 0),
       };
 
-      // Append answer to relevant question in local state
       setQuestions((prev) =>
         (Array.isArray(prev) ? prev : []).map((q) => {
           if (String(q.id) === String(questionId) || String(q._id) === String(questionId)) {
@@ -1077,24 +1064,69 @@ export default function ProductDetailsPage() {
   }
 
   async function checkDelivery() {
-    if (zipRaw.length !== 6) {
-      setDeliveryMsg({ ok: false, text: "Enter a 6-digit PIN" });
+    const pin = zipRaw.trim();
+
+    // Basic validation
+    if (!/^\d{6}$/.test(pin)) {
+      setDeliveryMsg({ ok: false, text: "Please enter a valid 6-digit PIN" });
       return;
     }
+
     try {
-      const res = await fetch(`${API_BASE}/api/shipping/estimate?pin=${zipRaw}`);
-      if (res.ok) {
-        const json = await res.json();
+      // optional: include origin pickup postcode if you have it (e.g. seller warehouse)
+      const url = `${API_BASE}/api/shipping/estimate?pin=${encodeURIComponent(pin)}&cod=1`;
+      const res = await fetch(url);
+
+      if (!res.ok) {
+        setDeliveryMsg({ ok: false, text: "Could not fetch delivery estimate" });
+        return;
+      }
+
+      const json = await res.json();
+
+      // Shiprocket responses vary; try a couple of shapes
+      const companies =
+        json?.available_courier_companies ||
+        json?.data?.available_courier_companies ||
+        (Array.isArray(json) ? json : null) ||
+        null;
+
+      if (Array.isArray(companies) && companies.length > 0) {
+        // Choose cheapest by rate, or fallback to first
+        const sorted = companies
+          .slice()
+          .filter((c) => c && (c.rate !== undefined || c.etd !== undefined))
+          .sort((a, b) => {
+            const ra = Number(a.rate ?? Number.MAX_SAFE_INTEGER);
+            const rb = Number(b.rate ?? Number.MAX_SAFE_INTEGER);
+            return ra - rb;
+          });
+        const best = sorted[0] || companies[0];
+        const name = best.courier_name || best.name || "a courier";
+        const eta = best.etd || best.eta || best.estimated_delivery || "3-5 business days";
         setDeliveryMsg({
           ok: true,
-          text: json?.estimate || "Estimated delivery: 3 - 5 business days",
+          text: `Delivery available via ${name} — ETA: ${eta}`,
         });
-      } else {
-        setDeliveryMsg({ ok: false, text: "Could not fetch delivery estimate" });
+        return;
       }
+
+      // If response has a friendly message
+      if (json?.message && typeof json.message === "string") {
+        setDeliveryMsg({ ok: false, text: json.message });
+        return;
+      }
+
+      setDeliveryMsg({
+        ok: false,
+        text: "Sorry, delivery is not available to this PIN",
+      });
     } catch (err) {
       console.warn("shipping estimate failed", err);
-      setDeliveryMsg({ ok: false, text: "Could not fetch delivery estimate" });
+      setDeliveryMsg({
+        ok: false,
+        text: "Could not fetch delivery estimate",
+      });
     }
   }
 
