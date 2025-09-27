@@ -1074,7 +1074,7 @@ export default function ProductDetailsPage() {
 
     try {
       // optional: include origin pickup postcode if you have it (e.g. seller warehouse)
-      const url = `${API_BASE}/api/shipping/estimate?pin=${encodeURIComponent(pin)}&cod=1`;
+      const url = `${API_BASE}/api/shipping/estimate?pin=${encodeURIComponent(pin)}&cod=0`;
       const res = await fetch(url);
 
       if (!res.ok) {
