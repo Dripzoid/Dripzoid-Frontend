@@ -1063,72 +1063,77 @@ export default function ProductDetailsPage() {
     else setZipDisplay(digits.slice(0, 3) + " " + digits.slice(3));
   }
 
-  async function checkDelivery() {
-    const pin = zipRaw.trim();
+ async function checkDelivery() {
+  const pin = zipRaw.trim();
 
-    // Basic validation
-    if (!/^\d{6}$/.test(pin)) {
-      setDeliveryMsg({ ok: false, text: "Please enter a valid 6-digit PIN" });
+  // Basic validation
+  if (!/^\d{6}$/.test(pin)) {
+    setDeliveryMsg({ ok: false, text: "Please enter a valid 6-digit PIN" });
+    return;
+  }
+
+  try {
+    const url = `${API_BASE}/api/shipping/estimate?pin=${encodeURIComponent(
+      pin
+    )}&cod=0`;
+    const res = await fetch(url);
+
+    if (!res.ok) {
+      setDeliveryMsg({ ok: false, text: "Could not fetch delivery estimate" });
       return;
     }
 
-    try {
-      // optional: include origin pickup postcode if you have it (e.g. seller warehouse)
-      const url = `${API_BASE}/api/shipping/estimate?pin=${encodeURIComponent(pin)}&cod=0`;
-      const res = await fetch(url);
+    const json = await res.json();
 
-      if (!res.ok) {
-        setDeliveryMsg({ ok: false, text: "Could not fetch delivery estimate" });
-        return;
-      }
+    // 🔹 Updated: read from backend's { estimate, count }
+    const companies =
+      json?.estimate ||
+      json?.available_courier_companies ||
+      json?.data?.available_courier_companies ||
+      (Array.isArray(json) ? json : null) ||
+      null;
 
-      const json = await res.json();
-
-      // Shiprocket responses vary; try a couple of shapes
-      const companies =
-        json?.available_courier_companies ||
-        json?.data?.available_courier_companies ||
-        (Array.isArray(json) ? json : null) ||
-        null;
-
-      if (Array.isArray(companies) && companies.length > 0) {
-        // Choose cheapest by rate, or fallback to first
-        const sorted = companies
-          .slice()
-          .filter((c) => c && (c.rate !== undefined || c.etd !== undefined))
-          .sort((a, b) => {
-            const ra = Number(a.rate ?? Number.MAX_SAFE_INTEGER);
-            const rb = Number(b.rate ?? Number.MAX_SAFE_INTEGER);
-            return ra - rb;
-          });
-        const best = sorted[0] || companies[0];
-        const name = best.courier_name || best.name || "a courier";
-        const eta = best.etd || best.eta || best.estimated_delivery || "3-5 business days";
-        setDeliveryMsg({
-          ok: true,
-          text: `Delivery available via ${name} — ETA: ${eta}`,
+    if (Array.isArray(companies) && companies.length > 0) {
+      // Choose cheapest by rate, or fallback to first
+      const sorted = companies
+        .slice()
+        .filter((c) => c && (c.rate !== undefined || c.etd !== undefined))
+        .sort((a, b) => {
+          const ra = Number(a.rate ?? Number.MAX_SAFE_INTEGER);
+          const rb = Number(b.rate ?? Number.MAX_SAFE_INTEGER);
+          return ra - rb;
         });
-        return;
-      }
 
-      // If response has a friendly message
-      if (json?.message && typeof json.message === "string") {
-        setDeliveryMsg({ ok: false, text: json.message });
-        return;
-      }
+      const best = sorted[0] || companies[0];
+      const name = best.courier_name || best.name || "a courier";
+      const eta =
+        best.etd || best.eta || best.estimated_delivery || "3-5 business days";
 
       setDeliveryMsg({
-        ok: false,
-        text: "Sorry, delivery is not available to this PIN",
+        ok: true,
+        text: `Delivery available via ${name} — ETA: ${eta}`,
       });
-    } catch (err) {
-      console.warn("shipping estimate failed", err);
-      setDeliveryMsg({
-        ok: false,
-        text: "Could not fetch delivery estimate",
-      });
+      return;
     }
+
+    // If response has a message
+    if (json?.message && typeof json.message === "string") {
+      setDeliveryMsg({ ok: false, text: json.message });
+      return;
+    }
+
+    setDeliveryMsg({
+      ok: false,
+      text: "Sorry, delivery is not available to this PIN",
+    });
+  } catch (err) {
+    console.warn("shipping estimate failed", err);
+    setDeliveryMsg({
+      ok: false,
+      text: "Could not fetch delivery estimate",
+    });
   }
+}
 
   if (!product)
     return (
