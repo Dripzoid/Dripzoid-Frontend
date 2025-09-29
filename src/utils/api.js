@@ -55,12 +55,17 @@ export default {
       auth
     );
   },
-  post: (path, body, auth = false) =>
-    request(path, { method: "POST", body: JSON.stringify(body) }, auth),
-  put: (path, body, auth = false) =>
-    request(path, { method: "PUT", body: JSON.stringify(body) }, auth),
-  delete: (path, auth = false) =>
-    request(path, { method: "DELETE" }, auth),
-  formPost: (path, formData, auth = false) =>
-    request(path, { method: "POST", body: formData }, auth),
+
+  post: (path, body, auth = false, extraHeaders = {}) =>
+    request(path, { method: "POST", body: JSON.stringify(body), headers: extraHeaders }, auth),
+
+  put: (path, body, auth = false, extraHeaders = {}) =>
+    request(path, { method: "PUT", body: JSON.stringify(body), headers: extraHeaders }, auth),
+
+  delete: (path, auth = false, extraHeaders = {}) =>
+    request(path, { method: "DELETE", headers: extraHeaders }, auth),
+
+  // Updated formPost: supports custom headers and auth
+  formPost: (path, formData, auth = false, extraHeaders = {}) =>
+    request(path, { method: "POST", body: formData, headers: extraHeaders }, auth),
 };
