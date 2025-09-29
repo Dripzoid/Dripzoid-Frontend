@@ -1085,41 +1085,33 @@ export default function ProductDetailsPage() {
 
     const json = await res.json();
 
-    // 🔹 Updated: read from backend's { estimate, count }
-    const companies =
-      json?.estimate ||
-      json?.available_courier_companies ||
-      json?.data?.available_courier_companies ||
-      (Array.isArray(json) ? json : null) ||
-      null;
+    const companies = json?.estimate || [];
 
     if (Array.isArray(companies) && companies.length > 0) {
-      // Choose cheapest by rate, or fallback to first
+      // Pick the earliest delivery date (ETD)
       const sorted = companies
-        .slice()
-        .filter((c) => c && (c.rate !== undefined || c.etd !== undefined))
-        .sort((a, b) => {
-          const ra = Number(a.rate ?? Number.MAX_SAFE_INTEGER);
-          const rb = Number(b.rate ?? Number.MAX_SAFE_INTEGER);
-          return ra - rb;
-        });
+        .filter((c) => c && c.etd)
+        .sort((a, b) => new Date(a.etd) - new Date(b.etd));
 
       const best = sorted[0] || companies[0];
-      const name = best.courier_name || best.name || "a courier";
-      const eta =
-        best.etd || best.eta || best.estimated_delivery || "3-5 business days";
+      const etdRaw = best.etd || best.estimated_delivery;
 
-      setDeliveryMsg({
-        ok: true,
-        text: `Delivery available via ${name} — ETA: ${eta}`,
-      });
-      return;
-    }
+      if (etdRaw) {
+        const date = new Date(etdRaw);
+        const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-    // If response has a message
-    if (json?.message && typeof json.message === "string") {
-      setDeliveryMsg({ ok: false, text: json.message });
-      return;
+        const dayName = days[date.getDay()];
+        const day = String(date.getDate()).padStart(2, "0");
+        const month = months[date.getMonth()];
+        const year = date.getFullYear();
+
+        setDeliveryMsg({
+          ok: true,
+          text: `Delivery Expected by ${dayName}, ${day}-${month}-${year}`,
+        });
+        return;
+      }
     }
 
     setDeliveryMsg({
@@ -1134,6 +1126,7 @@ export default function ProductDetailsPage() {
     });
   }
 }
+
 
   if (!product)
     return (
