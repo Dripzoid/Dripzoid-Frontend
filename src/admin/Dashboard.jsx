@@ -118,15 +118,14 @@ export default function Dashboard() {
     console.log("Upload token:", process.env.REACT_APP_UPLOAD_SECRET); // Check token
 
     const res = await api.post(
-      "/api/upload-db",
-      formData,
-      {
-        headers: {
-          "x-upload-token": process.env.REACT_APP_UPLOAD_SECRET, // lowercase
-        },
-      },
-      true
-    );
+  "/api/upload-db",
+  formData,
+  {
+    headers: {
+      "x-upload-token": process.env.REACT_APP_UPLOAD_SECRET,
+    },
+  }
+);
 
     if (res?.message === "DB replaced successfully") {
       alert("Database uploaded and replaced successfully!");
