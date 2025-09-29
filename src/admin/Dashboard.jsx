@@ -128,6 +128,8 @@ export default function Dashboard() {
       true
     );
 
+    console.log(process.env.REACT_APP_UPLOAD_SECRET);
+
     if (res?.success) {
       alert("Database uploaded and replaced successfully!");
     } else {
