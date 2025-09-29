@@ -114,23 +114,21 @@ export default function Dashboard() {
   formData.append("dbfile", file);
 
   try {
-    // Show some loading feedback (optional)
     console.log("Uploading database...");
+    console.log("Upload token:", process.env.REACT_APP_UPLOAD_SECRET); // Check token
 
     const res = await api.post(
       "/api/upload-db",
       formData,
       {
         headers: {
-          "X-Upload-Token": process.env.REACT_APP_UPLOAD_SECRET,
+          "x-upload-token": process.env.REACT_APP_UPLOAD_SECRET, // lowercase
         },
       },
       true
     );
 
-    console.log(process.env.REACT_APP_UPLOAD_SECRET);
-
-    if (res?.success) {
+    if (res?.message === "DB replaced successfully") {
       alert("Database uploaded and replaced successfully!");
     } else {
       alert(res?.message || "Failed to replace database");
@@ -139,9 +137,10 @@ export default function Dashboard() {
     console.error("Upload failed:", err);
     alert("Failed to upload database. Check console for details.");
   } finally {
-    e.target.value = null; // Reset file input so the same file can be uploaded again if needed
+    e.target.value = null;
   }
 };
+
 
 
   useEffect(() => {
