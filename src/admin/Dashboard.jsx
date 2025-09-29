@@ -99,22 +99,48 @@ export default function Dashboard() {
 
   const handleUploadClick = () => fileInputRef.current?.click();
 
-  const handleUploadFile = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const formData = new FormData();
-    formData.append("dbfile", file);
+ const handleUploadFile = async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
 
-    try {
-      await api.post("/api/upload-db", formData, { headers: { "X-Upload-Token": process.env.REACT_APP_UPLOAD_SECRET } }, true);
-      alert("Database uploaded successfully!");
-    } catch (err) {
-      console.error("Upload failed:", err);
-      alert("Failed to upload database");
-    } finally {
-      e.target.value = null;
+  // Validate file type
+  if (!file.name.endsWith(".db")) {
+    alert("Please select a valid .db file");
+    e.target.value = null;
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("dbfile", file);
+
+  try {
+    // Show some loading feedback (optional)
+    console.log("Uploading database...");
+
+    const res = await api.post(
+      "/api/upload-db",
+      formData,
+      {
+        headers: {
+          "X-Upload-Token": process.env.REACT_APP_UPLOAD_SECRET,
+        },
+      },
+      true
+    );
+
+    if (res?.success) {
+      alert("Database uploaded and replaced successfully!");
+    } else {
+      alert(res?.message || "Failed to replace database");
     }
-  };
+  } catch (err) {
+    console.error("Upload failed:", err);
+    alert("Failed to upload database. Check console for details.");
+  } finally {
+    e.target.value = null; // Reset file input so the same file can be uploaded again if needed
+  }
+};
+
 
   useEffect(() => {
     fetchStats();
