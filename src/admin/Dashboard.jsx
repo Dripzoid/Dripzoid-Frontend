@@ -1,5 +1,5 @@
 // src/admin/Dashboard.jsx
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   Users,
   IndianRupee,
@@ -7,7 +7,8 @@ import {
   PackageSearch,
   ClipboardList,
   Calendar,
-  Download,   // ✅ added
+  Download,
+  UploadCloud,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import api from "../utils/api";
@@ -38,6 +39,8 @@ export default function Dashboard() {
       return "";
     }
   });
+
+  const fileInputRef = useRef(null);
 
   const dateInputClass =
     "pl-3 pr-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white text-black";
@@ -77,32 +80,46 @@ export default function Dashboard() {
     }
   };
 
+  const handleExportData = async () => {
+    try {
+      const blob = await api.get("/api/admin/data-export", {}, true, true);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `dripzoid-backup-${new Date().toISOString().split("T")[0]}.db`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export data failed:", err);
+      alert("Failed to export database file");
+    }
+  };
+
+  const handleUploadClick = () => fileInputRef.current?.click();
+
+  const handleUploadFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("dbfile", file);
+
+    try {
+      await api.post("/api/upload-db", formData, { headers: { "X-Upload-Token": process.env.REACT_APP_UPLOAD_SECRET } }, true);
+      alert("Database uploaded successfully!");
+    } catch (err) {
+      console.error("Upload failed:", err);
+      alert("Failed to upload database");
+    } finally {
+      e.target.value = null;
+    }
+  };
+
   useEffect(() => {
     fetchStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range, date, month, week]);
-
-const handleExportData = async () => {
-  try {
-    // Request .db file with auth token and blob response
-    const blob = await api.get("/api/admin/data-export", {}, true, true);
-
-    // Create a URL and trigger download
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `dripzoid-backup-${new Date().toISOString().split("T")[0]}.db`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
-
-  } catch (err) {
-    console.error("Export data failed:", err);
-    alert("Failed to export database file");
-  }
-};
-
 
   const statCards = [
     { label: "Total Users", value: stats.totalUsers || 0, icon: Users, color: "bg-blue-500" },
@@ -119,6 +136,7 @@ const handleExportData = async () => {
 
   return (
     <div className="space-y-6">
+      {/* Stats Section */}
       <div className="rounded-2xl p-4 border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-3 mb-4">
           {tabs.map((t) => (
@@ -126,11 +144,9 @@ const handleExportData = async () => {
               key={t.key}
               onClick={() => {
                 setRange(t.key);
-                if (t.key === "daywise") {
-                  setDate(new Date().toISOString().split("T")[0]);
-                } else if (t.key === "monthly") {
-                  setMonth(new Date().toISOString().slice(0, 7));
-                } else if (t.key === "weekly") {
+                if (t.key === "daywise") setDate(new Date().toISOString().split("T")[0]);
+                else if (t.key === "monthly") setMonth(new Date().toISOString().slice(0, 7));
+                else if (t.key === "weekly") {
                   const d = new Date();
                   const target = new Date(d.valueOf());
                   const dayNr = (d.getDay() + 6) % 7;
@@ -139,9 +155,7 @@ const handleExportData = async () => {
                   const diff = (target - firstThursday) / 86400000;
                   const wk = 1 + Math.round(diff / 7);
                   setWeek(`${target.getFullYear()}-W${String(wk).padStart(2, "0")}`);
-                } else {
-                  setDate("");
-                }
+                } else setDate("");
               }}
               className={`flex items-center gap-2 ${
                 range === t.key
@@ -164,18 +178,8 @@ const handleExportData = async () => {
             {range === "daywise" && (
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={dateInputClass} />
             )}
-
             <button onClick={fetchStats} className={`${btnSecondaryBase} ${btnSecondaryLight} ${btnSecondaryDark}`}>
               Refresh
-            </button>
-
-            {/* ✅ Export Data Button */}
-            <button
-              onClick={handleExportData}
-              className={`${btnSecondaryBase} ${btnSecondaryLight} ${btnSecondaryDark} flex items-center gap-2`}
-            >
-              <Download className="w-4 h-4" />
-              Export Data
             </button>
           </div>
         </div>
@@ -202,6 +206,29 @@ const handleExportData = async () => {
               </div>
             </motion.div>
           ))}
+        </div>
+      </div>
+
+      {/* Disk & Data Management Section */}
+      <div className="rounded-2xl p-4 border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 space-y-4">
+        <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Disk & Data Management</h2>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleExportData}
+            className={`${btnSecondaryBase} ${btnSecondaryLight} ${btnSecondaryDark} flex items-center gap-2`}
+          >
+            <Download className="w-4 h-4" />
+            Export Data
+          </button>
+
+          <button
+            onClick={handleUploadClick}
+            className={`${btnSecondaryBase} ${btnSecondaryLight} ${btnSecondaryDark} flex items-center gap-2`}
+          >
+            <UploadCloud className="w-4 h-4" />
+            Upload DB
+          </button>
+          <input type="file" ref={fileInputRef} onChange={handleUploadFile} className="hidden" accept=".db" />
         </div>
       </div>
     </div>
