@@ -99,7 +99,7 @@ export default function Dashboard() {
 
   const handleUploadClick = () => fileInputRef.current?.click();
 
- const handleUploadFile = async (e) => {
+const handleUploadFile = async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
 
@@ -115,17 +115,14 @@ export default function Dashboard() {
 
   try {
     console.log("Uploading database...");
-    console.log("Upload token:", process.env.REACT_APP_UPLOAD_SECRET); // Check token
 
-    const res = await api.post(
-  "/api/upload-db",
-  formData,
-  {
-    headers: {
-      "x-upload-token": process.env.REACT_APP_UPLOAD_SECRET,
-    },
-  }
-);
+    // Use formPost to correctly handle FormData
+    const res = await api.formPost(
+      "/api/upload-db",
+      formData,
+      false, // no JWT auth needed
+      { "x-upload-token": process.env.REACT_APP_UPLOAD_SECRET } // pass header
+    );
 
     if (res?.message === "DB replaced successfully") {
       alert("Database uploaded and replaced successfully!");
@@ -136,7 +133,7 @@ export default function Dashboard() {
     console.error("Upload failed:", err);
     alert("Failed to upload database. Check console for details.");
   } finally {
-    e.target.value = null;
+    e.target.value = null; // reset file input
   }
 };
 
