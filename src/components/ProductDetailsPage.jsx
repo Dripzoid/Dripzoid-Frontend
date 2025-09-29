@@ -729,11 +729,21 @@ export default function ProductDetailsPage() {
   }, [availableStock]);
 
   /* ---------- ensure cart detection persists across refresh ---------- */
+
+  // Prevent repeated fetchCart calls by only invoking it once when it first becomes available.
+  const cartFetchedRef = useRef(false);
   useEffect(() => {
+    if (cartFetchedRef.current) return;
     if (typeof fetchCart === "function") {
+      cartFetchedRef.current = true;
       try {
-        fetchCart().catch(() => {});
-      } catch {}
+        fetchCart().catch(() => {
+          // If fetch fails, we don't flip the ref back to false here (avoid retry storms).
+          // If you want retry logic, implement an explicit retry/backoff mechanism.
+        });
+      } catch {
+        // ignore
+      }
     }
   }, [fetchCart]);
 
