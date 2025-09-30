@@ -26,7 +26,8 @@ const API_BASE = process.env.REACT_APP_API_BASE;
 const RAZORPAY_KEY = process.env.REACT_APP_RAZORPAY_KEY_ID || "";
 
 export default function CheckoutPage() {
-  const { cart = [], fetchCart } = useCart();
+  // include clearCart from context
+  const { cart = [], fetchCart, clearCart } = useCart();
   const { user, token } = useContext(UserContext) || {};
   const navigate = useNavigate();
   const location = useLocation();
@@ -378,6 +379,17 @@ export default function CheckoutPage() {
     return res.json();
   };
 
+  // Helper to clear server cart (only when order was placed from cart)
+  const clearServerCartIfNeeded = async (fromCart) => {
+    if (!fromCart) return;
+    try {
+      if (typeof clearCart === "function") await clearCart();
+      if (typeof fetchCart === "function") await fetchCart();
+    } catch (e) {
+      console.warn("Failed to clear/refresh cart after order:", e);
+    }
+  };
+
   // Main payment handler
   const handlePayment = async ({ fromCart = fromCartDefault } = {}) => {
     if (!isPaymentValid()) {
@@ -470,10 +482,13 @@ export default function CheckoutPage() {
         };
         try {
           localStorage.setItem("lastOrder", JSON.stringify(order));
-          if (fromCart && typeof fetchCart === "function") await fetchCart();
         } catch (e) {
           console.warn("Local storage save failed", e);
         }
+
+        // Clear server cart only if this was a cart checkout (not buy-now)
+        await clearServerCartIfNeeded(fromCart);
+
         navigate("/order-confirmation", { state: { order } });
         return;
       }
@@ -513,10 +528,13 @@ export default function CheckoutPage() {
             };
             try {
               localStorage.setItem("lastOrder", JSON.stringify(order));
-              if (fromCart && typeof fetchCart === "function") await fetchCart();
             } catch (e) {
               console.warn("Local storage save failed", e);
             }
+
+            // Clear server cart only if this was a cart checkout (not buy-now)
+            await clearServerCartIfNeeded(fromCart);
+
             navigate("/order-confirmation", { state: { order } });
           } catch (err) {
             console.error("Verification failed", err);
