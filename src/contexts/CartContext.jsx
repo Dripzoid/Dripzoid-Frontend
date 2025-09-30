@@ -212,7 +212,32 @@ export const CartProvider = ({ children }) => {
     }
   };
 
-  const buyNow = (product, quantity = 1, size = null, color = null, variantInfo = {}) => {
+  /** ✅ Clear all cart items */
+  const clearCart = async () => {
+    if (!user || !token) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/cart`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`Clear failed: ${res.status} ${txt}`);
+      }
+      setCart([]); // reset locally
+    } catch (err) {
+      console.error("Error clearing cart:", err);
+      setError("Could not clear cart");
+    }
+  };
+
+  const buyNow = (
+    product,
+    quantity = 1,
+    size = null,
+    color = null,
+    variantInfo = {}
+  ) => {
     let imagesForColor = product?.images ?? [];
     if (product?.variants?.length) {
       const variant = product.variants.find((v) => v.color === color);
@@ -244,6 +269,7 @@ export const CartProvider = ({ children }) => {
         addToCart,
         updateQuantity,
         removeFromCart,
+        clearCart, // ✅ exposed
         buyNow,
         isOpen,
         setIsOpen,
