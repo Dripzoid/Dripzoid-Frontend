@@ -9,17 +9,9 @@ import { motion } from "framer-motion";
 import { UserContext } from "../contexts/UserContext";
 
 /**
- * Razorpay integration notes (frontend):
- * - Adds a single Razorpay option (paymentType === 'razorpay') + 'cod'
- * - When user chooses Razorpay and places order, we call server endpoint
- *   POST /api/payments/razorpay/create-order with the order payload.
- *   Server should create internal order + create a Razorpay order and return
- *   at minimum: { razorpayOrderId, amount, currency, internalOrderId }
- * - We then open Razorpay Checkout using the returned razorpayOrderId.
- * - On successful payment, the checkout handler will POST to
- *   POST /api/payments/razorpay/verify with the payment details + internal order id
- *   Server should verify signature and mark order as paid.
- * - COD uses the existing /api/orders/place-order flow.
+ * Notes:
+ * - /api/orders/place-order expects: { items, buyNow, shippingAddress, paymentMethod, paymentDetails, totalAmount, ... }
+ * - /api/payments/razorpay/create-order expects: { items, shipping, totalAmount }
  */
 
 const API_BASE = process.env.REACT_APP_API_BASE;
@@ -408,6 +400,11 @@ export default function CheckoutPage() {
       return;
     }
 
+    if (checkoutItems.length === 0) {
+      alert("No items to place order.");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -425,6 +422,9 @@ export default function CheckoutPage() {
             selectedSize: it.selectedSize ?? null,
             variantId: it.variantId ?? null,
             product_snapshot: it.original ?? null,
+            name: it.name ?? (it.original && it.original.name) ?? `Product ${pid}`,
+            sku: (it.original && it.original.sku) || `SKU-${pid}`,
+            unit_price: Number(it.price || 0),
           };
         })
         .filter(Boolean);
@@ -443,16 +443,49 @@ export default function CheckoutPage() {
         phone: shipping.phone || "",
       };
 
-      const orderPayload = {
+      // Payload for /api/orders/place-order (backend expects shippingAddress)
+      const placeOrderPayload = {
         buyNow: isBuyNowMode,
-        fromCart: Boolean(fromCart),
-        items: itemsPayload,
-        totalAmount: Math.round(grandTotal),
-        paymentMethod: paymentType || "razorpay",
+        // optionally include cartItems if you want - backend doesn't require it
+        items: itemsPayload.map((it) => ({
+          product_id: it.product_id,
+          quantity: it.quantity,
+          price: it.price,
+          selectedColor: it.selectedColor,
+          selectedSize: it.selectedSize,
+        })),
         shippingAddress: shippingNormalized,
+        paymentMethod: paymentType === "cod" ? "COD" : "Razorpay",
+        paymentDetails: paymentType === "cod" ? { method: "COD" } : { method: "Razorpay" },
+        totalAmount: Math.round(grandTotal),
       };
 
-      // COD flow: call place-order backend (backend will mark as COD)
+      // Payload for /api/payments/razorpay/create-order (expects shipping)
+      const createOrderPayloadForRazor = {
+        items: itemsPayload.map((it) => ({
+          product_id: it.product_id,
+          quantity: it.quantity,
+          unit_price: it.unit_price,
+          name: it.name,
+          sku: it.sku,
+          selectedColor: it.selectedColor,
+          selectedSize: it.selectedSize,
+        })),
+        shipping: {
+          name: shippingNormalized.name,
+          line1: shippingNormalized.line1,
+          line2: shippingNormalized.line2,
+          city: shippingNormalized.city,
+          state: shippingNormalized.state,
+          pincode: shippingNormalized.pincode,
+          country: shippingNormalized.country,
+          phone: shippingNormalized.phone,
+          email: user?.email || "",
+        },
+        totalAmount: Math.round(grandTotal),
+      };
+
+      // ---------------- COD flow ----------------
       if (paymentType === "cod") {
         const res = await fetch(`${API_BASE}/api/orders/place-order`, {
           method: "POST",
@@ -460,7 +493,7 @@ export default function CheckoutPage() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify(orderPayload),
+          body: JSON.stringify(placeOrderPayload),
         });
 
         const data = await res.json().catch(() => null);
@@ -493,8 +526,9 @@ export default function CheckoutPage() {
         return;
       }
 
-      // Razorpay: create server order, open checkout
-      const serverResp = await createRazorpayOrderOnServer(orderPayload);
+      // ---------------- RAZORPAY flow ----------------
+      // Create razorpay order on server (server will create internal order too)
+      const serverResp = await createRazorpayOrderOnServer(createOrderPayloadForRazor);
       const ok = await loadRazorpayScript();
       if (!ok) throw new Error("Failed to load Razorpay SDK");
 
@@ -515,8 +549,10 @@ export default function CheckoutPage() {
         prefill: { name: shippingNormalized.name || user?.name || "", email: user?.email || "", contact: shippingNormalized.phone || "" },
         handler: async function (response) {
           try {
-            const verifyResp = await verifyRazorpayPayment({ ...response, internalOrderId, orderPayload });
+            // verify and update server order
+            const verifyResp = await verifyRazorpayPayment({ ...response, internalOrderId, orderPayload: createOrderPayloadForRazor });
             const orderInfo = verifyResp?.order || { orderId: internalOrderId };
+
             const order = {
               orderId: orderInfo?.id ?? orderInfo?.orderId ?? internalOrderId,
               items: checkoutItems,
@@ -526,6 +562,7 @@ export default function CheckoutPage() {
               shipping: shippingNormalized,
               orderDate: new Date().toISOString(),
             };
+
             try {
               localStorage.setItem("lastOrder", JSON.stringify(order));
             } catch (e) {
