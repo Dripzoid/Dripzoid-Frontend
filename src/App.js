@@ -10,6 +10,7 @@ import MenPage from "./pages/Men.jsx";
 import WomenPage from "./pages/Women.jsx";
 import KidsPage from "./pages/Kids.jsx";
 import Auth from "./pages/Auth.jsx";
+import OrderDetailsPage from "./pages/OrderDetailsPage.jsx";
 import { UserProvider, UserContext } from "./contexts/UserContext.js";
 import ProfileOverview from "./pages/account/ProfileOverview.jsx";
 import OrdersHistory from "./pages/account/OrdersHistory.jsx";
@@ -53,6 +54,7 @@ function App() {
               <Route path="/product/:id" element={<ProductDetailsPage />} />
               <Route path="/checkout" element={<CheckoutPage />} /> {/* 🆕 Checkout route */}
               <Route path="/order-confirmation" element={<OrderConfirmation />} />
+              <Route path="/order-details" element={<OrderDetailsPage />} />
               <Route path="/account" element={<DashboardLayout />}>
                 <Route index element={<ProfileOverview />} />
                 <Route path="profile" element={<ProfileOverview />} />
