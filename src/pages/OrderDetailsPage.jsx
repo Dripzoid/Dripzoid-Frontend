@@ -17,12 +17,9 @@ import {
 } from "lucide-react";
 
 // Order Details page (updated)
-// - Removed local theme toggle (assumes global theme toggle in app/navbar that toggles the `dark` class on <html>)
-// - Improved dark mode compatibility by using standard Tailwind neutral scales
-// - Enhanced progress indicator (stepper) with icons + animated active step
-// - Edit address button (inline prompt) that updates shipping address
-// - Conditional Cancel / Return / Rate flows depending on delivery status
-// - Rating form per product after delivery
+// - Replaced browser confirm/alert/prompt with in-file modal components
+// - Modal components: ConfirmModal, InputModal, InfoModal (all self-contained)
+// - All actions now use modals and update state cleanly
 
 export default function OrderDetailsPage() {
   // demo order data (now mutable via setOrder)
@@ -79,33 +76,33 @@ export default function OrderDetailsPage() {
   // ratings state (populated after delivery)
   const [ratings, setRatings] = useState({});
 
+  // modal states
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [showEditAddressModal, setShowEditAddressModal] = useState(false);
+  const [infoModal, setInfoModal] = useState({ open: false, title: "", message: "" });
+
   // helpers
   const doneCount = order.tracking.filter((t) => t.done).length;
   const progressPercent = (doneCount / order.tracking.length) * 100;
   const isDelivered = order.status.toLowerCase() === "delivered" || order.tracking.some(t => t.step.toLowerCase() === 'delivered' && t.done) || false;
 
-  // Cancel order handler
-  function cancelOrder() {
-    if (confirm("Are you sure you want to cancel this order?")) {
-      setOrder((o) => ({ ...o, status: "Cancelled", tracking: o.tracking.map(t => t.step === 'Order placed' ? { ...t, done: true } : t) }));
-      alert("Order cancelled — refund will be processed soon.");
-    }
+  // Cancel order handler (now invoked from modal confirm)
+  function handleCancelConfirmed() {
+    setOrder((o) => ({ ...o, status: "Cancelled", tracking: o.tracking.map(t => t.step === 'Order placed' ? { ...t, done: true } : t) }));
+    setInfoModal({ open: true, title: "Order cancelled", message: "Order cancelled — refund will be processed soon." });
   }
 
-  // Return request handler (simple demo)
-  function requestReturn() {
-    if (confirm("Request a return for this order?")) {
-      setOrder((o) => ({ ...o, status: "Return requested" }));
-      alert("Return requested. Seller will contact you soon.");
-    }
+  // Return request handler (invoked from modal confirm)
+  function handleReturnConfirmed() {
+    setOrder((o) => ({ ...o, status: "Return requested" }));
+    setInfoModal({ open: true, title: "Return requested", message: "Return requested. Seller will contact you soon." });
   }
 
-  // Edit address handler (simple prompt for demo)
-  function editAddress() {
-    const updated = prompt("Edit shipping address:", order.shipping.address);
-    if (updated !== null) {
-      setOrder((o) => ({ ...o, shipping: { ...o.shipping, address: updated } }));
-    }
+  // Edit address handler (invoked from InputModal)
+  function handleEditAddressConfirmed(newAddress) {
+    setOrder((o) => ({ ...o, shipping: { ...o.shipping, address: newAddress } }));
+    setInfoModal({ open: true, title: "Address updated", message: "Shipping address updated." });
   }
 
   // Rating handlers
@@ -117,9 +114,23 @@ export default function OrderDetailsPage() {
   }
   function submitRating(productId) {
     const payload = ratings[productId];
-    if (!payload || !payload.rating) return alert("Please give a rating before submitting.");
+    if (!payload || !payload.rating) {
+      setInfoModal({ open: true, title: "Rating required", message: "Please give a rating before submitting." });
+      return;
+    }
     // in real app: POST to server
-    alert(`Thanks! Received rating for product ${productId}: ${payload.rating} ⭐`);
+    setInfoModal({ open: true, title: "Thanks!", message: `Received rating for product ${productId}: ${payload.rating} ⭐` });
+    // optionally clear that product's rating after submit
+    setRatings((r) => ({ ...r, [productId]: {} }));
+  }
+
+  // Contact courier / other quick info actions
+  function contactCourier() {
+    setInfoModal({ open: true, title: "Contacting courier", message: `Calling ${order.courier.phone}...` });
+  }
+
+  function openRateProducts() {
+    setInfoModal({ open: true, title: "Rate products", message: "You can rate products below in the Items list." });
   }
 
   return (
@@ -249,7 +260,7 @@ export default function OrderDetailsPage() {
                     <div className="mt-3 flex gap-2">
                       <button className="flex-1 py-2 rounded border border-neutral-200 dark:border-neutral-700 text-sm">Track on courier</button>
                       {!isDelivered && order.status.toLowerCase() !== 'cancelled' && (
-                        <button onClick={() => window.alert('Contacting courier...')} className="flex-1 py-2 rounded bg-black dark:bg-white text-white dark:text-black text-sm">Contact courier</button>
+                        <button onClick={contactCourier} className="flex-1 py-2 rounded bg-black dark:bg-white text-white dark:text-black text-sm">Contact courier</button>
                       )}
                     </div>
                   </div>
@@ -292,9 +303,9 @@ export default function OrderDetailsPage() {
                 <div className="text-neutral-500">Have a question about an item?</div>
                 <div className="flex gap-2">
                   {!isDelivered && order.status.toLowerCase() !== 'cancelled' && (
-                    <button className="px-3 py-2 rounded border border-neutral-200 dark:border-neutral-700">Return/Replace</button>
+                    <button onClick={() => setShowReturnModal(true)} className="px-3 py-2 rounded border border-neutral-200 dark:border-neutral-700">Return/Replace</button>
                   )}
-                  <button className="px-3 py-2 rounded bg-black dark:bg-white text-white dark:text-black">Contact Seller</button>
+                  <button onClick={() => setInfoModal({ open: true, title: "Contact seller", message: "Opening chat with seller..." })} className="px-3 py-2 rounded bg-black dark:bg-white text-white dark:text-black">Contact Seller</button>
                 </div>
               </div>
             </div>
@@ -312,7 +323,7 @@ export default function OrderDetailsPage() {
                         <div className="text-sm text-neutral-500 mt-1">{order.shipping.address}</div>
                       </div>
                       <div className="ml-4">
-                        <button onClick={editAddress} className="px-3 py-1 rounded border text-sm">Edit address</button>
+                        <button onClick={() => setShowEditAddressModal(true)} className="px-3 py-1 rounded border text-sm">Edit address</button>
                       </div>
                     </div>
                   </div>
@@ -356,7 +367,7 @@ export default function OrderDetailsPage() {
                 {/* conditional actions */}
                 {(!isDelivered && order.status.toLowerCase() !== 'cancelled') ? (
                   <>
-                    <button onClick={cancelOrder} className="col-span-2 py-2 rounded border border-neutral-200 dark:border-neutral-700">Cancel order</button>
+                    <button onClick={() => setShowCancelModal(true)} className="col-span-2 py-2 rounded border border-neutral-200 dark:border-neutral-700">Cancel order</button>
                     <button className="col-span-2 py-2 rounded bg-black dark:bg-white text-white dark:text-black">Track package</button>
                     <button className="col-span-2 py-2 rounded border border-neutral-200 dark:border-neutral-700">Download invoice</button>
                   </>
@@ -365,8 +376,8 @@ export default function OrderDetailsPage() {
                     {/* Delivered or cancelled */}
                     {isDelivered ? (
                       <>
-                        <button onClick={requestReturn} className="col-span-2 py-2 rounded border border-neutral-200 dark:border-neutral-700">Request return</button>
-                        <button onClick={() => window.alert('Open rating modal / thank you')} className="col-span-2 py-2 rounded bg-emerald-500 text-white">Rate products</button>
+                        <button onClick={() => setShowReturnModal(true)} className="col-span-2 py-2 rounded border border-neutral-200 dark:border-neutral-700">Request return</button>
+                        <button onClick={openRateProducts} className="col-span-2 py-2 rounded bg-emerald-500 text-white">Rate products</button>
                         <button className="col-span-2 py-2 rounded border border-neutral-200 dark:border-neutral-700">Download invoice</button>
                       </>
                     ) : (
@@ -405,6 +416,40 @@ export default function OrderDetailsPage() {
             <button className="px-3 py-2 rounded border">Save</button>
           </div>
         </div>
+
+        {/* Modals placed at end of page */}
+        <ConfirmModal
+          open={showCancelModal}
+          title="Cancel order"
+          message="Are you sure you want to cancel this order?"
+          confirmLabel="Yes, cancel"
+          onClose={() => setShowCancelModal(false)}
+          onConfirm={() => { handleCancelConfirmed(); setShowCancelModal(false); }}
+        />
+
+        <ConfirmModal
+          open={showReturnModal}
+          title="Request return"
+          message="Do you want to request a return for this order?"
+          confirmLabel="Request return"
+          onClose={() => setShowReturnModal(false)}
+          onConfirm={() => { handleReturnConfirmed(); setShowReturnModal(false); }}
+        />
+
+        <InputModal
+          open={showEditAddressModal}
+          title="Edit shipping address"
+          initialValue={order.shipping.address}
+          onClose={() => setShowEditAddressModal(false)}
+          onConfirm={(val) => { handleEditAddressConfirmed(val); setShowEditAddressModal(false); }}
+        />
+
+        <InfoModal
+          open={infoModal.open}
+          title={infoModal.title}
+          message={infoModal.message}
+          onClose={() => setInfoModal({ open: false, title: "", message: "" })}
+        />
       </main>
     </div>
   );
@@ -503,6 +548,76 @@ function StarRating({ value = 0, onChange = () => {} }) {
           <Star size={16} />
         </button>
       ))}
+    </div>
+  );
+}
+
+// -------------------------
+// Modal components (in-file)
+// -------------------------
+
+function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose = () => {}, onConfirm = () => {} }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-md w-full p-6">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-full bg-amber-100 dark:bg-amber-900 text-amber-600">
+            <Info />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold">{title}</h3>
+            <p className="text-sm text-neutral-600 dark:text-neutral-300 mt-2">{message}</p>
+            <div className="mt-4 flex justify-end gap-3">
+              <button onClick={onClose} className="px-4 py-2 rounded border">Cancel</button>
+              <button onClick={() => { onConfirm(); }} className="px-4 py-2 rounded bg-amber-600 text-white">{confirmLabel}</button>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function InputModal({ open, title, initialValue = "", onClose = () => {}, onConfirm = (val) => {} }) {
+  const [value, setValue] = useState(initialValue);
+
+  // keep value in sync if initialValue changes
+  useEffect(() => setValue(initialValue), [initialValue]);
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-lg w-full p-6">
+        <h3 className="text-lg font-semibold">{title}</h3>
+        <textarea value={value} onChange={(e) => setValue(e.target.value)} className="w-full mt-3 p-3 rounded border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900" rows={4} />
+        <div className="mt-4 flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded border">Cancel</button>
+          <button onClick={() => onConfirm(value)} className="px-4 py-2 rounded bg-emerald-500 text-white">Save</button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function InfoModal({ open, title = "", message = "", onClose = () => {} }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <motion.div initial={{ y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-lg shadow-lg max-w-sm w-full p-4">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-full bg-emerald-100 text-emerald-600">
+            <CheckCircle />
+          </div>
+          <div className="flex-1">
+            <div className="font-semibold">{title}</div>
+            <div className="text-sm text-neutral-600 dark:text-neutral-300 mt-1">{message}</div>
+            <div className="mt-3 text-right">
+              <button onClick={onClose} className="px-3 py-1 rounded border">Close</button>
+            </div>
+          </div>
+        </div>
+      </motion.div>
     </div>
   );
 }
