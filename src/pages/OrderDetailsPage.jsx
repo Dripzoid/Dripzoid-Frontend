@@ -16,8 +16,6 @@ import {
   Share2,
   Printer,
   FileText,
-  Calendar,
-  List,
   X,
   ChevronDown,
   ChevronUp,
@@ -25,11 +23,9 @@ import {
 
 /**
  * Advanced OrderDetailsPage
- * - Large single-file component to paste into your project
  * - Black & white theme (global dark toggle assumed on <html> via your navbar)
- * - Many features: timeline, invoice, share, print, promo codes, notes, activity log, export CSV
- *
- * Replace simulated API stubs (simulateFetchOrder, apiCancelOrder, etc.) with your real endpoints.
+ * - Timeline, invoice, share, print, promo codes, notes, activity log, export CSV
+ * - Replace simulated API stubs with your real endpoints as required
  */
 
 // --------------------
@@ -38,9 +34,7 @@ import {
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 
 async function simulateFetchOrder(orderId) {
-  // Simulate network fetch of order details
   await delay(700);
-  // Return sample order (same structure as earlier)
   return {
     id: orderId || "OD335614556805540100",
     placedAt: "2025-10-01T08:30:00Z",
@@ -140,11 +134,23 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
   // local states
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // modal / UI states (fixed: added missing modal states)
+  const [showCancel, setShowCancel] = useState(false);
+  const [showReturn, setShowReturn] = useState(false);
+  const [showEditAddress, setShowEditAddress] = useState(false);
+
   const [promo, setPromo] = useState("");
   const [promoApplied, setPromoApplied] = useState(null);
   const [noteText, setNoteText] = useState("");
   const [showInvoice, setShowInvoice] = useState(false);
   const invoiceRef = useRef(null);
+
+  // rating state
+  const [ratings, setRatings] = useState({});
+
+  // generic info modal state (kept name setInfo for compatibility)
+  const [infoModal, setInfo] = useState({ open: false, title: "", message: "" });
 
   // fetch order (simulate)
   useEffect(() => {
@@ -189,6 +195,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
       setInfo({ open: true, title: "Error", message: res.message || "Could not cancel" });
     }
   }
+
   async function handleRequestReturn() {
     if (!order) return;
     setLoading(true);
@@ -202,6 +209,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
       setInfo({ open: true, title: "Error", message: res.message || "Could not request return" });
     }
   }
+
   async function handleSaveAddress(newAddr) {
     if (!order) return;
     setLoading(true);
@@ -215,6 +223,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
       setInfo({ open: true, title: "Error", message: res.message || "Could not update address" });
     }
   }
+
   async function handleSubmitRating(productId) {
     if (!order) return;
     const r = ratings[productId];
@@ -260,7 +269,6 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     if (navigator.share) {
       navigator.share({ title: `Order ${order.id}`, text: shareText }).catch(() => setInfo({ open: true, title: "Share", message: "Sharing cancelled or not supported" }));
     } else {
-      // fallback: copy text
       navigator.clipboard?.writeText(`${shareText}\nView in your orders`).then(() => {
         setInfo({ open: true, title: "Copied", message: "Order summary copied to clipboard" });
       }, () => {
@@ -268,14 +276,11 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
       });
     }
   }
+
   function handlePrintInvoice() {
-    // open invoice modal for printing
     setShowInvoice(true);
-    // small delay then print
     setTimeout(() => {
       if (invoiceRef.current) {
-        // open browser print for the content node
-        // We'll create a print window
         const printContent = invoiceRef.current.innerHTML;
         const w = window.open("", "_blank", "noopener,noreferrer");
         if (!w) {
@@ -332,9 +337,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     setInfo({ open: true, title: "Note added", message: "Your note was added to the order." });
   }
 
-  // Rating state
-  const [ratings, setRatings] = useState({});
-
+  // Rating helpers
   function setRating(productId, rating) {
     setRatings((r) => ({ ...r, [productId]: { ...(r[productId] || {}), rating } }));
   }
@@ -342,8 +345,15 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     setRatings((r) => ({ ...r, [productId]: { ...(r[productId] || {}), review } }));
   }
 
-  // Modal state (generic info)
-  const [infoModal, setInfo] = useState({ open: false, title: "", message: "" });
+  // contact courier helper (added)
+  function contactCourier() {
+    if (!order?.courier?.phone) {
+      setInfo({ open: true, title: "No courier number", message: "Courier phone not available" });
+      return;
+    }
+    // shallow UX: show info modal; in real app you might open dialer
+    setInfo({ open: true, title: "Contact courier", message: `Call ${order.courier.phone}` });
+  }
 
   // Accessible keyboard close for modals
   useEffect(() => {
@@ -360,7 +370,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Loading skeleton helper
+  // Loading skeleton
   if (loading || !order) {
     return (
       <div className="min-h-screen bg-white dark:bg-black text-neutral-900 dark:text-neutral-100 transition-colors duration-200">
@@ -370,6 +380,11 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
       </div>
     );
   }
+
+  // compute delivered
+  const isDelivered =
+    order.status.toLowerCase() === "delivered" ||
+    order.tracking.some((t) => t.step.toLowerCase() === "delivered" && t.done);
 
   // --------------------
   // Render
@@ -831,8 +846,7 @@ function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose 
   useEffect(() => {
     if (!open) return;
     const prev = document.activeElement;
-    const cleanup = () => prev?.focus?.();
-    return cleanup;
+    return () => prev?.focus?.();
   }, [open]);
 
   if (!open) return null;
