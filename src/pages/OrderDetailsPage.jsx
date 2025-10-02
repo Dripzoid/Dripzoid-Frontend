@@ -11,26 +11,21 @@ import {
   Download,
   Share2,
   Printer,
-  FileText,
 } from "lucide-react";
 
 /**
- * Advanced OrderDetailsPage (updated)
- * - Opposite-theme buttons (bg-black text-white in light mode, inverted in dark mode)
- * - Highlighted connectors between consecutive completed tracking steps
- * - Removed: order notes, activity/history, promo code input, CSV button, chat, and courier "track" button
- * - Keep: invoice/print/download/share, cancel/return flows, ratings (if delivered)
+ * OrderDetailsPage - updated
+ * - Visible vertical spine and colored connectors for consecutive completed steps
+ * - Opposite-theme buttons and hover-invert effect without focus rings
+ * - Removed notes/activity/promo/CSV/chat/track per request
  *
- * Replace simulated API stubs with real endpoints as required.
+ * Replace simulated APIs with real endpoints as needed
  */
 
-// --------------------
-// Simulated API / Helpers (replace with real calls)
-// --------------------
+// -------------------- simulated API / helpers --------------------
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
-
 async function simulateFetchOrder(orderId) {
-  await delay(700);
+  await delay(600);
   return {
     id: orderId || "OD335614556805540100",
     placedAt: "2025-10-01T08:30:00Z",
@@ -82,32 +77,14 @@ async function simulateFetchOrder(orderId) {
       { id: 2, time: "2025-10-01T09:30:00Z", title: "Packed", detail: "Warehouse A3" },
       { id: 3, time: "2025-10-01T11:15:00Z", title: "Shipped", detail: "Assigned to ShipQuick" },
     ],
-    notes: [
-      { id: 1, time: "2025-10-01T08:35:00Z", author: "system", text: "Order auto-verified." },
-    ],
   };
 }
+async function apiCancelOrder(orderId) { await delay(500); return { ok: true, message: "Order cancelled" }; }
+async function apiRequestReturn(orderId) { await delay(500); return { ok: true, message: "Return requested" }; }
+async function apiUpdateAddress(orderId, address) { await delay(400); return { ok: true, message: "Address updated" }; }
+async function apiSubmitRating(orderId, productId, rating, review) { await delay(400); return { ok: true, message: "Rating received" }; }
 
-async function apiCancelOrder(orderId) {
-  await delay(600);
-  return { ok: true, message: "Order cancelled" };
-}
-async function apiRequestReturn(orderId) {
-  await delay(600);
-  return { ok: true, message: "Return requested" };
-}
-async function apiUpdateAddress(orderId, address) {
-  await delay(500);
-  return { ok: true, message: "Address updated" };
-}
-async function apiSubmitRating(orderId, productId, rating, review) {
-  await delay(500);
-  return { ok: true, message: "Rating received" };
-}
-
-// --------------------
-// Utilities
-// --------------------
+// -------------------- utils --------------------
 function formatDateTime(iso) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -117,30 +94,34 @@ function currency(n) {
   return `₹${Number(n).toLocaleString("en-IN")}`;
 }
 
-// --------------------
-// Main Page Component
-// --------------------
+// -------------------- global button class (no rings) --------------------
+// initial: opposite-theme (light -> black bg, dark -> white bg)
+// hover: invert colors and add subtle black shadow
+const BTN =
+  "transition-all duration-200 font-medium rounded-md px-4 py-2 " +
+  "bg-black text-white dark:bg-white dark:text-black " +
+  "hover:bg-white hover:text-black dark:hover:bg-black dark:hover:text-white " +
+  "hover:shadow-[0_10px_25px_rgba(0,0,0,0.12)] focus:outline-none active:scale-95";
+
+// -------------------- Main component --------------------
 export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // modal UI states
+  // modal/UI states
   const [showCancel, setShowCancel] = useState(false);
   const [showReturn, setShowReturn] = useState(false);
   const [showEditAddress, setShowEditAddress] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
   const invoiceRef = useRef(null);
 
-  // ratings
   const [ratings, setRatings] = useState({});
-
-  // info modal
   const [infoModal, setInfo] = useState({ open: false, title: "", message: "" });
 
   useEffect(() => {
     let mounted = true;
-    setLoading(true);
     (async () => {
+      setLoading(true);
       const data = await simulateFetchOrder(orderId);
       if (!mounted) return;
       setOrder(data);
@@ -149,7 +130,6 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     return () => (mounted = false);
   }, [orderId]);
 
-  // derived: promo removed from this version so pricing is direct
   const pricing = useMemo(() => (order ? { ...order.pricing } : null), [order]);
 
   // Actions
@@ -159,42 +139,36 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     const res = await apiCancelOrder(order.id);
     if (res.ok) {
       setOrder((o) => ({ ...o, status: "Cancelled", history: [{ id: Date.now(), time: new Date().toISOString(), title: "Cancelled", detail: res.message }, ...o.history] }));
-      setLoading(false);
       setInfo({ open: true, title: "Cancelled", message: res.message });
     } else {
-      setLoading(false);
       setInfo({ open: true, title: "Error", message: res.message || "Could not cancel" });
     }
+    setLoading(false);
   }
-
   async function handleRequestReturn() {
     if (!order) return;
     setLoading(true);
     const res = await apiRequestReturn(order.id);
     if (res.ok) {
       setOrder((o) => ({ ...o, status: "Return requested", history: [{ id: Date.now(), time: new Date().toISOString(), title: "Return requested", detail: res.message }, ...o.history] }));
-      setLoading(false);
       setInfo({ open: true, title: "Return requested", message: res.message });
     } else {
-      setLoading(false);
       setInfo({ open: true, title: "Error", message: res.message || "Could not request return" });
     }
+    setLoading(false);
   }
-
   async function handleSaveAddress(newAddr) {
     if (!order) return;
     setLoading(true);
     const res = await apiUpdateAddress(order.id, newAddr);
     if (res.ok) {
       setOrder((o) => ({ ...o, shipping: { ...o.shipping, address: newAddr }, history: [{ id: Date.now(), time: new Date().toISOString(), title: "Address updated", detail: newAddr }, ...o.history] }));
-      setLoading(false);
       setInfo({ open: true, title: "Address updated", message: res.message });
     } else {
-      setLoading(false);
       setInfo({ open: true, title: "Error", message: res.message || "Could not update address" });
     }
+    setLoading(false);
   }
-
   async function handleSubmitRating(productId) {
     if (!order) return;
     const r = ratings[productId];
@@ -206,34 +180,28 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     const res = await apiSubmitRating(order.id, productId, r.rating, r.review);
     if (res.ok) {
       setOrder((o) => ({ ...o, history: [{ id: Date.now(), time: new Date().toISOString(), title: "Rating submitted", detail: `Product ${productId} rated ${r.rating}` }, ...o.history] }));
-      setLoading(false);
       setInfo({ open: true, title: "Thanks", message: res.message });
       setRatings((s) => ({ ...s, [productId]: {} }));
     } else {
-      setLoading(false);
       setInfo({ open: true, title: "Error", message: res.message || "Could not submit rating" });
     }
+    setLoading(false);
   }
 
-  // Share / print
   function handleShare() {
     if (!order) return;
     const shareText = `Order ${order.id} • ${order.items.length} items • ${currency(order.pricing.total)}`;
     if (navigator.share) {
       navigator.share({ title: `Order ${order.id}`, text: shareText }).catch(() => setInfo({ open: true, title: "Share", message: "Sharing cancelled or not supported" }));
     } else {
-      navigator.clipboard?.writeText(`${shareText}\nView in your orders`).then(() => {
-        setInfo({ open: true, title: "Copied", message: "Order summary copied to clipboard" });
-      }, () => {
-        setInfo({ open: true, title: "Share", message: "Share not available" });
-      });
+      navigator.clipboard?.writeText(`${shareText}\nView in your orders`).then(() => setInfo({ open: true, title: "Copied", message: "Order summary copied to clipboard" }), () => setInfo({ open: true, title: "Share", message: "Share not available" }));
     }
   }
 
   function handlePrintInvoice() {
     setShowInvoice(true);
     setTimeout(() => {
-      if (invoiceRef.current) {
+      if (invoiceRef.current && typeof window !== "undefined") {
         const printContent = invoiceRef.current.innerHTML;
         const w = window.open("", "_blank", "noopener,noreferrer");
         if (!w) {
@@ -242,34 +210,21 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
         }
         w.document.write(`
           <html>
-            <head>
-              <title>Invoice - ${order?.id}</title>
-              <style>
-                body { font-family: Arial, sans-serif; padding: 20px; color: #111; background: #fff; }
-                .invoice { max-width: 800px; margin: auto; }
-                h1,h2,h3{ margin:0; }
-                table{ width:100%; border-collapse:collapse; }
-                th,td{ padding:8px; border:1px solid #ddd; text-align:left; }
-              </style>
+            <head><title>Invoice - ${order?.id}</title>
+            <style>body{font-family:Arial;padding:20px;color:#111;background:#fff}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #ddd;text-align:left}</style>
             </head>
-            <body>
-              <div class="invoice">${printContent}</div>
-            </body>
+            <body>${printContent}</body>
           </html>
         `);
         w.document.close();
         w.focus();
-        setTimeout(() => {
-          w.print();
-          w.close();
-        }, 400);
+        setTimeout(() => { w.print(); w.close(); }, 300);
       } else {
         window.print();
       }
-    }, 250);
+    }, 200);
   }
 
-  // helpers
   function contactCourier() {
     if (!order?.courier?.phone) {
       setInfo({ open: true, title: "No courier number", message: "Courier phone not available" });
@@ -278,7 +233,6 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     setInfo({ open: true, title: "Contact courier", message: `Call ${order.courier.phone}` });
   }
 
-  // modal keyboard close
   useEffect(() => {
     function onKey(e) {
       if (e.key === "Escape") {
@@ -303,13 +257,9 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     );
   }
 
-  const isDelivered =
-    order.status.toLowerCase() === "delivered" ||
-    order.tracking.some((t) => t.step.toLowerCase() === "delivered" && t.done);
+  const isDelivered = order.status.toLowerCase() === "delivered" || order.tracking.some((t) => t.step.toLowerCase() === "delivered" && t.done);
 
-  // --------------------
-  // Render
-  // --------------------
+  // -------------------- Render --------------------
   return (
     <div className="min-h-screen bg-white dark:bg-black text-neutral-900 dark:text-neutral-100 transition-colors duration-200">
       {/* Breadcrumb */}
@@ -320,7 +270,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
       </div>
 
       <main className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left */}
+        {/* Left - Main */}
         <section className="lg:col-span-2 space-y-6">
           <ProductHeader order={order} />
 
@@ -353,7 +303,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
                     </div>
                   </div>
 
-                  {/* Rating form (if delivered) */}
+                  {/* Rating form if delivered */}
                   {isDelivered && (
                     <div className="mt-3 bg-neutral-50 dark:bg-neutral-800 border border-neutral-100 dark:border-neutral-700 rounded p-3">
                       <div className="text-sm font-medium mb-2">Rate this product</div>
@@ -366,19 +316,10 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
                           className="flex-1 p-2 rounded bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700"
                         />
                       </div>
+
                       <div className="mt-2 flex gap-2">
-                        <button
-                          onClick={() => handleSubmitRating(it.id)}
-                          className="px-3 py-2 rounded transition transform hover:-translate-y-0.5 hover:shadow-lg active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black"
-                        >
-                          Submit rating
-                        </button>
-                        <button
-                          onClick={() => setRatings((r) => ({ ...r, [it.id]: {} }))}
-                          className="px-3 py-2 rounded transition hover:shadow-md active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black"
-                        >
-                          Clear
-                        </button>
+                        <button onClick={() => handleSubmitRating(it.id)} className={BTN}>Submit rating</button>
+                        <button onClick={() => setRatings((r) => ({ ...r, [it.id]: {} }))} className={BTN}>Clear</button>
                       </div>
                     </div>
                   )}
@@ -403,12 +344,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
                 <div className="mt-2 flex items-center justify-between">
                   <div className="text-sm text-neutral-500">{order.shipping.name} • {order.shipping.phone}</div>
                   <div>
-                    <button
-                      onClick={() => setShowEditAddress(true)}
-                      className="px-2 py-1 rounded transition hover:shadow-md active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black text-sm"
-                    >
-                      Edit
-                    </button>
+                    <button onClick={() => setShowEditAddress(true)} className={BTN + " text-sm px-3 py-1"}>Edit</button>
                   </div>
                 </div>
               </div>
@@ -422,13 +358,8 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
                 <div className="text-right">
                   <div className="text-sm">{order.courier.exec?.eta}</div>
                   <div className="mt-2 flex flex-col gap-2">
-                    <button
-                      onClick={contactCourier}
-                      className="px-3 py-1 rounded transition hover:shadow-md active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black text-sm"
-                    >
-                      Call
-                    </button>
-                    {/* removed "Track" button per your request */}
+                    <button onClick={contactCourier} className={BTN + " text-sm px-3 py-1"}>Call</button>
+                    {/* Track removed */}
                   </div>
                 </div>
               </div>
@@ -477,26 +408,15 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
             </div>
 
             <div className="mt-4 space-y-2">
-              <button
-                onClick={() => setShowInvoice(true)}
-                className="w-full py-2 rounded border flex items-center justify-center gap-2 transition hover:shadow-lg active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black"
-              >
+              <button onClick={() => setShowInvoice(true)} className={BTN + " w-full py-2 flex items-center justify-center gap-2"}>
                 <Printer size={16} /> Print / Invoice
               </button>
 
               <div className="flex gap-2 mt-2">
-                <button
-                  onClick={handleShare}
-                  className="flex-1 py-2 rounded border flex items-center justify-center gap-2 transition hover:shadow-md active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black"
-                >
+                <button onClick={handleShare} className={BTN + " flex-1 py-2 flex items-center justify-center gap-2"}>
                   <Share2 size={16} /> Share
                 </button>
-
-                {/* CSV removed by request */}
-                <button
-                  onClick={() => setInfo({ open: true, title: "Download invoice", message: "Downloading invoice (demo)..." })}
-                  className="py-2 px-3 rounded border flex items-center gap-2 transition hover:shadow-md active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black"
-                >
+                <button onClick={() => setInfo({ open: true, title: "Download invoice", message: "Downloading invoice (demo)..." })} className={BTN + " py-2 px-3 flex items-center gap-2"}>
                   <Download size={16} /> Download
                 </button>
               </div>
@@ -508,20 +428,20 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
               <div className="font-medium">More actions</div>
             </div>
             <div className="mt-3 space-y-2">
-              <button onClick={handlePrintInvoice} className="w-full py-2 rounded border text-sm transition hover:shadow-md active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black flex items-center justify-center gap-2">
+              <button onClick={handlePrintInvoice} className={BTN + " w-full py-2 flex items-center justify-center gap-2"}>
                 <Printer size={16} /> Print
               </button>
-              <button onClick={() => setInfo({ open: true, title: "Report issue", message: "Open report flow (demo)..." })} className="w-full py-2 rounded border text-sm transition hover:shadow-md active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black">
+              <button onClick={() => setInfo({ open: true, title: "Report issue", message: "Open report flow (demo)..." })} className={BTN + " w-full py-2"}>
                 Report a problem
               </button>
-              <button onClick={() => setInfo({ open: true, title: "Help", message: "Open help center (demo)..." })} className="w-full py-2 rounded border text-sm transition hover:shadow-md active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black">
+              <button onClick={() => setInfo({ open: true, title: "Help", message: "Open help center (demo)..." })} className={BTN + " w-full py-2"}>
                 Help center
               </button>
             </div>
           </div>
         </aside>
 
-        {/* Invoice print area (hidden) */}
+        {/* Hidden invoice content for print */}
         {showInvoice && (
           <div className="hidden" aria-hidden>
             <div ref={invoiceRef}>
@@ -542,9 +462,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
   );
 }
 
-// --------------------
-// Subcomponents
-// --------------------
+// -------------------- Subcomponents --------------------
 
 function SkeletonPage() {
   return (
@@ -591,7 +509,8 @@ function ProductHeader({ order }) {
 
 /**
  * TimelineCard
- * - connector between marker and next is colored when both current and next are done
+ * - Uses a container with a full-height neutral spine (absolute)
+ * - Each timeline item renders a marker and an OVERLAY connector (absolute) that colors over the spine when both current and next are done
  */
 function TimelineCard({ order, onCancel, onRequestReturn, isDelivered }) {
   return (
@@ -604,83 +523,65 @@ function TimelineCard({ order, onCancel, onRequestReturn, isDelivered }) {
             <div className="font-semibold">{order.status}</div>
           </div>
         </div>
-
-        {/* top-right -- intentionally left minimal (no track) */}
         <div />
       </div>
 
-      <div className="mt-6 flex gap-6">
-        {/* Left marker column */}
-        <div className="w-12 flex flex-col items-center">
-          {/* background full spine */}
-          <div className="relative h-full w-px bg-neutral-100 dark:bg-neutral-800"></div>
-        </div>
+      {/* timeline wrapper (relative) */}
+      <div className="mt-6 relative">
+        {/* full height neutral spine (z-0) */}
+        <div className="absolute left-6 top-0 bottom-0 w-px bg-neutral-100 dark:bg-neutral-800 z-0" />
 
-        <div className="flex-1">
-          <div className="space-y-4 relative">
-            {order.tracking.map((t, idx) => {
-              const done = t.done;
-              const nextDone = order.tracking[idx + 1]?.done;
-              const markerClasses = done ? "bg-emerald-600 text-white" : nextDone ? "bg-white border border-neutral-300 dark:border-neutral-700 text-amber-500" : "bg-white border border-neutral-200 dark:border-neutral-800 text-neutral-400";
+        <div className="space-y-6 relative z-10">
+          {order.tracking.map((t, idx) => {
+            const done = t.done;
+            const nextDone = order.tracking[idx + 1]?.done;
+            const markerClasses = done ? "bg-emerald-600 text-white" : nextDone ? "bg-white border border-neutral-300 dark:border-neutral-700 text-amber-500" : "bg-white border border-neutral-200 dark:border-neutral-800 text-neutral-400";
+            // connector overlay (shows emerald when both current and next done)
+            const connectorClass = done && nextDone ? "bg-emerald-600" : "bg-transparent";
 
-              // connector color: if current done and next done => emerald, else neutral
-              const connectorClass = done && nextDone ? "bg-emerald-600" : "bg-neutral-100 dark:bg-neutral-800";
-
-              return (
-                <div key={t.step} className="flex items-start gap-4">
-                  <div className="flex flex-col items-center">
-                    <div className={`w-6 h-6 rounded-full flex items-center justify-center ${markerClasses}`}>
-                      {done ? <CheckCircle size={14} /> : nextDone ? <Clock size={14} /> : <PackageIcon size={14} />}
-                    </div>
-
-                    {/* connector to next: colored when both current and next are done */}
-                    <div className={`flex-1 w-px mt-2 ${connectorClass}`} />
-                  </div>
-
-                  <div className="flex-1">
-                    <div className={`font-medium ${done ? "text-neutral-700 dark:text-neutral-200" : "text-neutral-500"}`}>{t.step}</div>
-                    <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">{t.date ? formatDateTime(t.date) : done ? "" : "Pending"}</div>
-
-                    {t.detail && <div className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">{t.detail}</div>}
-
-                    {t.step.toLowerCase().includes("shipped") && done && (
-                      <div className="mt-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 rounded p-3 text-sm text-neutral-700 dark:text-neutral-200">
-                        Your item has arrived at a delivery partner facility — {new Date(t.date).toLocaleDateString()}
-                      </div>
-                    )}
+            return (
+              <div key={t.step} className="pl-14 relative">
+                {/* marker */}
+                <div className="absolute left-6 top-0 -translate-x-1/2">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center ${markerClasses}`}>
+                    {done ? <CheckCircle size={14} /> : nextDone ? <Clock size={14} /> : <PackageIcon size={14} />}
                   </div>
                 </div>
-              );
-            })}
-          </div>
 
-          <div className="mt-4 border-t border-neutral-100 dark:border-neutral-800 pt-4 text-sm text-neutral-500">
-            Delivery Executive details will be available once the order is out for delivery
-          </div>
+                {/* connector overlay below marker (extends to bottom of this item) */}
+                <div className={`absolute left-6 top-6 bottom-0 w-px ${connectorClass} z-10`} />
 
-          <div className="mt-4 flex items-center justify-between gap-4">
-            <div className="flex-1">
-              {!isDelivered && order.status.toLowerCase() !== "cancelled" ? (
-                <button
-                  onClick={onCancel}
-                  className="w-full py-3 rounded border transition hover:shadow-lg active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black"
-                >
-                  Cancel
-                </button>
-              ) : (
-                <button
-                  onClick={onRequestReturn}
-                  className="w-full py-3 rounded border transition hover:shadow-lg active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black"
-                >
-                  Request Return
-                </button>
-              )}
-            </div>
+                {/* content */}
+                <div>
+                  <div className={`font-medium ${done ? "text-neutral-700 dark:text-neutral-200" : "text-neutral-500"}`}>{t.step}</div>
+                  <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">{t.date ? formatDateTime(t.date) : done ? "" : "Pending"}</div>
+                  {t.detail && <div className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">{t.detail}</div>}
 
-            {/* removed "Chat with us" button */}
-            <div className="w-44" />
-          </div>
+                  {t.step.toLowerCase().includes("shipped") && done && (
+                    <div className="mt-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 rounded p-3 text-sm text-neutral-700 dark:text-neutral-200">
+                      Your item has arrived at a delivery partner facility — {t.date ? new Date(t.date).toLocaleDateString() : ""}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
+      </div>
+
+      <div className="mt-4 border-t border-neutral-100 dark:border-neutral-800 pt-4 text-sm text-neutral-500">
+        Delivery Executive details will be available once the order is out for delivery
+      </div>
+
+      <div className="mt-4 flex items-center justify-between gap-4">
+        <div className="flex-1">
+          {!isDelivered && order.status.toLowerCase() !== "cancelled" ? (
+            <button onClick={onCancel} className={BTN + " w-full"}>Cancel</button>
+          ) : (
+            <button onClick={onRequestReturn} className={BTN + " w-full"}>Request Return</button>
+          )}
+        </div>
+        <div className="w-44" />
       </div>
     </div>
   );
@@ -733,18 +634,13 @@ function InvoiceTemplate({ order, pricing }) {
   );
 }
 
-// Star rating
+// Star rating component
 function StarRating({ value = 0, onChange = () => {} }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-2">
       {[1, 2, 3, 4, 5].map((n) => (
-        <button
-          key={n}
-          onClick={() => onChange(n)}
-          aria-label={`${n} star`}
-          className={`p-1 rounded ${n <= value ? "bg-amber-400 text-white" : "bg-transparent text-neutral-400 dark:text-neutral-500"}`}
-        >
-          <Star size={16} />
+        <button key={n} onClick={() => onChange(n)} aria-label={`${n} star`} className="focus:outline-none">
+          <Star size={18} className={n <= value ? "text-yellow-400" : "text-neutral-400 dark:text-neutral-500"} />
         </button>
       ))}
     </div>
@@ -761,16 +657,16 @@ function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose 
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
-      <motion.div initial={{ scale: 0.97, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-md w-full p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <motion.div initial={{ scale: 0.98, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-md w-full p-6">
         <div className="flex items-start gap-4">
           <div className="p-2 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700"><Info /></div>
           <div className="flex-1">
-            <h3 id="confirm-title" className="text-lg font-semibold">{title}</h3>
+            <h3 className="text-lg font-semibold">{title}</h3>
             <p className="text-sm text-neutral-600 dark:text-neutral-300 mt-2">{message}</p>
             <div className="mt-4 flex justify-end gap-3">
-              <button onClick={onClose} className="px-4 py-2 rounded border transition hover:shadow-sm active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black">Cancel</button>
-              <button onClick={() => onConfirm()} className="px-4 py-2 rounded bg-emerald-600 text-white transition hover:shadow-lg active:scale-95 focus:outline-none"> {confirmLabel} </button>
+              <button onClick={onClose} className={BTN + " bg-black text-white dark:bg-white dark:text-black"}>Cancel</button>
+              <button onClick={() => onConfirm()} className="px-4 py-2 rounded bg-emerald-600 text-white"> {confirmLabel} </button>
             </div>
           </div>
         </div>
@@ -785,13 +681,13 @@ function InputModal({ open, title, initialValue = "", onClose = () => {}, onConf
   useEffect(() => setValue(initialValue || ""), [initialValue, open]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <motion.div initial={{ y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-lg w-full p-6">
         <h3 className="text-lg font-semibold">{title}</h3>
         <textarea value={value} onChange={(e) => setValue(e.target.value)} className="w-full mt-3 p-3 rounded border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900" rows={4} />
         <div className="mt-4 flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 rounded border transition hover:shadow-sm active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black">Cancel</button>
-          <button onClick={() => onConfirm(value)} className="px-4 py-2 rounded bg-black text-white dark:bg-white dark:text-black transition hover:shadow-lg active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white">Save</button>
+          <button onClick={onClose} className={BTN}>Cancel</button>
+          <button onClick={() => onConfirm(value)} className={BTN}>Save</button>
         </div>
       </motion.div>
     </div>
@@ -802,15 +698,15 @@ function InputModal({ open, title, initialValue = "", onClose = () => {}, onConf
 function InfoModal({ open, title = "", message = "", onClose = () => {} }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-4" role="status" aria-live="polite">
-      <motion.div initial={{ y: 16, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-lg shadow-lg max-w-sm w-full p-4">
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-4">
+      <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-lg shadow-lg max-w-sm w-full p-4">
         <div className="flex items-start gap-3">
           <div className="p-2 rounded-full bg-emerald-50 text-emerald-600"><CheckCircle /></div>
           <div className="flex-1">
             <div className="font-semibold">{title}</div>
             <div className="text-sm text-neutral-600 dark:text-neutral-300 mt-1">{message}</div>
             <div className="mt-3 text-right">
-              <button onClick={onClose} className="px-3 py-1 rounded border transition hover:shadow-sm active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black">Close</button>
+              <button onClick={onClose} className={BTN}>Close</button>
             </div>
           </div>
         </div>
