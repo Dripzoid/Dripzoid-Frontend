@@ -14,12 +14,17 @@ import {
 } from "lucide-react";
 
 /**
- * OrderDetailsPage - updated
- * - Visible vertical spine and colored connectors for consecutive completed steps
- * - Opposite-theme buttons and hover-invert effect without focus rings
- * - Removed notes/activity/promo/CSV/chat/track per request
+ * OrderDetailsPage - fixed
  *
- * Replace simulated APIs with real endpoints as needed
+ * Fixes in this file:
+ * - Timeline spine is thicker and connectors now visually touch below each marker.
+ * - Connectors between consecutive completed steps are highlighted (emerald).
+ * - All buttons are fully rounded, opposite-theme by default (black bg in light / white bg in dark), hover-invert,
+ *   with a hover ring: black ring in light theme, white ring in dark theme.
+ * - Buttons use hover:ring-4 (appears only on hover) and no always-on focus ring; focus:outline-none retained.
+ * - Removed notes/activity/promo/CSV/chat/track per earlier request.
+ *
+ * Replace simulated API stubs with real endpoints as required.
  */
 
 // -------------------- simulated API / helpers --------------------
@@ -94,14 +99,16 @@ function currency(n) {
   return `₹${Number(n).toLocaleString("en-IN")}`;
 }
 
-// -------------------- global button class (no rings) --------------------
-// initial: opposite-theme (light -> black bg, dark -> white bg)
-// hover: invert colors and add subtle black shadow
+// -------------------- global button class (rounded-full + hover ring) --------------------
+// - default: opposite-theme (light -> black bg / white text; dark -> white bg / black text)
+// - hover: invert bg/text and show a prominent ring (black in light, white in dark)
+// - fully rounded
 const BTN =
-  "transition-all duration-200 font-medium rounded-md px-4 py-2 " +
+  "transition-all duration-200 font-medium rounded-full px-4 py-2 " +
   "bg-black text-white dark:bg-white dark:text-black " +
   "hover:bg-white hover:text-black dark:hover:bg-black dark:hover:text-white " +
-  "hover:shadow-[0_10px_25px_rgba(0,0,0,0.12)] focus:outline-none active:scale-95";
+  // ring appears on hover only; black ring in light, white ring in dark
+  "hover:ring-4 hover:ring-black dark:hover:ring-white hover:shadow-[0_10px_25px_rgba(0,0,0,0.12)] focus:outline-none active:scale-95";
 
 // -------------------- Main component --------------------
 export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
@@ -509,8 +516,9 @@ function ProductHeader({ order }) {
 
 /**
  * TimelineCard
- * - Uses a container with a full-height neutral spine (absolute)
- * - Each timeline item renders a marker and an OVERLAY connector (absolute) that colors over the spine when both current and next are done
+ * - Thicker spine: w-[4px]
+ * - Connectors overlay match spine width and start right below the marker so the line touches the marker bottom
+ * - Marker has higher z-index so overlay sits behind marker edges and connects seamlessly
  */
 function TimelineCard({ order, onCancel, onRequestReturn, isDelivered }) {
   return (
@@ -528,28 +536,33 @@ function TimelineCard({ order, onCancel, onRequestReturn, isDelivered }) {
 
       {/* timeline wrapper (relative) */}
       <div className="mt-6 relative">
-        {/* full height neutral spine (z-0) */}
-        <div className="absolute left-6 top-0 bottom-0 w-px bg-neutral-100 dark:bg-neutral-800 z-0" />
+        {/* full height neutral spine (thicker) - base/neutral line */}
+        <div className="absolute left-6 top-0 bottom-0 w-[4px] rounded bg-neutral-100 dark:bg-neutral-800 z-0" />
 
         <div className="space-y-6 relative z-10">
           {order.tracking.map((t, idx) => {
             const done = t.done;
             const nextDone = order.tracking[idx + 1]?.done;
-            const markerClasses = done ? "bg-emerald-600 text-white" : nextDone ? "bg-white border border-neutral-300 dark:border-neutral-700 text-amber-500" : "bg-white border border-neutral-200 dark:border-neutral-800 text-neutral-400";
+            const markerClasses = done
+              ? "bg-emerald-600 text-white border-0"
+              : nextDone
+                ? "bg-white border border-neutral-300 dark:border-neutral-700 text-amber-500"
+                : "bg-white border border-neutral-200 dark:border-neutral-800 text-neutral-400";
             // connector overlay (shows emerald when both current and next done)
             const connectorClass = done && nextDone ? "bg-emerald-600" : "bg-transparent";
 
             return (
               <div key={t.step} className="pl-14 relative">
-                {/* marker */}
-                <div className="absolute left-6 top-0 -translate-x-1/2">
+                {/* marker (z-20 so it sits above connector/spine) */}
+                <div className="absolute left-6 top-0 -translate-x-1/2 z-20">
                   <div className={`w-6 h-6 rounded-full flex items-center justify-center ${markerClasses}`}>
                     {done ? <CheckCircle size={14} /> : nextDone ? <Clock size={14} /> : <PackageIcon size={14} />}
                   </div>
                 </div>
 
                 {/* connector overlay below marker (extends to bottom of this item) */}
-                <div className={`absolute left-6 top-6 bottom-0 w-px ${connectorClass} z-10`} />
+                {/* Use same left and width as spine so it overlays perfectly */ }
+                <div className={`absolute left-6 top-6 bottom-0 w-[4px] rounded ${connectorClass} z-10`} />
 
                 {/* content */}
                 <div>
@@ -665,8 +678,8 @@ function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose 
             <h3 className="text-lg font-semibold">{title}</h3>
             <p className="text-sm text-neutral-600 dark:text-neutral-300 mt-2">{message}</p>
             <div className="mt-4 flex justify-end gap-3">
-              <button onClick={onClose} className={BTN + " bg-black text-white dark:bg-white dark:text-black"}>Cancel</button>
-              <button onClick={() => onConfirm()} className="px-4 py-2 rounded bg-emerald-600 text-white"> {confirmLabel} </button>
+              <button onClick={onClose} className={BTN}>Cancel</button>
+              <button onClick={() => onConfirm()} className="px-4 py-2 rounded-full bg-emerald-600 text-white"> {confirmLabel} </button>
             </div>
           </div>
         </div>
