@@ -6,26 +6,22 @@ import {
   Package as PackageIcon,
   CheckCircle,
   Clock,
-  CreditCard,
-  MapPin,
-  Phone,
-  User,
   Info,
   Star,
   Download,
   Share2,
   Printer,
   FileText,
-  X,
-  ChevronDown,
-  ChevronUp,
 } from "lucide-react";
 
 /**
- * Advanced OrderDetailsPage
- * - Black & white theme (global dark toggle assumed on <html> via your navbar)
- * - Timeline, invoice, share, print, promo codes, notes, activity log, export CSV
- * - Replace simulated API stubs with your real endpoints as required
+ * Advanced OrderDetailsPage (updated)
+ * - Opposite-theme buttons (bg-black text-white in light mode, inverted in dark mode)
+ * - Highlighted connectors between consecutive completed tracking steps
+ * - Removed: order notes, activity/history, promo code input, CSV button, chat, and courier "track" button
+ * - Keep: invoice/print/download/share, cancel/return flows, ratings (if delivered)
+ *
+ * Replace simulated API stubs with real endpoints as required.
  */
 
 // --------------------
@@ -110,7 +106,7 @@ async function apiSubmitRating(orderId, productId, rating, review) {
 }
 
 // --------------------
-// Utility helpers
+// Utilities
 // --------------------
 function formatDateTime(iso) {
   if (!iso) return "";
@@ -120,39 +116,27 @@ function formatDateTime(iso) {
 function currency(n) {
   return `₹${Number(n).toLocaleString("en-IN")}`;
 }
-function toCSV(order) {
-  const headers = ["itemId", "title", "qty", "price", "options", "seller"];
-  const rows = order.items.map((it) => [it.id, it.title, it.qty, it.price, it.options, it.seller]);
-  const csv = [headers.join(","), ...rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))].join("\n");
-  return csv;
-}
 
 // --------------------
 // Main Page Component
 // --------------------
 export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
-  // local states
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // modal / UI states (fixed: added missing modal states)
+  // modal UI states
   const [showCancel, setShowCancel] = useState(false);
   const [showReturn, setShowReturn] = useState(false);
   const [showEditAddress, setShowEditAddress] = useState(false);
-
-  const [promo, setPromo] = useState("");
-  const [promoApplied, setPromoApplied] = useState(null);
-  const [noteText, setNoteText] = useState("");
   const [showInvoice, setShowInvoice] = useState(false);
   const invoiceRef = useRef(null);
 
-  // rating state
+  // ratings
   const [ratings, setRatings] = useState({});
 
-  // generic info modal state (kept name setInfo for compatibility)
+  // info modal
   const [infoModal, setInfo] = useState({ open: false, title: "", message: "" });
 
-  // fetch order (simulate)
   useEffect(() => {
     let mounted = true;
     setLoading(true);
@@ -165,23 +149,10 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     return () => (mounted = false);
   }, [orderId]);
 
-  // derived price with promo
-  const pricing = useMemo(() => {
-    if (!order) return null;
-    const base = { ...order.pricing };
-    if (promoApplied && promoApplied.type === "percent") {
-      const discount = Math.round((base.total * promoApplied.value) / 100);
-      return { ...base, total: base.total - discount, promoDiscount: discount };
-    }
-    if (promoApplied && promoApplied.type === "flat") {
-      return { ...base, total: Math.max(0, base.total - promoApplied.value), promoDiscount: promoApplied.value };
-    }
-    return base;
-  }, [order, promoApplied]);
+  // derived: promo removed from this version so pricing is direct
+  const pricing = useMemo(() => (order ? { ...order.pricing } : null), [order]);
 
-  // --------------------
-  // Actions (replace with real APIs)
-  // --------------------
+  // Actions
   async function handleCancel() {
     if (!order) return;
     setLoading(true);
@@ -244,25 +215,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     }
   }
 
-  // Promo code logic (demo only)
-  function applyPromo(code) {
-    if (!order) return setInfo({ open: true, title: "No order", message: "Order not loaded" });
-    const normalized = (code || "").trim().toUpperCase();
-    if (!normalized) return setInfo({ open: true, title: "Invalid", message: "Enter a promo code" });
-    // demo rules
-    if (normalized === "SAVE10") {
-      setPromoApplied({ code: normalized, type: "percent", value: 10 });
-      setInfo({ open: true, title: "Promo applied", message: "10% off applied" });
-    } else if (normalized === "FLAT200") {
-      setPromoApplied({ code: normalized, type: "flat", value: 200 });
-      setInfo({ open: true, title: "Promo applied", message: "₹200 off applied" });
-    } else {
-      setPromoApplied(null);
-      setInfo({ open: true, title: "Invalid code", message: "Promo code not recognized" });
-    }
-  }
-
-  // Share / print / download
+  // Share / print
   function handleShare() {
     if (!order) return;
     const shareText = `Order ${order.id} • ${order.items.length} items • ${currency(order.pricing.total)}`;
@@ -316,46 +269,16 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     }, 250);
   }
 
-  function downloadCSV() {
-    if (!order) return;
-    const csv = toCSV(order);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${order.id}-items.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  // Notes and history
-  function addNote() {
-    if (!noteText || !order) return;
-    const newNote = { id: Date.now(), time: new Date().toISOString(), author: "you", text: noteText };
-    setOrder((o) => ({ ...o, notes: [newNote, ...(o.notes || [])] }));
-    setNoteText("");
-    setInfo({ open: true, title: "Note added", message: "Your note was added to the order." });
-  }
-
-  // Rating helpers
-  function setRating(productId, rating) {
-    setRatings((r) => ({ ...r, [productId]: { ...(r[productId] || {}), rating } }));
-  }
-  function setReview(productId, review) {
-    setRatings((r) => ({ ...r, [productId]: { ...(r[productId] || {}), review } }));
-  }
-
-  // contact courier helper (added)
+  // helpers
   function contactCourier() {
     if (!order?.courier?.phone) {
       setInfo({ open: true, title: "No courier number", message: "Courier phone not available" });
       return;
     }
-    // shallow UX: show info modal; in real app you might open dialer
     setInfo({ open: true, title: "Contact courier", message: `Call ${order.courier.phone}` });
   }
 
-  // Accessible keyboard close for modals
+  // modal keyboard close
   useEffect(() => {
     function onKey(e) {
       if (e.key === "Escape") {
@@ -370,7 +293,6 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Loading skeleton
   if (loading || !order) {
     return (
       <div className="min-h-screen bg-white dark:bg-black text-neutral-900 dark:text-neutral-100 transition-colors duration-200">
@@ -381,7 +303,6 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     );
   }
 
-  // compute delivered
   const isDelivered =
     order.status.toLowerCase() === "delivered" ||
     order.tracking.some((t) => t.step.toLowerCase() === "delivered" && t.done);
@@ -399,16 +320,14 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
       </div>
 
       <main className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left - Main panel */}
+        {/* Left */}
         <section className="lg:col-span-2 space-y-6">
           <ProductHeader order={order} />
 
           <TimelineCard
             order={order}
-            onTrack={() => setInfo({ open: true, title: "Track", message: "Opening live tracking (demo)..." })}
             onCancel={() => setShowCancel(true)}
             onRequestReturn={() => setShowReturn(true)}
-            onChat={() => setInfo({ open: true, title: "Chat", message: "Opening support chat (demo)..." })}
             isDelivered={isDelivered}
           />
 
@@ -439,19 +358,25 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
                     <div className="mt-3 bg-neutral-50 dark:bg-neutral-800 border border-neutral-100 dark:border-neutral-700 rounded p-3">
                       <div className="text-sm font-medium mb-2">Rate this product</div>
                       <div className="flex items-start gap-3">
-                        <StarRating value={(ratings[it.id] && ratings[it.id].rating) || 0} onChange={(v) => setRating(it.id, v)} />
+                        <StarRating value={(ratings[it.id] && ratings[it.id].rating) || 0} onChange={(v) => setRatings((r) => ({ ...r, [it.id]: { ...(r[it.id] || {}), rating: v } }))} />
                         <textarea
                           value={(ratings[it.id] && ratings[it.id].review) || ""}
-                          onChange={(e) => setReview(it.id, e.target.value)}
+                          onChange={(e) => setRatings((r) => ({ ...r, [it.id]: { ...(r[it.id] || {}), review: e.target.value } }))}
                           placeholder="Write a short review (optional)"
                           className="flex-1 p-2 rounded bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700"
                         />
                       </div>
                       <div className="mt-2 flex gap-2">
-                        <button onClick={() => handleSubmitRating(it.id)} className="px-3 py-2 rounded bg-black text-white dark:bg-white dark:text-black">
+                        <button
+                          onClick={() => handleSubmitRating(it.id)}
+                          className="px-3 py-2 rounded transition transform hover:-translate-y-0.5 hover:shadow-lg active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black"
+                        >
                           Submit rating
                         </button>
-                        <button onClick={() => setRatings((r) => ({ ...r, [it.id]: {} }))} className="px-3 py-2 rounded border">
+                        <button
+                          onClick={() => setRatings((r) => ({ ...r, [it.id]: {} }))}
+                          className="px-3 py-2 rounded transition hover:shadow-md active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black"
+                        >
                           Clear
                         </button>
                       </div>
@@ -459,49 +384,6 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
                   )}
                 </div>
               ))}
-            </div>
-          </div>
-
-          {/* Notes & history */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded p-4">
-              <h3 className="font-medium">Order notes</h3>
-              <div className="mt-3">
-                <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Add a note for this order" className="w-full p-3 rounded border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900" rows={3} />
-                <div className="mt-2 flex gap-2">
-                  <button onClick={addNote} className="px-3 py-2 rounded bg-black text-white dark:bg-white dark:text-black">Save note</button>
-                  <button onClick={() => setNoteText("")} className="px-3 py-2 rounded border">Clear</button>
-                </div>
-              </div>
-
-              <div className="mt-4 divide-y divide-neutral-100 dark:divide-neutral-800">
-                {(order.notes || []).map((n) => (
-                  <div key={n.id} className="py-2 text-sm">
-                    <div className="flex items-center justify-between">
-                      <div className="text-neutral-500">{n.author}</div>
-                      <div className="text-neutral-400 text-xs">{formatDateTime(n.time)}</div>
-                    </div>
-                    <div className="mt-1">{n.text}</div>
-                  </div>
-                ))}
-                {(!order.notes || order.notes.length === 0) && <div className="py-2 text-sm text-neutral-500">No notes yet.</div>}
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded p-4">
-              <h3 className="font-medium">Activity & history</h3>
-              <div className="mt-3 space-y-2 text-sm">
-                {(order.history || []).map((h) => (
-                  <div key={h.id} className="p-2 rounded border border-neutral-100 dark:border-neutral-800">
-                    <div className="flex items-center justify-between">
-                      <div className="font-medium">{h.title}</div>
-                      <div className="text-neutral-400 text-xs">{formatDateTime(h.time)}</div>
-                    </div>
-                    <div className="text-neutral-500 mt-1">{h.detail}</div>
-                  </div>
-                ))}
-                {(!order.history || order.history.length === 0) && <div className="text-sm text-neutral-500">No activity yet.</div>}
-              </div>
             </div>
           </div>
         </section>
@@ -521,7 +403,12 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
                 <div className="mt-2 flex items-center justify-between">
                   <div className="text-sm text-neutral-500">{order.shipping.name} • {order.shipping.phone}</div>
                   <div>
-                    <button onClick={() => setShowEditAddress(true)} className="px-2 py-1 rounded border text-sm">Edit</button>
+                    <button
+                      onClick={() => setShowEditAddress(true)}
+                      className="px-2 py-1 rounded transition hover:shadow-md active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black text-sm"
+                    >
+                      Edit
+                    </button>
                   </div>
                 </div>
               </div>
@@ -535,17 +422,20 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
                 <div className="text-right">
                   <div className="text-sm">{order.courier.exec?.eta}</div>
                   <div className="mt-2 flex flex-col gap-2">
-                    <button onClick={contactCourier} className="px-3 py-1 rounded border text-sm">Call</button>
-                    <button onClick={() => setInfo({ open: true, title: "Track", message: "Open live map (demo)" })} className="px-3 py-1 rounded bg-black text-white dark:bg-white dark:text-black text-sm">
-                      Track
+                    <button
+                      onClick={contactCourier}
+                      className="px-3 py-1 rounded transition hover:shadow-md active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black text-sm"
+                    >
+                      Call
                     </button>
+                    {/* removed "Track" button per your request */}
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Price details & promo */}
+          {/* Price details */}
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-4">
             <div className="flex items-center justify-between">
               <div className="font-medium">Price details</div>
@@ -578,13 +468,6 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
                 <div>{currency(order.pricing.fees)}</div>
               </div>
 
-              {pricing?.promoDiscount ? (
-                <div className="flex justify-between text-emerald-600">
-                  <div>Promo ({promoApplied?.code})</div>
-                  <div>-{currency(pricing.promoDiscount)}</div>
-                </div>
-              ) : null}
-
               <div className="mt-3 border-t border-neutral-100 dark:border-neutral-800 pt-3 flex items-center justify-between">
                 <div className="font-semibold">Total amount</div>
                 <div className="font-semibold">{currency(pricing?.total ?? order.pricing.total)}</div>
@@ -594,18 +477,28 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
             </div>
 
             <div className="mt-4 space-y-2">
-              <div className="flex gap-2">
-                <input value={promo} onChange={(e) => setPromo(e.target.value)} placeholder="Apply promo code" className="flex-1 p-2 rounded border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm" />
-                <button onClick={() => applyPromo(promo)} className="px-3 py-2 rounded bg-black text-white dark:bg-white dark:text-black text-sm">Apply</button>
-              </div>
-
-              <button onClick={() => setShowInvoice(true)} className="w-full py-2 rounded border flex items-center justify-center gap-2">
+              <button
+                onClick={() => setShowInvoice(true)}
+                className="w-full py-2 rounded border flex items-center justify-center gap-2 transition hover:shadow-lg active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black"
+              >
                 <Printer size={16} /> Print / Invoice
               </button>
 
               <div className="flex gap-2 mt-2">
-                <button onClick={handleShare} className="flex-1 py-2 rounded border flex items-center justify-center gap-2"><Share2 size={16} /> Share</button>
-                <button onClick={downloadCSV} className="py-2 px-3 rounded border flex items-center gap-2"><FileText size={16} /> CSV</button>
+                <button
+                  onClick={handleShare}
+                  className="flex-1 py-2 rounded border flex items-center justify-center gap-2 transition hover:shadow-md active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black"
+                >
+                  <Share2 size={16} /> Share
+                </button>
+
+                {/* CSV removed by request */}
+                <button
+                  onClick={() => setInfo({ open: true, title: "Download invoice", message: "Downloading invoice (demo)..." })}
+                  className="py-2 px-3 rounded border flex items-center gap-2 transition hover:shadow-md active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black"
+                >
+                  <Download size={16} /> Download
+                </button>
               </div>
             </div>
           </div>
@@ -615,14 +508,20 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
               <div className="font-medium">More actions</div>
             </div>
             <div className="mt-3 space-y-2">
-              <button onClick={() => setInfo({ open: true, title: "Download invoice", message: "Downloading invoice (demo)..." })} className="w-full py-2 rounded border text-sm flex items-center justify-center gap-2"><Download size={16} /> Download invoice</button>
-              <button onClick={() => setInfo({ open: true, title: "Report issue", message: "Open report flow (demo)..." })} className="w-full py-2 rounded border text-sm">Report a problem</button>
-              <button onClick={() => setInfo({ open: true, title: "Help", message: "Open help center (demo)..." })} className="w-full py-2 rounded border text-sm">Help center</button>
+              <button onClick={handlePrintInvoice} className="w-full py-2 rounded border text-sm transition hover:shadow-md active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black flex items-center justify-center gap-2">
+                <Printer size={16} /> Print
+              </button>
+              <button onClick={() => setInfo({ open: true, title: "Report issue", message: "Open report flow (demo)..." })} className="w-full py-2 rounded border text-sm transition hover:shadow-md active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black">
+                Report a problem
+              </button>
+              <button onClick={() => setInfo({ open: true, title: "Help", message: "Open help center (demo)..." })} className="w-full py-2 rounded border text-sm transition hover:shadow-md active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black">
+                Help center
+              </button>
             </div>
           </div>
         </aside>
 
-        {/* Invoice print area (hidden in page, used for print) */}
+        {/* Invoice print area (hidden) */}
         {showInvoice && (
           <div className="hidden" aria-hidden>
             <div ref={invoiceRef}>
@@ -690,7 +589,11 @@ function ProductHeader({ order }) {
   );
 }
 
-function TimelineCard({ order, onTrack, onCancel, onRequestReturn, onChat, isDelivered }) {
+/**
+ * TimelineCard
+ * - connector between marker and next is colored when both current and next are done
+ */
+function TimelineCard({ order, onCancel, onRequestReturn, isDelivered }) {
   return (
     <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-6">
       <div className="flex items-center justify-between">
@@ -702,44 +605,44 @@ function TimelineCard({ order, onTrack, onCancel, onRequestReturn, onChat, isDel
           </div>
         </div>
 
-        <div>
-          <button onClick={onTrack} className="px-3 py-1.5 border rounded text-sm bg-black text-white dark:bg-white dark:text-black">
-            Track Order
-          </button>
-        </div>
+        {/* top-right -- intentionally left minimal (no track) */}
+        <div />
       </div>
 
       <div className="mt-6 flex gap-6">
+        {/* Left marker column */}
         <div className="w-12 flex flex-col items-center">
-          <div className="relative h-full w-px bg-neutral-100 dark:bg-neutral-800" />
+          {/* background full spine */}
+          <div className="relative h-full w-px bg-neutral-100 dark:bg-neutral-800"></div>
         </div>
 
         <div className="flex-1">
-          <div className="space-y-4">
+          <div className="space-y-4 relative">
             {order.tracking.map((t, idx) => {
               const done = t.done;
-              const prevDone = order.tracking[idx - 1]?.done;
-              const active = !done && prevDone;
+              const nextDone = order.tracking[idx + 1]?.done;
+              const markerClasses = done ? "bg-emerald-600 text-white" : nextDone ? "bg-white border border-neutral-300 dark:border-neutral-700 text-amber-500" : "bg-white border border-neutral-200 dark:border-neutral-800 text-neutral-400";
+
+              // connector color: if current done and next done => emerald, else neutral
+              const connectorClass = done && nextDone ? "bg-emerald-600" : "bg-neutral-100 dark:bg-neutral-800";
+
               return (
                 <div key={t.step} className="flex items-start gap-4">
                   <div className="flex flex-col items-center">
-                    <div
-                      className={`w-6 h-6 rounded-full flex items-center justify-center ${done ? "bg-emerald-600 text-white" : active ? "bg-white border border-neutral-300 dark:border-neutral-700 text-amber-500" : "bg-white border border-neutral-200 dark:border-neutral-800 text-neutral-400"}`}
-                    >
-                      {done ? <CheckCircle size={14} /> : active ? <Clock size={14} /> : <PackageIcon size={14} />}
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center ${markerClasses}`}>
+                      {done ? <CheckCircle size={14} /> : nextDone ? <Clock size={14} /> : <PackageIcon size={14} />}
                     </div>
-                    <div className="flex-1 w-px bg-neutral-100 dark:bg-neutral-800 mt-2" />
+
+                    {/* connector to next: colored when both current and next are done */}
+                    <div className={`flex-1 w-px mt-2 ${connectorClass}`} />
                   </div>
 
                   <div className="flex-1">
                     <div className={`font-medium ${done ? "text-neutral-700 dark:text-neutral-200" : "text-neutral-500"}`}>{t.step}</div>
                     <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">{t.date ? formatDateTime(t.date) : done ? "" : "Pending"}</div>
 
-                    {t.detail && (
-                      <div className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">{t.detail}</div>
-                    )}
+                    {t.detail && <div className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">{t.detail}</div>}
 
-                    {/* special highlight for shipped */}
                     {t.step.toLowerCase().includes("shipped") && done && (
                       <div className="mt-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 rounded p-3 text-sm text-neutral-700 dark:text-neutral-200">
                         Your item has arrived at a delivery partner facility — {new Date(t.date).toLocaleDateString()}
@@ -758,22 +661,24 @@ function TimelineCard({ order, onTrack, onCancel, onRequestReturn, onChat, isDel
           <div className="mt-4 flex items-center justify-between gap-4">
             <div className="flex-1">
               {!isDelivered && order.status.toLowerCase() !== "cancelled" ? (
-                <button onClick={onCancel} className="w-full py-3 rounded border">
+                <button
+                  onClick={onCancel}
+                  className="w-full py-3 rounded border transition hover:shadow-lg active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black"
+                >
                   Cancel
                 </button>
               ) : (
-                <button onClick={onRequestReturn} className="w-full py-3 rounded border">
+                <button
+                  onClick={onRequestReturn}
+                  className="w-full py-3 rounded border transition hover:shadow-lg active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black"
+                >
                   Request Return
                 </button>
               )}
             </div>
 
-            <div className="w-44">
-              <button onClick={onChat} className="w-full py-3 rounded border flex items-center justify-center gap-2">
-                <svg className="w-4 h-4 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" d="M17 8h2a2 2 0 0 1 2 2v7l-3-3H7a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h10z" /></svg>
-                Chat with us
-              </button>
-            </div>
+            {/* removed "Chat with us" button */}
+            <div className="w-44" />
           </div>
         </div>
       </div>
@@ -828,12 +733,17 @@ function InvoiceTemplate({ order, pricing }) {
   );
 }
 
-// Star rating component
+// Star rating
 function StarRating({ value = 0, onChange = () => {} }) {
   return (
     <div className="flex items-center gap-1">
       {[1, 2, 3, 4, 5].map((n) => (
-        <button key={n} onClick={() => onChange(n)} aria-label={`${n} star`} className={`p-1 rounded ${n <= value ? "bg-amber-400 text-white" : "bg-transparent text-neutral-400 dark:text-neutral-500"}`}>
+        <button
+          key={n}
+          onClick={() => onChange(n)}
+          aria-label={`${n} star`}
+          className={`p-1 rounded ${n <= value ? "bg-amber-400 text-white" : "bg-transparent text-neutral-400 dark:text-neutral-500"}`}
+        >
           <Star size={16} />
         </button>
       ))}
@@ -841,7 +751,7 @@ function StarRating({ value = 0, onChange = () => {} }) {
   );
 }
 
-// Confirm modal (accessible)
+// Confirm modal
 function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose = () => {}, onConfirm = () => {} }) {
   useEffect(() => {
     if (!open) return;
@@ -859,8 +769,8 @@ function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose 
             <h3 id="confirm-title" className="text-lg font-semibold">{title}</h3>
             <p className="text-sm text-neutral-600 dark:text-neutral-300 mt-2">{message}</p>
             <div className="mt-4 flex justify-end gap-3">
-              <button onClick={onClose} className="px-4 py-2 rounded border">Cancel</button>
-              <button onClick={() => onConfirm()} className="px-4 py-2 rounded bg-black text-white dark:bg-white dark:text-black">{confirmLabel}</button>
+              <button onClick={onClose} className="px-4 py-2 rounded border transition hover:shadow-sm active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black">Cancel</button>
+              <button onClick={() => onConfirm()} className="px-4 py-2 rounded bg-emerald-600 text-white transition hover:shadow-lg active:scale-95 focus:outline-none"> {confirmLabel} </button>
             </div>
           </div>
         </div>
@@ -880,8 +790,8 @@ function InputModal({ open, title, initialValue = "", onClose = () => {}, onConf
         <h3 className="text-lg font-semibold">{title}</h3>
         <textarea value={value} onChange={(e) => setValue(e.target.value)} className="w-full mt-3 p-3 rounded border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900" rows={4} />
         <div className="mt-4 flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 rounded border">Cancel</button>
-          <button onClick={() => onConfirm(value)} className="px-4 py-2 rounded bg-black text-white dark:bg-white dark:text-black">Save</button>
+          <button onClick={onClose} className="px-4 py-2 rounded border transition hover:shadow-sm active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black">Cancel</button>
+          <button onClick={() => onConfirm(value)} className="px-4 py-2 rounded bg-black text-white dark:bg-white dark:text-black transition hover:shadow-lg active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white">Save</button>
         </div>
       </motion.div>
     </div>
@@ -900,7 +810,7 @@ function InfoModal({ open, title = "", message = "", onClose = () => {} }) {
             <div className="font-semibold">{title}</div>
             <div className="text-sm text-neutral-600 dark:text-neutral-300 mt-1">{message}</div>
             <div className="mt-3 text-right">
-              <button onClick={onClose} className="px-3 py-1 rounded border">Close</button>
+              <button onClick={onClose} className="px-3 py-1 rounded border transition hover:shadow-sm active:scale-95 focus:outline-none ring-2 ring-offset-1 ring-black dark:ring-white bg-black text-white dark:bg-white dark:text-black">Close</button>
             </div>
           </div>
         </div>
