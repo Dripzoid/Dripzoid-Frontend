@@ -10,19 +10,23 @@ import {
   Star,
   Download,
   Share2,
-  Printer,
 } from "lucide-react";
 
 /**
- * OrderDetailsPage - fixed
+ * OrderDetailsPage - updated per user request
  *
- * Fixes in this file:
- * - Timeline spine is thicker and connectors now visually touch below each marker.
- * - Connectors between consecutive completed steps are highlighted (emerald).
- * - All buttons are fully rounded, opposite-theme by default (black bg in light / white bg in dark), hover-invert,
- *   with a hover ring: black ring in light theme, white ring in dark theme.
- * - Buttons use hover:ring-4 (appears only on hover) and no always-on focus ring; focus:outline-none retained.
- * - Removed notes/activity/promo/CSV/chat/track per earlier request.
+ * Key fixes & changes:
+ * - Timeline spine thicker (4px) and connectors start immediately below the marker so the line touches marker bottom.
+ *   Marker size increased slightly (w-7 h-7) and connector uses top-7 so it visually connects.
+ * - Connectors between consecutive completed steps highlighted in emerald.
+ * - All buttons are fully rounded, opposite-theme default (black bg in light / white bg in dark), hover-invert,
+ *   show a subtle hover ring (hover:ring-2) — black ring in light theme and white ring in dark theme.
+ * - Buttons do NOT zoom on hover/active (no scale transform).
+ * - "More actions" section removed.
+ * - "Need Help" button placed beside Cancel (calls parent handler to show info).
+ * - Print buttons removed from sidebar; only Share and Download remain (with icons).
+ * - Edit address button is hidden when order.status === "Packed".
+ * - Edit address form improved: fields for name, phone, and address with placeholders.
  *
  * Replace simulated API stubs with real endpoints as required.
  */
@@ -35,7 +39,7 @@ async function simulateFetchOrder(orderId) {
     id: orderId || "OD335614556805540100",
     placedAt: "2025-10-01T08:30:00Z",
     paymentMethod: "Cash On Delivery",
-    status: "Shipped",
+    status: "Shipped", // try "Packed" to test hiding edit button
     tracking: [
       { step: "Order confirmed", date: "2025-10-01T08:30:00Z", done: true, detail: "Payment verified" },
       { step: "Packed", date: "2025-10-01T09:30:00Z", done: true, detail: "Packed in warehouse A3" },
@@ -86,7 +90,8 @@ async function simulateFetchOrder(orderId) {
 }
 async function apiCancelOrder(orderId) { await delay(500); return { ok: true, message: "Order cancelled" }; }
 async function apiRequestReturn(orderId) { await delay(500); return { ok: true, message: "Return requested" }; }
-async function apiUpdateAddress(orderId, address) { await delay(400); return { ok: true, message: "Address updated" }; }
+// updated to accept shipping object { name, phone, address }
+async function apiUpdateAddress(orderId, shippingObj) { await delay(400); return { ok: true, message: "Address updated" }; }
 async function apiSubmitRating(orderId, productId, rating, review) { await delay(400); return { ok: true, message: "Rating received" }; }
 
 // -------------------- utils --------------------
@@ -101,14 +106,13 @@ function currency(n) {
 
 // -------------------- global button class (rounded-full + hover ring) --------------------
 // - default: opposite-theme (light -> black bg / white text; dark -> white bg / black text)
-// - hover: invert bg/text and show a prominent ring (black in light, white in dark)
-// - fully rounded
+// - hover: invert bg/text and show a subtle ring (black in light, white in dark) using hover:ring-2
+// - fully rounded; NO scale transforms on hover/active
 const BTN =
   "transition-all duration-200 font-medium rounded-full px-4 py-2 " +
   "bg-black text-white dark:bg-white dark:text-black " +
   "hover:bg-white hover:text-black dark:hover:bg-black dark:hover:text-white " +
-  // ring appears on hover only; black ring in light, white ring in dark
-  "hover:ring-4 hover:ring-black dark:hover:ring-white hover:shadow-[0_10px_25px_rgba(0,0,0,0.12)] focus:outline-none active:scale-95";
+  "hover:ring-2 hover:ring-black dark:hover:ring-white hover:shadow-[0_8px_20px_rgba(0,0,0,0.12)] focus:outline-none";
 
 // -------------------- Main component --------------------
 export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
@@ -164,12 +168,13 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     }
     setLoading(false);
   }
-  async function handleSaveAddress(newAddr) {
+  // updated to accept a shipping object { name, phone, address }
+  async function handleSaveAddress(shippingObj) {
     if (!order) return;
     setLoading(true);
-    const res = await apiUpdateAddress(order.id, newAddr);
+    const res = await apiUpdateAddress(order.id, shippingObj);
     if (res.ok) {
-      setOrder((o) => ({ ...o, shipping: { ...o.shipping, address: newAddr }, history: [{ id: Date.now(), time: new Date().toISOString(), title: "Address updated", detail: newAddr }, ...o.history] }));
+      setOrder((o) => ({ ...o, shipping: { ...o.shipping, ...shippingObj }, history: [{ id: Date.now(), time: new Date().toISOString(), title: "Address updated", detail: shippingObj.address }, ...o.history] }));
       setInfo({ open: true, title: "Address updated", message: res.message });
     } else {
       setInfo({ open: true, title: "Error", message: res.message || "Could not update address" });
@@ -205,33 +210,6 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     }
   }
 
-  function handlePrintInvoice() {
-    setShowInvoice(true);
-    setTimeout(() => {
-      if (invoiceRef.current && typeof window !== "undefined") {
-        const printContent = invoiceRef.current.innerHTML;
-        const w = window.open("", "_blank", "noopener,noreferrer");
-        if (!w) {
-          setInfo({ open: true, title: "Blocked", message: "Popup blocked by browser" });
-          return;
-        }
-        w.document.write(`
-          <html>
-            <head><title>Invoice - ${order?.id}</title>
-            <style>body{font-family:Arial;padding:20px;color:#111;background:#fff}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #ddd;text-align:left}</style>
-            </head>
-            <body>${printContent}</body>
-          </html>
-        `);
-        w.document.close();
-        w.focus();
-        setTimeout(() => { w.print(); w.close(); }, 300);
-      } else {
-        window.print();
-      }
-    }, 200);
-  }
-
   function contactCourier() {
     if (!order?.courier?.phone) {
       setInfo({ open: true, title: "No courier number", message: "Courier phone not available" });
@@ -240,10 +218,14 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     setInfo({ open: true, title: "Contact courier", message: `Call ${order.courier.phone}` });
   }
 
+  // need help handler for timeline area
+  function handleNeedHelp() {
+    setInfo({ open: true, title: "Need help", message: "Contact support at support@example.com or call +91 1800-000-000" });
+  }
+
   useEffect(() => {
     function onKey(e) {
       if (e.key === "Escape") {
-        setShowInvoice(false);
         setInfo({ open: false, title: "", message: "" });
         setShowCancel(false);
         setShowReturn(false);
@@ -265,6 +247,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
   }
 
   const isDelivered = order.status.toLowerCase() === "delivered" || order.tracking.some((t) => t.step.toLowerCase() === "delivered" && t.done);
+  const isPacked = order.status.toLowerCase() === "packed";
 
   // -------------------- Render --------------------
   return (
@@ -285,6 +268,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
             order={order}
             onCancel={() => setShowCancel(true)}
             onRequestReturn={() => setShowReturn(true)}
+            onNeedHelp={handleNeedHelp}
             isDelivered={isDelivered}
           />
 
@@ -351,7 +335,10 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
                 <div className="mt-2 flex items-center justify-between">
                   <div className="text-sm text-neutral-500">{order.shipping.name} • {order.shipping.phone}</div>
                   <div>
-                    <button onClick={() => setShowEditAddress(true)} className={BTN + " text-sm px-3 py-1"}>Edit</button>
+                    {/* hide edit when packed */}
+                    {!isPacked && (
+                      <button onClick={() => setShowEditAddress(true)} className={BTN + " text-sm px-3 py-1"}>Edit</button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -414,12 +401,9 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
               <div className="mt-3 text-sm text-neutral-500">Paid by <strong className="ml-1">{order.paymentMethod}</strong></div>
             </div>
 
-            <div className="mt-4 space-y-2">
-              <button onClick={() => setShowInvoice(true)} className={BTN + " w-full py-2 flex items-center justify-center gap-2"}>
-                <Printer size={16} /> Print / Invoice
-              </button>
-
-              <div className="flex gap-2 mt-2">
+            <div className="mt-4">
+              {/* Only Share and Download remain, side-by-side */}
+              <div className="flex gap-2">
                 <button onClick={handleShare} className={BTN + " flex-1 py-2 flex items-center justify-center gap-2"}>
                   <Share2 size={16} /> Share
                 </button>
@@ -429,26 +413,9 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
               </div>
             </div>
           </div>
-
-          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-4">
-            <div className="flex items-center justify-between">
-              <div className="font-medium">More actions</div>
-            </div>
-            <div className="mt-3 space-y-2">
-              <button onClick={handlePrintInvoice} className={BTN + " w-full py-2 flex items-center justify-center gap-2"}>
-                <Printer size={16} /> Print
-              </button>
-              <button onClick={() => setInfo({ open: true, title: "Report issue", message: "Open report flow (demo)..." })} className={BTN + " w-full py-2"}>
-                Report a problem
-              </button>
-              <button onClick={() => setInfo({ open: true, title: "Help", message: "Open help center (demo)..." })} className={BTN + " w-full py-2"}>
-                Help center
-              </button>
-            </div>
-          </div>
         </aside>
 
-        {/* Hidden invoice content for print */}
+        {/* Hidden invoice content for print (kept hidden; printing removed from UI per request) */}
         {showInvoice && (
           <div className="hidden" aria-hidden>
             <div ref={invoiceRef}>
@@ -461,7 +428,14 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
         <ConfirmModal open={!!showCancel} title="Cancel order" message="Are you sure you want to cancel this order?" confirmLabel="Yes, cancel" onClose={() => setShowCancel(false)} onConfirm={async () => { setShowCancel(false); await handleCancel(); }} />
         <ConfirmModal open={!!showReturn} title="Request return" message="Do you want to request a return for this order?" confirmLabel="Request return" onClose={() => setShowReturn(false)} onConfirm={async () => { setShowReturn(false); await handleRequestReturn(); }} />
 
-        <InputModal open={!!showEditAddress} title="Edit shipping address" initialValue={order.shipping.address} onClose={() => setShowEditAddress(false)} onConfirm={async (val) => { setShowEditAddress(false); await handleSaveAddress(val); }} />
+        {/* pass full shipping object to InputModal; improved address form */}
+        <InputModal
+          open={!!showEditAddress}
+          title="Edit shipping address"
+          initialShipping={order.shipping}
+          onClose={() => setShowEditAddress(false)}
+          onConfirm={async (newShipping) => { setShowEditAddress(false); await handleSaveAddress(newShipping); }}
+        />
 
         <InfoModal open={!!infoModal.open} title={infoModal.title} message={infoModal.message} onClose={() => setInfo({ open: false, title: "", message: "" })} />
       </main>
@@ -517,10 +491,10 @@ function ProductHeader({ order }) {
 /**
  * TimelineCard
  * - Thicker spine: w-[4px]
- * - Connectors overlay match spine width and start right below the marker so the line touches the marker bottom
- * - Marker has higher z-index so overlay sits behind marker edges and connects seamlessly
+ * - Marker w-7 h-7, connector overlay starts at top-7 so it visually touches the bottom of the marker
+ * - onNeedHelp callback added
  */
-function TimelineCard({ order, onCancel, onRequestReturn, isDelivered }) {
+function TimelineCard({ order, onCancel, onRequestReturn, onNeedHelp, isDelivered }) {
   return (
     <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-6">
       <div className="flex items-center justify-between">
@@ -534,10 +508,10 @@ function TimelineCard({ order, onCancel, onRequestReturn, isDelivered }) {
         <div />
       </div>
 
-      {/* timeline wrapper (relative) */}
+      {/* timeline wrapper */}
       <div className="mt-6 relative">
-        {/* full height neutral spine (thicker) - base/neutral line */}
-        <div className="absolute left-6 top-0 bottom-0 w-[4px] rounded bg-neutral-100 dark:bg-neutral-800 z-0" />
+        {/* thicker base spine */}
+        <div className="absolute left-6 top-0 bottom-0 w-[4px] bg-neutral-100 dark:bg-neutral-800 z-0" />
 
         <div className="space-y-6 relative z-10">
           {order.tracking.map((t, idx) => {
@@ -548,21 +522,21 @@ function TimelineCard({ order, onCancel, onRequestReturn, isDelivered }) {
               : nextDone
                 ? "bg-white border border-neutral-300 dark:border-neutral-700 text-amber-500"
                 : "bg-white border border-neutral-200 dark:border-neutral-800 text-neutral-400";
-            // connector overlay (shows emerald when both current and next done)
+
+            // highlight connector when current and next are done
             const connectorClass = done && nextDone ? "bg-emerald-600" : "bg-transparent";
 
             return (
               <div key={t.step} className="pl-14 relative">
-                {/* marker (z-20 so it sits above connector/spine) */}
+                {/* marker placed at top-0; marker size increased so connector starts at top-7 */}
                 <div className="absolute left-6 top-0 -translate-x-1/2 z-20">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center ${markerClasses}`}>
-                    {done ? <CheckCircle size={14} /> : nextDone ? <Clock size={14} /> : <PackageIcon size={14} />}
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center ${markerClasses}`}>
+                    {done ? <CheckCircle size={16} /> : nextDone ? <Clock size={16} /> : <PackageIcon size={16} />}
                   </div>
                 </div>
 
-                {/* connector overlay below marker (extends to bottom of this item) */}
-                {/* Use same left and width as spine so it overlays perfectly */ }
-                <div className={`absolute left-6 top-6 bottom-0 w-[4px] rounded ${connectorClass} z-10`} />
+                {/* connector overlay starts immediately below marker (top-7) and extends to bottom of item */}
+                <div className={`absolute left-6 top-7 bottom-0 w-[4px] ${connectorClass} z-10`} />
 
                 {/* content */}
                 <div>
@@ -586,14 +560,18 @@ function TimelineCard({ order, onCancel, onRequestReturn, isDelivered }) {
         Delivery Executive details will be available once the order is out for delivery
       </div>
 
+      {/* Cancel / Need Help area (Need Help placed beside Cancel) */}
       <div className="mt-4 flex items-center justify-between gap-4">
-        <div className="flex-1">
+        <div className="flex-1 flex gap-3">
           {!isDelivered && order.status.toLowerCase() !== "cancelled" ? (
-            <button onClick={onCancel} className={BTN + " w-full"}>Cancel</button>
+            <button onClick={onCancel} className={BTN + " flex-1 py-3"}>Cancel</button>
           ) : (
-            <button onClick={onRequestReturn} className={BTN + " w-full"}>Request Return</button>
+            <button onClick={onRequestReturn} className={BTN + " flex-1 py-3"}>Request Return</button>
           )}
+
+          <button onClick={onNeedHelp} className={BTN + " py-3"}>Need Help</button>
         </div>
+
         <div className="w-44" />
       </div>
     </div>
@@ -688,19 +666,46 @@ function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose 
   );
 }
 
-// Input modal
-function InputModal({ open, title, initialValue = "", onClose = () => {}, onConfirm = (val) => {} }) {
-  const [value, setValue] = useState(initialValue || "");
-  useEffect(() => setValue(initialValue || ""), [initialValue, open]);
+// Input modal (improved edit address form)
+// receives initialShipping: { name, phone, address }
+// onConfirm returns same shaped object
+function InputModal({ open, title, initialShipping = { name: "", phone: "", address: "" }, onClose = () => {}, onConfirm = (val) => {} }) {
+  const [name, setName] = useState(initialShipping?.name || "");
+  const [phone, setPhone] = useState(initialShipping?.phone || "");
+  const [address, setAddress] = useState(initialShipping?.address || "");
+
+  useEffect(() => {
+    setName(initialShipping?.name || "");
+    setPhone(initialShipping?.phone || "");
+    setAddress(initialShipping?.address || "");
+  }, [initialShipping, open]);
+
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <motion.div initial={{ y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-lg w-full p-6">
         <h3 className="text-lg font-semibold">{title}</h3>
-        <textarea value={value} onChange={(e) => setValue(e.target.value)} className="w-full mt-3 p-3 rounded border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900" rows={4} />
+
+        <div className="mt-3 grid grid-cols-1 gap-3">
+          <label className="text-sm">
+            Full name
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Recipient full name" className="mt-1 w-full p-2 border border-neutral-200 dark:border-neutral-700 rounded bg-white dark:bg-neutral-900" />
+          </label>
+
+          <label className="text-sm">
+            Phone
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Mobile number" className="mt-1 w-full p-2 border border-neutral-200 dark:border-neutral-700 rounded bg-white dark:bg-neutral-900" />
+          </label>
+
+          <label className="text-sm">
+            Address
+            <textarea value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Flat / House no., Street, Area, Landmark, City, State, PIN" className="mt-1 w-full p-2 border border-neutral-200 dark:border-neutral-700 rounded bg-white dark:bg-neutral-900" rows={4} />
+          </label>
+        </div>
+
         <div className="mt-4 flex justify-end gap-3">
           <button onClick={onClose} className={BTN}>Cancel</button>
-          <button onClick={() => onConfirm(value)} className={BTN}>Save</button>
+          <button onClick={() => onConfirm({ name: name.trim(), phone: phone.trim(), address: address.trim() })} className={BTN}>Save</button>
         </div>
       </motion.div>
     </div>
