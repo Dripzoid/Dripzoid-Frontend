@@ -13,14 +13,13 @@ import {
 } from "lucide-react";
 
 /**
- * OrderDetailsPage - timeline connector fixed + Track button for pending steps
+ * OrderDetailsPage - connector + Track order button updated
  *
  * Key points:
- * - Marker size is a constant (MARKER_SIZE_PX). Connector overlay uses that exact pixel value for "top"
- *   so it always starts exactly at the marker bottom (no rounding/spacing mismatch).
- * - z-index: base spine (z-0) < connector overlay (z-10) < marker (z-20) so the connector meets the marker bottom.
- * - Pending tracking steps render a small "Track order" button (calls onTrack handler).
- * - Buttons: fully-rounded, opposite-theme default, hover invert, hover:ring-2 (black in light, white in dark), no scale.
+ * - Marker uses two layers: outer (lower z) and inner (icon, higher z).
+ * - Connector overlay is above the outer layer so it's visible touching the outer circumference.
+ * - Inner icon sits above the connector so the icon remains visible.
+ * - Global Track order button (with Truck icon) placed beside Cancel on same line.
  */
 
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
@@ -102,6 +101,7 @@ const BTN =
 
 // marker size in pixels (used to compute connector top exactly)
 const MARKER_SIZE_PX = 28; // w-7 h-7 (28px)
+const MARKER_INNER_OFFSET_PX = 6; // inner icon inset from outer marker (so icon is smaller)
 
 export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
   const [order, setOrder] = useState(null);
@@ -203,13 +203,9 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     setInfo({ open: true, title: "Contact courier", message: `Call ${order.courier.phone}` });
   }
 
-  function handleNeedHelp() {
-    setInfo({ open: true, title: "Need help", message: "Contact support at support@example.com or call +91 1800-000-000" });
-  }
-
-  // new: handler when user clicks Track order for a pending step
-  function handleTrack(step) {
-    setInfo({ open: true, title: "Track order", message: `Tracking for "${step}" — (demo) status not available.` });
+  // Global track order button handler (replaced Need Help)
+  function handleTrackOrder() {
+    setInfo({ open: true, title: "Track order", message: "Open tracking flow (demo)..." });
   }
 
   useEffect(() => {
@@ -256,8 +252,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
             order={order}
             onCancel={() => setShowCancel(true)}
             onRequestReturn={() => setShowReturn(true)}
-            onNeedHelp={handleNeedHelp}
-            onTrack={handleTrack}
+            onTrackAll={handleTrackOrder}
             isDelivered={isDelivered}
           />
 
@@ -475,12 +470,12 @@ function ProductHeader({ order }) {
 /**
  * TimelineCard
  * - base spine: w-[4px], z-0
- * - connector overlay: top is exactly MARKER_SIZE_PX px -> so it starts at bottom of marker
- * - marker: w/h set to MARKER_SIZE_PX, z-20
+ * - connector overlay: top is exactly MARKER_SIZE_PX px -> so it starts at bottom of outer marker
+ * - marker: two layers: outer (z lower), inner icon (z higher)
  */
-function TimelineCard({ order, onCancel, onRequestReturn, onNeedHelp, onTrack, isDelivered }) {
-  // compute overlayTop in px string
+function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivered }) {
   const overlayTop = `${MARKER_SIZE_PX}px`;
+  const innerSize = MARKER_SIZE_PX - MARKER_INNER_OFFSET_PX; // slightly smaller inner icon
 
   return (
     <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-6">
@@ -496,53 +491,75 @@ function TimelineCard({ order, onCancel, onRequestReturn, onNeedHelp, onTrack, i
       </div>
 
       <div className="mt-6 relative">
-        {/* base spine (neutral) */}
+        {/* base spine */}
         <div className="absolute left-6 top-0 bottom-0 w-[4px] bg-neutral-100 dark:bg-neutral-800 z-0" />
 
         <div className="space-y-6 relative z-10">
           {order.tracking.map((t, idx) => {
             const done = t.done;
             const nextDone = order.tracking[idx + 1]?.done;
-            const markerClasses = done
-              ? "bg-emerald-600 text-white border-0"
-              : nextDone
-                ? "bg-white border border-neutral-300 dark:border-neutral-700 text-amber-500"
-                : "bg-white border border-neutral-200 dark:border-neutral-800 text-neutral-400";
 
+            // outer marker style (lower z so connector can be above it)
+            const outerClasses = done
+              ? "rounded-full bg-emerald-600"
+              : nextDone
+                ? "rounded-full bg-white border border-neutral-300 dark:border-neutral-700"
+                : "rounded-full bg-white border border-neutral-200 dark:border-neutral-800";
+
+            // inner icon bg and icon color
+            const innerBg = done ? "bg-white" : "bg-white";
+            const iconColorDone = done ? "text-emerald-600" : "text-neutral-500 dark:text-neutral-400";
+
+            // connector highlight for consecutive completed steps
             const connectorClass = done && nextDone ? "bg-emerald-600" : "bg-transparent";
 
             return (
               <div key={t.step} className="pl-14 relative">
-                {/* marker - explicit px size to avoid rounding issues */}
+                {/* marker wrapper: absolute positioned */}
                 <div
-                  className="absolute left-6 -translate-x-1/2 z-20"
+                  className="absolute left-6 -translate-x-1/2"
                   style={{ top: 0, width: MARKER_SIZE_PX, height: MARKER_SIZE_PX }}
                 >
-                  <div style={{ width: "100%", height: "100%" }} className={`rounded-full flex items-center justify-center ${markerClasses}`}>
-                    {done ? <CheckCircle size={16} /> : nextDone ? <Clock size={16} /> : <PackageIcon size={16} />}
+                  {/* outer layer - lower z so connector can be above */}
+                  <div style={{ width: "100%", height: "100%" }} className={`z-10 ${outerClasses}`} />
+
+                  {/* connector overlay - ABOVE outer (z-20) so the line is visible up to marker outer circumference */}
+                  <div
+                    className={`absolute left-0 w-[4px] ${connectorClass}`}
+                    style={{ top: overlayTop, bottom: 0, left: (MARKER_SIZE_PX / 2) - 2 /* center the 4px line */ , zIndex: 20 }}
+                  />
+
+                  {/* inner icon container - above everything (z-30) */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: `${MARKER_INNER_OFFSET_PX / 2}px`,
+                      top: `${MARKER_INNER_OFFSET_PX / 2}px`,
+                      width: innerSize,
+                      height: innerSize,
+                      zIndex: 30,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: "9999px",
+                      background: innerBg,
+                    }}
+                  >
+                    {done ? (
+                      <CheckCircle size={Math.max(12, innerSize - 8)} className={iconColorDone} />
+                    ) : nextDone ? (
+                      <Clock size={Math.max(12, innerSize - 8)} className={iconColorDone} />
+                    ) : (
+                      <PackageIcon size={Math.max(12, innerSize - 8)} className={iconColorDone} />
+                    )}
                   </div>
                 </div>
-
-                {/* connector overlay: exact top in px so it touches marker bottom */}
-                <div
-                  className={`absolute left-6 bottom-0 w-[4px] z-10 ${connectorClass}`}
-                  style={{ top: overlayTop }}
-                />
 
                 {/* content */}
                 <div>
                   <div className={`font-medium ${done ? "text-neutral-700 dark:text-neutral-200" : "text-neutral-500"}`}>{t.step}</div>
                   <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">{t.date ? formatDateTime(t.date) : done ? "" : "Pending"}</div>
                   {t.detail && <div className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">{t.detail}</div>}
-
-                  {/* if this step is pending, show a Track order button */}
-                  {!t.done && (
-                    <div className="mt-3">
-                      <button onClick={() => onTrack?.(t.step)} className={BTN + " text-sm px-3 py-1"}>
-                        Track order
-                      </button>
-                    </div>
-                  )}
 
                   {t.step.toLowerCase().includes("shipped") && done && (
                     <div className="mt-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 rounded p-3 text-sm text-neutral-700 dark:text-neutral-200">
@@ -560,15 +577,23 @@ function TimelineCard({ order, onCancel, onRequestReturn, onNeedHelp, onTrack, i
         Delivery Executive details will be available once the order is out for delivery
       </div>
 
+      {/* Cancel and Track Order are on the same row and aligned */}
       <div className="mt-4 flex items-center justify-between gap-4">
         <div className="flex-1 flex gap-3">
           {!isDelivered && order.status.toLowerCase() !== "cancelled" ? (
-            <button onClick={onCancel} className={BTN + " flex-1 py-3"}>Cancel</button>
+            <button onClick={onCancel} className={BTN + " flex-1 py-3 flex items-center justify-center gap-2"}>
+              Cancel
+            </button>
           ) : (
-            <button onClick={onRequestReturn} className={BTN + " flex-1 py-3"}>Request Return</button>
+            <button onClick={onRequestReturn} className={BTN + " flex-1 py-3 flex items-center justify-center gap-2"}>
+              Request Return
+            </button>
           )}
 
-          <button onClick={onNeedHelp} className={BTN + " py-3"}>Need Help</button>
+          {/* Track order button (replaced Need Help) */}
+          <button onClick={onTrackAll} className={BTN + " py-3 flex items-center gap-2"}>
+            <Truck size={16} /> Track order
+          </button>
         </div>
 
         <div className="w-44" />
