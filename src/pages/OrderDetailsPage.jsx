@@ -29,24 +29,14 @@ import {
  */
 
 // -------------------- API base helper --------------------
-const API_BASE = (() => {
-  try {
-    // Vite / modern
-    if (typeof import !== "undefined" && typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE) {
-      return import.meta.env.VITE_API_BASE.replace(/\/$/, "");
-    }
-  } catch (e) {}
-  try {
-    // CRA / webpack
-    if (typeof process !== "undefined" && process.env && process.env.REACT_APP_API_BASE) {
-      return process.env.REACT_APP_API_BASE.replace(/\/$/, "");
-    }
-  } catch (e) {}
-  return ""; // fallback: relative paths
-})();
+const API_BASE =
+  (import.meta?.env?.VITE_API_BASE ||
+   process?.env?.REACT_APP_API_BASE ||
+   "").replace(/\/$/, "");
 
-// small helper to build full url
-const apiUrl = (path) => `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`.replace(/([^:]\/)\/+/g, "$1");
+// Helper to safely build full API URLs
+const apiUrl = (path = "") =>
+  `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`.replace(/([^:]\/)\/+/g, "$1");;
 
 // -------------------- utils --------------------
 function formatDateTime(iso) {
