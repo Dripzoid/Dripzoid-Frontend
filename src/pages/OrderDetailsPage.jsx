@@ -42,8 +42,8 @@ async function simulateFetchOrder(orderId) {
       { step: "Order confirmed", date: "2025-10-01T08:30:00Z", done: true, detail: "Payment verified" },
       { step: "Packed", date: "2025-10-01T09:30:00Z", done: true, detail: "Packed in warehouse A3" },
       { step: "Shipped", date: "2025-10-01T11:15:00Z", done: true, detail: "Handed to ShipQuick" },
-      { step: "Out for delivery", date: null, done: false, detail: "Courier scanning pending" },
-      { step: "Delivered", date: null, done: false, detail: "Awaiting delivery" },
+      { step: "Out for delivery", date: "2025-10-04T05:15:00Z, done: true, detail: "Arriving Today" },
+      { step: "Delivered", date: "2025-10-04T09:30:00Z, done: true, detail: "Delivered Successfully" },
     ],
     courier: {
       name: "ShipQuick",
