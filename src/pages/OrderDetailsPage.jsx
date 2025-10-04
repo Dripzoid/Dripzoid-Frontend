@@ -51,7 +51,7 @@ const MARKER_INNER_OFFSET_PX = 6; // inner icon inset
 const LEFT_6_PX = 24;
 
 // -------------------- Main component --------------------
-export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
+export default function OrderDetailsPage({ orderId = "40" }) {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
 
