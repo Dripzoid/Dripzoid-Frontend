@@ -6,25 +6,47 @@ import {
   CheckCircle,
   Clock,
   Info,
-  Star,
   Download,
   Share2,
   XCircle,
 } from "lucide-react";
 
 /**
- * OrderDetailsPage - wired to backend endpoints
+ * OrderDetailsPage - wired to backend endpoints via API_BASE env var
  *
  * Backend endpoints used:
- *  - GET  /api/user/orders/:id                  -> order details (JSON)
- *  - POST /api/user/orders/:id/cancel           -> cancel order
- *  - POST /api/user/orders/:id/return           -> request return
- *  - PUT  /api/user/orders/:id/address          -> update shipping address
- *  - POST /api/user/orders/:id/rating           -> submit rating for product
- *  - POST /api/shipping/track-order             -> { orderId } -> latest tracking info
+ *  - GET  ${API_BASE}/api/user/orders/:id                  -> order details (JSON)
+ *  - PUT  ${API_BASE}/api/user/orders/:id/cancel           -> cancel order
+ *  - POST ${API_BASE}/api/user/orders/:id/return           -> request return
+ *  - PUT  ${API_BASE}/api/user/orders/:id/address          -> update shipping address
+ *  - POST ${API_BASE}/api/shipping/track-order             -> { orderId } -> latest tracking info
  *
- * Adjust headers (auth) as needed in fetch calls below.
+ * Provide API base in env:
+ *  - Vite: VITE_API_BASE
+ *  - CRA:   REACT_APP_API_BASE
+ *
+ * If API_BASE is empty string, fetches will be relative to current origin.
  */
+
+// -------------------- API base helper --------------------
+const API_BASE = (() => {
+  try {
+    // Vite / modern
+    if (typeof import !== "undefined" && typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE) {
+      return import.meta.env.VITE_API_BASE.replace(/\/$/, "");
+    }
+  } catch (e) {}
+  try {
+    // CRA / webpack
+    if (typeof process !== "undefined" && process.env && process.env.REACT_APP_API_BASE) {
+      return process.env.REACT_APP_API_BASE.replace(/\/$/, "");
+    }
+  } catch (e) {}
+  return ""; // fallback: relative paths
+})();
+
+// small helper to build full url
+const apiUrl = (path) => `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`.replace(/([^:]\/)\/+/g, "$1");
 
 // -------------------- utils --------------------
 function formatDateTime(iso) {
@@ -33,7 +55,7 @@ function formatDateTime(iso) {
   return d.toLocaleString();
 }
 function currency(n) {
-  return `₹${Number(n).toLocaleString("en-IN")}`;
+  return `₹${Number(n || 0).toLocaleString("en-IN")}`;
 }
 
 // -------------------- global button class --------------------
@@ -61,7 +83,6 @@ export default function OrderDetailsPage({ orderId = "40" }) {
   const [showInvoice, setShowInvoice] = useState(false);
   const invoiceRef = useRef(null);
 
-  const [ratings, setRatings] = useState({});
   const [infoModal, setInfo] = useState({ open: false, title: "", message: "" });
 
   // ------------------ fetch order from backend ------------------
@@ -70,7 +91,8 @@ export default function OrderDetailsPage({ orderId = "40" }) {
     (async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/user/orders/${encodeURIComponent(orderId)}`, {
+        const url = apiUrl(`/api/user/orders/${encodeURIComponent(orderId)}`);
+        const res = await fetch(url, {
           method: "GET",
           headers: {
             "Accept": "application/json",
@@ -105,8 +127,10 @@ export default function OrderDetailsPage({ orderId = "40" }) {
     if (!order) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/user/orders/${encodeURIComponent(order.id)}/cancel`, {
-        method: "POST",
+      // Note: server route in your router uses PUT for cancel — using PUT here
+      const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/cancel`);
+      const res = await fetch(url, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         // body: JSON.stringify({ reason: "User cancelled" }), // optional
       });
@@ -114,10 +138,9 @@ export default function OrderDetailsPage({ orderId = "40" }) {
       const payload = await parseJsonSafe(res);
       if (!res.ok) throw new Error(payload?.message || `Cancel failed (${res.status})`);
 
-      // update optimistic UI using returned status if available
       setOrder((o) => ({
         ...o,
-        status: payload?.status ?? "Cancelled",
+        status: payload?.status ?? "cancelled",
         history: payload?.history ? [...(payload.history || []), ...(o.history || [])] : [{ id: Date.now(), time: new Date().toISOString(), title: "Cancelled", detail: payload?.message || "Order cancelled" }, ...o.history],
       }));
 
@@ -134,7 +157,8 @@ export default function OrderDetailsPage({ orderId = "40" }) {
     if (!order) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/user/orders/${encodeURIComponent(order.id)}/return`, {
+      const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/return`);
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // body: JSON.stringify({ reason: "Product damaged" }), // optional
@@ -162,7 +186,8 @@ export default function OrderDetailsPage({ orderId = "40" }) {
     if (!order) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/user/orders/${encodeURIComponent(order.id)}/address`, {
+      const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/address`);
+      const res = await fetch(url, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(shippingObj),
@@ -186,44 +211,6 @@ export default function OrderDetailsPage({ orderId = "40" }) {
     }
   }
 
-  async function handleSubmitRating(productId) {
-    if (!order) return;
-    const r = ratings[productId];
-    if (!r || !r.rating) {
-      setInfo({ open: true, title: "Rating required", message: "Please choose a rating" });
-      return;
-    }
-    setLoading(true);
-    try {
-      const body = {
-        productId,
-        rating: r.rating,
-        review: r.review || "",
-      };
-      const res = await fetch(`/api/user/orders/${encodeURIComponent(order.id)}/rating`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      const payload = await parseJsonSafe(res);
-      if (!res.ok) throw new Error(payload?.message || `Rating failed (${res.status})`);
-
-      setOrder((o) => ({
-        ...o,
-        history: payload?.history ? [...payload.history, ...(o.history || [])] : [{ id: Date.now(), time: new Date().toISOString(), title: "Rating submitted", detail: `Product ${productId} rated ${r.rating}` }, ...o.history],
-      }));
-
-      setInfo({ open: true, title: "Thanks", message: payload?.message ?? "Rating submitted" });
-      setRatings((s) => ({ ...s, [productId]: {} }));
-    } catch (err) {
-      console.error("Submit rating error:", err);
-      setInfo({ open: true, title: "Error", message: err.message || "Could not submit rating" });
-    } finally {
-      setLoading(false);
-    }
-  }
-
   // ------------------ track-order ------------------
   async function handleTrackOrder() {
     if (!order) {
@@ -233,7 +220,8 @@ export default function OrderDetailsPage({ orderId = "40" }) {
 
     setLoading(true);
     try {
-      const res = await fetch("/api/shipping/track-order", {
+      const url = apiUrl(`/api/shipping/track-order`);
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderId: order.id }),
@@ -275,7 +263,7 @@ export default function OrderDetailsPage({ orderId = "40" }) {
 
   function handleShare() {
     if (!order) return;
-    const shareText = `Order ${order.id} • ${order.items.length} items • ${currency(order.pricing.total)}`;
+    const shareText = `Order ${order.id} • ${order.items.length} items • ${currency(order.pricing?.total)}`;
     if (navigator.share) {
       navigator.share({ title: `Order ${order.id}`, text: shareText }).catch(() => setInfo({ open: true, title: "Share", message: "Sharing cancelled or not supported" }));
     } else {
@@ -289,6 +277,17 @@ export default function OrderDetailsPage({ orderId = "40" }) {
       return;
     }
     setInfo({ open: true, title: "Contact courier", message: `Call ${order.courier.phone}` });
+  }
+
+  async function handleDownloadInvoice() {
+    try {
+      const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/invoice`);
+      // open in new tab so browser handles download
+      window.open(url, "_blank");
+    } catch (err) {
+      console.error("Download invoice failed:", err);
+      setInfo({ open: true, title: "Error", message: "Could not download invoice." });
+    }
   }
 
   if (loading || !order) {
@@ -349,29 +348,7 @@ export default function OrderDetailsPage({ orderId = "40" }) {
                     </div>
                   </div>
 
-                  {isDelivered && (
-                    <div className="mt-3 bg-neutral-50 dark:bg-neutral-800 border border-neutral-100 dark:border-neutral-700 rounded p-3">
-                      <div className="text-sm font-medium mb-2">Rate this product</div>
-                      <div className="flex items-start gap-3">
-                        <StarRating value={(ratings[it.id] && ratings[it.id].rating) || 0} onChange={(v) => setRatings((r) => ({ ...r, [it.id]: { ...(r[it.id] || {}), rating: v } }))} />
-                        <textarea
-                          value={(ratings[it.id] && ratings[it.id].review) || ""}
-                          onChange={(e) => setRatings((r) => ({ ...r, [it.id]: { ...(r[it.id] || {}), review: e.target.value } }))}
-                          placeholder="Write a short review (optional)"
-                          className="flex-1 p-2 rounded bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700"
-                        />
-                      </div>
-
-                      <div className="mt-2 flex gap-2">
-                        <button onClick={() => handleSubmitRating(it.id)} className={BTN + " flex items-center gap-2"}>
-                          <Star size={14} /> Submit rating
-                        </button>
-                        <button onClick={() => setRatings((r) => ({ ...r, [it.id]: {} }))} className={BTN + " flex items-center gap-2"}>
-                          <XCircle size={14} /> Clear
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  {/* Reviews/ratings removed as requested */}
                 </div>
               ))}
             </div>
@@ -462,7 +439,7 @@ export default function OrderDetailsPage({ orderId = "40" }) {
                 <button onClick={handleShare} className={BTN + " flex-1 py-2 flex items-center justify-center gap-2"}>
                   <Share2 size={16} /> Share
                 </button>
-                <button onClick={() => setInfo({ open: true, title: "Download invoice", message: "Downloading invoice..." })} className={BTN + " py-2 px-3 flex items-center gap-2"}>
+                <button onClick={handleDownloadInvoice} className={BTN + " py-2 px-3 flex items-center gap-2"}>
                   <Download size={16} /> Download
                 </button>
               </div>
@@ -800,19 +777,6 @@ function InvoiceTemplate({ order, pricing }) {
           <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginTop: 8 }}><div>Total</div><div>{currency(pricing?.total ?? order.pricing?.total)}</div></div>
         </div>
       </div>
-    </div>
-  );
-}
-
-// Star rating component
-function StarRating({ value = 0, onChange = () => {} }) {
-  return (
-    <div className="flex items-center gap-2">
-      {[1, 2, 3, 4, 5].map((n) => (
-        <button key={n} onClick={() => onChange(n)} aria-label={`${n} star`} className="focus:outline-none">
-          <Star size={18} className={n <= value ? "text-yellow-400" : "text-neutral-400 dark:text-neutral-500"} />
-        </button>
-      ))}
     </div>
   );
 }
