@@ -511,31 +511,35 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
         <div />
       </div>
 
-      <div className="mt-6 relative">
-     {/* base spine (neutral, behind) */}
-<div
-  className="absolute top-0 bottom-0 w-[4px] bg-neutral-100 dark:bg-neutral-800 z-0"
-  style={{
-    left: `calc(${LEFT_6_PX}px + ${MARKER_SIZE_PX / 2}px - 2px)`, // align to center
-  }}
-/>
-
-{/* Flipkart-style overlay (green filled spine) */}
-{lastDoneIndex >= 0 && (
+<div className="mt-6 relative">
+  {/* Base spine (gray skeleton line) */}
   <div
-    aria-hidden
+    className="absolute top-0 bottom-0 w-[4px] bg-neutral-100 dark:bg-neutral-800 z-0"
     style={{
-      position: "absolute",
-      left: `calc(${LEFT_6_PX}px + ${MARKER_SIZE_PX / 2}px - 2px)`, // same center as spine
-      top: overlayTopPx,
-      width: 4,
-      height: overlayHeightCss,
-      backgroundColor: "rgb(16,185,129)", // emerald
-      zIndex: 20,
-      borderRadius: 2,
+      left: `calc(${LEFT_6_PX}px + ${MARKER_SIZE_PX / 2}px - 2px)`,
     }}
   />
-)}
+
+  {/* Flipkart-style overlay (green filled progress line) */}
+  {lastDoneIndex >= 0 && (
+    <div
+      aria-hidden
+      style={{
+        position: "absolute",
+        // Shift progress line slightly left to overlap skeleton perfectly
+        left: `calc(${LEFT_6_PX}px + ${MARKER_SIZE_PX / 2}px - 3px)`,
+        top: overlayTopPx,
+        width: 4,
+        height: overlayHeightCss,
+        backgroundColor: "rgb(16,185,129)", // emerald green
+        zIndex: 20,
+        borderRadius: 2,
+        transition: "all 0.4s ease",
+      }}
+    />
+  )}
+</div>
+
 
 
         <div className="space-y-6 relative z-10">
