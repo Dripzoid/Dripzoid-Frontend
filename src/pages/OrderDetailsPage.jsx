@@ -13,13 +13,14 @@ import {
 } from "lucide-react";
 
 /**
- * OrderDetailsPage - connector + Track order button updated
+ * OrderDetailsPage - final polished
  *
- * Key points:
- * - Marker uses two layers: outer (lower z) and inner (icon, higher z).
- * - Connector overlay is above the outer layer so it's visible touching the outer circumference.
- * - Inner icon sits above the connector so the icon remains visible.
- * - Global Track order button (with Truck icon) placed beside Cancel on same line.
+ * Fixes applied:
+ * - Timeline connector is visible and touches the outer circumference of markers.
+ *   (outer marker is positioned and given lower z-index; connector overlay sits above it; inner icon is highest.)
+ * - Removed per-step "Track order" buttons; replaced with a global "Track order" at the action row.
+ * - Cancel and Track are aligned on the same row.
+ * - Buttons are fully rounded and follow the theme inversion + hover ring behavior.
  */
 
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
@@ -29,7 +30,7 @@ async function simulateFetchOrder(orderId) {
     id: orderId || "OD335614556805540100",
     placedAt: "2025-10-01T08:30:00Z",
     paymentMethod: "Cash On Delivery",
-    status: "Shipped", // try "Packed" to test hide edit
+    status: "Shipped",
     tracking: [
       { step: "Order confirmed", date: "2025-10-01T08:30:00Z", done: true, detail: "Payment verified" },
       { step: "Packed", date: "2025-10-01T09:30:00Z", done: true, detail: "Packed in warehouse A3" },
@@ -92,16 +93,14 @@ function currency(n) {
   return `₹${Number(n).toLocaleString("en-IN")}`;
 }
 
-// Buttons: fully rounded, opposite-theme default, hover invert, small hover ring, no scale
 const BTN =
   "transition-all duration-200 font-medium rounded-full px-4 py-2 " +
   "bg-black text-white dark:bg-white dark:text-black " +
   "hover:bg-white hover:text-black dark:hover:bg-black dark:hover:text-white " +
   "hover:ring-2 hover:ring-black dark:hover:ring-white hover:shadow-[0_8px_20px_rgba(0,0,0,0.12)] focus:outline-none";
 
-// marker size in pixels (used to compute connector top exactly)
-const MARKER_SIZE_PX = 28; // w-7 h-7 (28px)
-const MARKER_INNER_OFFSET_PX = 6; // inner icon inset from outer marker (so icon is smaller)
+const MARKER_SIZE_PX = 28;
+const MARKER_INNER_OFFSET_PX = 6;
 
 export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
   const [order, setOrder] = useState(null);
@@ -203,7 +202,6 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     setInfo({ open: true, title: "Contact courier", message: `Call ${order.courier.phone}` });
   }
 
-  // Global track order button handler (replaced Need Help)
   function handleTrackOrder() {
     setInfo({ open: true, title: "Track order", message: "Open tracking flow (demo)..." });
   }
@@ -467,15 +465,9 @@ function ProductHeader({ order }) {
   );
 }
 
-/**
- * TimelineCard
- * - base spine: w-[4px], z-0
- * - connector overlay: top is exactly MARKER_SIZE_PX px -> so it starts at bottom of outer marker
- * - marker: two layers: outer (z lower), inner icon (z higher)
- */
 function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivered }) {
   const overlayTop = `${MARKER_SIZE_PX}px`;
-  const innerSize = MARKER_SIZE_PX - MARKER_INNER_OFFSET_PX; // slightly smaller inner icon
+  const innerSize = MARKER_SIZE_PX - MARKER_INNER_OFFSET_PX;
 
   return (
     <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-6">
@@ -499,50 +491,47 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
             const done = t.done;
             const nextDone = order.tracking[idx + 1]?.done;
 
-            // outer marker style (lower z so connector can be above it)
             const outerClasses = done
-              ? "rounded-full bg-emerald-600"
+              ? "bg-emerald-600"
               : nextDone
-                ? "rounded-full bg-white border border-neutral-300 dark:border-neutral-700"
-                : "rounded-full bg-white border border-neutral-200 dark:border-neutral-800";
+                ? "bg-white border border-neutral-300 dark:border-neutral-700"
+                : "bg-white border border-neutral-200 dark:border-neutral-800";
 
-            // inner icon bg and icon color
-            const innerBg = done ? "bg-white" : "bg-white";
             const iconColorDone = done ? "text-emerald-600" : "text-neutral-500 dark:text-neutral-400";
-
-            // connector highlight for consecutive completed steps
             const connectorClass = done && nextDone ? "bg-emerald-600" : "bg-transparent";
 
             return (
               <div key={t.step} className="pl-14 relative">
-                {/* marker wrapper: absolute positioned */}
                 <div
                   className="absolute left-6 -translate-x-1/2"
                   style={{ top: 0, width: MARKER_SIZE_PX, height: MARKER_SIZE_PX }}
                 >
-                  {/* outer layer - lower z so connector can be above */}
-                  <div style={{ width: "100%", height: "100%" }} className={`z-10 ${outerClasses}`} />
-
-                  {/* connector overlay - ABOVE outer (z-20) so the line is visible up to marker outer circumference */}
+                  {/* outer layer - positioned and given lower z so connector overlay can be drawn above it */}
                   <div
-                    className={`absolute left-0 w-[4px] ${connectorClass}`}
-                    style={{ top: overlayTop, bottom: 0, left: (MARKER_SIZE_PX / 2) - 2 /* center the 4px line */ , zIndex: 20 }}
+                    style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', borderRadius: '9999px', zIndex: 12 }}
+                    className={outerClasses}
                   />
 
-                  {/* inner icon container - above everything (z-30) */}
+                  {/* connector overlay - sits above outer (zIndex 20) and aligns at the exact marker bottom */}
+                  <div
+                    className={`absolute w-[4px] ${connectorClass}`}
+                    style={{ top: overlayTop, bottom: 0, left: (MARKER_SIZE_PX / 2) - 2, zIndex: 20 }}
+                  />
+
+                  {/* inner icon container - highest z */}
                   <div
                     style={{
-                      position: "absolute",
+                      position: 'absolute',
                       left: `${MARKER_INNER_OFFSET_PX / 2}px`,
                       top: `${MARKER_INNER_OFFSET_PX / 2}px`,
                       width: innerSize,
                       height: innerSize,
                       zIndex: 30,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderRadius: "9999px",
-                      background: innerBg,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '9999px',
+                      background: 'white',
                     }}
                   >
                     {done ? (
@@ -555,7 +544,6 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
                   </div>
                 </div>
 
-                {/* content */}
                 <div>
                   <div className={`font-medium ${done ? "text-neutral-700 dark:text-neutral-200" : "text-neutral-500"}`}>{t.step}</div>
                   <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">{t.date ? formatDateTime(t.date) : done ? "" : "Pending"}</div>
@@ -577,7 +565,6 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
         Delivery Executive details will be available once the order is out for delivery
       </div>
 
-      {/* Cancel and Track Order are on the same row and aligned */}
       <div className="mt-4 flex items-center justify-between gap-4">
         <div className="flex-1 flex gap-3">
           {!isDelivered && order.status.toLowerCase() !== "cancelled" ? (
@@ -590,7 +577,6 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
             </button>
           )}
 
-          {/* Track order button (replaced Need Help) */}
           <button onClick={onTrackAll} className={BTN + " py-3 flex items-center gap-2"}>
             <Truck size={16} /> Track order
           </button>
@@ -602,7 +588,6 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
   );
 }
 
-// Invoice template
 function InvoiceTemplate({ order, pricing }) {
   return (
     <div style={{ padding: 20, maxWidth: 800 }}>
@@ -649,7 +634,6 @@ function InvoiceTemplate({ order, pricing }) {
   );
 }
 
-// StarRating
 function StarRating({ value = 0, onChange = () => {} }) {
   return (
     <div className="flex items-center gap-2">
@@ -662,7 +646,6 @@ function StarRating({ value = 0, onChange = () => {} }) {
   );
 }
 
-// ConfirmModal
 function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose = () => {}, onConfirm = () => {} }) {
   useEffect(() => {
     if (!open) return;
@@ -690,7 +673,6 @@ function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose 
   );
 }
 
-// InputModal
 function InputModal({ open, title, initialShipping = { name: "", phone: "", address: "" }, onClose = () => {}, onConfirm = (val) => {} }) {
   const [name, setName] = useState(initialShipping?.name || "");
   const [phone, setPhone] = useState(initialShipping?.phone || "");
@@ -734,7 +716,6 @@ function InputModal({ open, title, initialShipping = { name: "", phone: "", addr
   );
 }
 
-// InfoModal
 function InfoModal({ open, title = "", message = "", onClose = () => {} }) {
   if (!open) return null;
   return (
