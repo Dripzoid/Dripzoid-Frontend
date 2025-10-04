@@ -29,14 +29,40 @@ import {
  */
 
 // -------------------- API base helper --------------------
-const API_BASE =
-  (import.meta?.env?.VITE_API_BASE ||
-   process?.env?.REACT_APP_API_BASE ||
-   "").replace(/\/$/, "");
+const API_BASE = (() => {
+  let base = "";
+  // import.meta may throw in some environments — wrap in try/catch
+  try {
+    // Vite-style: import.meta.env.VITE_API_BASE
+    // Accessing import.meta directly inside try/catch prevents a hard runtime crash where unsupported
+    // environments might throw a ReferenceError.
+    // eslint-disable-next-line no-undef
+    if (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE) {
+      base = String(import.meta.env.VITE_API_BASE);
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  try {
+    if (!base && typeof process !== "undefined" && process.env && process.env.REACT_APP_API_BASE) {
+      base = String(process.env.REACT_APP_API_BASE);
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return (base || "").replace(/\/$/, "");
+})();
 
 // Helper to safely build full API URLs
-const apiUrl = (path = "") =>
-  `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`.replace(/([^:]\/)\/+/g, "$1");;
+const apiUrl = (path = "") => {
+  if (!path.startsWith("/")) path = `/${path}`;
+  // If API_BASE is empty string we return the relative path (browser origin)
+  const combined = API_BASE ? `${API_BASE}${path}` : path;
+  // Normalize duplicate slashes (but keep the protocol slashes)
+  return combined.replace(/([^:]\/)\/+/g, "$1");
+};
 
 // -------------------- utils --------------------
 function formatDateTime(iso) {
@@ -85,20 +111,20 @@ export default function OrderDetailsPage({ orderId = "40" }) {
         const res = await fetch(url, {
           method: "GET",
           headers: {
-            "Accept": "application/json",
-            // Add Authorization header if your backend needs it:
-            // "Authorization": `Bearer ${token}`,
+            Accept: "application/json",
+            // If your API needs cookies/credentials:
+            // credentials: "include",
+            // If your API uses bearer tokens add Authorization header here
           },
         });
 
+        const payload = await parseJsonSafe(res);
         if (!res.ok) {
-          const txt = await res.text().catch(() => "");
-          throw new Error(`Failed to fetch order: ${res.status} ${txt}`);
+          throw new Error(payload?.message || `Failed to fetch order: ${res.status}`);
         }
 
-        const data = await res.json();
         if (!mounted) return;
-        setOrder(data);
+        setOrder(payload);
       } catch (err) {
         console.error("Error loading order:", err);
         setInfo({ open: true, title: "Error", message: "Could not load order. Check network or try again." });
@@ -117,12 +143,11 @@ export default function OrderDetailsPage({ orderId = "40" }) {
     if (!order) return;
     setLoading(true);
     try {
-      // Note: server route in your router uses PUT for cancel — using PUT here
+      // Router used PUT for cancel in your backend; use PUT here as well
       const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/cancel`);
       const res = await fetch(url, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        // body: JSON.stringify({ reason: "User cancelled" }), // optional
       });
 
       const payload = await parseJsonSafe(res);
@@ -131,7 +156,7 @@ export default function OrderDetailsPage({ orderId = "40" }) {
       setOrder((o) => ({
         ...o,
         status: payload?.status ?? "cancelled",
-        history: payload?.history ? [...(payload.history || []), ...(o.history || [])] : [{ id: Date.now(), time: new Date().toISOString(), title: "Cancelled", detail: payload?.message || "Order cancelled" }, ...o.history],
+        history: payload?.history ? [...(payload.history || []), ...(o.history || [])] : [{ id: Date.now(), time: new Date().toISOString(), title: "Cancelled", detail: payload?.message || "Order cancelled" }, ...(o.history || [])],
       }));
 
       setInfo({ open: true, title: "Cancelled", message: payload?.message ?? "Order cancelled" });
@@ -151,7 +176,6 @@ export default function OrderDetailsPage({ orderId = "40" }) {
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // body: JSON.stringify({ reason: "Product damaged" }), // optional
       });
 
       const payload = await parseJsonSafe(res);
@@ -160,7 +184,7 @@ export default function OrderDetailsPage({ orderId = "40" }) {
       setOrder((o) => ({
         ...o,
         status: payload?.status ?? "Return requested",
-        history: payload?.history ? [...(payload.history || []), ...(o.history || [])] : [{ id: Date.now(), time: new Date().toISOString(), title: "Return requested", detail: payload?.message || "Return requested" }, ...o.history],
+        history: payload?.history ? [...(payload.history || []), ...(o.history || [])] : [{ id: Date.now(), time: new Date().toISOString(), title: "Return requested", detail: payload?.message || "Return requested" }, ...(o.history || [])],
       }));
 
       setInfo({ open: true, title: "Return requested", message: payload?.message ?? "Return requested" });
@@ -189,7 +213,7 @@ export default function OrderDetailsPage({ orderId = "40" }) {
       setOrder((o) => ({
         ...o,
         shipping: { ...o.shipping, ...shippingObj },
-        history: payload?.history ? [...payload.history, ...(o.history || [])] : [{ id: Date.now(), time: new Date().toISOString(), title: "Address updated", detail: shippingObj.address }, ...o.history],
+        history: payload?.history ? [...payload.history, ...(o.history || [])] : [{ id: Date.now(), time: new Date().toISOString(), title: "Address updated", detail: shippingObj.address }, ...(o.history || [])],
       }));
 
       setInfo({ open: true, title: "Address updated", message: payload?.message ?? "Address updated" });
@@ -253,7 +277,7 @@ export default function OrderDetailsPage({ orderId = "40" }) {
 
   function handleShare() {
     if (!order) return;
-    const shareText = `Order ${order.id} • ${order.items.length} items • ${currency(order.pricing?.total)}`;
+    const shareText = `Order ${order.id} • ${order.items?.length ?? 0} items • ${currency(order.pricing?.total)}`;
     if (navigator.share) {
       navigator.share({ title: `Order ${order.id}`, text: shareText }).catch(() => setInfo({ open: true, title: "Share", message: "Sharing cancelled or not supported" }));
     } else {
@@ -319,11 +343,11 @@ export default function OrderDetailsPage({ orderId = "40" }) {
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-4">
             <div className="flex items-center justify-between">
               <h3 className="font-medium">Items in this order</h3>
-              <div className="text-sm text-neutral-500">{order.items.length} item(s)</div>
+              <div className="text-sm text-neutral-500">{order.items?.length ?? 0} item(s)</div>
             </div>
 
             <div className="mt-4 divide-y divide-neutral-100 dark:divide-neutral-800">
-              {order.items.map((it) => (
+              {order.items?.map((it) => (
                 <div key={it.id} className="py-4">
                   <div className="flex items-center gap-4">
                     <img src={it.img} alt={it.title} className="w-20 h-20 object-cover rounded" />
@@ -340,7 +364,7 @@ export default function OrderDetailsPage({ orderId = "40" }) {
 
                   {/* Reviews/ratings removed as requested */}
                 </div>
-              ))}
+              )) ?? null}
             </div>
           </div>
         </section>
@@ -387,7 +411,7 @@ export default function OrderDetailsPage({ orderId = "40" }) {
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-4">
             <div className="flex items-center justify-between">
               <div className="font-medium">Price details</div>
-              <div className="text-sm text-neutral-400">Items: {order.items.length}</div>
+              <div className="text-sm text-neutral-400">Items: {order.items?.length ?? 0}</div>
             </div>
 
             <div className="mt-3 text-sm space-y-2">
@@ -633,7 +657,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
           {trackingToUse.map((t, idx) => {
             const done = t.done;
             const nextDone = trackingToUse[idx + 1]?.done;
-            const isCancelStep = t.step.toLowerCase().includes("cancel");
+            const isCancelStep = t.step?.toLowerCase().includes("cancel");
 
             const outerClasses = isCancelStep
               ? "rounded-full bg-red-600"
@@ -685,7 +709,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
                   <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">{t.date ? formatDateTime(t.date) : done ? "" : "Pending"}</div>
                   {t.detail && <div className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">{t.detail}</div>}
 
-                  {t.step.toLowerCase().includes("shipped") && done && (
+                  {t.step?.toLowerCase().includes("shipped") && done && (
                     <div className="mt-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 rounded p-3 text-sm text-neutral-700 dark:text-neutral-200">
                       Your item has arrived at a delivery partner facility — {t.date ? new Date(t.date).toLocaleDateString() : ""}
                     </div>
