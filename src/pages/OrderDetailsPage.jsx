@@ -15,11 +15,11 @@ import {
  * OrderDetailsPage - wired to backend endpoints via API_BASE env var
  *
  * Backend endpoints used:
- *  - GET  ${API_BASE}/api/user/orders/:id                  -> order details (JSON)
- *  - PUT  ${API_BASE}/api/user/orders/:id/cancel           -> cancel order
- *  - POST ${API_BASE}/api/user/orders/:id/return           -> request return
- *  - PUT  ${API_BASE}/api/user/orders/:id/address          -> update shipping address
- *  - POST ${API_BASE}/api/shipping/track-order             -> { orderId } -> latest tracking info
+ *  - GET  ${API_BASE}/api/user/orders/:id
+ *  - PUT  ${API_BASE}/api/user/orders/:id/cancel
+ *  - POST ${API_BASE}/api/user/orders/:id/return
+ *  - PUT  ${API_BASE}/api/user/orders/:id/address
+ *  - POST ${API_BASE}/api/shipping/track-order
  *
  * Provide API base in env:
  *  - Vite: VITE_API_BASE
@@ -29,16 +29,83 @@ import {
  */
 
 // -------------------- API base helper --------------------
-const API_BASE = process.env.REACT_APP_API_BASE;
+const API_BASE = (() => {
+  try {
+    // Vite
+    if (typeof import !== "undefined" && typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE) {
+      return import.meta.env.VITE_API_BASE.replace(/\/$/, "");
+    }
+  } catch (e) {}
+  try {
+    // CRA / webpack
+    if (typeof process !== "undefined" && process.env && process.env.REACT_APP_API_BASE) {
+      return process.env.REACT_APP_API_BASE.replace(/\/$/, "");
+    }
+  } catch (e) {}
+  return ""; // fallback: relative paths
+})();
 
 // Helper to safely build full API URLs
 const apiUrl = (path = "") => {
   if (!path.startsWith("/")) path = `/${path}`;
-  // If API_BASE is empty string we return the relative path (browser origin)
   const combined = API_BASE ? `${API_BASE}${path}` : path;
-  // Normalize duplicate slashes (but keep the protocol slashes)
   return combined.replace(/([^:]\/)\/+/g, "$1");
 };
+
+// -------------------- auth helpers --------------------
+function getCookie(name) {
+  if (typeof document === "undefined") return null;
+  const v = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
+  return v ? v.pop() : null;
+}
+
+function getAuthToken() {
+  // Try localStorage, then sessionStorage, then cookie "token"
+  try {
+    if (typeof window !== "undefined") {
+      const t1 = window.localStorage?.getItem?.("token");
+      if (t1) return t1;
+      const t2 = window.sessionStorage?.getItem?.("token");
+      if (t2) return t2;
+    }
+  } catch (e) {}
+  return getCookie("token");
+}
+
+// -------------------- small request wrappers --------------------
+async function apiRequest(path, options = {}) {
+  const token = getAuthToken();
+  const headers = {
+    Accept: "application/json",
+    ...(options.headers || {}),
+  };
+
+  // If body is a plain object (and not a FormData), stringify it unless caller already stringified.
+  if (options.body && typeof options.body === "object" && !(options.body instanceof FormData) && !(options.body instanceof Blob)) {
+    // If caller passed a string already, don't stringify (they shouldn't be passing objects here usually)
+    if (typeof options.body !== "string") {
+      options.body = JSON.stringify(options.body);
+      headers["Content-Type"] = headers["Content-Type"] || "application/json";
+    }
+  }
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const res = await fetch(apiUrl(path), { ...options, headers });
+  return res;
+}
+
+async function apiJson(path, options = {}) {
+  const res = await apiRequest(path, options);
+  const payload = await parseJsonSafe(res);
+  if (!res.ok) {
+    // payload may contain { message } or text
+    throw new Error(payload?.message || `HTTP ${res.status}`);
+  }
+  return payload;
+}
 
 // -------------------- utils --------------------
 function formatDateTime(iso) {
@@ -83,27 +150,12 @@ export default function OrderDetailsPage({ orderId = "40" }) {
     (async () => {
       setLoading(true);
       try {
-        const url = apiUrl(`/api/user/orders/${encodeURIComponent(orderId)}`);
-        const res = await fetch(url, {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-            // If your API needs cookies/credentials:
-            // credentials: "include",
-            // If your API uses bearer tokens add Authorization header here
-          },
-        });
-
-        const payload = await parseJsonSafe(res);
-        if (!res.ok) {
-          throw new Error(payload?.message || `Failed to fetch order: ${res.status}`);
-        }
-
+        const payload = await apiJson(`/api/user/orders/${encodeURIComponent(orderId)}`);
         if (!mounted) return;
         setOrder(payload);
       } catch (err) {
         console.error("Error loading order:", err);
-        setInfo({ open: true, title: "Error", message: "Could not load order. Check network or try again." });
+        setInfo({ open: true, title: "Error", message: err.message || "Could not load order. Check network or try again." });
       } finally {
         if (mounted) setLoading(false);
       }
@@ -119,15 +171,7 @@ export default function OrderDetailsPage({ orderId = "40" }) {
     if (!order) return;
     setLoading(true);
     try {
-      // Router used PUT for cancel in your backend; use PUT here as well
-      const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/cancel`);
-      const res = await fetch(url, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      const payload = await parseJsonSafe(res);
-      if (!res.ok) throw new Error(payload?.message || `Cancel failed (${res.status})`);
+      const payload = await apiJson(`/api/user/orders/${encodeURIComponent(order.id)}/cancel`, { method: "PUT" });
 
       setOrder((o) => ({
         ...o,
@@ -148,14 +192,7 @@ export default function OrderDetailsPage({ orderId = "40" }) {
     if (!order) return;
     setLoading(true);
     try {
-      const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/return`);
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      const payload = await parseJsonSafe(res);
-      if (!res.ok) throw new Error(payload?.message || `Return failed (${res.status})`);
+      const payload = await apiJson(`/api/user/orders/${encodeURIComponent(order.id)}/return`, { method: "POST" });
 
       setOrder((o) => ({
         ...o,
@@ -176,15 +213,10 @@ export default function OrderDetailsPage({ orderId = "40" }) {
     if (!order) return;
     setLoading(true);
     try {
-      const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/address`);
-      const res = await fetch(url, {
+      const payload = await apiJson(`/api/user/orders/${encodeURIComponent(order.id)}/address`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(shippingObj),
+        body: shippingObj, // apiRequest will JSON.stringify if needed
       });
-
-      const payload = await parseJsonSafe(res);
-      if (!res.ok) throw new Error(payload?.message || `Address update failed (${res.status})`);
 
       setOrder((o) => ({
         ...o,
@@ -210,17 +242,11 @@ export default function OrderDetailsPage({ orderId = "40" }) {
 
     setLoading(true);
     try {
-      const url = apiUrl(`/api/shipping/track-order`);
-      const res = await fetch(url, {
+      const payload = await apiJson(`/api/shipping/track-order`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId: order.id }),
+        body: { orderId: order.id },
       });
 
-      const payload = await parseJsonSafe(res);
-      if (!res.ok) throw new Error(payload?.message || `Track API error (${res.status})`);
-
-      // payload expected to include: tracking (array), status, courier, history
       setOrder((o) => ({
         ...o,
         tracking: payload.tracking ?? o.tracking,
@@ -271,12 +297,25 @@ export default function OrderDetailsPage({ orderId = "40" }) {
 
   async function handleDownloadInvoice() {
     try {
-      const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/invoice`);
-      // open in new tab so browser handles download
-      window.open(url, "_blank");
+      // Use apiRequest so Authorization header is sent
+      const res = await apiRequest(`/api/user/orders/${encodeURIComponent(order.id)}/invoice`, { method: "GET" });
+      if (!res.ok) {
+        const payload = await parseJsonSafe(res);
+        throw new Error(payload?.message || `Download failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const filename = (res.headers.get("content-disposition") || "").split("filename=")[1]?.replace(/[";]/g, "") || `invoice-${order.id}.pdf`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Download invoice failed:", err);
-      setInfo({ open: true, title: "Error", message: "Could not download invoice." });
+      setInfo({ open: true, title: "Error", message: err.message || "Could not download invoice." });
     }
   }
 
