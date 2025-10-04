@@ -13,14 +13,18 @@ import {
 } from "lucide-react";
 
 /**
- * OrderDetailsPage - connector + Track order button updated
+ * OrderDetailsPage - Flipkart-like progress line
  *
- * Notes:
- * - Uses DOM measurement to draw a single filled connector overlay from the center
- *   of the first marker down to the center of the last completed marker.
- * - Marker layering:
- *   outer marker (z lower), connector overlay (z above outer), inner icon (top z).
- * - Cancel + Track are on the same line on the right place.
+ * Technique:
+ * - Draw a neutral full-height spine (gray).
+ * - Draw a single overlay (green) positioned on top of spine.
+ * - Overlay's height is computed as percentage based on how many steps are completed:
+ *     percent = lastDoneIndex / (steps - 1) * 100
+ * - Overlay starts visually from center of the first marker (top offset) and extends
+ *   down by the computed percentage (using a small calc to align with marker centers).
+ *
+ * Note: This mirrors Flipkart's approach (one full line + one filled overlay). It's
+ * simpler and works well when steps are laid out with consistent spacing (space-y).
  */
 
 // -------------------- simulated API / helpers --------------------
@@ -102,12 +106,11 @@ const BTN =
   "hover:bg-white hover:text-black dark:hover:bg-black dark:hover:text-white " +
   "hover:ring-2 hover:ring-black dark:hover:ring-white hover:shadow-[0_8px_20px_rgba(0,0,0,0.12)] focus:outline-none";
 
-// marker size in pixels (used to compute connector top exactly)
+// marker size in pixels (used to compute overlay top offset)
 const MARKER_SIZE_PX = 28; // outer marker diameter
 const MARKER_INNER_OFFSET_PX = 6; // inner icon inset
 
 // Tailwind left-6 equals 1.5rem which is normally 24px (assuming root font-size 16px).
-// We'll use this base left offset to compute a px left for the connector.
 const LEFT_6_PX = 24;
 
 export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
@@ -475,75 +478,25 @@ function ProductHeader({ order }) {
 }
 
 /**
- * TimelineCard
- * - base spine: w-[4px], z-0
- * - connector overlay: single measured div from center of first marker to center of last done marker
- * - marker: two layers: outer (z lower), inner icon (z higher)
+ * TimelineCard - Flipkart style overlay
  */
 function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivered }) {
-  const timelineRef = useRef(null);
-  const markersRef = useRef([]); // array of marker DOM nodes
-  const [connectorRect, setConnectorRect] = useState(null); // { topPx, heightPx } or null
-
   const innerSize = MARKER_SIZE_PX - MARKER_INNER_OFFSET_PX;
 
-  // measure markers and compute connector overlay to fill up to last completed marker center
-  useEffect(() => {
-    function measure() {
-      const nodes = markersRef.current || [];
-      const container = timelineRef.current;
-      if (!container || !nodes.length) {
-        setConnectorRect(null);
-        return;
-      }
+  // compute last done index and percentage progress (0..100)
+  const steps = order.tracking.length;
+  const lastDoneIndex = order.tracking.map((t) => t.done).lastIndexOf(true);
+  const percent = steps > 1 && lastDoneIndex >= 0 ? (lastDoneIndex / (steps - 1)) * 100 : lastDoneIndex >= 0 ? 100 : 0;
 
-      // find last done index
-      const lastDoneIndex = order.tracking.map((t) => t.done).lastIndexOf(true);
-      if (lastDoneIndex < 0) {
-        setConnectorRect(null);
-        return;
-      }
-
-      const containerRect = container.getBoundingClientRect();
-
-      // center of first marker (we start from the first marker center)
-      const firstNode = nodes[0];
-      // center of last done marker
-      const lastNode = nodes[lastDoneIndex];
-
-      if (!firstNode || !lastNode) {
-        setConnectorRect(null);
-        return;
-      }
-
-      const firstRect = firstNode.getBoundingClientRect();
-      const lastRect = lastNode.getBoundingClientRect();
-
-      // compute centers relative to container top
-      const firstCenter = firstRect.top - containerRect.top + MARKER_SIZE_PX / 2;
-      const lastCenter = lastRect.top - containerRect.top + MARKER_SIZE_PX / 2;
-
-      const topPx = Math.round(firstCenter);
-      const heightPx = Math.max(2, Math.round(lastCenter - firstCenter));
-
-      setConnectorRect({ topPx, heightPx });
-    }
-
-    // measure after small delay to ensure layout stable
-    measure();
-    window.addEventListener("resize", measure);
-    // also observe mutations to content heights (optional)
-    const ro = new ResizeObserver(measure);
-    if (timelineRef.current) ro.observe(timelineRef.current);
-    markersRef.current.forEach((el) => el && ro.observe(el));
-    return () => {
-      window.removeEventListener("resize", measure);
-      try { ro.disconnect(); } catch (e) {}
-    };
-  }, [order.tracking]);
-
-  // compute left px for the connector (align center of 4px line under marker centers)
+  // connector left position (centering the 4px line under the marker)
   const connectorLeftPx = LEFT_6_PX + MARKER_SIZE_PX / 2 - 2; // 2 is half of 4px line width
+
+  // top offset: start from the center of the first marker (to match Flipkart visual)
+  const overlayTopPx = MARKER_SIZE_PX / 2;
+
+  // overlay height using percent; subtract the top offset so overlay begins at center of first marker
+  // Use CSS math to ensure minimum visible height. We use `max(4px, calc(<percent>% - <top>px))`.
+  const overlayHeightCss = `max(4px, calc(${percent}% - ${overlayTopPx}px))`;
 
   return (
     <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-6">
@@ -558,20 +511,21 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
         <div />
       </div>
 
-      <div className="mt-6 relative" ref={timelineRef}>
+      <div className="mt-6 relative">
         {/* base spine (neutral, behind) */}
         <div className="absolute left-6 top-0 bottom-0 w-[4px] bg-neutral-100 dark:bg-neutral-800 z-0" />
 
-        {/* measured connector overlay (fills up to the last completed center) */}
-        {connectorRect && (
+        {/* Flipkart-style overlay (single element) */}
+        {lastDoneIndex >= 0 && (
           <div
+            aria-hidden
             style={{
               position: "absolute",
               left: connectorLeftPx,
-              top: connectorRect.topPx,
+              top: overlayTopPx,
               width: 4,
-              height: connectorRect.heightPx,
-              backgroundColor: "rgb(16,185,129)", // emerald-500/600 approx
+              height: overlayHeightCss,
+              backgroundColor: "rgb(16,185,129)", // emerald
               zIndex: 20,
               borderRadius: 2,
             }}
@@ -583,7 +537,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
             const done = t.done;
             const nextDone = order.tracking[idx + 1]?.done;
 
-            // outer marker style (lower z so measured connector can be above it)
+            // outer marker style
             const outerClasses = done
               ? "rounded-full bg-emerald-600"
               : nextDone
@@ -596,14 +550,13 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
               <div key={t.step} className="pl-14 relative">
                 {/* marker wrapper: absolute positioned */}
                 <div
-                  ref={(el) => (markersRef.current[idx] = el)}
                   className="absolute left-6 -translate-x-1/2"
                   style={{ top: 0, width: MARKER_SIZE_PX, height: MARKER_SIZE_PX }}
                 >
-                  {/* outer layer - lower z */}
+                  {/* outer layer */}
                   <div style={{ width: "100%", height: "100%" }} className={`z-10 ${outerClasses}`} />
 
-                  {/* inner icon container - above everything (z-30) */}
+                  {/* inner icon */}
                   <div
                     style={{
                       position: "absolute",
@@ -616,7 +569,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
                       alignItems: "center",
                       justifyContent: "center",
                       borderRadius: "9999px",
-                      background: done ? "transparent" : "transparent", // keep background transparent so outer color shows
+                      background: "transparent",
                     }}
                   >
                     {done ? (
