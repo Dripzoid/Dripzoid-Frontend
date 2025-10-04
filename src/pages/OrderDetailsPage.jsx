@@ -538,7 +538,6 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
       }}
     />
   )}
-</div>
 
 
 
