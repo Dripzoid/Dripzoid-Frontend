@@ -512,25 +512,31 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
       </div>
 
       <div className="mt-6 relative">
-        {/* base spine (neutral, behind) */}
-        <div className="absolute left-6 top-0 bottom-0 w-[4px] bg-neutral-100 dark:bg-neutral-800 z-0" />
+     {/* base spine (neutral, behind) */}
+<div
+  className="absolute top-0 bottom-0 w-[4px] bg-neutral-100 dark:bg-neutral-800 z-0"
+  style={{
+    left: `calc(${LEFT_6_PX}px + ${MARKER_SIZE_PX / 2}px - 2px)`, // align to center
+  }}
+/>
 
-        {/* Flipkart-style overlay (single element) */}
-        {lastDoneIndex >= 0 && (
-          <div
-            aria-hidden
-            style={{
-              position: "absolute",
-              left: connectorLeftPx,
-              top: overlayTopPx,
-              width: 4,
-              height: overlayHeightCss,
-              backgroundColor: "rgb(16,185,129)", // emerald
-              zIndex: 20,
-              borderRadius: 2,
-            }}
-          />
-        )}
+{/* Flipkart-style overlay (green filled spine) */}
+{lastDoneIndex >= 0 && (
+  <div
+    aria-hidden
+    style={{
+      position: "absolute",
+      left: `calc(${LEFT_6_PX}px + ${MARKER_SIZE_PX / 2}px - 2px)`, // same center as spine
+      top: overlayTopPx,
+      width: 4,
+      height: overlayHeightCss,
+      backgroundColor: "rgb(16,185,129)", // emerald
+      zIndex: 20,
+      borderRadius: 2,
+    }}
+  />
+)}
+
 
         <div className="space-y-6 relative z-10">
           {order.tracking.map((t, idx) => {
