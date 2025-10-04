@@ -16,21 +16,11 @@ import {
  * OrderDetailsPage - connector + Track order button updated
  *
  * Notes:
- * - The main change here is the connectorClass calculation in TimelineCard:
- *   connectorClass now uses `done ? "bg-emerald-600" : "bg-transparent"` so the
- *   connector under every completed marker is filled, resulting in a continuous
- *   looking progress line up to the last completed marker.
- *
+ * - Uses DOM measurement to draw a single filled connector overlay from the center
+ *   of the first marker down to the center of the last completed marker.
  * - Marker layering:
  *   outer marker (z lower), connector overlay (z above outer), inner icon (top z).
- *   This makes the connector visually touch the outer marker circumference while
- *   keeping the inner icon visible on top.
- *
- * - Track order button (global) is placed beside Cancel on the same line.
- *
- * - If you want the green line to reach *exactly* to the center of the last completed
- *   marker across variable-height items, a small DOM measurement approach is needed
- *   (I can add that if you'd like). This change is the minimal reliable fix.
+ * - Cancel + Track are on the same line on the right place.
  */
 
 // -------------------- simulated API / helpers --------------------
@@ -113,15 +103,17 @@ const BTN =
   "hover:ring-2 hover:ring-black dark:hover:ring-white hover:shadow-[0_8px_20px_rgba(0,0,0,0.12)] focus:outline-none";
 
 // marker size in pixels (used to compute connector top exactly)
-const MARKER_SIZE_PX = 28; // w-7 h-7 (28px)
-const MARKER_INNER_OFFSET_PX = 6; // inner icon inset from outer marker (so icon is smaller)
+const MARKER_SIZE_PX = 28; // outer marker diameter
+const MARKER_INNER_OFFSET_PX = 6; // inner icon inset
 
-// -------------------- Main component --------------------
+// Tailwind left-6 equals 1.5rem which is normally 24px (assuming root font-size 16px).
+// We'll use this base left offset to compute a px left for the connector.
+const LEFT_6_PX = 24;
+
 export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // modal/UI states
   const [showCancel, setShowCancel] = useState(false);
   const [showReturn, setShowReturn] = useState(false);
   const [showEditAddress, setShowEditAddress] = useState(false);
@@ -145,7 +137,6 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
 
   const pricing = useMemo(() => (order ? { ...order.pricing } : null), [order]);
 
-  // Actions
   async function handleCancel() {
     if (!order) return;
     setLoading(true);
@@ -250,7 +241,6 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
   const isDelivered = order.status.toLowerCase() === "delivered" || order.tracking.some((t) => t.step.toLowerCase() === "delivered" && t.done);
   const isPacked = order.status.toLowerCase() === "packed";
 
-  // -------------------- Render --------------------
   return (
     <div className="min-h-screen bg-white dark:bg-black text-neutral-900 dark:text-neutral-100 transition-colors duration-200">
       {/* Breadcrumb */}
@@ -425,7 +415,6 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
         <ConfirmModal open={!!showCancel} title="Cancel order" message="Are you sure you want to cancel this order?" confirmLabel="Yes, cancel" onClose={() => setShowCancel(false)} onConfirm={async () => { setShowCancel(false); await handleCancel(); }} />
         <ConfirmModal open={!!showReturn} title="Request return" message="Do you want to request a return for this order?" confirmLabel="Request return" onClose={() => setShowReturn(false)} onConfirm={async () => { setShowReturn(false); await handleRequestReturn(); }} />
 
-        {/* pass full shipping object to InputModal; improved address form */}
         <InputModal
           open={!!showEditAddress}
           title="Edit shipping address"
@@ -488,12 +477,73 @@ function ProductHeader({ order }) {
 /**
  * TimelineCard
  * - base spine: w-[4px], z-0
- * - connector overlay: top is exactly MARKER_SIZE_PX px -> so it starts at bottom of outer marker
+ * - connector overlay: single measured div from center of first marker to center of last done marker
  * - marker: two layers: outer (z lower), inner icon (z higher)
  */
 function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivered }) {
-  const overlayTop = `${MARKER_SIZE_PX}px`;
-  const innerSize = MARKER_SIZE_PX - MARKER_INNER_OFFSET_PX; // slightly smaller inner icon
+  const timelineRef = useRef(null);
+  const markersRef = useRef([]); // array of marker DOM nodes
+  const [connectorRect, setConnectorRect] = useState(null); // { topPx, heightPx } or null
+
+  const innerSize = MARKER_SIZE_PX - MARKER_INNER_OFFSET_PX;
+
+  // measure markers and compute connector overlay to fill up to last completed marker center
+  useEffect(() => {
+    function measure() {
+      const nodes = markersRef.current || [];
+      const container = timelineRef.current;
+      if (!container || !nodes.length) {
+        setConnectorRect(null);
+        return;
+      }
+
+      // find last done index
+      const lastDoneIndex = order.tracking.map((t) => t.done).lastIndexOf(true);
+      if (lastDoneIndex < 0) {
+        setConnectorRect(null);
+        return;
+      }
+
+      const containerRect = container.getBoundingClientRect();
+
+      // center of first marker (we start from the first marker center)
+      const firstNode = nodes[0];
+      // center of last done marker
+      const lastNode = nodes[lastDoneIndex];
+
+      if (!firstNode || !lastNode) {
+        setConnectorRect(null);
+        return;
+      }
+
+      const firstRect = firstNode.getBoundingClientRect();
+      const lastRect = lastNode.getBoundingClientRect();
+
+      // compute centers relative to container top
+      const firstCenter = firstRect.top - containerRect.top + MARKER_SIZE_PX / 2;
+      const lastCenter = lastRect.top - containerRect.top + MARKER_SIZE_PX / 2;
+
+      const topPx = Math.round(firstCenter);
+      const heightPx = Math.max(2, Math.round(lastCenter - firstCenter));
+
+      setConnectorRect({ topPx, heightPx });
+    }
+
+    // measure after small delay to ensure layout stable
+    measure();
+    window.addEventListener("resize", measure);
+    // also observe mutations to content heights (optional)
+    const ro = new ResizeObserver(measure);
+    if (timelineRef.current) ro.observe(timelineRef.current);
+    markersRef.current.forEach((el) => el && ro.observe(el));
+    return () => {
+      window.removeEventListener("resize", measure);
+      try { ro.disconnect(); } catch (e) {}
+    };
+  }, [order.tracking]);
+
+  // compute left px for the connector (align center of 4px line under marker centers)
+  const connectorLeftPx = LEFT_6_PX + MARKER_SIZE_PX / 2 - 2; // 2 is half of 4px line width
 
   return (
     <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-6">
@@ -508,45 +558,50 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
         <div />
       </div>
 
-      <div className="mt-6 relative">
-        {/* base spine */}
+      <div className="mt-6 relative" ref={timelineRef}>
+        {/* base spine (neutral, behind) */}
         <div className="absolute left-6 top-0 bottom-0 w-[4px] bg-neutral-100 dark:bg-neutral-800 z-0" />
+
+        {/* measured connector overlay (fills up to the last completed center) */}
+        {connectorRect && (
+          <div
+            style={{
+              position: "absolute",
+              left: connectorLeftPx,
+              top: connectorRect.topPx,
+              width: 4,
+              height: connectorRect.heightPx,
+              backgroundColor: "rgb(16,185,129)", // emerald-500/600 approx
+              zIndex: 20,
+              borderRadius: 2,
+            }}
+          />
+        )}
 
         <div className="space-y-6 relative z-10">
           {order.tracking.map((t, idx) => {
             const done = t.done;
             const nextDone = order.tracking[idx + 1]?.done;
 
-            // outer marker style (lower z so connector can be above it)
+            // outer marker style (lower z so measured connector can be above it)
             const outerClasses = done
               ? "rounded-full bg-emerald-600"
               : nextDone
                 ? "rounded-full bg-white border border-neutral-300 dark:border-neutral-700"
                 : "rounded-full bg-white border border-neutral-200 dark:border-neutral-800";
 
-            // inner icon bg and icon color
-            const innerBg = done ? "bg-white" : "bg-white";
-            const iconColorDone = done ? "text-emerald-600" : "text-neutral-500 dark:text-neutral-400";
-
-            // *** FIX: fill connector below every completed marker so the line appears filled up to the last done ***
-            // Previously this only highlighted when both current and next were done.
-            const connectorClass = done ? "bg-emerald-600" : "bg-transparent";
+            const iconColorDone = done ? "text-white" : "text-neutral-500 dark:text-neutral-400";
 
             return (
               <div key={t.step} className="pl-14 relative">
                 {/* marker wrapper: absolute positioned */}
                 <div
+                  ref={(el) => (markersRef.current[idx] = el)}
                   className="absolute left-6 -translate-x-1/2"
                   style={{ top: 0, width: MARKER_SIZE_PX, height: MARKER_SIZE_PX }}
                 >
-                  {/* outer layer - lower z so connector can be above */}
+                  {/* outer layer - lower z */}
                   <div style={{ width: "100%", height: "100%" }} className={`z-10 ${outerClasses}`} />
-
-                  {/* connector overlay - ABOVE outer (z-20) so the line is visible up to marker outer circumference */}
-                  <div
-                    className={`absolute left-0 w-[4px] ${connectorClass}`}
-                    style={{ top: overlayTop, bottom: 0, left: (MARKER_SIZE_PX / 2) - 2 /* center the 4px line */ , zIndex: 20 }}
-                  />
 
                   {/* inner icon container - above everything (z-30) */}
                   <div
@@ -561,7 +616,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
                       alignItems: "center",
                       justifyContent: "center",
                       borderRadius: "9999px",
-                      background: innerBg,
+                      background: done ? "transparent" : "transparent", // keep background transparent so outer color shows
                     }}
                   >
                     {done ? (
