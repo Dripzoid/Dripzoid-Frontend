@@ -1,4 +1,3 @@
-// src/pages/OrderDetailsPage.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -13,18 +12,21 @@ import {
 } from "lucide-react";
 
 /**
- * OrderDetailsPage - Flipkart-like progress line
+ * OrderDetailsPage - corrected timeline with pixel-perfect overlay
  *
  * Technique:
- * - Draw a neutral full-height spine (gray).
- * - Draw a single overlay (green) positioned on top of spine.
- * - Overlay's height is computed as percentage based on how many steps are completed:
- *     percent = lastDoneIndex / (steps - 1) * 100
- * - Overlay starts visually from center of the first marker (top offset) and extends
- *   down by the computed percentage (using a small calc to align with marker centers).
+ * - The gray spine is drawn once.
+ * - Marker nodes are measured (via refs).
+ * - We compute the exact px position from the center of the first marker
+ *   to the center of the last completed marker and draw a single green overlay
+ *   using those pixel coordinates. This guarantees pixel-perfect alignment
+ *   with both skeleton and markers in all viewport sizes.
  *
- * Note: This mirrors Flipkart's approach (one full line + one filled overlay). It's
- * simpler and works well when steps are laid out with consistent spacing (space-y).
+ * Improvements in this version:
+ * - The green progress overlay is placed *behind* marker points so markers
+ *   remain visually on top (exact Flipkart-like look).
+ * - The progress overlay animates vertically using Framer Motion (scaleY)
+ *   with transform-origin at the top so it grows smoothly down the path.
  */
 
 // -------------------- simulated API / helpers --------------------
@@ -35,7 +37,7 @@ async function simulateFetchOrder(orderId) {
     id: orderId || "OD335614556805540100",
     placedAt: "2025-10-01T08:30:00Z",
     paymentMethod: "Cash On Delivery",
-    status: "Shipped", // try "Packed" to test hide edit button
+    status: "Shipped",
     tracking: [
       { step: "Order confirmed", date: "2025-10-01T08:30:00Z", done: true, detail: "Payment verified" },
       { step: "Packed", date: "2025-10-01T09:30:00Z", done: true, detail: "Packed in warehouse A3" },
@@ -84,10 +86,22 @@ async function simulateFetchOrder(orderId) {
     ],
   };
 }
-async function apiCancelOrder(orderId) { await delay(500); return { ok: true, message: "Order cancelled" }; }
-async function apiRequestReturn(orderId) { await delay(500); return { ok: true, message: "Return requested" }; }
-async function apiUpdateAddress(orderId, shippingObj) { await delay(400); return { ok: true, message: "Address updated" }; }
-async function apiSubmitRating(orderId, productId, rating, review) { await delay(400); return { ok: true, message: "Rating received" }; }
+async function apiCancelOrder(orderId) {
+  await delay(500);
+  return { ok: true, message: "Order cancelled" };
+}
+async function apiRequestReturn(orderId) {
+  await delay(500);
+  return { ok: true, message: "Return requested" };
+}
+async function apiUpdateAddress(orderId, shippingObj) {
+  await delay(400);
+  return { ok: true, message: "Address updated" };
+}
+async function apiSubmitRating(orderId, productId, rating, review) {
+  await delay(400);
+  return { ok: true, message: "Rating received" };
+}
 
 // -------------------- utils --------------------
 function formatDateTime(iso) {
@@ -106,13 +120,15 @@ const BTN =
   "hover:bg-white hover:text-black dark:hover:bg-black dark:hover:text-white " +
   "hover:ring-2 hover:ring-black dark:hover:ring-white hover:shadow-[0_8px_20px_rgba(0,0,0,0.12)] focus:outline-none";
 
-// marker size in pixels (used to compute overlay top offset)
+// marker size in pixels (outer marker diameter)
 const MARKER_SIZE_PX = 28; // outer marker diameter
 const MARKER_INNER_OFFSET_PX = 6; // inner icon inset
 
-// Tailwind left-6 equals 1.5rem which is normally 24px (assuming root font-size 16px).
+// Tailwind left-6 roughly equals 24px (1.5rem) in default root sizing.
+// We'll keep this constant for layout math (matches the left gutter used in markup).
 const LEFT_6_PX = 24;
 
+// -------------------- Main component --------------------
 export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -201,7 +217,8 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     if (navigator.share) {
       navigator.share({ title: `Order ${order.id}`, text: shareText }).catch(() => setInfo({ open: true, title: "Share", message: "Sharing cancelled or not supported" }));
     } else {
-      navigator.clipboard?.writeText(`${shareText}\nView in your orders`).then(() => setInfo({ open: true, title: "Copied", message: "Order summary copied to clipboard" }), () => setInfo({ open: true, title: "Share", message: "Share not available" }));
+      navigator.clipboard?.writeText(`${shareText}
+View in your orders`).then(() => setInfo({ open: true, title: "Copied", message: "Order summary copied to clipboard" }), () => setInfo({ open: true, title: "Share", message: "Share not available" }));
     }
   }
 
@@ -244,6 +261,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
   const isDelivered = order.status.toLowerCase() === "delivered" || order.tracking.some((t) => t.step.toLowerCase() === "delivered" && t.done);
   const isPacked = order.status.toLowerCase() === "packed";
 
+  // -------------------- Render --------------------
   return (
     <div className="min-h-screen bg-white dark:bg-black text-neutral-900 dark:text-neutral-100 transition-colors duration-200">
       {/* Breadcrumb */}
@@ -405,7 +423,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
           </div>
         </aside>
 
-        {/* Hidden invoice content for print (kept hidden; printing removed from UI per request) */}
+        {/* Hidden invoice content for print */}
         {showInvoice && (
           <div className="hidden" aria-hidden>
             <div ref={invoiceRef}>
@@ -478,25 +496,81 @@ function ProductHeader({ order }) {
 }
 
 /**
- * TimelineCard - Flipkart style overlay
+ * TimelineCard - measured overlay for perfect alignment
  */
 function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivered }) {
+  const timelineRef = useRef(null);
+  const markersRef = useRef([]);
+  const [overlayRect, setOverlayRect] = useState(null); // { leftPx, topPx, heightPx }
+
   const innerSize = MARKER_SIZE_PX - MARKER_INNER_OFFSET_PX;
 
-  // compute last done index and percentage progress (0..100)
-  const steps = order.tracking.length;
+  // compute last done index
   const lastDoneIndex = order.tracking.map((t) => t.done).lastIndexOf(true);
-  const percent = steps > 1 && lastDoneIndex >= 0 ? (lastDoneIndex / (steps - 1)) * 100 : lastDoneIndex >= 0 ? 100 : 0;
 
-  // connector left position (centering the 4px line under the marker)
-  const connectorLeftPx = LEFT_6_PX + MARKER_SIZE_PX / 2 - 2; // 2 is half of 4px line width
+  // measure positions (centers) and compute overlay top/height in px
+  useEffect(() => {
+    function measure() {
+      const container = timelineRef.current;
+      const nodes = markersRef.current || [];
+      if (!container || !nodes.length) {
+        setOverlayRect(null);
+        return;
+      }
 
-  // top offset: start from the center of the first marker (to match Flipkart visual)
-  const overlayTopPx = MARKER_SIZE_PX / 2;
+      const containerRect = container.getBoundingClientRect();
+      const firstNode = nodes[0];
 
-  // overlay height using percent; subtract the top offset so overlay begins at center of first marker
-  // Use CSS math to ensure minimum visible height. We use `max(4px, calc(<percent>% - <top>px))`.
-  const overlayHeightCss = `max(4px, calc(${percent}% - ${overlayTopPx}px))`;
+      // if no done steps, still keep overlay null
+      if (lastDoneIndex < 0) {
+        setOverlayRect(null);
+        return;
+      }
+      const lastNode = nodes[lastDoneIndex] || firstNode;
+      if (!firstNode || !lastNode) {
+        setOverlayRect(null);
+        return;
+      }
+
+      const firstRect = firstNode.getBoundingClientRect();
+      const lastRect = lastNode.getBoundingClientRect();
+
+      // center positions relative to container top
+      const firstCenter = firstRect.top - containerRect.top + MARKER_SIZE_PX / 2;
+      const lastCenter = lastRect.top - containerRect.top + MARKER_SIZE_PX / 2;
+
+      // align the 4px green line so its center sits at the marker center horizontally/vertically
+      // we move top up by 2px to let the 4px line's center equal the marker center
+      const topPx = Math.round(firstCenter - 2);
+      // extend height by 4px so we reach to the last center inclusively
+      const heightPx = Math.max(4, Math.round(lastCenter - firstCenter) + 4);
+
+      // compute left: center the 4px line where the marker center is horizontally
+      const spineLeftPx = LEFT_6_PX + MARKER_SIZE_PX / 2 - 2; // same math as layout
+
+      // set overlay rect; Framer Motion will handle the grow animation when the motion.div mounts
+      setOverlayRect({ leftPx: Math.round(spineLeftPx), topPx, heightPx });
+    }
+
+    measure();
+
+    // re-measure on resize and when layout changes
+    window.addEventListener("resize", measure);
+    const ro = new ResizeObserver(measure);
+    if (timelineRef.current) ro.observe(timelineRef.current);
+    markersRef.current.forEach((el) => el && ro.observe(el));
+    return () => {
+      window.removeEventListener("resize", measure);
+      try {
+        ro.disconnect();
+      } catch (e) {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.tracking, lastDoneIndex]);
+
+  // left for marker wrapper (so markers center align on the same column)
+  const spineLeftForCSS = LEFT_6_PX + MARKER_SIZE_PX / 2 - 2; // px value where 4px line sits
+  const markerLeftPx = spineLeftForCSS - MARKER_SIZE_PX / 2; // left for marker box (so its center is spineLeftForCSS)
 
   return (
     <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-6">
@@ -511,42 +585,42 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
         <div />
       </div>
 
-<div className="mt-6 relative">
-  {/* Base spine (gray skeleton line) */}
-  <div
-    className="absolute top-0 bottom-0 w-[4px] bg-neutral-100 dark:bg-neutral-800 z-0"
-    style={{
-      left: `calc(${LEFT_6_PX}px + ${MARKER_SIZE_PX / 2}px - 2px)`,
-    }}
-  />
+      <div className="mt-6 relative" ref={timelineRef}>
+        {/* base spine (neutral, behind) */}
+        <div
+          className="absolute top-0 bottom-0 w-[4px] bg-neutral-100 dark:bg-neutral-800 z-0"
+          style={{ left: `${spineLeftForCSS}px` }}
+        />
 
-  {/* Flipkart-style overlay (green filled progress line) */}
-  {lastDoneIndex >= 0 && (
-    <div
-      aria-hidden
-      style={{
-        position: "absolute",
-        // Shift progress line slightly left to overlap skeleton perfectly
-        left: `calc(${LEFT_6_PX}px + ${MARKER_SIZE_PX / 2}px - 3px)`,
-        top: overlayTopPx,
-        width: 4,
-        height: overlayHeightCss,
-        backgroundColor: "rgb(16,185,129)", // emerald green
-        zIndex: 20,
-        borderRadius: 2,
-        transition: "all 0.4s ease",
-      }}
-    />
-  )}
-
-
+        {/* measured green overlay - placed _above_ the neutral spine but intentionally
+            *behind* the marker elements so markers remain visible on top (Flipkart-like).
+            We animate the vertical growth using Framer Motion (scaleY) with transform-origin: top. */}
+        {overlayRect && (
+          <motion.div
+            key={`overlay-${overlayRect.heightPx}-${overlayRect.topPx}`}
+            initial={{ scaleY: 0 }}
+            animate={{ scaleY: 1 }}
+            transition={{ duration: 0.42, ease: [0.2, 0.9, 0.2, 1] }}
+            aria-hidden
+            style={{
+              position: "absolute",
+              left: `${overlayRect.leftPx}px`,
+              top: `${overlayRect.topPx}px`,
+              width: 4,
+              height: `${overlayRect.heightPx}px`,
+              backgroundColor: "rgb(16,185,129)", // emerald
+              zIndex: 5, // behind markers (markers use z-10 and above)
+              borderRadius: 2,
+              transformOrigin: "top center",
+            }}
+          />
+        )}
 
         <div className="space-y-6 relative z-10">
           {order.tracking.map((t, idx) => {
             const done = t.done;
             const nextDone = order.tracking[idx + 1]?.done;
 
-            // outer marker style
             const outerClasses = done
               ? "rounded-full bg-emerald-600"
               : nextDone
@@ -557,15 +631,15 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
 
             return (
               <div key={t.step} className="pl-14 relative">
-                {/* marker wrapper: absolute positioned */}
+                {/* marker wrapper: absolutely positioned at computed left so its center sits on spine */}
                 <div
-                  className="absolute left-6 -translate-x-1/2"
-                  style={{ top: 0, width: MARKER_SIZE_PX, height: MARKER_SIZE_PX }}
+                  ref={(el) => (markersRef.current[idx] = el)}
+                  style={{ position: "absolute", left: `${markerLeftPx}px`, top: 0, width: MARKER_SIZE_PX, height: MARKER_SIZE_PX }}
                 >
-                  {/* outer layer */}
+                  {/* outer circle (lower z than overlay previously) - keep markers on top */}
                   <div style={{ width: "100%", height: "100%" }} className={`z-10 ${outerClasses}`} />
 
-                  {/* inner icon */}
+                  {/* inner icon (on top) */}
                   <div
                     style={{
                       position: "absolute",
@@ -591,7 +665,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
                   </div>
                 </div>
 
-                {/* content */}
+                {/* content for step */}
                 <div>
                   <div className={`font-medium ${done ? "text-neutral-700 dark:text-neutral-200" : "text-neutral-500"}`}>{t.step}</div>
                   <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">{t.date ? formatDateTime(t.date) : done ? "" : "Pending"}</div>
@@ -613,7 +687,6 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
         Delivery Executive details will be available once the order is out for delivery
       </div>
 
-      {/* Cancel and Track Order are on the same row and aligned */}
       <div className="mt-4 flex items-center justify-between gap-4">
         <div className="flex-1 flex gap-3">
           {!isDelivered && order.status.toLowerCase() !== "cancelled" ? (
@@ -626,7 +699,6 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
             </button>
           )}
 
-          {/* Track order button (replaced Need Help) */}
           <button onClick={onTrackAll} className={BTN + " py-3 flex items-center gap-2"}>
             <Truck size={16} /> Track order
           </button>
