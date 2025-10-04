@@ -29,31 +29,7 @@ import {
  */
 
 // -------------------- API base helper --------------------
-const API_BASE = (() => {
-  let base = "";
-  // import.meta may throw in some environments — wrap in try/catch
-  try {
-    // Vite-style: import.meta.env.VITE_API_BASE
-    // Accessing import.meta directly inside try/catch prevents a hard runtime crash where unsupported
-    // environments might throw a ReferenceError.
-    // eslint-disable-next-line no-undef
-    if (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE) {
-      base = String(import.meta.env.VITE_API_BASE);
-    }
-  } catch (e) {
-    // ignore
-  }
-
-  try {
-    if (!base && typeof process !== "undefined" && process.env && process.env.REACT_APP_API_BASE) {
-      base = String(process.env.REACT_APP_API_BASE);
-    }
-  } catch (e) {
-    // ignore
-  }
-
-  return (base || "").replace(/\/$/, "");
-})();
+const API_BASE = process.env.REACT_APP_API_BASE;
 
 // Helper to safely build full API URLs
 const apiUrl = (path = "") => {
