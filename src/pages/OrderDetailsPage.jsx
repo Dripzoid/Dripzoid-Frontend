@@ -13,99 +13,18 @@ import {
 } from "lucide-react";
 
 /**
- * OrderDetailsPage - corrected timeline with pixel-perfect overlay
+ * OrderDetailsPage - wired to backend endpoints
  *
- * Technique:
- * - The gray spine is drawn once.
- * - Marker nodes are measured (via refs).
- * - We compute the exact px position from the center of the first marker
- *   to the center of the last completed marker and draw a single green overlay
- *   using those pixel coordinates. This guarantees pixel-perfect alignment
- *   with both skeleton and markers in all viewport sizes.
+ * Backend endpoints used:
+ *  - GET  /api/user/orders/:id                  -> order details (JSON)
+ *  - POST /api/user/orders/:id/cancel           -> cancel order
+ *  - POST /api/user/orders/:id/return           -> request return
+ *  - PUT  /api/user/orders/:id/address          -> update shipping address
+ *  - POST /api/user/orders/:id/rating           -> submit rating for product
+ *  - POST /api/shipping/track-order             -> { orderId } -> latest tracking info
  *
- * Improvements in this version:
- * - The green progress overlay is placed *behind* marker points so markers
- *   remain visually on top (exact Flipkart-like look).
- * - The progress overlay animates vertically using Framer Motion (scaleY)
- *   with transform-origin at the top so it grows smoothly down the path.
- * - Integrates backend routes:
- *    - GET /api/user/orders/:id  -> order details
- *    - POST /api/user/track-order -> { orderId } returns latest tracking info
+ * Adjust headers (auth) as needed in fetch calls below.
  */
-
-// -------------------- simulated API / helpers (fallback) --------------------
-const delay = (ms) => new Promise((res) => setTimeout(res, ms));
-async function simulateFetchOrder(orderId) {
-  await delay(600);
-  return {
-    id: orderId || "OD335614556805540100",
-    placedAt: "2025-10-01T08:30:00Z",
-    paymentMethod: "Cash On Delivery",
-    status: "Shipped",
-    tracking: [
-      { step: "Order confirmed", date: "2025-10-01T08:30:00Z", done: true, detail: "Payment verified" },
-      { step: "Packed", date: "2025-10-01T09:30:00Z", done: true, detail: "Packed in warehouse A3" },
-      { step: "Shipped", date: "2025-10-01T11:15:00Z", done: true, detail: "Handed to ShipQuick" },
-      { step: "Out for delivery", date: "2025-10-04T05:15:00Z", done: true, detail: "Arriving Today" },
-      { step: "Delivered", date: "2025-10-04T09:30:00Z", done: true, detail: "Delivered Successfully" },
-    ],
-    courier: {
-      name: "ShipQuick",
-      phone: "+91 91234 56789",
-      awb: "SQ123456789IN",
-      exec: { name: "Ramesh Kumar", phone: "+91 91234 00000", photo: null, eta: "Today • 3:30 PM - 6:30 PM" },
-    },
-    items: [
-      {
-        id: "itm_1",
-        title: "CAMPUS MIKE (N) Running Shoes For Men",
-        qty: 1,
-        price: 947,
-        img: "https://via.placeholder.com/120x120.png?text=Shoes",
-        options: "Size: 9, Black",
-        seller: "CAMPUS COMPANY STORE",
-        weightKg: 0.9,
-        hsCode: "6403",
-      },
-    ],
-    shipping: {
-      name: "K Yuvateja Sainadh",
-      phone: "9390942546",
-      address:
-        "Home • Beside Vinayaka Temple, Ramesampeta Centre, Samalkot, Andhra Pradesh, 533450",
-    },
-    pricing: {
-      listingPrice: 1999,
-      sellingPrice: 1665,
-      extraDiscount: 466,
-      specialPrice: 1199,
-      otherDiscount: 264,
-      fees: 12,
-      total: 947,
-    },
-    history: [
-      { id: 1, time: "2025-10-01T08:30:00Z", title: "Order created", detail: "Order placed from web" },
-      { id: 2, time: "2025-10-01T09:30:00Z", title: "Packed", detail: "Warehouse A3" },
-      { id: 3, time: "2025-10-01T11:15:00Z", title: "Shipped", detail: "Assigned to ShipQuick" },
-    ],
-  };
-}
-async function apiCancelOrder(orderId) {
-  await delay(500);
-  return { ok: true, message: "Order cancelled" };
-}
-async function apiRequestReturn(orderId) {
-  await delay(500);
-  return { ok: true, message: "Return requested" };
-}
-async function apiUpdateAddress(orderId, shippingObj) {
-  await delay(400);
-  return { ok: true, message: "Address updated" };
-}
-async function apiSubmitRating(orderId, productId, rating, review) {
-  await delay(400);
-  return { ok: true, message: "Rating received" };
-}
 
 // -------------------- utils --------------------
 function formatDateTime(iso) {
@@ -128,8 +47,7 @@ const BTN =
 const MARKER_SIZE_PX = 28; // outer marker diameter
 const MARKER_INNER_OFFSET_PX = 6; // inner icon inset
 
-// Tailwind left-6 roughly equals 24px (1.5rem) in default root sizing.
-// We'll keep this constant for layout math (matches the left gutter used in markup).
+// Tailwind left-6 roughly equals 24px (1.5rem)
 const LEFT_6_PX = 24;
 
 // -------------------- Main component --------------------
@@ -146,23 +64,32 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
   const [ratings, setRatings] = useState({});
   const [infoModal, setInfo] = useState({ open: false, title: "", message: "" });
 
-  // ------------------ new: fetch order from backend ------------------
+  // ------------------ fetch order from backend ------------------
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/user/orders/${encodeURIComponent(orderId)}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const res = await fetch(`/api/user/orders/${encodeURIComponent(orderId)}`, {
+          method: "GET",
+          headers: {
+            "Accept": "application/json",
+            // Add Authorization header if your backend needs it:
+            // "Authorization": `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) {
+          const txt = await res.text().catch(() => "");
+          throw new Error(`Failed to fetch order: ${res.status} ${txt}`);
+        }
+
         const data = await res.json();
         if (!mounted) return;
         setOrder(data);
       } catch (err) {
-        // fallback to simulated fetch on error (local dev / demo)
-        console.warn("Fetching order failed, falling back to simulateFetchOrder:", err);
-        const data = await simulateFetchOrder(orderId);
-        if (!mounted) return;
-        setOrder(data);
+        console.error("Error loading order:", err);
+        setInfo({ open: true, title: "Error", message: "Could not load order. Check network or try again." });
       } finally {
         if (mounted) setLoading(false);
       }
@@ -172,47 +99,93 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
 
   const pricing = useMemo(() => (order ? { ...order.pricing } : null), [order]);
 
+  // ------------------ backend-integrated actions ------------------
+
   async function handleCancel() {
     if (!order) return;
     setLoading(true);
     try {
-      const res = await apiCancelOrder(order.id); // simulated; replace with backend call if available
-      if (res.ok) {
-        setOrder((o) => ({ ...o, status: "Cancelled", history: [{ id: Date.now(), time: new Date().toISOString(), title: "Cancelled", detail: res.message }, ...o.history] }));
-        setInfo({ open: true, title: "Cancelled", message: res.message });
-      } else {
-        setInfo({ open: true, title: "Error", message: res.message || "Could not cancel" });
-      }
+      const res = await fetch(`/api/user/orders/${encodeURIComponent(order.id)}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // body: JSON.stringify({ reason: "User cancelled" }), // optional
+      });
+
+      const payload = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(payload?.message || `Cancel failed (${res.status})`);
+
+      // update optimistic UI using returned status if available
+      setOrder((o) => ({
+        ...o,
+        status: payload?.status ?? "Cancelled",
+        history: payload?.history ? [...(payload.history || []), ...(o.history || [])] : [{ id: Date.now(), time: new Date().toISOString(), title: "Cancelled", detail: payload?.message || "Order cancelled" }, ...o.history],
+      }));
+
+      setInfo({ open: true, title: "Cancelled", message: payload?.message ?? "Order cancelled" });
     } catch (err) {
-      setInfo({ open: true, title: "Error", message: err.message || "Could not cancel" });
+      console.error("Cancel error:", err);
+      setInfo({ open: true, title: "Error", message: err.message || "Could not cancel order" });
     } finally {
       setLoading(false);
     }
   }
+
   async function handleRequestReturn() {
     if (!order) return;
     setLoading(true);
-    const res = await apiRequestReturn(order.id);
-    if (res.ok) {
-      setOrder((o) => ({ ...o, status: "Return requested", history: [{ id: Date.now(), time: new Date().toISOString(), title: "Return requested", detail: res.message }, ...o.history] }));
-      setInfo({ open: true, title: "Return requested", message: res.message });
-    } else {
-      setInfo({ open: true, title: "Error", message: res.message || "Could not request return" });
+    try {
+      const res = await fetch(`/api/user/orders/${encodeURIComponent(order.id)}/return`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // body: JSON.stringify({ reason: "Product damaged" }), // optional
+      });
+
+      const payload = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(payload?.message || `Return failed (${res.status})`);
+
+      setOrder((o) => ({
+        ...o,
+        status: payload?.status ?? "Return requested",
+        history: payload?.history ? [...(payload.history || []), ...(o.history || [])] : [{ id: Date.now(), time: new Date().toISOString(), title: "Return requested", detail: payload?.message || "Return requested" }, ...o.history],
+      }));
+
+      setInfo({ open: true, title: "Return requested", message: payload?.message ?? "Return requested" });
+    } catch (err) {
+      console.error("Return error:", err);
+      setInfo({ open: true, title: "Error", message: err.message || "Could not request return" });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
+
   async function handleSaveAddress(shippingObj) {
     if (!order) return;
     setLoading(true);
-    const res = await apiUpdateAddress(order.id, shippingObj);
-    if (res.ok) {
-      setOrder((o) => ({ ...o, shipping: { ...o.shipping, ...shippingObj }, history: [{ id: Date.now(), time: new Date().toISOString(), title: "Address updated", detail: shippingObj.address }, ...o.history] }));
-      setInfo({ open: true, title: "Address updated", message: res.message });
-    } else {
-      setInfo({ open: true, title: "Error", message: res.message || "Could not update address" });
+    try {
+      const res = await fetch(`/api/user/orders/${encodeURIComponent(order.id)}/address`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(shippingObj),
+      });
+
+      const payload = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(payload?.message || `Address update failed (${res.status})`);
+
+      setOrder((o) => ({
+        ...o,
+        shipping: { ...o.shipping, ...shippingObj },
+        history: payload?.history ? [...payload.history, ...(o.history || [])] : [{ id: Date.now(), time: new Date().toISOString(), title: "Address updated", detail: shippingObj.address }, ...o.history],
+      }));
+
+      setInfo({ open: true, title: "Address updated", message: payload?.message ?? "Address updated" });
+    } catch (err) {
+      console.error("Update address error:", err);
+      setInfo({ open: true, title: "Error", message: err.message || "Could not update address" });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
+
   async function handleSubmitRating(productId) {
     if (!order) return;
     const r = ratings[productId];
@@ -221,16 +194,84 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
       return;
     }
     setLoading(true);
-    const res = await apiSubmitRating(order.id, productId, r.rating, r.review);
-    if (res.ok) {
-      setOrder((o) => ({ ...o, history: [{ id: Date.now(), time: new Date().toISOString(), title: "Rating submitted", detail: `Product ${productId} rated ${r.rating}` }, ...o.history] }));
-      setInfo({ open: true, title: "Thanks", message: res.message });
+    try {
+      const body = {
+        productId,
+        rating: r.rating,
+        review: r.review || "",
+      };
+      const res = await fetch(`/api/user/orders/${encodeURIComponent(order.id)}/rating`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const payload = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(payload?.message || `Rating failed (${res.status})`);
+
+      setOrder((o) => ({
+        ...o,
+        history: payload?.history ? [...payload.history, ...(o.history || [])] : [{ id: Date.now(), time: new Date().toISOString(), title: "Rating submitted", detail: `Product ${productId} rated ${r.rating}` }, ...o.history],
+      }));
+
+      setInfo({ open: true, title: "Thanks", message: payload?.message ?? "Rating submitted" });
       setRatings((s) => ({ ...s, [productId]: {} }));
-    } else {
-      setInfo({ open: true, title: "Error", message: res.message || "Could not submit rating" });
+    } catch (err) {
+      console.error("Submit rating error:", err);
+      setInfo({ open: true, title: "Error", message: err.message || "Could not submit rating" });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
+
+  // ------------------ track-order ------------------
+  async function handleTrackOrder() {
+    if (!order) {
+      setInfo({ open: true, title: "Track order", message: "No order to track" });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/shipping/track-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: order.id }),
+      });
+
+      const payload = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(payload?.message || `Track API error (${res.status})`);
+
+      // payload expected to include: tracking (array), status, courier, history
+      setOrder((o) => ({
+        ...o,
+        tracking: payload.tracking ?? o.tracking,
+        status: payload.status ?? o.status,
+        courier: payload.courier ?? o.courier,
+        history: payload.history ? [...payload.history, ...(o.history || [])] : o.history,
+      }));
+      setInfo({ open: true, title: "Tracking updated", message: payload?.message ?? "Latest tracking information received." });
+    } catch (err) {
+      console.error("Track order failed:", err);
+      setInfo({ open: true, title: "Tracking error", message: err.message || "Could not fetch live tracking." });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ------------------ misc ------------------
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === "Escape") {
+        setInfo({ open: false, title: "", message: "" });
+        setShowCancel(false);
+        setShowReturn(false);
+        setShowEditAddress(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   function handleShare() {
     if (!order) return;
@@ -250,59 +291,6 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     setInfo({ open: true, title: "Contact courier", message: `Call ${order.courier.phone}` });
   }
 
-  // ------------------ new: call track-order backend route ------------------
-  async function handleTrackOrder() {
-    if (!order) {
-      setInfo({ open: true, title: "Track order", message: "No order to track" });
-      return;
-    }
-
-    setLoading(true);
-    try {
-      // POST to /api/user/track-order with { orderId }
-      const res = await fetch("/api/user/track-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId: order.id }),
-      });
-
-      if (!res.ok) {
-        // non-2xx, show message but don't break the UI
-        const txt = await res.text();
-        throw new Error(`Track API error: ${res.status} ${txt}`);
-      }
-
-      const data = await res.json();
-      // Expecting data.tracking (array), optionally status, courier, history
-      setOrder((o) => ({
-        ...o,
-        tracking: data.tracking ?? o.tracking,
-        status: data.status ?? o.status,
-        courier: data.courier ?? o.courier,
-        history: data.history ? [...data.history, ...(o.history || [])] : o.history,
-      }));
-      setInfo({ open: true, title: "Tracking updated", message: "Latest tracking information received." });
-    } catch (err) {
-      console.warn("Track order failed:", err);
-      setInfo({ open: true, title: "Tracking error", message: "Could not fetch live tracking. Showing cached data." });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    function onKey(e) {
-      if (e.key === "Escape") {
-        setInfo({ open: false, title: "", message: "" });
-        setShowCancel(false);
-        setShowReturn(false);
-        setShowEditAddress(false);
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
   if (loading || !order) {
     return (
       <div className="min-h-screen bg-white dark:bg-black text-neutral-900 dark:text-neutral-100 transition-colors duration-200">
@@ -313,8 +301,8 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     );
   }
 
-  const isDelivered = order.status.toLowerCase() === "delivered" || order.tracking.some((t) => t.step.toLowerCase() === "delivered" && t.done);
-  const isPacked = order.status.toLowerCase() === "packed";
+  const isDelivered = order.status?.toLowerCase() === "delivered" || order.tracking?.some((t) => t.step?.toLowerCase() === "delivered" && t.done);
+  const isPacked = order.status?.toLowerCase() === "packed";
 
   // -------------------- Render --------------------
   return (
@@ -395,15 +383,15 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-4">
             <div className="flex items-center justify-between">
               <div className="font-medium">Delivery details</div>
-              <div className="text-sm text-neutral-400">AWB: {order.courier.awb}</div>
+              <div className="text-sm text-neutral-400">AWB: {order.courier?.awb}</div>
             </div>
 
             <div className="mt-3 space-y-3">
               <div className="bg-neutral-50 dark:bg-neutral-800 rounded p-3">
                 <div className="text-sm text-neutral-500">Home</div>
-                <div className="text-sm text-neutral-700 dark:text-neutral-200">{order.shipping.address}</div>
+                <div className="text-sm text-neutral-700 dark:text-neutral-200">{order.shipping?.address}</div>
                 <div className="mt-2 flex items-center justify-between">
-                  <div className="text-sm text-neutral-500">{order.shipping.name} • {order.shipping.phone}</div>
+                  <div className="text-sm text-neutral-500">{order.shipping?.name} • {order.shipping?.phone}</div>
                   <div>
                     {!isPacked && (
                       <button onClick={() => setShowEditAddress(true)} className={BTN + " text-sm px-3 py-1"}>Edit</button>
@@ -415,11 +403,11 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
               <div className="bg-neutral-50 dark:bg-neutral-800 rounded p-3 flex items-center justify-between">
                 <div>
                   <div className="text-sm text-neutral-500">Courier</div>
-                  <div className="text-sm font-medium">{order.courier.name}</div>
-                  <div className="text-sm text-neutral-500">{order.courier.exec?.name} • {order.courier.exec?.phone}</div>
+                  <div className="text-sm font-medium">{order.courier?.name}</div>
+                  <div className="text-sm text-neutral-500">{order.courier?.exec?.name} • {order.courier?.exec?.phone}</div>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm">{order.courier.exec?.eta}</div>
+                  <div className="text-sm">{order.courier?.exec?.eta}</div>
                   <div className="mt-2 flex flex-col gap-2">
                     <button onClick={contactCourier} className={BTN + " text-sm px-3 py-1"}>Call</button>
                   </div>
@@ -438,32 +426,32 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
             <div className="mt-3 text-sm space-y-2">
               <div className="flex justify-between text-neutral-500">
                 <div>Listing price</div>
-                <div className="line-through">{currency(order.pricing.listingPrice)}</div>
+                <div className="line-through">{currency(order.pricing?.listingPrice)}</div>
               </div>
               <div className="flex justify-between">
                 <div>Selling price</div>
-                <div>{currency(order.pricing.sellingPrice)}</div>
+                <div>{currency(order.pricing?.sellingPrice)}</div>
               </div>
               <div className="flex justify-between text-emerald-600">
                 <div>Extra discount</div>
-                <div>-{currency(order.pricing.extraDiscount)}</div>
+                <div>-{currency(order.pricing?.extraDiscount)}</div>
               </div>
               <div className="flex justify-between">
                 <div>Special price</div>
-                <div>{currency(order.pricing.specialPrice)}</div>
+                <div>{currency(order.pricing?.specialPrice)}</div>
               </div>
               <div className="flex justify-between text-emerald-600">
                 <div>Other discount</div>
-                <div>-{currency(order.pricing.otherDiscount)}</div>
+                <div>-{currency(order.pricing?.otherDiscount)}</div>
               </div>
               <div className="flex justify-between text-neutral-500">
                 <div>Total fees</div>
-                <div>{currency(order.pricing.fees)}</div>
+                <div>{currency(order.pricing?.fees)}</div>
               </div>
 
               <div className="mt-3 border-t border-neutral-100 dark:border-neutral-800 pt-3 flex items-center justify-between">
                 <div className="font-semibold">Total amount</div>
-                <div className="font-semibold">{currency(pricing?.total ?? order.pricing.total)}</div>
+                <div className="font-semibold">{currency(pricing?.total ?? order.pricing?.total)}</div>
               </div>
 
               <div className="mt-3 text-sm text-neutral-500">Paid by <strong className="ml-1">{order.paymentMethod}</strong></div>
@@ -474,7 +462,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
                 <button onClick={handleShare} className={BTN + " flex-1 py-2 flex items-center justify-center gap-2"}>
                   <Share2 size={16} /> Share
                 </button>
-                <button onClick={() => setInfo({ open: true, title: "Download invoice", message: "Downloading invoice (demo)..." })} className={BTN + " py-2 px-3 flex items-center gap-2"}>
+                <button onClick={() => setInfo({ open: true, title: "Download invoice", message: "Downloading invoice..." })} className={BTN + " py-2 px-3 flex items-center gap-2"}>
                   <Download size={16} /> Download
                 </button>
               </div>
@@ -531,7 +519,7 @@ function SkeletonPage() {
 }
 
 function ProductHeader({ order }) {
-  const item = order.items[0];
+  const item = order.items?.[0] || { title: "", options: "", seller: "", price: 0, img: "" };
   return (
     <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-6">
       <div className="flex items-start gap-4">
@@ -564,17 +552,16 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
 
   const innerSize = MARKER_SIZE_PX - MARKER_INNER_OFFSET_PX;
 
-  // If order is cancelled, we render a custom two-step timeline
+  // If order is cancelled, render simple two-step timeline
   const isCancelled = order.status && order.status.toLowerCase() === "cancelled";
   const cancelledTracking = isCancelled
     ? [
-        { step: "Order confirmed", date: order.history?.find((h) => h.title.toLowerCase().includes("order"))?.time || null, done: true, detail: "Payment verified" },
-        { step: "Cancelled", date: order.history?.find((h) => h.title.toLowerCase().includes("cancel"))?.time || new Date().toISOString(), done: true, detail: "Order cancelled" },
+        { step: "Order confirmed", date: order.history?.find((h) => h.title?.toLowerCase().includes("order"))?.time || null, done: true, detail: "Payment verified" },
+        { step: "Cancelled", date: order.history?.find((h) => h.title?.toLowerCase().includes("cancel"))?.time || new Date().toISOString(), done: true, detail: "Order cancelled" },
       ]
     : null;
 
-  // Which tracking array we render and measure
-  const trackingToUse = cancelledTracking ?? order.tracking ?? [];
+  const trackingToUse = cancelledTracking ?? (order.tracking ?? []);
 
   // compute last done index
   const lastDoneIndex = trackingToUse.map((t) => t.done).lastIndexOf(true);
@@ -592,7 +579,6 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
       const containerRect = container.getBoundingClientRect();
       const firstNode = nodes[0];
 
-      // if no done steps, still keep overlay null
       if (lastDoneIndex < 0) {
         setOverlayRect(null);
         return;
@@ -606,26 +592,19 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
       const firstRect = firstNode.getBoundingClientRect();
       const lastRect = lastNode.getBoundingClientRect();
 
-      // center positions relative to container top
       const firstCenter = firstRect.top - containerRect.top + MARKER_SIZE_PX / 2;
       const lastCenter = lastRect.top - containerRect.top + MARKER_SIZE_PX / 2;
 
-      // align the 4px green line so its center sits at the marker center horizontally/vertically
-      // we move top up by 2px to let the 4px line's center equal the marker center
       const topPx = Math.round(firstCenter - 2);
-      // extend height by 4px so we reach to the last center inclusively
       const heightPx = Math.max(4, Math.round(lastCenter - firstCenter) + 4);
 
-      // compute left: center the 4px line where the marker center is horizontally
-      const spineLeftPx = LEFT_6_PX + MARKER_SIZE_PX / 2 - 2; // same math as layout
+      const spineLeftPx = LEFT_6_PX + MARKER_SIZE_PX / 2 - 2;
 
-      // set overlay rect; Framer Motion will handle the grow animation when the motion.div mounts
       setOverlayRect({ leftPx: Math.round(spineLeftPx), topPx, heightPx });
     }
 
     measure();
 
-    // re-measure on resize and when layout changes
     window.addEventListener("resize", measure);
     const ro = new ResizeObserver(measure);
     if (timelineRef.current) ro.observe(timelineRef.current);
@@ -636,12 +615,10 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
         ro.disconnect();
       } catch (e) {}
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackingToUse, lastDoneIndex, order.status]);
 
-  // left for marker wrapper (so markers center align on the same column)
-  const spineLeftForCSS = LEFT_6_PX + MARKER_SIZE_PX / 2 - 2; // px value where 4px line sits
-  const markerLeftPx = spineLeftForCSS - MARKER_SIZE_PX / 2; // left for marker box (so its center is spineLeftForCSS)
+  const spineLeftForCSS = LEFT_6_PX + MARKER_SIZE_PX / 2 - 2;
+  const markerLeftPx = spineLeftForCSS - MARKER_SIZE_PX / 2;
 
   return (
     <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-6">
@@ -663,9 +640,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
           style={{ left: `${spineLeftForCSS}px` }}
         />
 
-        {/* measured green overlay - placed _above_ the neutral spine but intentionally
-            *behind* the marker elements so markers remain visible on top (Flipkart-like).
-            We animate the vertical growth using Framer Motion (scaleY) with transform-origin: top. */}
+        {/* progress overlay (animated via Framer Motion) */}
         {overlayRect && (
           <motion.div
             key={`overlay-${overlayRect.heightPx}-${overlayRect.topPx}-${isCancelled ? "cancel" : "ok"}`}
@@ -679,8 +654,8 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
               top: `${overlayRect.topPx}px`,
               width: 4,
               height: `${overlayRect.heightPx}px`,
-              backgroundColor: "rgb(16,185,129)", // emerald
-              zIndex: 5, // behind markers (markers use z-10 and above)
+              backgroundColor: "rgb(16,185,129)",
+              zIndex: 5,
               borderRadius: 2,
               transformOrigin: "top center",
             }}
@@ -691,8 +666,6 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
           {trackingToUse.map((t, idx) => {
             const done = t.done;
             const nextDone = trackingToUse[idx + 1]?.done;
-
-            // if cancelled timeline, render cancelled step with red color
             const isCancelStep = t.step.toLowerCase().includes("cancel");
 
             const outerClasses = isCancelStep
@@ -707,15 +680,12 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
 
             return (
               <div key={t.step + "-" + idx} className="pl-14 relative">
-                {/* marker wrapper: absolutely positioned at computed left so its center sits on spine */}
                 <div
                   ref={(el) => (markersRef.current[idx] = el)}
                   style={{ position: "absolute", left: `${markerLeftPx}px`, top: 0, width: MARKER_SIZE_PX, height: MARKER_SIZE_PX }}
                 >
-                  {/* outer circle (lower z than overlay previously) - keep markers on top */}
                   <div style={{ width: "100%", height: "100%" }} className={`z-10 ${outerClasses}`} />
 
-                  {/* inner icon (on top) */}
                   <div
                     style={{
                       position: "absolute",
@@ -743,7 +713,6 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
                   </div>
                 </div>
 
-                {/* content for step */}
                 <div>
                   <div className={`font-medium ${done ? "text-neutral-700 dark:text-neutral-200" : "text-neutral-500"}`}>{t.step}</div>
                   <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">{t.date ? formatDateTime(t.date) : done ? "" : "Pending"}</div>
@@ -800,8 +769,8 @@ function InvoiceTemplate({ order, pricing }) {
         </div>
         <div>
           <div><strong>Ship to:</strong></div>
-          <div>{order.shipping.name}</div>
-          <div style={{ maxWidth: 300 }}>{order.shipping.address}</div>
+          <div>{order.shipping?.name}</div>
+          <div style={{ maxWidth: 300 }}>{order.shipping?.address}</div>
         </div>
       </div>
 
@@ -814,7 +783,7 @@ function InvoiceTemplate({ order, pricing }) {
           </tr>
         </thead>
         <tbody>
-          {order.items.map((it) => (
+          {order.items?.map((it) => (
             <tr key={it.id}>
               <td style={{ padding: 8, borderBottom: "1px solid #eee" }}>{it.title}</td>
               <td style={{ padding: 8, borderBottom: "1px solid #eee", textAlign: "right" }}>{it.qty}</td>
@@ -826,9 +795,9 @@ function InvoiceTemplate({ order, pricing }) {
 
       <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end" }}>
         <div style={{ width: 250 }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}><div>Subtotal</div><div>{currency(order.pricing.sellingPrice)}</div></div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}><div>Fees</div><div>{currency(order.pricing.fees)}</div></div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginTop: 8 }}><div>Total</div><div>{currency(pricing?.total ?? order.pricing.total)}</div></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><div>Subtotal</div><div>{currency(order.pricing?.sellingPrice)}</div></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><div>Fees</div><div>{currency(order.pricing?.fees)}</div></div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginTop: 8 }}><div>Total</div><div>{currency(pricing?.total ?? order.pricing?.total)}</div></div>
         </div>
       </div>
     </div>
@@ -876,7 +845,7 @@ function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose 
   );
 }
 
-// Input modal (improved edit address form)
+// Input modal (edit address form)
 function InputModal({ open, title, initialShipping = { name: "", phone: "", address: "" }, onClose = () => {}, onConfirm = (val) => {} }) {
   const [name, setName] = useState(initialShipping?.name || "");
   const [phone, setPhone] = useState(initialShipping?.phone || "");
@@ -939,4 +908,14 @@ function InfoModal({ open, title = "", message = "", onClose = () => {} }) {
       </motion.div>
     </div>
   );
+}
+
+// -------------------- small helpers --------------------
+async function parseJsonSafe(res) {
+  try {
+    return await res.json();
+  } catch (e) {
+    const txt = await res.text().catch(() => "");
+    return { message: txt || `HTTP ${res.status}` };
+  }
 }
