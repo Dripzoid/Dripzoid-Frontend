@@ -82,7 +82,7 @@ const MARKER_INNER_OFFSET_PX = 6;
 const LEFT_6_PX = 24;
 
 // -------------------- Main component --------------------
-export default function OrderDetailsPage({ orderId = "40" }) {
+export default function OrderDetailsPage({ orderId = "38" }) {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
 
