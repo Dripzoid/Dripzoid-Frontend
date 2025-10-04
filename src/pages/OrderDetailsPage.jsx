@@ -1,3 +1,4 @@
+// src/pages/OrderDetailsPage.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -12,85 +13,50 @@ import {
 } from "lucide-react";
 
 /**
- * OrderDetailsPage - wired to backend endpoints via API_BASE env var
+ * OrderDetailsPage - reads API that returns shape like:
+ * {
+ *   id, status, total_amount, created_at, user_name, payment_method,
+ *   shipping_address: {...},
+ *   items: [{ id, name, image, quantity, price, options: {color,size} }, ...]
+ * }
  *
- * Backend endpoints used:
- *  - GET  ${API_BASE}/api/user/orders/:id
- *  - PUT  ${API_BASE}/api/user/orders/:id/cancel
- *  - POST ${API_BASE}/api/user/orders/:id/return
- *  - PUT  ${API_BASE}/api/user/orders/:id/address
- *  - POST ${API_BASE}/api/shipping/track-order
- *
- * Provide API base in env:
- *  - Vite: VITE_API_BASE
- *  - CRA:   REACT_APP_API_BASE
- *
- * If API_BASE is empty string, fetches will be relative to current origin.
+ * This component normalizes that to the UI model used in JSX and
+ * includes Authorization header (Bearer token) if a token is available.
  */
 
 // -------------------- API base helper --------------------
-const API_BASE =  process.env.REACT_APP_API_BASE;
+const API_BASE = process.env.REACT_APP_API_BASE || ""; // CRA default. For Vite use import.meta.env.VITE_API_BASE
 
-// Helper to safely build full API URLs
 const apiUrl = (path = "") => {
   if (!path.startsWith("/")) path = `/${path}`;
   const combined = API_BASE ? `${API_BASE}${path}` : path;
   return combined.replace(/([^:]\/)\/+/g, "$1");
 };
 
-// -------------------- auth helpers --------------------
-function getCookie(name) {
-  if (typeof document === "undefined") return null;
-  const v = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
-  return v ? v.pop() : null;
-}
-
+// -------------------- Auth helpers --------------------
 function getAuthToken() {
-  // Try localStorage, then sessionStorage, then cookie "token"
-  try {
-    if (typeof window !== "undefined") {
-      const t1 = window.localStorage?.getItem?.("token");
-      if (t1) return t1;
-      const t2 = window.sessionStorage?.getItem?.("token");
-      if (t2) return t2;
-    }
-  } catch (e) {}
-  return getCookie("token");
+  // check localStorage common keys
+  const ls = typeof window !== "undefined" ? (localStorage.getItem("token") || localStorage.getItem("authToken")) : null;
+  if (ls) return ls;
+  // fallback: cookie named token
+  if (typeof document !== "undefined") {
+    const m = document.cookie.match(/(?:^|;\s*)token=([^;]+)/);
+    if (m) return decodeURIComponent(m[1]);
+  }
+  return null;
 }
 
-// -------------------- small request wrappers --------------------
-async function apiRequest(path, options = {}) {
+function authHeaders(hasJson = true) {
+  const headers = {};
+  if (hasJson) {
+    headers["Content-Type"] = "application/json";
+    headers["Accept"] = "application/json";
+  } else {
+    headers["Accept"] = "application/json";
+  }
   const token = getAuthToken();
-  const headers = {
-    Accept: "application/json",
-    ...(options.headers || {}),
-  };
-
-  // If body is a plain object (and not a FormData), stringify it unless caller already stringified.
-  if (options.body && typeof options.body === "object" && !(options.body instanceof FormData) && !(options.body instanceof Blob)) {
-    // If caller passed a string already, don't stringify (they shouldn't be passing objects here usually)
-    if (typeof options.body !== "string") {
-      options.body = JSON.stringify(options.body);
-      headers["Content-Type"] = headers["Content-Type"] || "application/json";
-    }
-  }
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  const res = await fetch(apiUrl(path), { ...options, headers });
-  return res;
-}
-
-async function apiJson(path, options = {}) {
-  const res = await apiRequest(path, options);
-  const payload = await parseJsonSafe(res);
-  if (!res.ok) {
-    // payload may contain { message } or text
-    throw new Error(payload?.message || `HTTP ${res.status}`);
-  }
-  return payload;
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return headers;
 }
 
 // -------------------- utils --------------------
@@ -110,11 +76,9 @@ const BTN =
   "hover:bg-white hover:text-black dark:hover:bg-black dark:hover:text-white " +
   "hover:ring-2 hover:ring-black dark:hover:ring-white hover:shadow-[0_8px_20px_rgba(0,0,0,0.12)] focus:outline-none";
 
-// marker size in pixels (outer marker diameter)
-const MARKER_SIZE_PX = 28; // outer marker diameter
-const MARKER_INNER_OFFSET_PX = 6; // inner icon inset
-
-// Tailwind left-6 roughly equals 24px (1.5rem)
+// marker constants
+const MARKER_SIZE_PX = 28;
+const MARKER_INNER_OFFSET_PX = 6;
 const LEFT_6_PX = 24;
 
 // -------------------- Main component --------------------
@@ -130,15 +94,110 @@ export default function OrderDetailsPage({ orderId = "40" }) {
 
   const [infoModal, setInfo] = useState({ open: false, title: "", message: "" });
 
+  // normalize backend response into UI shape
+  function normalizeApiOrder(payload) {
+    if (!payload) return null;
+
+    // map pricing (backend has total_amount)
+    const pricing = {
+      total: payload.total_amount ?? (payload.pricing && payload.pricing.total) ?? 0,
+      sellingPrice: (payload.total_amount ?? payload.pricing?.sellingPrice) ?? 0,
+      listingPrice: payload.pricing?.listingPrice ?? payload.total_amount ?? 0,
+      fees: payload.pricing?.fees ?? 0,
+      extraDiscount: payload.pricing?.extraDiscount ?? 0,
+      specialPrice: payload.pricing?.specialPrice ?? 0,
+      otherDiscount: payload.pricing?.otherDiscount ?? 0,
+    };
+
+    // shipping_address -> shipping
+    const sa = payload.shipping_address || payload.shipping || null;
+    const shipping = sa
+      ? {
+          id: sa.id ?? null,
+          label: sa.label ?? null,
+          name: sa.name ?? sa.label ?? payload.user_name ?? null,
+          phone: sa.phone ?? null,
+          // join lines into single address string for display
+          address: [
+            sa.line1 ?? sa.address_line1 ?? sa.address1 ?? null,
+            sa.line2 ?? sa.address_line2 ?? sa.address2 ?? null,
+            sa.city ?? sa.town ?? null,
+            sa.state ?? null,
+            sa.pincode ?? sa.postcode ?? sa.zip ?? null,
+            sa.country ?? null,
+          ]
+            .filter(Boolean)
+            .join(", "),
+          raw: sa,
+        }
+      : { address: "", name: "", phone: "" };
+
+    // map items to UI-friendly shape
+    const items = Array.isArray(payload.items)
+      ? payload.items.map((it) => {
+          const firstImg = (it.image || it.images || "")
+            .toString()
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)[0] || "";
+
+          const opts = it.options || {};
+          const optionsText = typeof opts === "string" ? opts : [
+            opts.color ? `${opts.color}` : null,
+            opts.size ? `${opts.size}` : null,
+            opts.variant ? `${opts.variant}` : null,
+          ].filter(Boolean).join(" • ");
+
+          return {
+            id: it.id,
+            title: it.name ?? it.title ?? "",
+            img: firstImg,
+            qty: it.quantity ?? it.qty ?? 1,
+            price: it.price ?? it.amount ?? 0,
+            options: optionsText,
+            seller: it.seller ?? "",
+            raw: it,
+          };
+        })
+      : [];
+
+    // return normalized
+    return {
+      id: payload.id,
+      status: payload.status,
+      created_at: payload.created_at ?? payload.placedAt ?? payload.createdAt,
+      user_name: payload.user_name ?? payload.userName ?? null,
+      paymentMethod: payload.payment_method ?? payload.paymentMethod ?? null,
+      shipping,
+      pricing,
+      items,
+      // pass through other common fields
+      tracking: payload.tracking ?? payload.tracking_info ?? [],
+      courier: payload.courier ?? null,
+      history: payload.history ?? [],
+      raw: payload,
+    };
+  }
+
   // ------------------ fetch order from backend ------------------
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true);
       try {
-        const payload = await apiJson(`/api/user/orders/${encodeURIComponent(orderId)}`);
+        const url = apiUrl(`/api/user/orders/${encodeURIComponent(orderId)}`);
+        const res = await fetch(url, {
+          method: "GET",
+          headers: authHeaders(false),
+          credentials: "same-origin", // include cookies if backend auth uses them; adjust if needed
+        });
+
+        const payload = await parseJsonSafe(res);
+        if (!res.ok) throw new Error(payload?.message || `Failed to fetch order: ${res.status}`);
+
+        const normalized = normalizeApiOrder(payload);
         if (!mounted) return;
-        setOrder(payload);
+        setOrder(normalized);
       } catch (err) {
         console.error("Error loading order:", err);
         setInfo({ open: true, title: "Error", message: err.message || "Could not load order. Check network or try again." });
@@ -152,19 +211,27 @@ export default function OrderDetailsPage({ orderId = "40" }) {
   const pricing = useMemo(() => (order ? { ...order.pricing } : null), [order]);
 
   // ------------------ backend-integrated actions ------------------
-
   async function handleCancel() {
     if (!order) return;
     setLoading(true);
     try {
-      const payload = await apiJson(`/api/user/orders/${encodeURIComponent(order.id)}/cancel`, { method: "PUT" });
+      const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/cancel`);
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: authHeaders(true),
+        credentials: "same-origin",
+      });
 
-      setOrder((o) => ({
-        ...o,
+      const payload = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(payload?.message || `Cancel failed (${res.status})`);
+
+      // normalize in case server returns full order or small object
+      const normalized = normalizeApiOrder(payload?.order ?? payload) ?? {
+        ...order,
         status: payload?.status ?? "cancelled",
-        history: payload?.history ? [...(payload.history || []), ...(o.history || [])] : [{ id: Date.now(), time: new Date().toISOString(), title: "Cancelled", detail: payload?.message || "Order cancelled" }, ...(o.history || [])],
-      }));
+      };
 
+      setOrder((o) => ({ ...o, ...normalized }));
       setInfo({ open: true, title: "Cancelled", message: payload?.message ?? "Order cancelled" });
     } catch (err) {
       console.error("Cancel error:", err);
@@ -178,14 +245,18 @@ export default function OrderDetailsPage({ orderId = "40" }) {
     if (!order) return;
     setLoading(true);
     try {
-      const payload = await apiJson(`/api/user/orders/${encodeURIComponent(order.id)}/return`, { method: "POST" });
+      const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/return`);
+      const res = await fetch(url, {
+        method: "POST",
+        headers: authHeaders(true),
+        credentials: "same-origin",
+      });
 
-      setOrder((o) => ({
-        ...o,
-        status: payload?.status ?? "Return requested",
-        history: payload?.history ? [...(payload.history || []), ...(o.history || [])] : [{ id: Date.now(), time: new Date().toISOString(), title: "Return requested", detail: payload?.message || "Return requested" }, ...(o.history || [])],
-      }));
+      const payload = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(payload?.message || `Return failed (${res.status})`);
 
+      const normalized = normalizeApiOrder(payload?.order ?? payload) ?? order;
+      setOrder((o) => ({ ...o, ...normalized }));
       setInfo({ open: true, title: "Return requested", message: payload?.message ?? "Return requested" });
     } catch (err) {
       console.error("Return error:", err);
@@ -199,15 +270,27 @@ export default function OrderDetailsPage({ orderId = "40" }) {
     if (!order) return;
     setLoading(true);
     try {
-      const payload = await apiJson(`/api/user/orders/${encodeURIComponent(order.id)}/address`, {
+      const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/address`);
+      const res = await fetch(url, {
         method: "PUT",
-        body: shippingObj, // apiRequest will JSON.stringify if needed
+        headers: authHeaders(true),
+        credentials: "same-origin",
+        body: JSON.stringify(shippingObj),
       });
 
+      const payload = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(payload?.message || `Address update failed (${res.status})`);
+
+      // Update local order.shipping
       setOrder((o) => ({
         ...o,
-        shipping: { ...o.shipping, ...shippingObj },
-        history: payload?.history ? [...payload.history, ...(o.history || [])] : [{ id: Date.now(), time: new Date().toISOString(), title: "Address updated", detail: shippingObj.address }, ...(o.history || [])],
+        shipping: {
+          ...o.shipping,
+          name: shippingObj.name ?? o.shipping.name,
+          phone: shippingObj.phone ?? o.shipping.phone,
+          address: shippingObj.address ?? o.shipping.address,
+        },
+        history: payload?.history ? [...(payload.history || []), ...(o.history || [])] : o.history,
       }));
 
       setInfo({ open: true, title: "Address updated", message: payload?.message ?? "Address updated" });
@@ -228,14 +311,20 @@ export default function OrderDetailsPage({ orderId = "40" }) {
 
     setLoading(true);
     try {
-      const payload = await apiJson(`/api/shipping/track-order`, {
+      const url = apiUrl(`/api/shipping/track-order`);
+      const res = await fetch(url, {
         method: "POST",
-        body: { orderId: order.id },
+        headers: authHeaders(true),
+        credentials: "same-origin",
+        body: JSON.stringify({ orderId: order.id }),
       });
+
+      const payload = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(payload?.message || `Track API error (${res.status})`);
 
       setOrder((o) => ({
         ...o,
-        tracking: payload.tracking ?? o.tracking,
+        tracking: payload.tracking ?? payload.tracking_info ?? o.tracking,
         status: payload.status ?? o.status,
         courier: payload.courier ?? o.courier,
         history: payload.history ? [...payload.history, ...(o.history || [])] : o.history,
@@ -283,25 +372,12 @@ export default function OrderDetailsPage({ orderId = "40" }) {
 
   async function handleDownloadInvoice() {
     try {
-      // Use apiRequest so Authorization header is sent
-      const res = await apiRequest(`/api/user/orders/${encodeURIComponent(order.id)}/invoice`, { method: "GET" });
-      if (!res.ok) {
-        const payload = await parseJsonSafe(res);
-        throw new Error(payload?.message || `Download failed (${res.status})`);
-      }
-      const blob = await res.blob();
-      const filename = (res.headers.get("content-disposition") || "").split("filename=")[1]?.replace(/[";]/g, "") || `invoice-${order.id}.pdf`;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/invoice`);
+      // open in new tab so browser handles download
+      window.open(url, "_blank");
     } catch (err) {
       console.error("Download invoice failed:", err);
-      setInfo({ open: true, title: "Error", message: err.message || "Could not download invoice." });
+      setInfo({ open: true, title: "Error", message: "Could not download invoice." });
     }
   }
 
@@ -355,7 +431,7 @@ export default function OrderDetailsPage({ orderId = "40" }) {
                     <div className="flex-1">
                       <div className="font-medium">{it.title}</div>
                       <div className="text-sm text-neutral-500">{it.options}</div>
-                      <div className="text-sm text-neutral-500 mt-1">Seller: {it.seller}</div>
+                      <div className="text-sm text-neutral-500 mt-1">Seller: {it.seller || "—"}</div>
                     </div>
                     <div className="text-right">
                       <div className="font-semibold">{currency(it.price)}</div>
@@ -375,7 +451,7 @@ export default function OrderDetailsPage({ orderId = "40" }) {
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-4">
             <div className="flex items-center justify-between">
               <div className="font-medium">Delivery details</div>
-              <div className="text-sm text-neutral-400">AWB: {order.courier?.awb}</div>
+              <div className="text-sm text-neutral-400">AWB: {order.courier?.awb ?? "—"}</div>
             </div>
 
             <div className="mt-3 space-y-3">
@@ -395,11 +471,11 @@ export default function OrderDetailsPage({ orderId = "40" }) {
               <div className="bg-neutral-50 dark:bg-neutral-800 rounded p-3 flex items-center justify-between">
                 <div>
                   <div className="text-sm text-neutral-500">Courier</div>
-                  <div className="text-sm font-medium">{order.courier?.name}</div>
-                  <div className="text-sm text-neutral-500">{order.courier?.exec?.name} • {order.courier?.exec?.phone}</div>
+                  <div className="text-sm font-medium">{order.courier?.name ?? "—"}</div>
+                  <div className="text-sm text-neutral-500">{order.courier?.exec?.name ?? ""} • {order.courier?.exec?.phone ?? ""}</div>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm">{order.courier?.exec?.eta}</div>
+                  <div className="text-sm">{order.courier?.exec?.eta ?? ""}</div>
                   <div className="mt-2 flex flex-col gap-2">
                     <button onClick={contactCourier} className={BTN + " text-sm px-3 py-1"}>Call</button>
                   </div>
@@ -446,7 +522,7 @@ export default function OrderDetailsPage({ orderId = "40" }) {
                 <div className="font-semibold">{currency(pricing?.total ?? order.pricing?.total)}</div>
               </div>
 
-              <div className="mt-3 text-sm text-neutral-500">Paid by <strong className="ml-1">{order.paymentMethod}</strong></div>
+              <div className="mt-3 text-sm text-neutral-500">Paid by <strong className="ml-1">{order.paymentMethod ?? "—"}</strong></div>
             </div>
 
             <div className="mt-4">
@@ -489,7 +565,7 @@ export default function OrderDetailsPage({ orderId = "40" }) {
   );
 }
 
-// -------------------- Subcomponents --------------------
+// -------------------- Subcomponents (same as before) --------------------
 
 function SkeletonPage() {
   return (
@@ -535,16 +611,15 @@ function ProductHeader({ order }) {
 }
 
 /**
- * TimelineCard - measured overlay for perfect alignment
+ * TimelineCard - (unchanged logic) measured overlay for alignment
+ * It expects order.tracking entries to have { step, date, done, detail }
  */
 function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivered }) {
   const timelineRef = useRef(null);
   const markersRef = useRef([]);
-  const [overlayRect, setOverlayRect] = useState(null); // { leftPx, topPx, heightPx }
+  const [overlayRect, setOverlayRect] = useState(null);
 
   const innerSize = MARKER_SIZE_PX - MARKER_INNER_OFFSET_PX;
-
-  // If order is cancelled, render simple two-step timeline
   const isCancelled = order.status && order.status.toLowerCase() === "cancelled";
   const cancelledTracking = isCancelled
     ? [
@@ -555,10 +630,8 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
 
   const trackingToUse = cancelledTracking ?? (order.tracking ?? []);
 
-  // compute last done index
   const lastDoneIndex = trackingToUse.map((t) => t.done).lastIndexOf(true);
 
-  // measure positions (centers) and compute overlay top/height in px
   useEffect(() => {
     function measure() {
       const container = timelineRef.current;
@@ -596,7 +669,6 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
     }
 
     measure();
-
     window.addEventListener("resize", measure);
     const ro = new ResizeObserver(measure);
     if (timelineRef.current) ro.observe(timelineRef.current);
@@ -626,13 +698,11 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
       </div>
 
       <div className="mt-6 relative" ref={timelineRef}>
-        {/* base spine (neutral, behind) */}
         <div
           className="absolute top-0 bottom-0 w-[4px] bg-neutral-100 dark:bg-neutral-800 z-0"
           style={{ left: `${spineLeftForCSS}px` }}
         />
 
-        {/* progress overlay (animated via Framer Motion) */}
         {overlayRect && (
           <motion.div
             key={`overlay-${overlayRect.heightPx}-${overlayRect.topPx}-${isCancelled ? "cancel" : "ok"}`}
@@ -709,12 +779,6 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
                   <div className={`font-medium ${done ? "text-neutral-700 dark:text-neutral-200" : "text-neutral-500"}`}>{t.step}</div>
                   <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">{t.date ? formatDateTime(t.date) : done ? "" : "Pending"}</div>
                   {t.detail && <div className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">{t.detail}</div>}
-
-                  {t.step?.toLowerCase().includes("shipped") && done && (
-                    <div className="mt-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 rounded p-3 text-sm text-neutral-700 dark:text-neutral-200">
-                      Your item has arrived at a delivery partner facility — {t.date ? new Date(t.date).toLocaleDateString() : ""}
-                    </div>
-                  )}
                 </div>
               </div>
             );
@@ -749,7 +813,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
   );
 }
 
-// Invoice Template (simple)
+// InvoiceTemplate, ConfirmModal, InputModal, InfoModal & parseJsonSafe (same helpers)
 function InvoiceTemplate({ order, pricing }) {
   return (
     <div style={{ padding: 20, maxWidth: 800 }}>
@@ -757,7 +821,7 @@ function InvoiceTemplate({ order, pricing }) {
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}>
         <div>
           <div><strong>Order ID:</strong> {order.id}</div>
-          <div><strong>Placed:</strong> {formatDateTime(order.placedAt)}</div>
+          <div><strong>Placed:</strong> {formatDateTime(order.created_at)}</div>
         </div>
         <div>
           <div><strong>Ship to:</strong></div>
@@ -796,7 +860,6 @@ function InvoiceTemplate({ order, pricing }) {
   );
 }
 
-// Confirm modal
 function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose = () => {}, onConfirm = () => {} }) {
   useEffect(() => {
     if (!open) return;
@@ -824,7 +887,6 @@ function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose 
   );
 }
 
-// Input modal (edit address form)
 function InputModal({ open, title, initialShipping = { name: "", phone: "", address: "" }, onClose = () => {}, onConfirm = (val) => {} }) {
   const [name, setName] = useState(initialShipping?.name || "");
   const [phone, setPhone] = useState(initialShipping?.phone || "");
@@ -868,7 +930,6 @@ function InputModal({ open, title, initialShipping = { name: "", phone: "", addr
   );
 }
 
-// Info modal
 function InfoModal({ open, title = "", message = "", onClose = () => {} }) {
   if (!open) return null;
   return (
