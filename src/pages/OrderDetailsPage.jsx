@@ -29,21 +29,7 @@ import {
  */
 
 // -------------------- API base helper --------------------
-const API_BASE = (() => {
-  try {
-    // Vite
-    if (typeof import !== "undefined" && typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE) {
-      return import.meta.env.VITE_API_BASE.replace(/\/$/, "");
-    }
-  } catch (e) {}
-  try {
-    // CRA / webpack
-    if (typeof process !== "undefined" && process.env && process.env.REACT_APP_API_BASE) {
-      return process.env.REACT_APP_API_BASE.replace(/\/$/, "");
-    }
-  } catch (e) {}
-  return ""; // fallback: relative paths
-})();
+const API_BASE =  process.env.REACT_APP_API_BASE;
 
 // Helper to safely build full API URLs
 const apiUrl = (path = "") => {
