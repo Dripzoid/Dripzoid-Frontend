@@ -9,6 +9,7 @@ import {
   Star,
   Download,
   Share2,
+  XCircle,
 } from "lucide-react";
 
 /**
@@ -27,9 +28,12 @@ import {
  *   remain visually on top (exact Flipkart-like look).
  * - The progress overlay animates vertically using Framer Motion (scaleY)
  *   with transform-origin at the top so it grows smoothly down the path.
+ * - Integrates backend routes:
+ *    - GET /api/user/orders/:id  -> order details
+ *    - POST /api/user/track-order -> { orderId } returns latest tracking info
  */
 
-// -------------------- simulated API / helpers --------------------
+// -------------------- simulated API / helpers (fallback) --------------------
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 async function simulateFetchOrder(orderId) {
   await delay(600);
@@ -142,14 +146,26 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
   const [ratings, setRatings] = useState({});
   const [infoModal, setInfo] = useState({ open: false, title: "", message: "" });
 
+  // ------------------ new: fetch order from backend ------------------
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true);
-      const data = await simulateFetchOrder(orderId);
-      if (!mounted) return;
-      setOrder(data);
-      setLoading(false);
+      try {
+        const res = await fetch(`/api/user/orders/${encodeURIComponent(orderId)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!mounted) return;
+        setOrder(data);
+      } catch (err) {
+        // fallback to simulated fetch on error (local dev / demo)
+        console.warn("Fetching order failed, falling back to simulateFetchOrder:", err);
+        const data = await simulateFetchOrder(orderId);
+        if (!mounted) return;
+        setOrder(data);
+      } finally {
+        if (mounted) setLoading(false);
+      }
     })();
     return () => (mounted = false);
   }, [orderId]);
@@ -159,14 +175,19 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
   async function handleCancel() {
     if (!order) return;
     setLoading(true);
-    const res = await apiCancelOrder(order.id);
-    if (res.ok) {
-      setOrder((o) => ({ ...o, status: "Cancelled", history: [{ id: Date.now(), time: new Date().toISOString(), title: "Cancelled", detail: res.message }, ...o.history] }));
-      setInfo({ open: true, title: "Cancelled", message: res.message });
-    } else {
-      setInfo({ open: true, title: "Error", message: res.message || "Could not cancel" });
+    try {
+      const res = await apiCancelOrder(order.id); // simulated; replace with backend call if available
+      if (res.ok) {
+        setOrder((o) => ({ ...o, status: "Cancelled", history: [{ id: Date.now(), time: new Date().toISOString(), title: "Cancelled", detail: res.message }, ...o.history] }));
+        setInfo({ open: true, title: "Cancelled", message: res.message });
+      } else {
+        setInfo({ open: true, title: "Error", message: res.message || "Could not cancel" });
+      }
+    } catch (err) {
+      setInfo({ open: true, title: "Error", message: err.message || "Could not cancel" });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
   async function handleRequestReturn() {
     if (!order) return;
@@ -217,8 +238,7 @@ export default function OrderDetailsPage({ orderId = "OD335614556805540100" }) {
     if (navigator.share) {
       navigator.share({ title: `Order ${order.id}`, text: shareText }).catch(() => setInfo({ open: true, title: "Share", message: "Sharing cancelled or not supported" }));
     } else {
-      navigator.clipboard?.writeText(`${shareText}
-View in your orders`).then(() => setInfo({ open: true, title: "Copied", message: "Order summary copied to clipboard" }), () => setInfo({ open: true, title: "Share", message: "Share not available" }));
+      navigator.clipboard?.writeText(`${shareText}\nView in your orders`).then(() => setInfo({ open: true, title: "Copied", message: "Order summary copied to clipboard" }), () => setInfo({ open: true, title: "Share", message: "Share not available" }));
     }
   }
 
@@ -230,9 +250,44 @@ View in your orders`).then(() => setInfo({ open: true, title: "Copied", message:
     setInfo({ open: true, title: "Contact courier", message: `Call ${order.courier.phone}` });
   }
 
-  // Global track order button handler (replaced Need Help)
-  function handleTrackOrder() {
-    setInfo({ open: true, title: "Track order", message: "Open tracking flow (demo)..." });
+  // ------------------ new: call track-order backend route ------------------
+  async function handleTrackOrder() {
+    if (!order) {
+      setInfo({ open: true, title: "Track order", message: "No order to track" });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // POST to /api/user/track-order with { orderId }
+      const res = await fetch("/api/user/track-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: order.id }),
+      });
+
+      if (!res.ok) {
+        // non-2xx, show message but don't break the UI
+        const txt = await res.text();
+        throw new Error(`Track API error: ${res.status} ${txt}`);
+      }
+
+      const data = await res.json();
+      // Expecting data.tracking (array), optionally status, courier, history
+      setOrder((o) => ({
+        ...o,
+        tracking: data.tracking ?? o.tracking,
+        status: data.status ?? o.status,
+        courier: data.courier ?? o.courier,
+        history: data.history ? [...data.history, ...(o.history || [])] : o.history,
+      }));
+      setInfo({ open: true, title: "Tracking updated", message: "Latest tracking information received." });
+    } catch (err) {
+      console.warn("Track order failed:", err);
+      setInfo({ open: true, title: "Tracking error", message: "Could not fetch live tracking. Showing cached data." });
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -320,8 +375,12 @@ View in your orders`).then(() => setInfo({ open: true, title: "Copied", message:
                       </div>
 
                       <div className="mt-2 flex gap-2">
-                        <button onClick={() => handleSubmitRating(it.id)} className={BTN}>Submit rating</button>
-                        <button onClick={() => setRatings((r) => ({ ...r, [it.id]: {} }))} className={BTN}>Clear</button>
+                        <button onClick={() => handleSubmitRating(it.id)} className={BTN + " flex items-center gap-2"}>
+                          <Star size={14} /> Submit rating
+                        </button>
+                        <button onClick={() => setRatings((r) => ({ ...r, [it.id]: {} }))} className={BTN + " flex items-center gap-2"}>
+                          <XCircle size={14} /> Clear
+                        </button>
                       </div>
                     </div>
                   )}
@@ -505,8 +564,20 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
 
   const innerSize = MARKER_SIZE_PX - MARKER_INNER_OFFSET_PX;
 
+  // If order is cancelled, we render a custom two-step timeline
+  const isCancelled = order.status && order.status.toLowerCase() === "cancelled";
+  const cancelledTracking = isCancelled
+    ? [
+        { step: "Order confirmed", date: order.history?.find((h) => h.title.toLowerCase().includes("order"))?.time || null, done: true, detail: "Payment verified" },
+        { step: "Cancelled", date: order.history?.find((h) => h.title.toLowerCase().includes("cancel"))?.time || new Date().toISOString(), done: true, detail: "Order cancelled" },
+      ]
+    : null;
+
+  // Which tracking array we render and measure
+  const trackingToUse = cancelledTracking ?? order.tracking ?? [];
+
   // compute last done index
-  const lastDoneIndex = order.tracking.map((t) => t.done).lastIndexOf(true);
+  const lastDoneIndex = trackingToUse.map((t) => t.done).lastIndexOf(true);
 
   // measure positions (centers) and compute overlay top/height in px
   useEffect(() => {
@@ -566,7 +637,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
       } catch (e) {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [order.tracking, lastDoneIndex]);
+  }, [trackingToUse, lastDoneIndex, order.status]);
 
   // left for marker wrapper (so markers center align on the same column)
   const spineLeftForCSS = LEFT_6_PX + MARKER_SIZE_PX / 2 - 2; // px value where 4px line sits
@@ -597,7 +668,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
             We animate the vertical growth using Framer Motion (scaleY) with transform-origin: top. */}
         {overlayRect && (
           <motion.div
-            key={`overlay-${overlayRect.heightPx}-${overlayRect.topPx}`}
+            key={`overlay-${overlayRect.heightPx}-${overlayRect.topPx}-${isCancelled ? "cancel" : "ok"}`}
             initial={{ scaleY: 0 }}
             animate={{ scaleY: 1 }}
             transition={{ duration: 0.42, ease: [0.2, 0.9, 0.2, 1] }}
@@ -617,20 +688,25 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
         )}
 
         <div className="space-y-6 relative z-10">
-          {order.tracking.map((t, idx) => {
+          {trackingToUse.map((t, idx) => {
             const done = t.done;
-            const nextDone = order.tracking[idx + 1]?.done;
+            const nextDone = trackingToUse[idx + 1]?.done;
 
-            const outerClasses = done
-              ? "rounded-full bg-emerald-600"
-              : nextDone
-                ? "rounded-full bg-white border border-neutral-300 dark:border-neutral-700"
-                : "rounded-full bg-white border border-neutral-200 dark:border-neutral-800";
+            // if cancelled timeline, render cancelled step with red color
+            const isCancelStep = t.step.toLowerCase().includes("cancel");
+
+            const outerClasses = isCancelStep
+              ? "rounded-full bg-red-600"
+              : done
+                ? "rounded-full bg-emerald-600"
+                : nextDone
+                  ? "rounded-full bg-white border border-neutral-300 dark:border-neutral-700"
+                  : "rounded-full bg-white border border-neutral-200 dark:border-neutral-800";
 
             const iconColorDone = done ? "text-white" : "text-neutral-500 dark:text-neutral-400";
 
             return (
-              <div key={t.step} className="pl-14 relative">
+              <div key={t.step + "-" + idx} className="pl-14 relative">
                 {/* marker wrapper: absolutely positioned at computed left so its center sits on spine */}
                 <div
                   ref={(el) => (markersRef.current[idx] = el)}
@@ -655,7 +731,9 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
                       background: "transparent",
                     }}
                   >
-                    {done ? (
+                    {isCancelStep ? (
+                      <XCircle size={Math.max(12, innerSize - 8)} className={"text-white"} />
+                    ) : done ? (
                       <CheckCircle size={Math.max(12, innerSize - 8)} className={iconColorDone} />
                     ) : nextDone ? (
                       <Clock size={Math.max(12, innerSize - 8)} className={iconColorDone} />
