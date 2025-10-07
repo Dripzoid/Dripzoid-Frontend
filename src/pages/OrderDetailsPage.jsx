@@ -20,8 +20,8 @@ import {
  *   items: [{ id, name, image, quantity, price, options: {color,size} }, ...]
  * }
  *
- * This component normalizes that to the UI model used in JSX and
- * includes Authorization header (Bearer token) if a token is available.
+ * Normalizes that response for the UI and includes Authorization header
+ * (Bearer token) if a token is found in localStorage or cookies.
  */
 
 // -------------------- API base helper --------------------
@@ -35,14 +35,11 @@ const apiUrl = (path = "") => {
 
 // -------------------- Auth helpers --------------------
 function getAuthToken() {
-  // check localStorage common keys
-  const ls = typeof window !== "undefined" ? (localStorage.getItem("token") || localStorage.getItem("authToken")) : null;
+  if (typeof window === "undefined") return null;
+  const ls = localStorage.getItem("token") || localStorage.getItem("authToken");
   if (ls) return ls;
-  // fallback: cookie named token
-  if (typeof document !== "undefined") {
-    const m = document.cookie.match(/(?:^|;\s*)token=([^;]+)/);
-    if (m) return decodeURIComponent(m[1]);
-  }
+  const m = document.cookie.match(/(?:^|;\s*)token=([^;]+)/);
+  if (m) return decodeURIComponent(m[1]);
   return null;
 }
 
@@ -82,7 +79,21 @@ const MARKER_INNER_OFFSET_PX = 6;
 const LEFT_6_PX = 24;
 
 // -------------------- Main component --------------------
-export default function OrderDetailsPage({ orderId = "38" }) {
+export default function OrderDetailsPage({ orderId: propOrderId }) {
+  // If propOrderId not provided, extract from URL like /order-details/40
+  const [orderId] = useState(() => {
+    if (propOrderId) return String(propOrderId);
+    if (typeof window === "undefined") return "38";
+    const path = window.location.pathname || "";
+    // match /order-details/40 or last numeric segment
+    const m = path.match(/\/order-details\/(\d+)(?:\/|$)/i);
+    if (m) return m[1];
+    const parts = path.split("/").filter(Boolean);
+    const last = parts[parts.length - 1] || "";
+    if (/^\d+$/.test(last)) return last;
+    return "38";
+  });
+
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -98,7 +109,6 @@ export default function OrderDetailsPage({ orderId = "38" }) {
   function normalizeApiOrder(payload) {
     if (!payload) return null;
 
-    // map pricing (backend has total_amount)
     const pricing = {
       total: payload.total_amount ?? (payload.pricing && payload.pricing.total) ?? 0,
       sellingPrice: (payload.total_amount ?? payload.pricing?.sellingPrice) ?? 0,
@@ -109,7 +119,6 @@ export default function OrderDetailsPage({ orderId = "38" }) {
       otherDiscount: payload.pricing?.otherDiscount ?? 0,
     };
 
-    // shipping_address -> shipping
     const sa = payload.shipping_address || payload.shipping || null;
     const shipping = sa
       ? {
@@ -117,7 +126,6 @@ export default function OrderDetailsPage({ orderId = "38" }) {
           label: sa.label ?? null,
           name: sa.name ?? sa.label ?? payload.user_name ?? null,
           phone: sa.phone ?? null,
-          // join lines into single address string for display
           address: [
             sa.line1 ?? sa.address_line1 ?? sa.address1 ?? null,
             sa.line2 ?? sa.address_line2 ?? sa.address2 ?? null,
@@ -132,7 +140,6 @@ export default function OrderDetailsPage({ orderId = "38" }) {
         }
       : { address: "", name: "", phone: "" };
 
-    // map items to UI-friendly shape
     const items = Array.isArray(payload.items)
       ? payload.items.map((it) => {
           const firstImg = (it.image || it.images || "")
@@ -142,11 +149,10 @@ export default function OrderDetailsPage({ orderId = "38" }) {
             .filter(Boolean)[0] || "";
 
           const opts = it.options || {};
-          const optionsText = typeof opts === "string" ? opts : [
-            opts.color ? `${opts.color}` : null,
-            opts.size ? `${opts.size}` : null,
-            opts.variant ? `${opts.variant}` : null,
-          ].filter(Boolean).join(" • ");
+          const optionsText =
+            typeof opts === "string"
+              ? opts
+              : [opts.color ? `${opts.color}` : null, opts.size ? `${opts.size}` : null, opts.variant ? `${opts.variant}` : null].filter(Boolean).join(" • ");
 
           return {
             id: it.id,
@@ -161,7 +167,6 @@ export default function OrderDetailsPage({ orderId = "38" }) {
         })
       : [];
 
-    // return normalized
     return {
       id: payload.id,
       status: payload.status,
@@ -171,7 +176,6 @@ export default function OrderDetailsPage({ orderId = "38" }) {
       shipping,
       pricing,
       items,
-      // pass through other common fields
       tracking: payload.tracking ?? payload.tracking_info ?? [],
       courier: payload.courier ?? null,
       history: payload.history ?? [],
@@ -189,7 +193,7 @@ export default function OrderDetailsPage({ orderId = "38" }) {
         const res = await fetch(url, {
           method: "GET",
           headers: authHeaders(false),
-          credentials: "same-origin", // include cookies if backend auth uses them; adjust if needed
+          credentials: "same-origin",
         });
 
         const payload = await parseJsonSafe(res);
@@ -225,12 +229,7 @@ export default function OrderDetailsPage({ orderId = "38" }) {
       const payload = await parseJsonSafe(res);
       if (!res.ok) throw new Error(payload?.message || `Cancel failed (${res.status})`);
 
-      // normalize in case server returns full order or small object
-      const normalized = normalizeApiOrder(payload?.order ?? payload) ?? {
-        ...order,
-        status: payload?.status ?? "cancelled",
-      };
-
+      const normalized = normalizeApiOrder(payload?.order ?? payload) ?? { ...order, status: payload?.status ?? "cancelled" };
       setOrder((o) => ({ ...o, ...normalized }));
       setInfo({ open: true, title: "Cancelled", message: payload?.message ?? "Order cancelled" });
     } catch (err) {
@@ -281,7 +280,6 @@ export default function OrderDetailsPage({ orderId = "38" }) {
       const payload = await parseJsonSafe(res);
       if (!res.ok) throw new Error(payload?.message || `Address update failed (${res.status})`);
 
-      // Update local order.shipping
       setOrder((o) => ({
         ...o,
         shipping: {
@@ -358,7 +356,10 @@ export default function OrderDetailsPage({ orderId = "38" }) {
     if (navigator.share) {
       navigator.share({ title: `Order ${order.id}`, text: shareText }).catch(() => setInfo({ open: true, title: "Share", message: "Sharing cancelled or not supported" }));
     } else {
-      navigator.clipboard?.writeText(`${shareText}\nView in your orders`).then(() => setInfo({ open: true, title: "Copied", message: "Order summary copied to clipboard" }), () => setInfo({ open: true, title: "Share", message: "Share not available" }));
+      navigator.clipboard
+        ?.writeText(`${shareText}\nView in your orders`)
+        .then(() => setInfo({ open: true, title: "Copied", message: "Order summary copied to clipboard" }))
+        .catch(() => setInfo({ open: true, title: "Share", message: "Share not available" }));
     }
   }
 
@@ -373,7 +374,6 @@ export default function OrderDetailsPage({ orderId = "38" }) {
   async function handleDownloadInvoice() {
     try {
       const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/invoice`);
-      // open in new tab so browser handles download
       window.open(url, "_blank");
     } catch (err) {
       console.error("Download invoice failed:", err);
@@ -393,6 +393,7 @@ export default function OrderDetailsPage({ orderId = "38" }) {
 
   const isDelivered = order.status?.toLowerCase() === "delivered" || order.tracking?.some((t) => t.step?.toLowerCase() === "delivered" && t.done);
   const isPacked = order.status?.toLowerCase() === "packed";
+  const isCancelled = order.status?.toLowerCase() === "cancelled";
 
   // -------------------- Render --------------------
   return (
@@ -438,8 +439,6 @@ export default function OrderDetailsPage({ orderId = "38" }) {
                       <div className="text-sm text-neutral-500">Qty: {it.qty}</div>
                     </div>
                   </div>
-
-                  {/* Reviews/ratings removed as requested */}
                 </div>
               )) ?? null}
             </div>
@@ -459,10 +458,14 @@ export default function OrderDetailsPage({ orderId = "38" }) {
                 <div className="text-sm text-neutral-500">Home</div>
                 <div className="text-sm text-neutral-700 dark:text-neutral-200">{order.shipping?.address}</div>
                 <div className="mt-2 flex items-center justify-between">
-                  <div className="text-sm text-neutral-500">{order.shipping?.name} • {order.shipping?.phone}</div>
+                  <div className="text-sm text-neutral-500">
+                    {order.shipping?.name} • {order.shipping?.phone}
+                  </div>
                   <div>
                     {!isPacked && (
-                      <button onClick={() => setShowEditAddress(true)} className={BTN + " text-sm px-3 py-1"}>Edit</button>
+                      <button onClick={() => setShowEditAddress(true)} className={BTN + " text-sm px-3 py-1"}>
+                        Edit
+                      </button>
                     )}
                   </div>
                 </div>
@@ -472,12 +475,16 @@ export default function OrderDetailsPage({ orderId = "38" }) {
                 <div>
                   <div className="text-sm text-neutral-500">Courier</div>
                   <div className="text-sm font-medium">{order.courier?.name ?? "—"}</div>
-                  <div className="text-sm text-neutral-500">{order.courier?.exec?.name ?? ""} • {order.courier?.exec?.phone ?? ""}</div>
+                  <div className="text-sm text-neutral-500">
+                    {order.courier?.exec?.name ?? ""} • {order.courier?.exec?.phone ?? ""}
+                  </div>
                 </div>
                 <div className="text-right">
                   <div className="text-sm">{order.courier?.exec?.eta ?? ""}</div>
                   <div className="mt-2 flex flex-col gap-2">
-                    <button onClick={contactCourier} className={BTN + " text-sm px-3 py-1"}>Call</button>
+                    <button onClick={contactCourier} className={BTN + " text-sm px-3 py-1"}>
+                      Call
+                    </button>
                   </div>
                 </div>
               </div>
@@ -522,7 +529,9 @@ export default function OrderDetailsPage({ orderId = "38" }) {
                 <div className="font-semibold">{currency(pricing?.total ?? order.pricing?.total)}</div>
               </div>
 
-              <div className="mt-3 text-sm text-neutral-500">Paid by <strong className="ml-1">{order.paymentMethod ?? "—"}</strong></div>
+              <div className="mt-3 text-sm text-neutral-500">
+                Paid by <strong className="ml-1">{order.paymentMethod ?? "—"}</strong>
+              </div>
             </div>
 
             <div className="mt-4">
@@ -530,7 +539,7 @@ export default function OrderDetailsPage({ orderId = "38" }) {
                 <button onClick={handleShare} className={BTN + " flex-1 py-2 flex items-center justify-center gap-2"}>
                   <Share2 size={16} /> Share
                 </button>
-                <button onClick={handleDownloadInvoice} className={BTN + " py-2 px-3 flex items-center gap-2"}>
+                <button onClick={handleDownloadInvoice} className={BTN + " flex-1 py-2 px-3 flex items-center justify-center gap-2"}>
                   <Download size={16} /> Download
                 </button>
               </div>
@@ -548,15 +557,39 @@ export default function OrderDetailsPage({ orderId = "38" }) {
         )}
 
         {/* Modals */}
-        <ConfirmModal open={!!showCancel} title="Cancel order" message="Are you sure you want to cancel this order?" confirmLabel="Yes, cancel" onClose={() => setShowCancel(false)} onConfirm={async () => { setShowCancel(false); await handleCancel(); }} />
-        <ConfirmModal open={!!showReturn} title="Request return" message="Do you want to request a return for this order?" confirmLabel="Request return" onClose={() => setShowReturn(false)} onConfirm={async () => { setShowReturn(false); await handleRequestReturn(); }} />
+        <ConfirmModal
+          open={!!showCancel}
+          title="Cancel order"
+          message="Are you sure you want to cancel this order?"
+          confirmLabel="Yes, cancel"
+          onClose={() => setShowCancel(false)}
+          onConfirm={async () => {
+            setShowCancel(false);
+            await handleCancel();
+          }}
+        />
+
+        <ConfirmModal
+          open={!!showReturn}
+          title="Return order"
+          message="Do you want to return this order?"
+          confirmLabel="Return"
+          onClose={() => setShowReturn(false)}
+          onConfirm={async () => {
+            setShowReturn(false);
+            await handleRequestReturn();
+          }}
+        />
 
         <InputModal
           open={!!showEditAddress}
           title="Edit shipping address"
           initialShipping={order.shipping}
           onClose={() => setShowEditAddress(false)}
-          onConfirm={async (newShipping) => { setShowEditAddress(false); await handleSaveAddress(newShipping); }}
+          onConfirm={async (newShipping) => {
+            setShowEditAddress(false);
+            await handleSaveAddress(newShipping);
+          }}
         />
 
         <InfoModal open={!!infoModal.open} title={infoModal.title} message={infoModal.message} onClose={() => setInfo({ open: false, title: "", message: "" })} />
@@ -565,7 +598,7 @@ export default function OrderDetailsPage({ orderId = "38" }) {
   );
 }
 
-// -------------------- Subcomponents (same as before) --------------------
+// -------------------- Subcomponents --------------------
 
 function SkeletonPage() {
   return (
@@ -611,8 +644,13 @@ function ProductHeader({ order }) {
 }
 
 /**
- * TimelineCard - (unchanged logic) measured overlay for alignment
- * It expects order.tracking entries to have { step, date, done, detail }
+ * TimelineCard
+ *
+ * - Shows Cancel/Return/Track UI.
+ * - Rules:
+ *    - If order is cancelled: hide Return and Track buttons entirely (no actions).
+ *    - If delivered (and not cancelled): show ONLY the Return button (full-width).
+ *    - If not delivered (and not cancelled): show Cancel and Track buttons side-by-side (equal width).
  */
 function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivered }) {
   const timelineRef = useRef(null);
@@ -623,12 +661,22 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
   const isCancelled = order.status && order.status.toLowerCase() === "cancelled";
   const cancelledTracking = isCancelled
     ? [
-        { step: "Order confirmed", date: order.history?.find((h) => h.title?.toLowerCase().includes("order"))?.time || null, done: true, detail: "Payment verified" },
-        { step: "Cancelled", date: order.history?.find((h) => h.title?.toLowerCase().includes("cancel"))?.time || new Date().toISOString(), done: true, detail: "Order cancelled" },
+        {
+          step: "Order confirmed",
+          date: order.history?.find((h) => h.title?.toLowerCase().includes("order"))?.time || null,
+          done: true,
+          detail: "Payment verified",
+        },
+        {
+          step: "Cancelled",
+          date: order.history?.find((h) => h.title?.toLowerCase().includes("cancel"))?.time || new Date().toISOString(),
+          done: true,
+          detail: "Order cancelled",
+        },
       ]
     : null;
 
-  const trackingToUse = cancelledTracking ?? (order.tracking ?? []);
+  const trackingToUse = cancelledTracking ?? order.tracking ?? [];
 
   const lastDoneIndex = trackingToUse.map((t) => t.done).lastIndexOf(true);
 
@@ -684,6 +732,8 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
   const spineLeftForCSS = LEFT_6_PX + MARKER_SIZE_PX / 2 - 2;
   const markerLeftPx = spineLeftForCSS - MARKER_SIZE_PX / 2;
 
+  const showActions = !isCancelled; // hide action buttons entirely if cancelled
+
   return (
     <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-6">
       <div className="flex items-center justify-between">
@@ -698,10 +748,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
       </div>
 
       <div className="mt-6 relative" ref={timelineRef}>
-        <div
-          className="absolute top-0 bottom-0 w-[4px] bg-neutral-100 dark:bg-neutral-800 z-0"
-          style={{ left: `${spineLeftForCSS}px` }}
-        />
+        <div className="absolute top-0 bottom-0 w-[4px] bg-neutral-100 dark:bg-neutral-800 z-0" style={{ left: `${spineLeftForCSS}px` }} />
 
         {overlayRect && (
           <motion.div
@@ -733,10 +780,10 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
             const outerClasses = isCancelStep
               ? "rounded-full bg-red-600"
               : done
-                ? "rounded-full bg-emerald-600"
-                : nextDone
-                  ? "rounded-full bg-white border border-neutral-300 dark:border-neutral-700"
-                  : "rounded-full bg-white border border-neutral-200 dark:border-neutral-800";
+              ? "rounded-full bg-emerald-600"
+              : nextDone
+              ? "rounded-full bg-white border border-neutral-300 dark:border-neutral-700"
+              : "rounded-full bg-white border border-neutral-200 dark:border-neutral-800";
 
             const iconColorDone = done ? "text-white" : "text-neutral-500 dark:text-neutral-400";
 
@@ -792,19 +839,24 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
 
       <div className="mt-4 flex items-center justify-between gap-4">
         <div className="flex-1 flex gap-3">
-          {!isDelivered && order.status.toLowerCase() !== "cancelled" ? (
-            <button onClick={onCancel} className={BTN + " flex-1 py-3 flex items-center justify-center gap-2"}>
-              Cancel
-            </button>
-          ) : (
-            <button onClick={onRequestReturn} className={BTN + " flex-1 py-3 flex items-center justify-center gap-2"}>
-              Request Return
-            </button>
+          {/* If cancelled -> no action buttons */}
+          {showActions && !isDelivered && (
+            <>
+              <button onClick={onCancel} className={BTN + " flex-1 py-3 flex items-center justify-center gap-2"}>
+                Cancel
+              </button>
+              <button onClick={onTrackAll} className={BTN + " flex-1 py-3 flex items-center justify-center gap-2"}>
+                <Truck size={16} /> Track order
+              </button>
+            </>
           )}
 
-          <button onClick={onTrackAll} className={BTN + " py-3 flex items-center gap-2"}>
-            <Truck size={16} /> Track order
-          </button>
+          {/* If delivered and not cancelled -> show only Return button (single full-width) */}
+          {showActions && isDelivered && (
+            <button onClick={onRequestReturn} className={BTN + " flex-1 py-3 flex items-center justify-center gap-2"}>
+              Return
+            </button>
+          )}
         </div>
 
         <div className="w-44" />
@@ -813,18 +865,24 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
   );
 }
 
-// InvoiceTemplate, ConfirmModal, InputModal, InfoModal & parseJsonSafe (same helpers)
+// InvoiceTemplate, ConfirmModal, InputModal, InfoModal & parseJsonSafe (helpers)
 function InvoiceTemplate({ order, pricing }) {
   return (
     <div style={{ padding: 20, maxWidth: 800 }}>
       <h2>Invoice</h2>
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}>
         <div>
-          <div><strong>Order ID:</strong> {order.id}</div>
-          <div><strong>Placed:</strong> {formatDateTime(order.created_at)}</div>
+          <div>
+            <strong>Order ID:</strong> {order.id}
+          </div>
+          <div>
+            <strong>Placed:</strong> {formatDateTime(order.created_at)}
+          </div>
         </div>
         <div>
-          <div><strong>Ship to:</strong></div>
+          <div>
+            <strong>Ship to:</strong>
+          </div>
           <div>{order.shipping?.name}</div>
           <div style={{ maxWidth: 300 }}>{order.shipping?.address}</div>
         </div>
@@ -851,9 +909,18 @@ function InvoiceTemplate({ order, pricing }) {
 
       <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end" }}>
         <div style={{ width: 250 }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}><div>Subtotal</div><div>{currency(order.pricing?.sellingPrice)}</div></div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}><div>Fees</div><div>{currency(order.pricing?.fees)}</div></div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginTop: 8 }}><div>Total</div><div>{currency(pricing?.total ?? order.pricing?.total)}</div></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div>Subtotal</div>
+            <div>{currency(order.pricing?.sellingPrice)}</div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div>Fees</div>
+            <div>{currency(order.pricing?.fees)}</div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginTop: 8 }}>
+            <div>Total</div>
+            <div>{currency(pricing?.total ?? order.pricing?.total)}</div>
+          </div>
         </div>
       </div>
     </div>
@@ -872,13 +939,19 @@ function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <motion.div initial={{ scale: 0.98, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-md w-full p-6">
         <div className="flex items-start gap-4">
-          <div className="p-2 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700"><Info /></div>
+          <div className="p-2 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700">
+            <Info />
+          </div>
           <div className="flex-1">
             <h3 className="text-lg font-semibold">{title}</h3>
             <p className="text-sm text-neutral-600 dark:text-neutral-300 mt-2">{message}</p>
             <div className="mt-4 flex justify-end gap-3">
-              <button onClick={onClose} className={BTN}>Cancel</button>
-              <button onClick={() => onConfirm()} className="px-4 py-2 rounded-full bg-emerald-600 text-white">{confirmLabel}</button>
+              <button onClick={onClose} className={BTN}>
+                Cancel
+              </button>
+              <button onClick={() => onConfirm()} className="px-4 py-2 rounded-full bg-emerald-600 text-white">
+                {confirmLabel}
+              </button>
             </div>
           </div>
         </div>
@@ -922,8 +995,12 @@ function InputModal({ open, title, initialShipping = { name: "", phone: "", addr
         </div>
 
         <div className="mt-4 flex justify-end gap-3">
-          <button onClick={onClose} className={BTN}>Cancel</button>
-          <button onClick={() => onConfirm({ name: name.trim(), phone: phone.trim(), address: address.trim() })} className={BTN}>Save</button>
+          <button onClick={onClose} className={BTN}>
+            Cancel
+          </button>
+          <button onClick={() => onConfirm({ name: name.trim(), phone: phone.trim(), address: address.trim() })} className={BTN}>
+            Save
+          </button>
         </div>
       </motion.div>
     </div>
@@ -936,12 +1013,16 @@ function InfoModal({ open, title = "", message = "", onClose = () => {} }) {
     <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-4">
       <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-lg shadow-lg max-w-sm w-full p-4">
         <div className="flex items-start gap-3">
-          <div className="p-2 rounded-full bg-emerald-50 text-emerald-600"><CheckCircle /></div>
+          <div className="p-2 rounded-full bg-emerald-50 text-emerald-600">
+            <CheckCircle />
+          </div>
           <div className="flex-1">
             <div className="font-semibold">{title}</div>
             <div className="text-sm text-neutral-600 dark:text-neutral-300 mt-1">{message}</div>
             <div className="mt-3 text-right">
-              <button onClick={onClose} className={BTN}>Close</button>
+              <button onClick={onClose} className={BTN}>
+                Close
+              </button>
             </div>
           </div>
         </div>
