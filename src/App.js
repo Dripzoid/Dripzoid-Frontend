@@ -54,7 +54,7 @@ function App() {
               <Route path="/product/:id" element={<ProductDetailsPage />} />
               <Route path="/checkout" element={<CheckoutPage />} /> {/* 🆕 Checkout route */}
               <Route path="/order-confirmation" element={<OrderConfirmation />} />
-              <Route path="/order-details" element={<OrderDetailsPage />} />
+              <Route path="/order-details/:id" element={<OrderDetailsPage />} />
               <Route path="/account" element={<DashboardLayout />}>
                 <Route index element={<ProfileOverview />} />
                 <Route path="profile" element={<ProfileOverview />} />
