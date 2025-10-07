@@ -659,24 +659,39 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
 
   const innerSize = MARKER_SIZE_PX - MARKER_INNER_OFFSET_PX;
   const isCancelled = order.status && order.status.toLowerCase() === "cancelled";
-  const cancelledTracking = isCancelled
-    ? [
-        {
-          step: "Order confirmed",
-          date: order.history?.find((h) => h.title?.toLowerCase().includes("order"))?.time || null,
-          done: true,
-          detail: "Payment verified",
-        },
-        {
-          step: "Cancelled",
-          date: order.history?.find((h) => h.title?.toLowerCase().includes("cancel"))?.time || new Date().toISOString(),
-          done: true,
-          detail: "Order cancelled",
-        },
-      ]
-    : null;
 
-  const trackingToUse = cancelledTracking ?? order.tracking ?? [];
+  // 🔹 Define the timeline based on order status
+  const allSteps = isCancelled
+    ? ["Order Confirmed", "Cancelled"]
+    : ["Order Confirmed", "Packed", "Shipped", "Out For Delivery", "Delivered"];
+
+  // 🔹 Map progress index based on order.status
+  const progressMap = {
+    pending: 0,
+    confirmed: 0,
+    processing: 1,
+    packed: 1,
+    shipped: 2,
+    "out for delivery": 3,
+    delivered: 4,
+    cancelled: isCancelled ? 1 : 0,
+  };
+
+  const normalizedStatus = (order.status || "").toLowerCase();
+  const progressIndex = progressMap[normalizedStatus] ?? 0;
+
+  // 🔹 Build tracking data dynamically
+  const trackingToUse = allSteps.map((step, idx) => ({
+    step,
+    done: idx <= progressIndex,
+    date:
+      idx <= progressIndex
+        ? order.history?.find((h) => h.title?.toLowerCase().includes(step.toLowerCase()))?.time ||
+          order.created_at ||
+          null
+        : null,
+    detail: idx <= progressIndex ? (step === "Cancelled" ? "Order cancelled" : "Completed") : "",
+  }));
 
   const lastDoneIndex = trackingToUse.map((t) => t.done).lastIndexOf(true);
 
@@ -712,7 +727,6 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
       const heightPx = Math.max(4, Math.round(lastCenter - firstCenter) + 4);
 
       const spineLeftPx = LEFT_6_PX + MARKER_SIZE_PX / 2 - 2;
-
       setOverlayRect({ leftPx: Math.round(spineLeftPx), topPx, heightPx });
     }
 
@@ -732,7 +746,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
   const spineLeftForCSS = LEFT_6_PX + MARKER_SIZE_PX / 2 - 2;
   const markerLeftPx = spineLeftForCSS - MARKER_SIZE_PX / 2;
 
-  const showActions = !isCancelled; // hide action buttons entirely if cancelled
+  const showActions = !isCancelled; // hide buttons for cancelled orders
 
   return (
     <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-6">
@@ -741,10 +755,9 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
           <Truck className="text-neutral-600 dark:text-neutral-300" />
           <div>
             <div className="text-sm text-neutral-500 dark:text-neutral-400">Tracking status</div>
-            <div className="font-semibold">{order.status}</div>
+            <div className="font-semibold capitalize">{order.status}</div>
           </div>
         </div>
-        <div />
       </div>
 
       <div className="mt-6 relative" ref={timelineRef}>
@@ -763,7 +776,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
               top: `${overlayRect.topPx}px`,
               width: 4,
               height: `${overlayRect.heightPx}px`,
-              backgroundColor: "rgb(16,185,129)",
+              backgroundColor: isCancelled ? "rgb(239,68,68)" : "rgb(16,185,129)", // red for cancelled
               zIndex: 5,
               borderRadius: 2,
               transformOrigin: "top center",
@@ -824,7 +837,9 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
 
                 <div>
                   <div className={`font-medium ${done ? "text-neutral-700 dark:text-neutral-200" : "text-neutral-500"}`}>{t.step}</div>
-                  <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">{t.date ? formatDateTime(t.date) : done ? "" : "Pending"}</div>
+                  <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+                    {t.date ? formatDateTime(t.date) : done ? "" : "Pending"}
+                  </div>
                   {t.detail && <div className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">{t.detail}</div>}
                 </div>
               </div>
@@ -839,7 +854,6 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
 
       <div className="mt-4 flex items-center justify-between gap-4">
         <div className="flex-1 flex gap-3">
-          {/* If cancelled -> no action buttons */}
           {showActions && !isDelivered && (
             <>
               <button onClick={onCancel} className={BTN + " flex-1 py-3 flex items-center justify-center gap-2"}>
@@ -850,15 +864,12 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
               </button>
             </>
           )}
-
-          {/* If delivered and not cancelled -> show only Return button (single full-width) */}
           {showActions && isDelivered && (
             <button onClick={onRequestReturn} className={BTN + " flex-1 py-3 flex items-center justify-center gap-2"}>
               Return
             </button>
           )}
         </div>
-
         <div className="w-44" />
       </div>
     </div>
