@@ -171,6 +171,7 @@ export default function ProductCard({ product }) {
 
   // ---- Wishlist toggle (via context only) ----
   const handleWishlistToggle = async (e) => {
+    // prevent card click navigation
     e.stopPropagation();
     if (!pid || wlBusy) return;
     setWlBusy(true);
@@ -178,7 +179,6 @@ export default function ProductCard({ product }) {
       if (isWishlisted) {
         if (typeof removeFromWishlist === "function") {
           await removeFromWishlist(pid);
-          // ensure context list refreshed if needed
           if (typeof fetchWishlist === "function") await fetchWishlist();
         }
       } else {
@@ -206,48 +206,56 @@ export default function ProductCard({ product }) {
       role="button"
       tabIndex={0}
       onClick={handleNavigate}
-      className="group relative bg-white dark:bg-neutral-900 border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition cursor-pointer"
+      className="group relative bg-white dark:bg-neutral-900 border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           handleNavigate();
         }
       }}
-      aria-label={`Open details for ${product?.name}`}
+      aria-label={`Open details for ${product?.name || "product"}`}
     >
       {/* Image carousel */}
-      <div className="relative w-full aspect-square bg-gray-100 dark:bg-gray-800 overflow-hidden">
-        <AnimatePresence mode="wait">
-          <motion.img
-            key={`${current}-${imageSrc}`}
-            src={imageSrc}
-            alt={product?.name || "product image"}
-            className="w-full h-full object-cover"
-            initial={{ opacity: 0, scale: 1.02 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
-            transition={{ duration: 0.28 }}
-            loading="lazy"
-            onError={handleImgError}
-          />
-        </AnimatePresence>
+      <div className="relative w-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+        {/* Responsive image sizing:
+            - mobile: h-[220px]
+            - sm: h-56 (224)
+            - md: aspect-square (keeps card grid consistent on large screens)
+         */}
+        <div className="w-full h-[220px] sm:h-56 md:aspect-square md:h-auto overflow-hidden">
+          <AnimatePresence mode="wait">
+            <motion.img
+              key={`${current}-${imageSrc}`}
+              src={imageSrc}
+              alt={product?.name || "product image"}
+              className="w-full h-full object-cover"
+              initial={{ opacity: 0, scale: 1.02 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.28 }}
+              loading="lazy"
+              onError={handleImgError}
+            />
+          </AnimatePresence>
+        </div>
 
-        {/* Wishlist button */}
+        {/* Wishlist button (larger on mobile for touch) */}
         <button
           type="button"
           onClick={handleWishlistToggle}
           disabled={wlBusy}
-          className="absolute top-3 right-3 bg-white/90 dark:bg-black/80 rounded-full p-2 shadow hover:scale-105 transition disabled:opacity-60"
+          className="absolute top-3 right-3 bg-white/90 dark:bg-black/80 rounded-full p-2 sm:p-2.5 shadow hover:scale-105 transition disabled:opacity-60"
           aria-pressed={isWishlisted}
           aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
           title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
+          onMouseDown={(e) => e.stopPropagation()}
         >
           <FiHeart size={18} className={isWishlisted ? "text-red-500" : "text-gray-500"} />
         </button>
 
-        {/* Dots */}
+        {/* Dots (compact on mobile) */}
         {images.length > 1 && (
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2" onClick={(e) => e.stopPropagation()} aria-hidden>
             {images.map((_, idx) => (
               <button
                 key={idx}
@@ -265,52 +273,53 @@ export default function ProductCard({ product }) {
       </div>
 
       {/* Info */}
-      <div className="p-4 flex flex-col gap-2">
-        <h3 className="text-base font-semibold text-gray-900 dark:text-white line-clamp-1">{product?.name}</h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{product?.category}</p>
+      <div className="p-3 sm:p-4 flex flex-col gap-2">
+        <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white line-clamp-2">{product?.name}</h3>
+        <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{product?.category}</p>
 
         <div className="mt-1 flex items-center gap-2 flex-wrap">
-          <span className="text-lg font-bold text-gray-900 dark:text-white">₹{price.toLocaleString()}</span>
+          <span className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">₹{price.toLocaleString()}</span>
 
           {hasDiscount && (
             <>
-              <span className="text-sm line-through text-gray-500 dark:text-gray-400">₹{originalPrice.toLocaleString()}</span>
+              <span className="text-xs sm:text-sm line-through text-gray-500 dark:text-gray-400">₹{originalPrice.toLocaleString()}</span>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-600 text-white">{discountPercent}% OFF</span>
             </>
           )}
 
-          <AiOutlineTag className="text-green-500" />
+          <AiOutlineTag className="text-green-500 ml-auto sm:ml-0" aria-hidden />
         </div>
 
         {/* Rating (from DB via reviews endpoint) */}
         {reviewsNum > 0 ? (
-          <div className="flex items-center text-yellow-500">
-            {Array.from({ length: 5 }).map((_, idx) => (
-              <AiFillStar
-                key={idx}
-                className={idx < avgRounded ? "opacity-100" : "opacity-30"}
-              />
-            ))}
-            {/* numeric average beside stars */}
-            <span className="ml-2 text-sm font-medium text-gray-800 dark:text-gray-200">
+          <div className="flex items-center text-yellow-500 mt-1 sm:mt-2 gap-2">
+            <div className="flex items-center gap-0.5">
+              {Array.from({ length: 5 }).map((_, idx) => (
+                <AiFillStar
+                  key={idx}
+                  className={idx < avgRounded ? "opacity-100 text-yellow-500" : "opacity-30 text-yellow-400"}
+                  style={{ fontSize: idx < 3 ? 14 : 13 }}
+                  aria-hidden
+                />
+              ))}
+            </div>
+            <span className="ml-2 text-xs sm:text-sm font-medium text-gray-800 dark:text-gray-200">
               {avg.toFixed(1)}
             </span>
-            {/* review count in parentheses */}
-            <span className="ml-1 text-sm text-gray-600 dark:text-gray-400">
+            <span className="ml-1 text-xs text-gray-600 dark:text-gray-400">
               ({reviewsNum})
             </span>
           </div>
         ) : (
-          <div className="text-sm text-gray-600 dark:text-gray-400">
-            No Ratings &amp; Reviews
-          </div>
+          <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">No Ratings &amp; Reviews</div>
         )}
 
-
-        {/* Stock */}
-        <div className="mt-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-          <span>{product?.seller || "Seller"}</span>
-          {stockBadge && <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${stockBadge.tone}`}>{stockBadge.text}</div>}
+        {/* Stock & seller row */}
+        <div className="mt-2 flex items-center justify-between text-xs sm:text-sm text-gray-500 dark:text-gray-400">
+          <span className="truncate">{product?.seller || "Seller"}</span>
+          {stockBadge && (
+            <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${stockBadge.tone}`}>{stockBadge.text}</div>
+          )}
         </div>
       </div>
     </div>
