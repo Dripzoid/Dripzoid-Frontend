@@ -4,20 +4,20 @@ import { Avatar, Card, CardContent, Typography } from "@mui/material";
 import { ThumbsUp, ThumbsDown, Send, Trash2, Paperclip } from "lucide-react";
 import { FaStar, FaStarHalfAlt, FaRegStar } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
-import useUploader from "../hooks/useUploader"; // keep your hook
-// envs
+import useUploader from "../hooks/useUploader"; // <-- ensure path is correct
+
 const DEFAULT_API_BASE = process.env.REACT_APP_API_BASE;
 const CLOUDINARY_CLOUD_NAME = process.env.REACT_APP_CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_UPLOAD_PRESET = process.env.REACT_APP_CLOUDINARY_UPLOAD_PRESET;
-
 const READ_MORE_LIMIT = 280;
 const MAX_FILES = 6;
 const MAX_FILE_SIZE_BYTES = 12 * 1024 * 1024; // 12MB
 const PAGE_SIZE = 6;
 
 const BUTTON_CLASS =
-  "shadow-[inset_0_0_0_2px_#616467] text-black px-3 py-2 rounded text-sm flex items-center gap-2 bg-transparent hover:bg-[#616467] hover:text-white dark:text-neutral-200 transition duration-200";
+  "shadow-[inset_0_0_0_2px_#616467] text-black px-4 py-2 rounded text-sm flex items-center gap-2 bg-transparent hover:bg-[#616467] hover:text-white dark:text-neutral-200 transition duration-200";
 
+// ---------- helpers ----------
 function ReadMore({ text }) {
   const [open, setOpen] = useState(false);
   if (!text) return null;
@@ -25,7 +25,12 @@ function ReadMore({ text }) {
   return (
     <div className="text-sm leading-relaxed">
       <div className="text-black dark:text-white">{open ? text : text.slice(0, READ_MORE_LIMIT) + "..."}</div>
-      <button onClick={() => setOpen((s) => !s)} className="mt-2 text-xs underline decoration-black/50 dark:decoration-white/50" type="button" aria-expanded={open}>
+      <button
+        onClick={() => setOpen((s) => !s)}
+        className="mt-2 text-xs underline decoration-black/50 dark:decoration-white/50"
+        type="button"
+        aria-expanded={open}
+      >
         {open ? "Read less" : "Read more"}
       </button>
     </div>
@@ -51,16 +56,6 @@ function Lightbox({ item, onClose }) {
   );
 }
 
-function stringToHslColor(str = "", s = 65, l = 45) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-    hash = hash & hash;
-  }
-  const h = Math.abs(hash) % 360;
-  return `hsl(${h} ${s}% ${l}%)`;
-}
-
 function StarDisplay({ value = 0, size = 16 }) {
   const stars = [];
   for (let i = 1; i <= 5; i++) {
@@ -72,23 +67,41 @@ function StarDisplay({ value = 0, size = 16 }) {
 }
 
 function StarSelector({ value = 5, onChange, size = 20 }) {
-  return (
-    <div className="flex items-center gap-1">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <button
-          key={i}
-          onClick={() => onChange?.(i)}
-          aria-label={`Set rating to ${i}`}
-          type="button"
-          className={`p-1 rounded-md ${value >= i ? "text-yellow-500" : "text-gray-400"}`}
-        >
-          {value >= i ? <FaStar size={size} /> : <FaRegStar size={size} />}
-        </button>
-      ))}
-    </div>
-  );
+  function handleClick(starIndex) {
+    onChange?.(starIndex);
+  }
+
+  const stars = [];
+  for (let i = 1; i <= 5; i++) {
+    const key = `star-${i}`;
+    const el = value >= i ? <FaStar key={key} size={size} /> : <FaRegStar key={key} size={size} />;
+    stars.push(
+      <button
+        key={key}
+        onClick={() => handleClick(i)}
+        type="button"
+        className="p-1 bg-transparent rounded-md"
+        aria-label={`Set rating to ${i}`}
+      >
+        {el}
+      </button>
+    );
+  }
+  return <div className="flex items-center gap-1">{stars}</div>;
 }
 
+// deterministic HSL color generator for avatar backgrounds
+function stringToHslColor(str = "", s = 65, l = 45) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    hash = hash & hash;
+  }
+  const h = Math.abs(hash) % 360;
+  return `hsl(${h} ${s}% ${l}%)`;
+}
+
+// format relative time in minute/hour/day chunks (shows "0m ago" for <1min)
 function formatRelativeTime(isoOrDate) {
   if (!isoOrDate) return "";
   const date = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
@@ -96,11 +109,19 @@ function formatRelativeTime(isoOrDate) {
   const now = new Date();
   const diffSeconds = Math.floor((now - date) / 1000);
   const diffMinutes = Math.floor(diffSeconds / 60);
-  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`; // 0m, 1m, 59m
+  }
   const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
   const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 30) return `${diffDays}d ago`;
+  if (diffDays < 30) {
+    return `${diffDays}d ago`;
+  }
+  // older -> show localized IST date/time for clarity
   try {
     return date.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
   } catch {
@@ -108,7 +129,7 @@ function formatRelativeTime(isoOrDate) {
   }
 }
 
-// normalize payload helper (robust)
+// robust payload normalizer
 function normalizeReviewsPayload(payload) {
   if (!payload) return [];
   let arr = [];
@@ -162,10 +183,10 @@ function normalizeReviewsPayload(payload) {
   });
 }
 
+// ---------------- component ----------------
 export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, currentUser = null, showToast = () => {} }) {
-  // core state
+  // core data state
   const [reviews, setReviews] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [voteCache, setVoteCache] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("vote_cache_v1") || "{}");
@@ -173,15 +194,13 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
       return {};
     }
   });
+  const [loading, setLoading] = useState(false);
 
-  // UI state
+  // UI + form state
   const [ratingFilter, setRatingFilter] = useState(null); // 1-5 or null
   const [sortOrder, setSortOrder] = useState("recent"); // recent | high | low
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-  const [lightboxItem, setLightboxItem] = useState(null);
 
-  // form state
-  const [showReviewForm, setShowReviewForm] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewTitle, setReviewTitle] = useState("");
   const [reviewText, setReviewText] = useState("");
@@ -190,9 +209,15 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
   const previewsRef = useRef([]);
   const [fileWarning, setFileWarning] = useState("");
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
-  const [uploadError, setUploadError] = useState(null);
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const [canReviewFlag, setCanReviewFlag] = useState(null);
+  const [userCanReview, setUserCanReview] = useState(false);
+  const [userHasReviewed, setUserHasReviewed] = useState(false);
+  const [lightboxItem, setLightboxItem] = useState(null);
+  const [currentUserVerified, setCurrentUserVerified] = useState(false);
+
   const toastTimerRef = useRef(null);
-  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
 
   function internalToast(msg, ttl = 4000) {
     try { showToast(msg); } catch {}
@@ -201,33 +226,97 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
   }
 
   // uploader hook
-  const { upload, isUploading: uploaderBusy, error: uploaderError } = useUploader(apiBase, {
+  const { upload, isUploading: isUploadingFiles, error: uploadError } = useUploader(apiBase, {
     cloudName: CLOUDINARY_CLOUD_NAME,
     uploadPreset: CLOUDINARY_UPLOAD_PRESET,
   });
 
-  useEffect(() => {
-    setUploadError(uploaderError || null);
-    setIsUploadingFiles(Boolean(uploaderBusy));
-  }, [uploaderBusy, uploaderError]);
-
-  // fetch reviews
+  // fetch reviews then votes
   async function fetchReviews() {
     setLoading(true);
     try {
-      const res = await fetch(`${apiBase}/api/reviews/product/${productId}`);
-      if (!res.ok) {
-        try { const t = await res.text(); console.warn("Reviews fetch failed:", t); } catch {}
-        setLoading(false);
-        return;
+      const r = await fetch(`${apiBase}/api/reviews/product/${productId}`);
+      if (r.ok) {
+        const rjson = await r.json();
+        const normalized = normalizeReviewsPayload(rjson);
+        setReviews(normalized);
+        await fetchVotesForReviews(normalized);
+        return normalized;
       }
-      const json = await res.json();
-      const normalized = normalizeReviewsPayload(json);
-      setReviews(normalized);
     } catch (err) {
-      console.warn("fetchReviews err", err);
+      console.warn("fetchReviews failed", err);
     } finally {
       setLoading(false);
+    }
+    return reviews;
+  }
+
+  // try batch votes fetch then per-review fallback
+  async function fetchVotesForReviews(revs = []) {
+    if (!Array.isArray(revs) || revs.length === 0) return;
+    const ids = revs.map((r) => r.id).filter(Boolean);
+    if (ids.length === 0) return;
+
+    try {
+      const q = `${apiBase}/api/votes?entityType=review&entityIds=${ids.join(",")}`;
+      const res = await fetch(q);
+      if (res.ok) {
+        const json = await res.json();
+        const map = {};
+        let votesNode = null;
+        if (json && typeof json === "object") {
+          if (json.votes && typeof json.votes === "object") votesNode = json.votes;
+          else votesNode = json;
+        } else {
+          votesNode = json;
+        }
+
+        if (Array.isArray(votesNode)) {
+          votesNode.forEach((it) => {
+            const id = String(it.entityId ?? it.id ?? it._id);
+            if (!id) return;
+            const likes = Number(it.like ?? it.likes ?? it.countLikes ?? it.likesCount ?? 0);
+            const dislikes = Number(it.dislike ?? it.dislikes ?? it.countDislikes ?? it.dislikesCount ?? 0);
+            map[id] = { likes, dislikes };
+          });
+        } else if (votesNode && typeof votesNode === "object") {
+          Object.keys(votesNode).forEach((k) => {
+            if (!/^\d+$/.test(String(k))) return;
+            const it = votesNode[k] || {};
+            const likes = Number(it.like ?? it.likes ?? it.countLikes ?? it.likesCount ?? 0);
+            const dislikes = Number(it.dislike ?? it.dislikes ?? it.countDislikes ?? it.dislikesCount ?? 0);
+            map[String(k)] = { likes, dislikes };
+          });
+        }
+
+        if (Object.keys(map).length > 0) {
+          setReviews((prev) =>
+            (Array.isArray(prev) ? prev : []).map((r) => {
+              const m = map[String(r.id)];
+              if (!m) return r;
+              return { ...r, likes: m.likes, dislikes: m.dislikes };
+            })
+          );
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Batch votes fetch failed, falling back to per-review", err);
+    }
+
+    for (const r of revs) {
+      try {
+        const url = `${apiBase}/api/votes/review/${r.id}`;
+        const res2 = await fetch(url);
+        if (!res2.ok) continue;
+        const j = await res2.json();
+        const votesObj = (j && typeof j === "object" && (j.votes || j.data)) ? (j.votes || j.data) : j;
+        const likes = Number(votesObj?.like ?? votesObj?.likes ?? votesObj?.countLikes ?? votesObj?.likesCount ?? 0);
+        const dislikes = Number(votesObj?.dislike ?? votesObj?.dislikes ?? votesObj?.countDislikes ?? votesObj?.dislikesCount ?? 0);
+        setReviews((prev) => (Array.isArray(prev) ? prev.map((x) => (String(x.id) === String(r.id) ? { ...x, likes, dislikes } : x)) : prev));
+      } catch (err) {
+        // ignore
+      }
     }
   }
 
@@ -237,82 +326,70 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
     // cleanup blob urls on unmount
     return () => {
       try {
-        (previewsRef.current || []).forEach((p) => { if (p && p.url && p.url.startsWith("blob:")) URL.revokeObjectURL(p.url); });
+        (previewsRef.current || []).forEach((p) => {
+          if (p && p.url && p.url.startsWith("blob:")) URL.revokeObjectURL(p.url);
+        });
       } catch {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId]);
 
-  // overall metrics
-  const overall = useMemo(() => {
-    const arr = Array.isArray(reviews) ? reviews : [];
-    const count = arr.length;
-    const avg = count ? +(arr.reduce((a, r) => a + (Number(r.rating) || 0), 0) / count).toFixed(2) : 0;
-    const hist = [5, 4, 3, 2, 1].map((s) => arr.filter((r) => Number(r.rating) === s).length);
-    const total = hist.reduce((a, b) => a + b, 0) || 1;
-    const pct = hist.map((c) => Math.round((c / total) * 100));
-    return { avg, count, hist, pct };
-  }, [reviews]);
-
-  // filter + sort + pagination
-  const filtered = useMemo(() => {
-    const arr = Array.isArray(reviews) ? [...reviews] : [];
-    const filteredByRating = ratingFilter ? arr.filter((r) => Number(r.rating) === Number(ratingFilter)) : arr;
-    // sort
-    if (sortOrder === "high") filteredByRating.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0));
-    else if (sortOrder === "low") filteredByRating.sort((a, b) => Number(a.rating || 0) - Number(b.rating || 0));
-    else filteredByRating.sort((a, b) => new Date(b.created_at || b.createdAt || 0) - new Date(a.created_at || a.createdAt || 0));
-    return filteredByRating;
-  }, [reviews, ratingFilter, sortOrder]);
-
-  const visibleReviews = useMemo(() => {
-    return filtered.slice(0, visibleCount);
-  }, [filtered, visibleCount]);
-
-  // optimistic vote handling
-  function toggleVote(entityId, voteType) {
-    const key = `review_${entityId}`;
-    const existing = voteCache[key];
-    const newVote = existing === voteType ? "none" : voteType;
-
-    setReviews((prev) => (Array.isArray(prev) ? prev.map((r) => {
-      if (String(r.id) !== String(entityId)) return r;
-      let nl = Number(r.likes || 0);
-      let nd = Number(r.dislikes || 0);
-      if (existing === "like") nl = Math.max(0, nl - 1);
-      if (existing === "dislike") nd = Math.max(0, nd - 1);
-      if (newVote === "like") nl++;
-      if (newVote === "dislike") nd++;
-      return { ...r, likes: nl, dislikes: nd };
-    }) : prev));
-
-    setVoteCache((prev) => {
-      const clone = { ...(prev || {}) };
-      if (newVote === "none") delete clone[key];
-      else clone[key] = newVote;
-      try { localStorage.setItem("vote_cache_v1", JSON.stringify(clone)); } catch {}
-      return clone;
-    });
-
-    // fire-and-forget API call
-    (async () => {
-      try {
-        const token = localStorage.getItem("token");
-        await fetch(`${apiBase}/api/votes`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ entityType: "review", entityId, vote: newVote, userId: currentUser?.id || "anonymous" }),
-        });
-      } catch (err) {
-        console.warn("vote API error", err);
+  // check if current user can review and whether they already have
+  useEffect(() => {
+    async function checkEligibility() {
+      const actingUser = currentUser || (() => {
+        try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
+      })();
+      if (!actingUser) {
+        setUserCanReview(false);
+        setUserHasReviewed(false);
+        setCurrentUserVerified(false);
+        return;
       }
-    })();
-  }
 
-  // file selection for review form
+      try {
+        const purchased = await userHasPurchased(productId, actingUser);
+        setUserCanReview(Boolean(purchased));
+        setCurrentUserVerified(Boolean(purchased));
+      } catch {
+        setUserCanReview(false);
+      }
+
+      const has = (reviews || []).some((r) => String(r.userId) === String(actingUser.id));
+      setUserHasReviewed(Boolean(has));
+    }
+    checkEligibility();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productId, currentUser, reviews.length]);
+
+  // enrich reviews (try to fetch missing user names)
+  useEffect(() => {
+    async function enrich() {
+      const need = reviews.filter((r) => (!r.userName || r.userName === null) && (r.userId || r.user_id));
+      if (!need.length) return;
+      for (const r of need) {
+        const uid = r.userId || r.user_id;
+        try {
+          const res = await fetch(`${apiBase}/api/users/${uid}`);
+          if (!res.ok) continue;
+          const j = await res.json();
+          const uname = j?.name || j?.fullName || j?.username || j?.email || null;
+          if (uname) {
+            setReviews((prev) => (prev || []).map((x) => (String(x.id) === String(r.id) ? { ...x, userName: uname } : x)));
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+    enrich();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviews.length]);
+
+  // file handlers
   function onFilesSelected(e) {
     const files = Array.from(e.target.files || []);
-    if (!files.length) return;
+    if (!files || files.length === 0) return;
     const nextFiles = [...reviewFiles];
     const nextPreviews = [...reviewPreviews];
     for (const file of files) {
@@ -355,18 +432,11 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
     });
   }
 
-  function resetForm() {
-    setReviewTitle("");
-    setReviewText("");
-    setReviewFiles([]);
-    reviewPreviews.forEach((p) => { if (p.url && p.url.startsWith("blob:")) URL.revokeObjectURL(p.url); });
-    setReviewPreviews([]);
-    previewsRef.current = [];
-    setFileWarning("");
-    setReviewRating(5);
+  function displayNameForUser(user) {
+    if (!user) return null;
+    return user.name || user.fullName || user.full_name || user.firstName || user.first_name || user.email || null;
   }
 
-  // check user purchase status (used for verified badge logic and to restrict who can review)
   async function userHasPurchased(productIdToCheck, user) {
     if (!user || !user.id) return false;
     try {
@@ -383,7 +453,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         if (Array.isArray(json) && json.length > 0) return true;
         if (json && (json.found || json.count > 0)) return true;
       }
-    } catch {}
+    } catch { /* ignore */ }
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(`${apiBase}/api/user/orders/verify`, {
@@ -399,7 +469,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         if (Array.isArray(json) && json.length > 0) return true;
         if (json && (json.found || json.count > 0)) return true;
       }
-    } catch {}
+    } catch { /* ignore */ }
     try {
       const orders = JSON.parse(localStorage.getItem("orders_v1") || "[]");
       return orders.some((o) => String(o.productId) === String(productIdToCheck) && String(o.userId) === String(user.id));
@@ -408,7 +478,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
     }
   }
 
-  // submit review (with file upload using useUploader)
+  // submit review (keeps original optimistic flow)
   async function handleSubmitReview() {
     const actingUser = currentUser || (() => {
       try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
@@ -418,7 +488,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
       internalToast("Please sign in to submit a review.");
       return;
     }
-
     if (!reviewText.trim() && !reviewRating && reviewFiles.length === 0) {
       setFileWarning("Please provide a rating, text, or attach a photo/video.");
       return;
@@ -426,20 +495,25 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
 
     setIsSubmittingReview(true);
 
-    // verify purchase
-    const purchased = await userHasPurchased(productId, actingUser);
-    if (!purchased) {
+    if (canReviewFlag === false) {
       setIsSubmittingReview(false);
       alert("You did not buy this product — only verified buyers can leave reviews.");
       return;
     }
 
-    // optimistic temp review
+    const purchased = await userHasPurchased(productId, actingUser);
+    if (!purchased) {
+      setIsSubmittingReview(false);
+      alert("You did not buy this product — only verified buyers can leave reviews.");
+      setCanReviewFlag(false);
+      return;
+    }
+
     const tempId = -Date.now();
     const tempReview = {
       id: tempId,
       userId: actingUser.id,
-      userName: actingUser.name || actingUser.email || "You",
+      userName: displayNameForUser(actingUser) || actingUser.email || "Anonymous",
       title: reviewTitle || null,
       rating: reviewRating,
       text: reviewText || "",
@@ -447,20 +521,20 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
       dislikes: 0,
       created_at: new Date().toISOString(),
       pending: true,
-      media: reviewPreviews.map((p) => ({ url: p.url, type: p.type })),
+      media: reviewPreviews.map((p) => ({ url: p.url, type: p.type, name: p.name })),
       imageUrl: reviewPreviews[0]?.url || null,
+      verified: true, // optimistic: current user purchased
     };
 
     setReviews((prev) => [tempReview, ...(Array.isArray(prev) ? prev : [])]);
-    resetForm();
-    setShowReviewForm(false);
+    setShowReviewForm(true);
+    setReviewSubmitted(false);
 
     try {
-      // upload files if any
+      // Upload attachments (if any)
       let uploaded = [];
       if (reviewFiles && reviewFiles.length > 0) {
         try {
-          setIsUploadingFiles(true);
           uploaded = await upload(reviewFiles);
           if (!Array.isArray(uploaded) || uploaded.length === 0) {
             throw new Error("Upload returned no urls");
@@ -468,9 +542,9 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         } catch (upErr) {
           console.error("Upload failed:", upErr);
           internalToast("Attachment upload failed. Please try again.");
-          setReviews((prev) => (Array.isArray(prev) ? prev.filter((r) => String(r.id) !== String(tempId)) : []));
           setIsSubmittingReview(false);
-          setIsUploadingFiles(false);
+          // remove optimistic temp review
+          setReviews((prev) => (Array.isArray(prev) ? prev.filter((r) => String(r.id) !== String(tempId)) : []));
           return;
         }
       }
@@ -501,37 +575,66 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
       }
 
       const created = await res.json();
-      // normalize single
-      const createdNormalized = normalizeReviewsPayload(created)[0] || { ...created, id: created.id || created._id };
 
-      // replace temp review with created (if temp existed)
-      setReviews((prev) => {
-        const arr = Array.isArray(prev) ? [...prev] : [];
-        const replaced = arr.map((r) => (String(r.id) === String(tempId) ? createdNormalized : r));
-        // if not found, put it at top
-        if (!replaced.some((r) => String(r.id) === String(createdNormalized.id))) {
-          replaced.unshift(createdNormalized);
-        }
-        return replaced;
-      });
+      // normalize created review
+      const createdNormalized = {
+        ...created,
+        id: created?.id || created?._id || tempId,
+        userId: created?.userId || created?.user_id || tempReview.userId,
+        userName: created?.userName || created?.name || created?.username || tempReview.userName,
+        title: created?.title ?? tempReview.title,
+        rating: created?.rating ?? tempReview.rating,
+        text: created?.text ?? tempReview.text,
+        pending: false,
+        media: (() => {
+          const inputArr =
+            created.imageUrls || created.images || created.media ||
+            (typeof created.imageUrl === "string" && created.imageUrl ? created.imageUrl.split(",") : []);
+          const arr = Array.isArray(inputArr) ? inputArr : [];
+          const urls = arr.length ? arr : uploaded.map((u) => u.url || String(u));
+          return urls.map((m) => {
+            const url = typeof m === "object" && m.url ? m.url : String(m || "");
+            const lower = url.split("?")[0].toLowerCase();
+            const isVideo = /\.(mp4|webm|ogg|mov|m4v)$/i.test(lower) || lower.includes("video") || lower.includes("/video/");
+            return { url, type: isVideo ? "video" : "image", name: url.split("/").pop() };
+          });
+        })(),
+        verified: true, // mark created as verified because purchase was validated
+      };
 
+      setReviews((prev) => (Array.isArray(prev) ? prev.map((r) => (String(r.id) === String(tempId) ? createdNormalized : r)) : [createdNormalized]));
+      await fetchReviews();
+
+      setUserHasReviewed(true);
+
+      // cleanup previews & form
+      setReviewRating(5);
+      setReviewTitle("");
+      setReviewText("");
+      setReviewFiles([]);
+      reviewPreviews.forEach((p) => { if (p.url && p.url.startsWith("blob:")) URL.revokeObjectURL(p.url); });
+      setReviewPreviews([]);
+      previewsRef.current = [];
+      setFileWarning("");
+      setReviewSubmitted(true);
       internalToast("Review submitted — thanks!");
     } catch (err) {
-      console.error("submitReview err", err);
+      console.error("Review POST failed:", err);
       internalToast("Review could not be uploaded.");
-      // cleanup optimistic
       await fetchReviews();
     } finally {
       setIsSubmittingReview(false);
-      setIsUploadingFiles(false);
     }
   }
 
-  // delete review (if allowed)
+  // delete review
   async function deleteReview(reviewId) {
     if (!reviewId) return;
-    // optimistic remove
-    setReviews((prev) => (Array.isArray(prev) ? prev.filter((r) => String(r.id) !== String(reviewId)) : prev));
+    const actingUser = currentUser || (() => {
+      try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
+    })();
+
+    setReviews((prev) => (Array.isArray(prev) ? prev.filter((r) => String(r.id) !== String(reviewId)) : []));
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(`${apiBase}/api/reviews/${reviewId}`, {
@@ -539,63 +642,124 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
       if (!res.ok) {
-        internalToast("Could not delete on server; refreshed reviews.");
         await fetchReviews();
+        internalToast("Could not delete on server; refreshed reviews.");
       } else {
         internalToast("Review deleted");
+        await fetchReviews();
+        setUserHasReviewed(false);
       }
     } catch (err) {
-      console.error("delete err", err);
+      console.error("Delete failed:", err);
       internalToast("Delete failed; try again.");
       await fetchReviews();
     }
   }
 
-  // load more handler
+  // optimistic votes + API call
+  async function toggleVote(entityId, voteType) {
+    const key = `review_${entityId}`;
+    const existing = voteCache[key];
+    const newVote = existing === voteType ? "none" : voteType;
+
+    setReviews((prev) =>
+      (prev || []).map((r) => {
+        if (String(r.id) !== String(entityId)) return r;
+        let nl = r.likes || 0;
+        let nd = r.dislikes || 0;
+        if (existing === "like") nl = Math.max(0, nl - 1);
+        if (existing === "dislike") nd = Math.max(0, nd - 1);
+        if (newVote === "like") nl = nl + 1;
+        if (newVote === "dislike") nd = nd + 1;
+        return { ...r, likes: nl, dislikes: nd };
+      })
+    );
+
+    setVoteCache((prev) => {
+      const clone = { ...(prev || {}) };
+      if (newVote === "none") delete clone[key];
+      else clone[key] = newVote;
+      try { localStorage.setItem("vote_cache_v1", JSON.stringify(clone)); } catch {}
+      return clone;
+    });
+
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${apiBase}/api/votes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ entityType: "review", entityId, vote: newVote, userId: currentUser?.id || "anonymous" }),
+      });
+      if (!res.ok) throw new Error("vote failed");
+    } catch (err) {
+      console.error("Vote API failed:", err);
+    }
+  }
+
+  // overall metrics
+  const overall = useMemo(() => {
+    const arr = Array.isArray(reviews) ? reviews : [];
+    const ratingsCount = arr.length;
+    const sum = arr.reduce((s, r) => s + (Number(r.rating) || 0), 0);
+    const avg = ratingsCount ? +(sum / ratingsCount).toFixed(2) : 0;
+    const hist = [5, 4, 3, 2, 1].map((star) => arr.filter((r) => Number(r.rating) === star).length);
+    const total = hist.reduce((a, b) => a + b, 0) || 0;
+    const pct = hist.map((c) => (total ? Math.round((c / total) * 100) : 0));
+    return { avg, ratingsCount, hist, pct };
+  }, [reviews]);
+
+  // filtering, sorting, pagination
+  const filteredAndSorted = useMemo(() => {
+    const arr = Array.isArray(reviews) ? [...reviews] : [];
+    const byRating = ratingFilter ? arr.filter((r) => Number(r.rating) === Number(ratingFilter)) : arr;
+    if (sortOrder === "high") byRating.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0));
+    else if (sortOrder === "low") byRating.sort((a, b) => Number(a.rating || 0) - Number(b.rating || 0));
+    else byRating.sort((a, b) => new Date(b.created_at || b.createdAt || 0) - new Date(a.created_at || a.createdAt || 0));
+    return byRating;
+  }, [reviews, ratingFilter, sortOrder]);
+
+  const visibleReviews = useMemo(() => filteredAndSorted.slice(0, visibleCount), [filteredAndSorted, visibleCount]);
+
   function loadMore() {
     setVisibleCount((v) => v + PAGE_SIZE);
   }
 
-  // helper: mark current user's reviews as verified if purchased
-  const userVerifiedMap = useMemo(() => {
-    // map userId -> purchased? (we only mark current user when we know)
-    const map = {};
-    // we'll treat reviews where userId === currentUser.id as verified true if userHasPurchased returns true (we could fetch per review but that would be heavy)
-    // For simplicity we'll rely on userHasPurchased when submitting and mark the submitted review as verified
-    return map;
-  }, [currentUser]);
+  // reset form helper
+  function resetForm() {
+    setReviewTitle("");
+    setReviewText("");
+    setReviewFiles([]);
+    reviewPreviews.forEach((p) => { if (p.url && p.url.startsWith("blob:")) URL.revokeObjectURL(p.url); });
+    setReviewPreviews([]);
+    previewsRef.current = [];
+    setFileWarning("");
+    setReviewRating(5);
+  }
 
-  // small subcomponents
-  function RatingSummary() {
+  // small UI components inside component for clarity
+  function RatingSummaryCard() {
     return (
-      <div className="p-4 rounded-md bg-gray-50 dark:bg-gray-800/40 border">
+      <div className="p-4 rounded-md bg-gray-50 dark:bg-gray-800/30 border">
         <div className="flex items-center gap-3">
-          <div className="text-3xl font-bold">{overall.avg || 0}</div>
+          <div className="text-3xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
           <div>
             <StarDisplay value={overall.avg} size={18} />
-            <div className="text-sm text-gray-500">{overall.count} review{overall.count !== 1 ? "s" : ""}</div>
+            <div className="text-sm text-gray-500">{overall.ratingsCount} review{overall.ratingsCount !== 1 ? "s" : ""}</div>
           </div>
         </div>
 
         <div className="mt-3 space-y-2">
           {[5, 4, 3, 2, 1].map((s, i) => (
             <button
-              key={`bar-${s}`}
+              key={`summary-bar-${s}`}
               type="button"
               onClick={() => setRatingFilter((prev) => (prev === s ? null : s))}
-              className={`w-full flex items-center gap-3 text-sm ${
-                ratingFilter === s ? "font-semibold text-black dark:text-white" : "text-gray-700 dark:text-gray-300"
-              }`}
+              className={`w-full flex items-center gap-3 text-sm ${ratingFilter === s ? "font-semibold text-black dark:text-white" : "text-gray-700 dark:text-gray-300"}`}
               aria-pressed={ratingFilter === s}
             >
               <div className="w-8 text-xs">{s}★</div>
               <div className="flex-1 h-3 bg-gray-200 dark:bg-gray-700 rounded overflow-hidden">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${overall.pct[i]}%` }}
-                  transition={{ duration: 0.45 }}
-                  className={`h-full rounded ${ratingFilter === s ? "bg-[#3b82f6]" : "bg-[#616467]"}`}
-                />
+                <motion.div initial={{ width: 0 }} animate={{ width: `${overall.pct[i]}%` }} transition={{ duration: 0.45 }} className={`h-full rounded ${ratingFilter === s ? "bg-blue-500" : "bg-[#616467]"}`} />
               </div>
               <div className="w-10 text-right text-xs text-gray-500 dark:text-gray-400">{overall.pct[i]}%</div>
             </button>
@@ -608,19 +772,15 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
             <option value="high">Highest rating</option>
             <option value="low">Lowest rating</option>
           </select>
-
-          <button onClick={() => { setRatingFilter(null); setSortOrder("recent"); }} className="ml-auto text-xs underline text-gray-600 dark:text-gray-300" type="button">
-            Reset filters
-          </button>
+          <button onClick={() => { setRatingFilter(null); setSortOrder("recent"); }} className="ml-auto text-xs underline text-gray-600 dark:text-gray-300" type="button">Reset filters</button>
         </div>
       </div>
     );
   }
 
   function ReviewFormPanel() {
-    const [canReviewFlag, setCanReviewFlag] = useState(null);
+    const [checkingEligibility, setCheckingEligibility] = useState(false);
     useEffect(() => {
-      // quick check if user can review (current user)
       (async () => {
         const actingUser = currentUser || (() => {
           try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
@@ -629,264 +789,385 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
           setCanReviewFlag(false);
           return;
         }
+        setCheckingEligibility(true);
         try {
           const ok = await userHasPurchased(productId, actingUser);
           setCanReviewFlag(Boolean(ok));
         } catch {
           setCanReviewFlag(false);
+        } finally {
+          setCheckingEligibility(false);
         }
       })();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentUser, productId]);
 
     return (
-      <div className="w-full lg:sticky lg:top-24">
-        <div className="p-3 rounded-md bg-white dark:bg-gray-900 border">
-          <div className="text-sm font-semibold mb-2 text-black dark:text-white">Write a review</div>
+      <div className="p-3 rounded-md bg-white dark:bg-gray-900 border">
+        <div className="text-sm font-semibold mb-2 text-black dark:text-white">Write a review</div>
 
-          <div className="text-sm text-gray-600 mb-3">Only verified buyers can leave reviews.</div>
+        <div className="text-sm text-gray-600 mb-3">Only verified buyers can leave reviews.</div>
 
-          <div className="mb-2">
-            <div className="text-xs text-gray-600 mb-1">Your rating</div>
-            <StarSelector value={reviewRating} onChange={(v) => setReviewRating(v)} size={20} />
-          </div>
-
-          <div className="mb-2">
-            <input
-              value={reviewTitle}
-              onChange={(e) => setReviewTitle(e.target.value)}
-              placeholder="Title (optional)"
-              className="w-full p-2 border rounded bg-white dark:bg-gray-900 text-sm"
-            />
-          </div>
-
-          <div className="mb-3">
-            <textarea rows={4} value={reviewText} onChange={(e) => setReviewText(e.target.value)} placeholder="Write your review..." className="w-full p-2 border rounded bg-white dark:bg-gray-900 text-sm" />
-          </div>
-
-          <div className="mb-3">
-            <label className={`${BUTTON_CLASS} cursor-pointer inline-flex items-center`}>
-              <Paperclip size={14} /> <span className="ml-2">Attach</span>
-              <input type="file" accept="image/*,video/*" multiple onChange={onFilesSelected} className="hidden" />
-            </label>
-            <div className="text-xs text-gray-500 mt-2">Up to {MAX_FILES} files, max {Math.round(MAX_FILE_SIZE_BYTES / (1024 * 1024))} MB each</div>
-            {fileWarning && <div className="text-xs text-red-600 mt-2">{fileWarning}</div>}
-            {reviewPreviews && reviewPreviews.length > 0 && (
-              <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {reviewPreviews.map((p, idx) => (
-                  <div key={`${p.name || idx}-${idx}`} className="relative border rounded overflow-hidden bg-gray-50 flex items-center justify-center h-28">
-                    {p.type === "image" ? (
-                      // eslint-disable-next-line
-                      <img src={p.url} alt={p.name} className="w-full h-full object-cover cursor-pointer" onClick={() => setLightboxItem({ url: p.url, type: "image", name: p.name })} />
-                    ) : (
-                      <video src={p.url} className="w-full h-full object-cover cursor-pointer" onClick={() => setLightboxItem({ url: p.url, type: "video", name: p.name })} muted playsInline />
-                    )}
-                    <button onClick={() => removeAttachment(idx)} type="button" className={`${BUTTON_CLASS} absolute top-2 right-2 bg-white/90 rounded-full p-1`}>
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="flex gap-2">
-            <button disabled={isSubmittingReview || isUploadingFiles || canReviewFlag === false} onClick={handleSubmitReview} className={`${BUTTON_CLASS} flex-1 justify-center`} type="button">
-              {isSubmittingReview || isUploadingFiles ? (<><Send size={14} /> Submitting...</>) : (<><Send size={14} /> Submit</>)}
-            </button>
-            <button onClick={resetForm} className={`${BUTTON_CLASS} justify-center`} type="button"><Trash2 size={14} /> Reset</button>
-          </div>
-
-          {uploadError && <div className="text-xs text-red-600 mt-2">Upload error: {String(uploadError)}</div>}
-          {canReviewFlag === false && <div className="text-xs text-red-600 mt-2">Only verified buyers can submit reviews.</div>}
+        <div className="mb-2">
+          <div className="text-xs text-gray-600 mb-1">Your rating</div>
+          <StarSelector value={reviewRating} onChange={(v) => setReviewRating(v)} size={20} />
         </div>
+
+        <div className="mb-2">
+          <input value={reviewTitle} onChange={(e) => setReviewTitle(e.target.value)} placeholder="Title (optional)" className="w-full p-2 border rounded bg-white dark:bg-gray-900 text-sm" />
+        </div>
+
+        <div className="mb-3">
+          <textarea rows={4} value={reviewText} onChange={(e) => setReviewText(e.target.value)} placeholder="Write your review..." className="w-full p-2 border rounded bg-white dark:bg-gray-900 text-sm" />
+        </div>
+
+        <div className="mb-3">
+          <label className={`${BUTTON_CLASS} cursor-pointer inline-flex items-center`}>
+            <Paperclip size={14} /> <span className="ml-2">Attach</span>
+            <input type="file" accept="image/*,video/*" multiple onChange={onFilesSelected} className="hidden" />
+          </label>
+          <div className="text-xs text-gray-500 mt-2">Up to {MAX_FILES} files, max {Math.round(MAX_FILE_SIZE_BYTES / (1024 * 1024))} MB each</div>
+          {fileWarning && <div className="text-xs text-red-600 mt-2">{fileWarning}</div>}
+
+          {reviewPreviews && reviewPreviews.length > 0 && (
+            <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {reviewPreviews.map((p, idx) => (
+                <div key={`${p.name || idx}-${idx}`} className="relative border rounded overflow-hidden bg-gray-50 flex items-center justify-center h-28">
+                  {p.type === "image" ? (
+                    // eslint-disable-next-line
+                    <img src={p.url} alt={p.name} className="w-full h-full object-cover cursor-pointer" onClick={() => setLightboxItem({ url: p.url, type: "image", name: p.name })} />
+                  ) : (
+                    <video src={p.url} className="w-full h-full object-cover cursor-pointer" onClick={() => setLightboxItem({ url: p.url, type: "video", name: p.name })} muted playsInline />
+                  )}
+                  <button onClick={() => removeAttachment(idx)} type="button" className={`${BUTTON_CLASS} absolute top-2 right-2 bg-white/90 rounded-full p-1`}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <button disabled={isSubmittingReview || isUploadingFiles || canReviewFlag === false} onClick={handleSubmitReview} className={`${BUTTON_CLASS} flex-1 justify-center`} type="button">
+            {isSubmittingReview || isUploadingFiles ? (<><Send size={14} /> Submitting...</>) : (<><Send size={14} /> Submit</>)}
+          </button>
+          <button onClick={() => { resetForm(); }} className={`${BUTTON_CLASS} justify-center`} type="button"><Trash2 size={14} /> Reset</button>
+        </div>
+
+        {uploadError && <div className="text-xs text-red-600 mt-2">Upload error: {String(uploadError)}</div>}
+        {canReviewFlag === false && <div className="text-xs text-red-600 mt-2">Only verified buyers can submit reviews.</div>}
       </div>
     );
   }
 
-  // responsive layout render
+  // Render
   return (
     <section id="reviews-section" className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 sm:p-6 border border-gray-200/60 dark:border-gray-700/60">
       <div className="flex items-start justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-black dark:text-white">Ratings & Reviews</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Honest feedback from buyers helps everyone</p>
+          <h3 className="text-lg font-semibold text-black dark:text-white">Rate & review</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Share your experience with the product</p>
         </div>
         <div className="text-sm text-gray-500">Guidelines apply</div>
       </div>
 
-      <div className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* left: summary + reviews */}
+      <div className="mt-4 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left: main area */}
         <div className="lg:col-span-8">
-          {/* rating summary (mobile top) */}
-          <div className="mb-4 lg:hidden">
-            <div className="p-4 rounded-md bg-gray-50 dark:bg-gray-800/40 border">
-              <div className="flex items-center gap-3">
-                <div className="text-3xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
+          <div className="p-4 sm:p-6 rounded-md bg-gray-50 dark:bg-gray-800/40 border">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="text-3xl sm:text-4xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
                 <div>
-                  <StarDisplay value={overall.avg} />
-                  <div className="text-sm text-gray-500">{overall.count} review{overall.count !== 1 ? "s" : ""}</div>
+                  <StarDisplay value={overall.avg} size={20} />
+                  <div className="text-sm text-gray-500">{overall.ratingsCount} review{overall.ratingsCount !== 1 ? "s" : ""}</div>
                 </div>
               </div>
-              <div className="mt-3 space-y-2">
-                {[5, 4, 3, 2, 1].map((s, i) => (
-                  <div key={`m-bar-${s}`} className="flex items-center gap-3 text-sm">
-                    <div className="w-8">{s}★</div>
-                    <div className="flex-1 h-3 bg-gray-200 dark:bg-gray-700 rounded overflow-hidden">
-                      <motion.div initial={{ width: 0 }} animate={{ width: `${overall.pct[i]}%` }} transition={{ duration: 0.45 }} className="h-full bg-[#616467]" />
+
+              <div className="flex items-center gap-4 w-full sm:w-auto">
+                <div className="hidden sm:block w-64">
+                  {[5, 4, 3, 2, 1].map((s, i) => (
+                    <div key={`hist-${s}`} className="flex items-center gap-3 text-sm mb-2">
+                      <div className="w-8">{s}★</div>
+                      <div className="flex-1 h-3 bg-gray-200 rounded overflow-hidden">
+                        <motion.div initial={{ width: 0 }} animate={{ width: `${overall.pct[i] || 0}%` }} transition={{ duration: 0.45 }} className="h-full bg-[#616467]" />
+                      </div>
+                      <div className="w-10 text-right">{overall.pct[i] || 0}%</div>
                     </div>
-                    <div className="w-10 text-right text-xs text-gray-500">{overall.pct[i]}%</div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+
+                <button
+                  onClick={async () => {
+                    const actingUser = currentUser || (() => {
+                      try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
+                    })();
+                    if (!actingUser) {
+                      internalToast("Please sign in to rate.");
+                      return;
+                    }
+                    if (!userCanReview) {
+                      alert("You did not buy this product — only verified buyers can write reviews.");
+                      setCanReviewFlag(false);
+                      return;
+                    }
+                    if (userHasReviewed) {
+                      internalToast("You already left a review. Delete it to submit a new one.");
+                      return;
+                    }
+                    setShowReviewForm(true);
+                    // scroll to form on mobile
+                    setTimeout(() => window.scrollTo({ top: 600, behavior: "smooth" }), 200);
+                  }}
+                  disabled={!userCanReview || userHasReviewed}
+                  className={` ${BUTTON_CLASS} min-w-[140px] px-4 py-2 ${(!userCanReview || userHasReviewed) ? "opacity-50 cursor-not-allowed" : ""}`}
+                  type="button"
+                >
+                  Rate product
+                </button>
               </div>
             </div>
           </div>
 
-          {/* controls */}
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <div className="flex items-center gap-2">
-              {ratingFilter ? (
-                <div className="text-sm text-gray-700 dark:text-gray-300">Filtering by: <span className="font-semibold ml-1">{ratingFilter}★</span></div>
-              ) : (
-                <div className="text-sm text-gray-700 dark:text-gray-300">Showing all reviews</div>
-              )}
+          {!showReviewForm ? (
+            <div className="mt-4 p-4 rounded-md bg-gray-50 dark:bg-gray-800/40 border">
+              <div className="text-sm text-gray-600 dark:text-gray-300">
+                Only verified buyers can leave reviews. Click{" "}
+                <button
+                  onClick={async () => {
+                    const actingUser = currentUser || (() => {
+                      try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
+                    })();
+                    if (!actingUser) {
+                      internalToast("Please sign in to rate.");
+                      return;
+                    }
+                    if (!userCanReview) {
+                      alert("You did not buy this product — only verified buyers can write reviews.");
+                      setCanReviewFlag(false);
+                      return;
+                    }
+                    if (userHasReviewed) {
+                      internalToast("You already left a review. Delete it to submit a new one.");
+                      return;
+                    }
+                    setShowReviewForm(true);
+                    setTimeout(() => window.scrollTo({ top: 600, behavior: "smooth" }), 200);
+                  }}
+                  disabled={!userCanReview || userHasReviewed}
+                  className={`${(!userCanReview || userHasReviewed) ? "underline opacity-50 cursor-not-allowed" : "underline"}`}
+                  type="button"
+                >
+                  Rate product
+                </button>{" "}
+                to start writing.
+              </div>
             </div>
-
-            <div className="flex items-center gap-2">
-              <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="border rounded px-3 py-2 text-sm bg-white dark:bg-gray-900">
-                <option value="recent">Most recent</option>
-                <option value="high">Highest rating</option>
-                <option value="low">Lowest rating</option>
-              </select>
+          ) : reviewSubmitted || userHasReviewed ? (
+            <div className="mt-4 p-4 rounded-md bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+              <div className="text-sm text-green-800 dark:text-green-200">{userHasReviewed ? "You have already submitted a review for this product." : "Review submitted successfully. Thank you!"}</div>
             </div>
-          </div>
+          ) : (
+            <div className="mt-4 p-4 rounded-md bg-white dark:bg-gray-900 border">
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-3 text-black dark:text-white">
+                  <StarSelector value={reviewRating} onChange={(v) => setReviewRating(v)} size={22} />
+                </div>
 
-          {/* reviews list */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <AnimatePresence>
-              {visibleReviews.map((r) => {
-                const authorName = r.userName || r.user_name || r.name || "Anonymous";
-                const initials = (authorName || "A").split(" ").map((p) => p?.[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "A";
-                const createdAt = r.created_at || r.createdAt || new Date().toISOString();
-                const isOwn = currentUser && String(currentUser.id) === String(r.userId);
-                return (
-                  <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }} transition={{ duration: 0.25 }} key={r.id}>
-                    <Card className="bg-white dark:bg-gray-900 border dark:border-gray-700">
-                      <div className="flex flex-col sm:flex-row items-start gap-4 p-4">
-                        <Avatar
-                          variant="rounded"
-                          alt={authorName}
-                          src={r.avatar || undefined}
-                          sx={{
-                            width: 56,
-                            height: 56,
-                            bgcolor: r.avatar ? undefined : stringToHslColor(authorName || initials),
-                            color: "#fff",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {!r.avatar ? initials : null}
-                        </Avatar>
+                <div className="mb-3">
+                  <label htmlFor="review-title" className="font-semibold text-sm text-black dark:text-white">Title</label>
+                  <input id="review-title" value={reviewTitle} onChange={(e) => setReviewTitle(e.target.value)} placeholder="Review title (optional)" className="w-full p-3 border rounded-lg bg-white dark:bg-gray-900 text-black dark:text-white mt-1" />
+                </div>
 
-                        <div className="flex-1">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <Typography variant="subtitle2" className="!text-sm font-semibold text-black dark:text-white">
-                                {authorName} {r.verified || isOwn ? <span className="ml-2 inline-block text-xs bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 px-2 py-0.5 rounded">Verified</span> : null}
-                              </Typography>
-                              <div className="text-xs text-gray-500">{formatRelativeTime(createdAt)}</div>
-                            </div>
+                <div className="mb-3">
+                  <label htmlFor="review-text" className="font-semibold text-sm text-black dark:text-white">Review</label>
+                  <textarea id="review-text" placeholder="Write your review..." rows={6} value={reviewText} onChange={(e) => setReviewText(e.target.value)} className="w-full p-3 border rounded-lg bg-white dark:bg-gray-900 text-black dark:text-white mt-1 resize-y" />
+                </div>
 
-                            <div className="flex items-center gap-3">
-                              <div className="flex items-center gap-2">
-                                <StarDisplay value={Number(r.rating) || 0} />
-                                <div className="text-xs font-medium">{r.rating}★</div>
-                              </div>
+                <div className="mb-3">
+                  <label className="font-semibold text-sm text-black dark:text-white">Photos & videos (optional)</label>
+                  <div className="mt-2 flex gap-2 items-center">
+                    <label className={`${BUTTON_CLASS} px-4 py-2 cursor-pointer bg-white dark:bg-gray-800 inline-flex items-center`}>
+                      <Paperclip size={14} /> <span className="ml-2">Attach</span>
+                      <input type="file" accept="image/*,video/*" multiple onChange={onFilesSelected} className="hidden" />
+                    </label>
+                    <div className="text-sm text-gray-500">Up to {MAX_FILES} files, max {Math.round(MAX_FILE_SIZE_BYTES / (1024 * 1024))} MB each</div>
+                  </div>
 
-                              {(currentUser && (String(currentUser.id) === String(r.userId) || currentUser.role === "admin" || currentUser.isAdmin)) && (
-                                <button onClick={() => deleteReview(r.id)} className={`${BUTTON_CLASS} ml-2`} type="button" aria-label="Delete review"><Trash2 size={12} /> Delete</button>
-                              )}
-                            </div>
-                          </div>
+                  {fileWarning && <div className="text-sm text-red-600 mt-2">{fileWarning}</div>}
 
-                          {r.title && <Typography className="text-sm font-medium mt-2 text-black dark:text-white">{r.title}</Typography>}
-
-                          <CardContent className="p-0 pt-3 bg-white dark:bg-gray-900">
-                            <Typography className="text-black dark:text-white text-sm">
-                              <ReadMore text={r.text} />
-                            </Typography>
-
-                            {Array.isArray(r.media) && r.media.length > 0 && (
-                              <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                {r.media.map((m, mi) => (
-                                  <div key={`${String(r.id)}-media-${mi}`} className="relative border rounded overflow-hidden bg-gray-50 flex items-center justify-center h-28">
-                                    {m.type === "image" ? (
-                                      // eslint-disable-next-line
-                                      <img src={m.url} alt={m.name || "media"} className="w-full h-full object-cover cursor-pointer" onClick={() => setLightboxItem({ url: m.url, type: "image", name: m.name })} />
-                                    ) : (
-                                      <video src={m.url} className="w-full h-full object-cover cursor-pointer" onClick={() => setLightboxItem({ url: m.url, type: "video", name: m.name })} muted playsInline />
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            <div className="flex flex-wrap items-center gap-2 mt-3">
-                              <button onClick={() => toggleVote(r.id, "like")} className={`${BUTTON_CLASS} px-3 py-2`} type="button" aria-pressed={voteCache[`review_${r.id}`] === "like"}>
-                                <ThumbsUp size={14} /> <span className="ml-1">{r.likes || 0}</span>
-                              </button>
-                              <button onClick={() => toggleVote(r.id, "dislike")} className={`${BUTTON_CLASS} px-3 py-2`} type="button" aria-pressed={voteCache[`review_${r.id}`] === "dislike"}>
-                                <ThumbsDown size={14} /> <span className="ml-1">{r.dislikes || 0}</span>
-                              </button>
-                            </div>
-                          </CardContent>
+                  {reviewPreviews.length > 0 && (
+                    <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {reviewPreviews.map((p, idx) => (
+                        <div key={`${p.name || idx}-${idx}`} className="relative border rounded overflow-hidden bg-gray-50 flex items-center justify-center">
+                          {p.type === "image" ? (
+                            // eslint-disable-next-line
+                            <img
+                              src={p.url}
+                              alt={p.name}
+                              className="w-full h-36 object-contain cursor-pointer bg-gray-100"
+                              onClick={() => setLightboxItem({ url: p.url, type: "image", name: p.name })}
+                            />
+                          ) : (
+                            <video
+                              src={p.url}
+                              className="w-full h-36 object-contain cursor-pointer bg-gray-100"
+                              onClick={() => setLightboxItem({ url: p.url, type: "video", name: p.name })}
+                              muted
+                              playsInline
+                            />
+                          )}
+                          <button onClick={() => removeAttachment(idx)} type="button" className={`${BUTTON_CLASS} absolute top-2 right-2 bg-white/90 rounded-full p-1`}>
+                            <Trash2 size={14} />
+                          </button>
                         </div>
-                      </div>
-                    </Card>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
-          </div>
-
-          {/* load more */}
-          <div className="mt-6 text-center">
-            {filtered.length > visibleCount ? (
-              <button onClick={loadMore} className={`${BUTTON_CLASS} px-4 py-2`} type="button">Load more</button>
-            ) : (
-              filtered.length > 0 && <div className="text-sm text-gray-500">End of reviews</div>
-            )}
-            {filtered.length === 0 && <div className="text-sm text-gray-500">No reviews match your filters.</div>}
-          </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* right: sticky summary + form */}
-        <div className="lg:col-span-4 flex flex-col gap-4">
-          <div className="hidden lg:block">
-            <RatingSummary />
+        {/* Right: sticky panel */}
+        <div className="lg:col-span-4 flex flex-col items-stretch gap-4">
+          <div className="hidden lg:block lg:sticky lg:top-20">
+            <RatingSummaryCard />
           </div>
 
           <div>
             <ReviewFormPanel />
           </div>
 
-          {/* mobile: small summary at bottom of right column */}
           <div className="block lg:hidden">
-            <RatingSummary />
+            <RatingSummaryCard />
           </div>
         </div>
       </div>
 
+      {/* Reviews list */}
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+        {filteredAndSorted.length === 0 && <div className="text-gray-500">No reviews yet — be the first to review.</div>}
+
+        <AnimatePresence>
+          {visibleReviews.map((r) => {
+            const authorName = r.userName || r.user_name || r.name || "Anonymous";
+            const createdAt = r.created_at || r.createdAt || new Date().toISOString();
+            const avatarSrc = r.avatar || r.userAvatar || null;
+            const initials = (authorName || "A").split(" ").map((p) => p?.[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "A";
+            const isOwn = currentUser && String(currentUser.id) === String(r.userId);
+            const showVerified = Boolean(r.verified || (isOwn && currentUserVerified));
+
+            return (
+              <motion.div key={r.id} layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }} transition={{ duration: 0.22 }}>
+                <Card className="w-full bg-white dark:bg-gray-900">
+                  <div className="mx-0 flex flex-col sm:flex-row items-start gap-4 pb-0 pt-4 px-4">
+                    <Avatar
+                      variant="rounded"
+                      alt={authorName || "user"}
+                      src={avatarSrc || undefined}
+                      sx={{
+                        width: 56,
+                        height: 56,
+                        bgcolor: avatarSrc ? undefined : stringToHslColor(authorName || initials),
+                        color: "#fff",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {!avatarSrc ? initials : null}
+                    </Avatar>
+
+                    <div className="flex-1 w-full">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <Typography variant="subtitle2" className="!text-sm font-semibold text-black dark:text-white">
+                            {authorName} {showVerified && <span className="ml-2 inline-block text-xs bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 px-2 py-0.5 rounded">Verified</span>}
+                          </Typography>
+                          <div className="text-xs text-gray-500">{formatRelativeTime(createdAt)}</div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 text-black dark:text-white">
+                            <StarDisplay value={Number(r.rating) || 0} />
+                            <div className="text-xs font-medium">{r.rating}★</div>
+                          </div>
+
+                          {(currentUser && (String(currentUser.id) === String(r.userId) || currentUser.role === "admin" || currentUser.isAdmin)) && (
+                            <button onClick={() => deleteReview(r.id)} className={`${BUTTON_CLASS} ml-3`} type="button" aria-label="Delete review"><Trash2 size={12} /> Delete</button>
+                          )}
+                        </div>
+                      </div>
+
+                      {r.title && <Typography className="text-sm font-medium mt-2 text-black dark:text-white">{r.title}</Typography>}
+
+                      <CardContent className="p-4 pt-0 bg-white dark:bg-gray-900">
+                        <Typography className="text-black dark:text-white text-sm">
+                          <ReadMore text={r.text} />
+                        </Typography>
+
+                        {Array.isArray(r.media) && r.media.length > 0 && (
+                          <div className="mt-3 grid grid-cols-3 gap-2">
+                            {r.media.map((m, mi) => (
+                              <div key={`${String(r.id)}-media-${mi}`} className="relative border rounded overflow-hidden bg-gray-50 flex items-center justify-center">
+                                {m.type === "image" ? (
+                                  // eslint-disable-next-line
+                                  <img
+                                    src={m.url}
+                                    alt={m.name || "media"}
+                                    className="w-full h-28 object-contain cursor-pointer bg-gray-100"
+                                    onClick={() => setLightboxItem({ url: m.url, type: "image", name: m.name })}
+                                    style={{ maxHeight: 112 }}
+                                  />
+                                ) : (
+                                  <video
+                                    src={m.url}
+                                    className="w-full h-28 object-contain cursor-pointer bg-gray-100"
+                                    onClick={() => setLightboxItem({ url: m.url, type: "video", name: m.name })}
+                                    muted
+                                    playsInline
+                                    style={{ maxHeight: 112 }}
+                                  />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-3 mt-3">
+                          <button onClick={() => toggleVote(r.id, "like")} className={`${BUTTON_CLASS}`} type="button" aria-pressed={voteCache[`review_${r.id}`] === "like"}><ThumbsUp size={14} /> <span className="ml-1">{r.likes || 0}</span></button>
+                          <button onClick={() => toggleVote(r.id, "dislike")} className={`${BUTTON_CLASS}`} type="button" aria-pressed={voteCache[`review_${r.id}`] === "dislike"}><ThumbsDown size={14} /> <span className="ml-1">{r.dislikes || 0}</span></button>
+                        </div>
+                      </CardContent>
+                    </div>
+                  </div>
+                </Card>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </div>
+
+      {/* Load more */}
+      <div className="mt-6 text-center">
+        {filteredAndSorted.length > visibleCount ? (
+          <button onClick={loadMore} className={`${BUTTON_CLASS} px-4 py-2`} type="button">Load more</button>
+        ) : filteredAndSorted.length > 0 ? (
+          <div className="text-sm text-gray-500">End of reviews</div>
+        ) : null}
+      </div>
+
       <Lightbox item={lightboxItem} onClose={() => setLightboxItem(null)} />
 
-      {/* mobile fixed action bar for submit when form visible */}
-      {showReviewForm && (
+      {/* Mobile fixed action bar for submit/reset when the form is open */}
+      {showReviewForm && !reviewSubmitted && !userHasReviewed && (
         <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-t p-3">
           <div className="max-w-screen-xl mx-auto px-4 flex gap-2">
-            <button onClick={handleSubmitReview} disabled={isSubmittingReview || isUploadingFiles} className="flex-1 py-3 rounded-full bg-black text-white flex items-center justify-center gap-2" type="button" aria-label="Submit review (mobile)">
+            <button onClick={handleSubmitReview} disabled={isSubmittingReview || canReviewFlag === false || isUploadingFiles} className="flex-1 py-3 rounded-full bg-black text-white flex items-center justify-center gap-2" type="button" aria-label="Submit review (mobile)">
               {isSubmittingReview || isUploadingFiles ? (<><Send size={16} /> Submitting...</>) : (<><Send size={16} /> Submit</>)}
             </button>
-            <button onClick={resetForm} className="flex-1 py-3 rounded-full border bg-white text-black flex items-center justify-center gap-2" type="button" aria-label="Reset review (mobile)">
+            <button onClick={() => { resetForm(); }} className="flex-1 py-3 rounded-full border bg-white text-black flex items-center justify-center gap-2" type="button" aria-label="Reset review (mobile)">
               <Trash2 size={16} /> Reset
             </button>
           </div>
