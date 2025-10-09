@@ -762,18 +762,27 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
                 </div>
               </div>
 
-              <div className="flex items-center gap-4 w-full sm:w-auto">
-                <div className="hidden sm:block w-64">
-                  {[5, 4, 3, 2, 1].map((s, i) => (
-                    <div key={`hist-${s}`} className="flex items-center gap-3 text-sm mb-2">
-                      <div className="w-8">{s}★</div>
-                      <div className="flex-1 h-3 bg-gray-200 rounded overflow-hidden">
-                        <div style={{ width: `${overall.pct[i] || 0}%` }} className="h-full bg-[#616467]" />
-                      </div>
-                      <div className="w-10 text-right">{overall.pct[i] || 0}%</div>
-                    </div>
-                  ))}
-                </div>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 w-full">
+  <div className="flex-1 min-w-[220px] sm:min-w-[280px] md:min-w-[360px]">
+    {[5, 4, 3, 2, 1].map((s, i) => (
+      <div
+        key={`hist-${s}`}
+        className="flex items-center gap-3 text-sm mb-2 w-full"
+      >
+        <div className="w-8 text-right">{s}★</div>
+        <div className="flex-1 h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+          <div
+            style={{ width: `${overall.pct[i] || 0}%` }}
+            className="h-full bg-[#616467] dark:bg-[#a3a3a3] transition-all duration-500"
+          />
+        </div>
+        <div className="w-10 text-right text-gray-700 dark:text-gray-300">
+          {overall.pct[i] || 0}%
+        </div>
+      </div>
+    ))}
+  </div>
+
 
                 <button
                   onClick={async () => {
