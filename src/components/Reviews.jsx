@@ -838,7 +838,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
               {/* show thanks instead of action prompt when user already reviewed or just submitted */}
               {showThanksMessage ? (
                 <div className="text-sm text-green-700 dark:text-green-300">
-                  Thanks for reviewing — we appreciate your feedback.
+                   
                 </div>
               ) : (
                 <div className="text-sm text-gray-600 dark:text-gray-300">
