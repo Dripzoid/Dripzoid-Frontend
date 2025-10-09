@@ -970,7 +970,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
 
             <div className="mt-3">
               {showThanksMessage ? (
-                <div className="text-sm text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 rounded px-3 py-2 text-center">Thanks for reviewing — we appreciate your feedback.</div>
+                <div className="text-sm text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 rounded px-3 py-2 text-center">You Reviewed This Product</div>
               ) : (
                 <button onClick={() => { setShowReviewForm(true); setTimeout(() => window.scrollTo({ top: window.scrollY + 300, behavior: "smooth" }), 200); }} className={`${BUTTON_CLASS} w-full justify-center`} type="button">Write review</button>
               )}
