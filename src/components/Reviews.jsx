@@ -144,6 +144,36 @@ function formatRelativeTime(isoOrDate) {
   }
 }
 
+/**
+ * HistogramBar - robust bar widget that guarantees visibility in flex layouts.
+ * - pct: number 0..100
+ */
+function HistogramBar({ pct = 0 }) {
+  const pctNum = Number(pct) || 0;
+  // If pct is 0, show a small visible marker so the row is obvious.
+  const foregroundWidth = pctNum > 0 ? `${pctNum}%` : "6px";
+  return (
+    <div
+      className="relative flex-1 h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden"
+      role="progressbar"
+      aria-valuenow={pctNum}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={`${pctNum}%`}
+    >
+      <div
+        className="absolute left-0 top-0 bottom-0 rounded-full transition-all duration-600"
+        style={{
+          width: foregroundWidth,
+          backgroundColor: "#616467",
+          // use subtle shadow for contrast
+          boxShadow: "inset 0 -1px 0 rgba(0,0,0,0.08)",
+        }}
+      />
+    </div>
+  );
+}
+
 export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, currentUser = null, showToast = () => {} }) {
   const [reviews, setReviews] = useState([]);
   const [reviewRating, setReviewRating] = useState(5);
@@ -266,16 +296,10 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
       if (res.ok) {
         const json = await res.json();
 
-        // The API can respond in different shapes:
-        //  - { success: true, votes: { "9": { like: 1 }, "11": { dislike: 1 } } }
-        //  - or { "9": { like: 1 }, "11": { dislike: 1 } }
-        //  - or [ { entityId: 9, like: 1, dislike: 0 }, ... ]
-        // Normalize into a map: { "<id>": { likes: X, dislikes: Y }, ... }
         const map = {};
         let votesNode = null;
 
         if (json && typeof json === "object") {
-          // if response contains a top-level "votes" object prefer it
           if (json.votes && typeof json.votes === "object") votesNode = json.votes;
           else votesNode = json;
         } else {
@@ -283,7 +307,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         }
 
         if (Array.isArray(votesNode)) {
-          // array of objects with entityId or id
           votesNode.forEach((it) => {
             const id = String(it.entityId ?? it.id ?? it._id);
             if (!id) return;
@@ -292,9 +315,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
             map[id] = { likes, dislikes };
           });
         } else if (votesNode && typeof votesNode === "object") {
-          // object keyed by id: { "9": { like: 1 }, "11": { dislike: 1 } }
           Object.keys(votesNode).forEach((k) => {
-            // skip keys that are not numeric ids (like "success")
             if (!/^\d+$/.test(String(k))) return;
             const it = votesNode[k] || {};
             const likes = Number(it.like ?? it.likes ?? it.countLikes ?? it.likesCount ?? 0);
@@ -315,18 +336,16 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         }
       }
     } catch (err) {
-      // ignore and try per-review fallback
       console.warn("Batch votes fetch failed, falling back to per-review", err);
     }
 
-    // 2) fallback: fetch per review (robust to different shapes)
+    // fallback per-review
     for (const r of revs) {
       try {
         const url = `${apiBase}/api/votes/review/${r.id}`;
         const res2 = await fetch(url);
         if (!res2.ok) continue;
         const j = await res2.json();
-        // j might be { success: true, votes: { like: 1 } } or { like: 1 } or { likes: 1, dislikes: 0 }
         const votesObj = (j && typeof j === "object" && (j.votes || j.data)) ? (j.votes || j.data) : j;
         const likes = Number(votesObj?.like ?? votesObj?.likes ?? votesObj?.countLikes ?? votesObj?.likesCount ?? 0);
         const dislikes = Number(votesObj?.dislike ?? votesObj?.dislikes ?? votesObj?.countDisLikes ?? votesObj?.dislikesCount ?? 0);
@@ -739,6 +758,9 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
     setReviewRating(5);
   }
 
+  // defensive pct fallback
+  const pctArray = Array.isArray(overall.pct) && overall.pct.length === 5 ? overall.pct : [0, 0, 0, 0, 0];
+
   return (
     <section id="reviews-section" className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 sm:p-6 border border-gray-200/60 dark:border-gray-700/60">
       <div className="flex items-start justify-between">
@@ -763,26 +785,23 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
               </div>
 
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 w-full">
-  <div className="flex-1 min-w-[220px] sm:min-w-[280px] md:min-w-[360px]">
-    {[5, 4, 3, 2, 1].map((s, i) => (
-      <div
-        key={`hist-${s}`}
-        className="flex items-center gap-3 text-sm mb-2 w-full"
-      >
-        <div className="w-8 text-right">{s}★</div>
-        <div className="flex-1 h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-          <div
-            style={{ width: `${overall.pct[i] || 0}%` }}
-            className="h-full bg-[#616467] dark:bg-[#a3a3a3] transition-all duration-500"
-          />
-        </div>
-        <div className="w-10 text-right text-gray-700 dark:text-gray-300">
-          {overall.pct[i] || 0}%
-        </div>
-      </div>
-    ))}
-  </div>
+                <div className="flex-1 min-w-[220px] sm:min-w-[280px] md:min-w-[360px] w-full">
+                  {[5, 4, 3, 2, 1].map((s, i) => (
+                    <div
+                      key={`hist-${s}`}
+                      className="flex items-center gap-3 text-sm mb-2 w-full"
+                    >
+                      <div className="w-8 text-right text-gray-700 dark:text-gray-300">{s}★</div>
 
+                      {/* robust histogram bar */}
+                      <HistogramBar pct={pctArray[i]} />
+
+                      <div className="w-12 text-right text-gray-700 dark:text-gray-300">
+                        {pctArray[i] || 0}%
+                      </div>
+                    </div>
+                  ))}
+                </div>
 
                 <button
                   onClick={async () => {
@@ -938,11 +957,12 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
             <div className="mt-3 space-y-2">
               {[5, 4, 3, 2, 1].map((s, i) => (
                 <div key={`hist-side-${s}`} className="flex items-center gap-3 text-sm mb-2">
-                  <div className="w-8">{s}★</div>
-                  <div className="flex-1 h-3 bg-gray-200 rounded overflow-hidden">
-                    <div style={{ width: `${overall.pct[i] || 0}%` }} className="h-full bg-[#616467]" />
-                  </div>
-                  <div className="w-10 text-right">{overall.pct[i] || 0}%</div>
+                  <div className="w-8 text-gray-700 dark:text-gray-300">{s}★</div>
+
+                  {/* use same robust histogram */}
+                  <HistogramBar pct={pctArray[i]} />
+
+                  <div className="w-10 text-right text-gray-700 dark:text-gray-300">{pctArray[i] || 0}%</div>
                 </div>
               ))}
             </div>
@@ -979,10 +999,8 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
               {[5, 4, 3, 2, 1].map((s, i) => (
                 <div key={`hist-side-sm-${s}`} className="flex items-center gap-3 text-sm mb-2">
                   <div className="w-8">{s}★</div>
-                  <div className="flex-1 h-3 bg-gray-200 rounded overflow-hidden">
-                    <div style={{ width: `${overall.pct[i] || 0}%` }} className="h-full bg-[#616467]" />
-                  </div>
-                  <div className="w-10 text-right">{overall.pct[i] || 0}%</div>
+                  <HistogramBar pct={pctArray[i]} />
+                  <div className="w-10 text-right">{pctArray[i] || 0}%</div>
                 </div>
               ))}
             </div>
