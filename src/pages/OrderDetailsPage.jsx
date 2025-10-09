@@ -11,6 +11,7 @@ import {
   Share2,
   XCircle,
 } from "lucide-react";
+import Reviews from "../components/Reviews"; // <-- uses the uploaded Reviews.jsx
 
 /**
  * OrderDetailsPage - reads API that returns shape like:
@@ -60,7 +61,11 @@ function authHeaders(hasJson = true) {
 function formatDateTime(iso) {
   if (!iso) return "";
   const d = new Date(iso);
-  return d.toLocaleString();
+  try {
+    return d.toLocaleString();
+  } catch {
+    return String(iso);
+  }
 }
 function currency(n) {
   return `₹${Number(n || 0).toLocaleString("en-IN")}`;
@@ -104,6 +109,11 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
   const invoiceRef = useRef(null);
 
   const [infoModal, setInfo] = useState({ open: false, title: "", message: "" });
+
+  const [currentUser, setCurrentUser] = useState(null);
+
+  // track which product review widgets are open (map productId -> boolean)
+  const [openReviews, setOpenReviews] = useState({});
 
   // normalize backend response into UI shape
   function normalizeApiOrder(payload) {
@@ -212,12 +222,35 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     return () => (mounted = false);
   }, [orderId]);
 
+  useEffect(() => {
+    // read current user from localStorage (used by Reviews component)
+    try {
+      const u = JSON.parse(localStorage.getItem("current_user") || "null");
+      setCurrentUser(u);
+    } catch {
+      setCurrentUser(null);
+    }
+  }, []);
+
   const pricing = useMemo(() => (order ? { ...order.pricing } : null), [order]);
 
   // ------------------ backend-integrated actions ------------------
+  // Optimistic cancel: update UI immediately, revert if API fails
   async function handleCancel() {
     if (!order) return;
+    // optimistic update
+    const prevOrder = order;
+    const nowIso = new Date().toISOString();
+    const optimistic = {
+      ...order,
+      status: "cancelled",
+      history: [...(order.history || []), { title: "Cancelled", time: nowIso }],
+      tracking: [...(order.tracking || []), { step: "Cancelled", done: true, time: nowIso }],
+    };
+    setOrder(optimistic);
+    setShowCancel(false);
     setLoading(true);
+
     try {
       const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/cancel`);
       const res = await fetch(url, {
@@ -230,10 +263,13 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       if (!res.ok) throw new Error(payload?.message || `Cancel failed (${res.status})`);
 
       const normalized = normalizeApiOrder(payload?.order ?? payload) ?? { ...order, status: payload?.status ?? "cancelled" };
+      // merge normalized into optimistic state (server wins)
       setOrder((o) => ({ ...o, ...normalized }));
       setInfo({ open: true, title: "Cancelled", message: payload?.message ?? "Order cancelled" });
     } catch (err) {
       console.error("Cancel error:", err);
+      // revert to previous order
+      setOrder(prevOrder);
       setInfo({ open: true, title: "Error", message: err.message || "Could not cancel order" });
     } finally {
       setLoading(false);
@@ -391,7 +427,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     );
   }
 
-  const isDelivered = order.status?.toLowerCase() === "delivered" || order.tracking?.some((t) => t.step?.toLowerCase() === "delivered" && t.done);
+  const isDelivered = order.status?.toLowerCase() === "delivered" || order.tracking?.some((t) => (t.step || t.status)?.toString().toLowerCase() === "delivered" && (t.done || t.status === "delivered"));
   const isPacked = order.status?.toLowerCase() === "packed";
   const isCancelled = order.status?.toLowerCase() === "cancelled";
 
@@ -406,9 +442,9 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       </div>
 
       <main className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left - Main */}
+        {/* Left - Main (span 2 on lg) */}
         <section className="lg:col-span-2 space-y-6">
-          <ProductHeader order={order} />
+          {/* ProductHeader intentionally removed (products are listed below) */}
 
           <TimelineCard
             order={order}
@@ -426,19 +462,53 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
 
             <div className="mt-4 divide-y divide-neutral-100 dark:divide-neutral-800">
               {order.items?.map((it) => (
-                <div key={it.id} className="py-4">
-                  <div className="flex items-center gap-4">
-                    <img src={it.img} alt={it.title} className="w-20 h-20 object-cover rounded" />
-                    <div className="flex-1">
-                      <div className="font-medium">{it.title}</div>
-                      <div className="text-sm text-neutral-500">{it.options}</div>
-                      <div className="text-sm text-neutral-500 mt-1">Seller: {it.seller || "—"}</div>
+                <div key={it.id || `${it.title}-${Math.random()}`} className="py-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                    <div className="w-full sm:w-auto flex items-center gap-4">
+                      <div className="w-20 h-20 flex-shrink-0 rounded overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-gray-50">
+                        {/* fallback image */}
+                        <img
+                          src={it.img || "/placeholder.png"}
+                          alt={it.title}
+                          className="w-full h-full object-cover"
+                          onError={(e) => (e.currentTarget.src = "/placeholder.png")}
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium">{it.title}</div>
+                        <div className="text-sm text-neutral-500">{it.options || "—"}</div>
+                        <div className="text-sm text-neutral-500 mt-1">Seller: {it.seller || "—"}</div>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <div className="font-semibold">{currency(it.price)}</div>
-                      <div className="text-sm text-neutral-500">Qty: {it.qty}</div>
+
+                    <div className="flex items-center justify-between sm:justify-end gap-4">
+                      <div className="text-right">
+                        <div className="font-semibold">{currency(it.price)}</div>
+                        <div className="text-sm text-neutral-500">Qty: {it.qty}</div>
+                      </div>
+
+                      {/* When delivered, show Submit review button for each product */}
+                      {isDelivered && !isCancelled && (
+                        <div className="flex-shrink-0">
+                          <button
+                            onClick={() =>
+                              setOpenReviews((prev) => ({ ...(prev || {}), [String(it.id)]: !Boolean(prev?.[String(it.id)]) }))
+                            }
+                            className={`${BTN} text-sm px-3 py-2`}
+                          >
+                            Submit review
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
+
+                  {/* Inline Reviews component for that product when toggled open */}
+                  {openReviews[String(it.id)] && (
+                    <div className="mt-4">
+                      <Reviews productId={it.id} apiBase={API_BASE} currentUser={currentUser} showToast={(m) => setInfo({ open: true, title: "Notice", message: m || "" })} />
+                    </div>
+                  )}
                 </div>
               )) ?? null}
             </div>
@@ -446,7 +516,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
         </section>
 
         {/* Right - Sidebar */}
-        <aside className="space-y-6 sticky top-6">
+        <aside className="space-y-6">
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-4">
             <div className="flex items-center justify-between">
               <div className="font-medium">Delivery details</div>
@@ -456,13 +526,13 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
             <div className="mt-3 space-y-3">
               <div className="bg-neutral-50 dark:bg-neutral-800 rounded p-3">
                 <div className="text-sm text-neutral-500">Home</div>
-                <div className="text-sm text-neutral-700 dark:text-neutral-200">{order.shipping?.address}</div>
+                <div className="text-sm text-neutral-700 dark:text-neutral-200 break-words">{order.shipping?.address || "—"}</div>
                 <div className="mt-2 flex items-center justify-between">
                   <div className="text-sm text-neutral-500">
-                    {order.shipping?.name} • {order.shipping?.phone}
+                    {order.shipping?.name || "—"} • {order.shipping?.phone || "—"}
                   </div>
                   <div>
-                    {!isPacked && (
+                    {!isPacked && !isCancelled && (
                       <button onClick={() => setShowEditAddress(true)} className={BTN + " text-sm px-3 py-1"}>
                         Edit
                       </button>
@@ -619,6 +689,7 @@ function SkeletonPage() {
   );
 }
 
+/* ProductHeader left in file but not used — you can remove if you want */
 function ProductHeader({ order }) {
   const item = order.items?.[0] || { title: "", options: "", seller: "", price: 0, img: "" };
   return (
@@ -686,7 +757,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
     done: idx <= progressIndex,
     date:
       idx <= progressIndex
-        ? order.history?.find((h) => h.title?.toLowerCase().includes(step.toLowerCase()))?.time ||
+        ? order.history?.find((h) => (h.title || "").toString().toLowerCase().includes(step.toLowerCase()))?.time ||
           order.created_at ||
           null
         : null,
@@ -758,6 +829,8 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
             <div className="font-semibold capitalize">{order.status}</div>
           </div>
         </div>
+
+        <div className="text-sm text-neutral-500 hidden sm:block">Order placed: {formatDateTime(order.created_at)}</div>
       </div>
 
       <div className="mt-6 relative" ref={timelineRef}>
@@ -852,8 +925,8 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
         Delivery Executive details will be available once the order is out for delivery
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-4">
-        <div className="flex-1 flex gap-3">
+      <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex-1 flex gap-3 w-full">
           {showActions && !isDelivered && (
             <>
               <button onClick={onCancel} className={BTN + " flex-1 py-3 flex items-center justify-center gap-2"}>
@@ -869,8 +942,12 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
               Return
             </button>
           )}
+
+          {isCancelled && (
+            <div className="text-sm text-red-600 italic px-2">This order has been cancelled.</div>
+          )}
         </div>
-        <div className="w-44" />
+        <div className="w-full sm:w-44" />
       </div>
     </div>
   );
