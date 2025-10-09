@@ -37,6 +37,7 @@ function normalizeColorString(str) {
   return String(str || "").trim().toLowerCase();
 }
 
+/** sanitize color name for lookup: lowercased + remove spaces */
 function sanitizeColorNameForLookup(name) {
   if (!name || typeof name !== "string") return "";
   return name.trim().toLowerCase().replace(/\s+/g, "");
@@ -46,6 +47,10 @@ function normalizeVariantValue(v) {
   if (v === null || v === undefined) return "";
   return String(v).trim().toLowerCase();
 }
+
+/**
+ * Color name detection + nearest-color integration
+ */
 
 // --- nearest-color setup ---
 const CUSTOM_NAMED_COLORS = {
@@ -75,6 +80,7 @@ function detectColorTextName(color) {
   }
   const s = String(color).trim();
   if (!s) return "";
+  // hex?
   if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s)) {
     const hex = s.toUpperCase();
     if (nearest) {
@@ -86,6 +92,7 @@ function detectColorTextName(color) {
     return hex;
   }
 
+  // try browser accept
   try {
     if (typeof document !== "undefined") {
       const st = document.createElement("span").style;
@@ -121,6 +128,16 @@ function detectColorTextName(color) {
   return s;
 }
 
+/**
+ * Try to resolve a CSS color name (or hex string) into a hex value.
+ * Approach:
+ *  - If input is already a hex -> return it.
+ *  - Attempt to resolve named CSS color by creating a temporary element,
+ *    setting its color, reading computed style (rgb) and converting that to hex.
+ *  - Fall back to '#808080'.
+ *
+ * Works only in browser (guards for SSR).
+ */
 function rgbStringToHex(rgb) {
   if (!rgb || typeof rgb !== "string") return null;
   const m = rgb.match(/rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/i);
@@ -137,7 +154,7 @@ function rgbStringToHex(rgb) {
 
 function nameToHex(name) {
   if (!name || typeof name !== "string") return null;
-  if (typeof document === "undefined") return null;
+  if (typeof document === "undefined") return null; // SSR guard
   try {
     const span = document.createElement("span");
     span.style.color = "";
@@ -154,6 +171,7 @@ function nameToHex(name) {
   return null;
 }
 
+/** Try to resolve provided color (string or object) to a usable CSS color hex. */
 function resolveColor(c) {
   if (!c) return "#808080";
   if (typeof c === "object") {
@@ -163,10 +181,13 @@ function resolveColor(c) {
   }
   const s = String(c).trim();
   if (!s) return "#808080";
+  // hex candidate?
   if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s)) return s.toUpperCase();
+  // try name -> hex
   const sanitized = sanitizeColorNameForLookup(s);
   const fromName = nameToHex(sanitized) || nameToHex(s);
   if (fromName) return fromName;
+  // try DOM accept
   try {
     if (typeof document !== "undefined") {
       const st = document.createElement("span").style;
@@ -177,6 +198,7 @@ function resolveColor(c) {
   return "#808080";
 }
 
+// Helper: return friendly nearest name (falls back to detectColorTextName)
 function getNearestColorLabel(c) {
   const hex = resolveColor(c);
   if (!hex) return detectColorTextName(c);
@@ -189,6 +211,7 @@ function getNearestColorLabel(c) {
   return detectColorTextName(c);
 }
 
+/* Format timestamp into IST string */
 function formatIST(isoOrDate) {
   try {
     if (!isoOrDate) return "";
@@ -199,11 +222,12 @@ function formatIST(isoOrDate) {
   }
 }
 
+/* Relative time (uses device clock) */
 function formatRelativeIST(dateString) {
   if (!dateString) return "";
   const date = new Date(dateString);
   const now = new Date();
-  const diff = Math.floor((now - date) / 1000);
+  const diff = Math.floor((now - date) / 1000); // seconds
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
@@ -211,6 +235,7 @@ function formatRelativeIST(dateString) {
   return formatIST(date);
 }
 
+// deterministic HSL color generator for avatar backgrounds
 function stringToHslColor(str = "", s = 65, l = 40) {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -221,6 +246,12 @@ function stringToHslColor(str = "", s = 65, l = 40) {
   return `hsl(${h} ${s}% ${l}%)`;
 }
 
+/* -------------------- COLOR / SIZE COMPARISON HELPERS -------------------- */
+
+/**
+ * Get a sanitized name string from a color input (object/string).
+ * Returns lowercased, whitespace-collapsed string.
+ */
 function colorNameFromInput(v) {
   if (!v && v !== 0) return "";
   if (typeof v === "object") {
@@ -230,6 +261,10 @@ function colorNameFromInput(v) {
   return sanitizeColorNameForLookup(String(v || ""));
 }
 
+/**
+ * Get resolved hex (uppercase) for an input where possible.
+ * May return null if resolution fails (e.g. SSR or unknown name).
+ */
 function colorHexFromInput(v) {
   try {
     const hex = resolveColor(v);
@@ -238,21 +273,30 @@ function colorHexFromInput(v) {
   return null;
 }
 
+/**
+ * Compare two color inputs tolerant of name-vs-hex vs object differences.
+ * Returns true if they are likely the same color.
+ */
 function colorEquals(a, b) {
   if (!a && !b) return true;
   if (!a || !b) return false;
+
+  // If direct string equality after trimming (fast path)
   const sa = String(a).trim().toLowerCase();
   const sb = String(b).trim().toLowerCase();
   if (sa && sb && sa === sb) return true;
 
+  // Compare sanitized friendly names
   const na = colorNameFromInput(a);
   const nb = colorNameFromInput(b);
   if (na && nb && na === nb) return true;
 
+  // Compare resolved hex values (if any)
   const ha = colorHexFromInput(a);
   const hb = colorHexFromInput(b);
   if (ha && hb && ha === hb) return true;
 
+  // Try nearest-name mapping via CUSTOM_NAMED_COLORS (fallback)
   if (nearest) {
     try {
       const ra = ha ? nearest(ha) : nearest(colorNameFromInput(a));
@@ -266,6 +310,9 @@ function colorEquals(a, b) {
   return false;
 }
 
+/**
+ * Compare two size inputs (normalized strings)
+ */
 function sizeEquals(a, b) {
   if (!a && !b) return true;
   if (!a || !b) return false;
@@ -278,6 +325,7 @@ export default function ProductDetailsPage() {
   const productId = routeProductId || "demo-kurta-1";
   const navigate = useNavigate();
 
+  // contexts
   const { addToCart, buyNow: ctxBuyNow, cart = [], fetchCart } = useCart() || {};
   const wishlistCtx = useWishlist() || {};
   const { wishlist = [], addToWishlist = async () => {}, removeFromWishlist = async () => {}, fetchWishlist = async () => {} } = wishlistCtx;
@@ -318,10 +366,12 @@ export default function ProductDetailsPage() {
     };
   }, []);
 
+  // keep currentUser synced with UserContext if it becomes available
   useEffect(() => {
     if (ctxUser) setCurrentUser(ctxUser);
   }, [ctxUser]);
 
+  // wishlist top
   const [wlBusyTop, setWlBusyTop] = useState(false);
   const canonicalPid = useMemo(
     () =>
@@ -362,6 +412,7 @@ export default function ProductDetailsPage() {
     }
   };
 
+  /* ---------- load product + qa + related ---------- */
   useEffect(() => {
     const ac = new AbortController();
     let mounted = true;
@@ -400,6 +451,7 @@ export default function ProductDetailsPage() {
 
         await enrichQAWithUserNames(qjson, ac.signal);
 
+        // related products
         try {
           let list = [];
           const rr = await fetch(`${API_BASE}/api/products/related/${productId}`, { signal: ac.signal });
@@ -435,6 +487,7 @@ export default function ProductDetailsPage() {
     };
   }, [productId]);
 
+  // Enrich QA with user names and fetch votes for answers
   async function enrichQAWithUserNames(qList = [], signal = null) {
     const list = Array.isArray(qList) ? qList : [];
     if (list.length === 0) {
@@ -497,6 +550,7 @@ export default function ProductDetailsPage() {
       });
       setQuestions(enriched);
 
+      // fetch votes map for answers if any
       (async () => {
         try {
           const allAnswerIds = enriched.flatMap((q) => (q.answers || []).map((a) => a.id).filter(Boolean));
@@ -537,9 +591,11 @@ export default function ProductDetailsPage() {
     });
   }
 
+  /* ---------- gallery (color-aware) ---------- */
   const requiresColor = Array.isArray(product?.colors) && product.colors.length > 0;
   const requiresSize = Array.isArray(product?.sizes) && product.sizes.length > 0;
 
+  // Build a mapping of colorKey -> images slice
   const colorImageMap = useMemo(() => {
     const imgs = Array.isArray(product?.images) ? product.images.slice() : [];
     const colors = Array.isArray(product?.colors) && product.colors.length ? product.colors.slice() : [];
@@ -586,6 +642,7 @@ export default function ProductDetailsPage() {
     return map;
   }, [product?.images, product?.colors]);
 
+  // Helper: derive a readable list of color names (advanced detection)
   const allColorNames = useMemo(() => {
     const colors = Array.isArray(product?.colors) ? product.colors : [];
     return colors.map((c) => getNearestColorLabel(c));
@@ -620,6 +677,7 @@ export default function ProductDetailsPage() {
     setSelectedImage(0);
   }, [galleryImages.length, selectedColor]);
 
+  // Lightbox
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   useEffect(() => {
@@ -639,6 +697,7 @@ export default function ProductDetailsPage() {
   };
   const closeLightbox = () => setLightboxOpen(false);
 
+  /* ---------- variant-aware stock & quantity safety ---------- */
   const selectedVariant = useMemo(() => {
     const variants = Array.isArray(product?.variants) ? product.variants : [];
     if (!variants.length) return null;
@@ -669,17 +728,26 @@ export default function ProductDetailsPage() {
     });
   }, [availableStock]);
 
+  /* ---------- ensure cart detection persists across refresh ---------- */
+
+  // Prevent repeated fetchCart calls by only invoking it once when it first becomes available.
   const cartFetchedRef = useRef(false);
   useEffect(() => {
     if (cartFetchedRef.current) return;
     if (typeof fetchCart === "function") {
       cartFetchedRef.current = true;
       try {
-        fetchCart().catch(() => {});
-      } catch {}
+        fetchCart().catch(() => {
+          // If fetch fails, we don't flip the ref back to false here (avoid retry storms).
+          // If you want retry logic, implement an explicit retry/backoff mechanism.
+        });
+      } catch {
+        // ignore
+      }
     }
   }, [fetchCart]);
 
+  // Helper: check if a cart item matches current product + selection (color/size/variant)
   function cartItemMatchesSelection(item, prodKey, selColor, selSize, selVariantId) {
     if (!item) return false;
     const pid = String(item.product_id ?? item.productId ?? item.product?.id ?? item.product?._id ?? item.id ?? "");
@@ -788,6 +856,7 @@ export default function ProductDetailsPage() {
     }
   }, [cart, product, productId, selectedColor, selectedSize, selectedVariant]);
 
+  /* ---------- actions ---------- */
   async function addToCartHandler() {
     const needSelectionError = (requiresColor && !selectedColor) || (requiresSize && !selectedSize);
     if (needSelectionError) {
@@ -822,9 +891,11 @@ export default function ProductDetailsPage() {
         try {
           await addToCart(itemForCart);
         } catch (err) {
+          // backward compatibility: older addToCart signature
           try {
             await addToCart(product, Number(quantity || 1), selectedSize, selectedColor, variantInfo);
           } catch (err2) {
+            // ignore and rethrow
             throw err2;
           }
         }
@@ -885,6 +956,7 @@ export default function ProductDetailsPage() {
     showToast("Proceeding to checkout...");
   }
 
+  // ---- FIXED: Define handleVote + handlePostAnswer so ESLint/no-undef stops failing ----
   const handleVote = async (entityId, entityType, voteType) => {
     try {
       const res = await fetch(`${API_BASE}/api/votes`, {
@@ -964,6 +1036,8 @@ export default function ProductDetailsPage() {
     }
   };
 
+  // ------------------------------------------------------------------------------
+
   async function handleShare() {
     try {
       const shareUrl = window.location.href;
@@ -999,71 +1073,74 @@ export default function ProductDetailsPage() {
     else setZipDisplay(digits.slice(0, 3) + " " + digits.slice(3));
   }
 
-  async function checkDelivery() {
-    const pin = zipRaw.trim();
+ async function checkDelivery() {
+  const pin = zipRaw.trim();
 
-    if (!/^\d{6}$/.test(pin)) {
-      setDeliveryMsg({ ok: false, text: "Please enter a valid 6-digit PIN" });
+  // Basic validation
+  if (!/^\d{6}$/.test(pin)) {
+    setDeliveryMsg({ ok: false, text: "Please enter a valid 6-digit PIN" });
+    return;
+  }
+
+  try {
+    const url = `${API_BASE}/api/shipping/estimate?pin=${encodeURIComponent(
+      pin
+    )}&cod=0`;
+    const res = await fetch(url);
+
+    if (!res.ok) {
+      setDeliveryMsg({ ok: false, text: "Could not fetch delivery estimate" });
       return;
     }
 
-    try {
-      const url = `${API_BASE}/api/shipping/estimate?pin=${encodeURIComponent(
-        pin
-      )}&cod=0`;
-      const res = await fetch(url);
+    const json = await res.json();
 
-      if (!res.ok) {
-        setDeliveryMsg({ ok: false, text: "Could not fetch delivery estimate" });
+    const companies = json?.estimate || [];
+
+    if (Array.isArray(companies) && companies.length > 0) {
+      // Pick the earliest delivery date (ETD)
+      const sorted = companies
+        .filter((c) => c && c.etd)
+        .sort((a, b) => new Date(a.etd) - new Date(b.etd));
+
+      const best = sorted[0] || companies[0];
+      const etdRaw = best.etd || best.estimated_delivery;
+
+      if (etdRaw) {
+        const date = new Date(etdRaw);
+        const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+        const dayName = days[date.getDay()];
+        const day = String(date.getDate()).padStart(2, "0");
+        const month = months[date.getMonth()];
+        const year = date.getFullYear();
+
+        setDeliveryMsg({
+          ok: true,
+          text: `Delivery Expected by ${dayName}, ${day}-${month}-${year}`,
+        });
         return;
       }
-
-      const json = await res.json();
-
-      const companies = json?.estimate || [];
-
-      if (Array.isArray(companies) && companies.length > 0) {
-        const sorted = companies
-          .filter((c) => c && c.etd)
-          .sort((a, b) => new Date(a.etd) - new Date(b.etd));
-
-        const best = sorted[0] || companies[0];
-        const etdRaw = best.etd || best.estimated_delivery;
-
-        if (etdRaw) {
-          const date = new Date(etdRaw);
-          const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-          const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-          const dayName = days[date.getDay()];
-          const day = String(date.getDate()).padStart(2, "0");
-          const month = months[date.getMonth()];
-          const year = date.getFullYear();
-
-          setDeliveryMsg({
-            ok: true,
-            text: `Delivery Expected by ${dayName}, ${day}-${month}-${year}`,
-          });
-          return;
-        }
-      }
-
-      setDeliveryMsg({
-        ok: false,
-        text: "Sorry, delivery is not available to this PIN",
-      });
-    } catch (err) {
-      console.warn("shipping estimate failed", err);
-      setDeliveryMsg({
-        ok: false,
-        text: "Could not fetch delivery estimate",
-      });
     }
+
+    setDeliveryMsg({
+      ok: false,
+      text: "Sorry, delivery is not available to this PIN",
+    });
+  } catch (err) {
+    console.warn("shipping estimate failed", err);
+    setDeliveryMsg({
+      ok: false,
+      text: "Could not fetch delivery estimate",
+    });
   }
+}
+
 
   if (!product)
     return (
-      <div className="p-6 text-center text-black dark:text-white">
+      <div className="p-8 text-center text-black dark:text-white">
         Loading product...
       </div>
     );
@@ -1084,8 +1161,9 @@ export default function ProductDetailsPage() {
   const disablePurchase = availableStock <= 0 || (requiresColor && !selectedColor) || (requiresSize && !selectedSize);
 
   const actionButtonClass =
-    "shadow-[inset_0_0_0_2px_#616467] text-black px-4 py-2 rounded-full tracking-widest uppercase font-bold bg-transparent hover:bg-[#616467] hover:text-white dark:text-neutral-200 transition duration-200 flex items-center gap-2 justify-center";
+    "shadow-[inset_0_0_0_2px_#616467] text-black px-6 py-2 rounded-full tracking-widest uppercase font-bold bg-transparent hover:bg-[#616467] hover:text-white dark:text-neutral-200 transition duration-200 flex items-center gap-2 justify-center";
 
+  /* Color display small component */
   function ColorDisplay({ color }) {
     const name = typeof color === "string" ? color : (color && (color.label || color.name)) || String(color || "");
     const final = resolveColor(color);
@@ -1133,66 +1211,34 @@ export default function ProductDetailsPage() {
   }
 
   return (
-    <div className="bg-white dark:bg-black min-h-screen text-black dark:text-white pb-32">
-      <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
+    <div className="bg-white dark:bg-black min-h-screen text-black dark:text-white pb-20">
+      <div className="container mx-auto p-6 space-y-8">
         {/* Gallery + details */}
-        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 border border-gray-200/60 dark:border-gray-700/60">
+        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 border border-gray-200/60 dark:border-gray-700/60">
           <div className="relative">
             <div className="relative">
-              <button
-                type="button"
-                onClick={() => openLightbox(selectedImage)}
-                aria-label="Open gallery"
-                className="w-full block"
-              >
-                <img
-                  src={galleryImages[selectedImage]}
-                  alt={`${product.name} - image ${selectedImage + 1}`}
-                  loading="lazy"
-                  className="w-full h-56 sm:h-72 md:h-96 lg:h-[460px] object-cover rounded-xl shadow"
-                />
+              <button type="button" onClick={() => openLightbox(selectedImage)} aria-label="Open gallery" className="w-full block">
+                <img src={galleryImages[selectedImage]} alt={`${product.name} - image ${selectedImage + 1}`} className="w-full h-[460px] object-cover rounded-xl shadow" />
               </button>
-
-              <div className="absolute top-3 left-3 bg-black/60 text-white px-2 py-1 rounded text-xs">
+              <div className="absolute top-4 left-4 bg-black/60 text-white px-2 py-1 rounded">
                 {selectedImage + 1}/{galleryImages.length}
               </div>
 
-              <button
-                onClick={prevImage}
-                type="button"
-                className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-black/70 text-black dark:text-white p-2 rounded-full shadow z-30"
-                aria-label="Previous image"
-              >
+              <button onClick={prevImage} type="button" className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-black/70 text-black dark:text-white p-2 rounded-full shadow z-30" aria-label="Previous image">
                 <ChevronLeft />
               </button>
-              <button
-                onClick={nextImage}
-                type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-black/70 text-black dark:text-white p-2 rounded-full shadow z-30"
-                aria-label="Next image"
-              >
+              <button onClick={nextImage} type="button" className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-black/70 text-black dark:text-white p-2 rounded-full shadow z-30" aria-label="Next image">
                 <ChevronRight />
               </button>
             </div>
 
-            <div className="flex gap-3 mt-3 overflow-x-auto thumbs-container py-1">
+            <div className="flex gap-3 mt-4 overflow-x-auto thumbs-container py-1" role="tablist" aria-label="Product images">
               {galleryImages.map((g, i) => {
                 const isActive = i === selectedImage;
                 return (
-                  <button
-                    key={`${g}-${i}`}
-                    onClick={() => setSelectedImage(i)}
-                    aria-selected={isActive}
-                    aria-label={`Image ${i + 1}`}
-                    title={`Image ${i + 1}`}
-                    type="button"
-                    role="tab"
-                    className="relative flex-shrink-0 w-14 h-14 sm:w-20 sm:h-20 rounded-md overflow-hidden focus:outline-none"
-                  >
-                    <div
-                      className={`w-full h-full rounded-md border transition-all duration-200 overflow-hidden ${isActive ? "border-2 border-black dark:border-white shadow-md" : "border border-gray-300 dark:border-gray-700 hover:border-gray-500"}`}
-                    >
-                      <img src={g} alt={`Thumbnail ${i + 1}`} loading="lazy" className="w-full h-full object-cover" />
+                  <button key={`${g}-${i}`} onClick={() => setSelectedImage(i)} aria-selected={isActive} aria-label={`Image ${i + 1}`} title={`Image ${i + 1}`} type="button" role="tab" className="relative flex-shrink-0 w-20 h-20 rounded-md overflow-hidden focus:outline-none">
+                    <div className={`w-full h-full rounded-md border transition-all duration-200 overflow-hidden ${isActive ? "border-2 border-black dark:border-white shadow-md" : "border border-gray-300 dark:border-gray-700 hover:border-gray-500"}`}>
+                      <img src={g} alt={`Thumbnail ${i + 1}`} className="w-full h-full object-cover" />
                     </div>
                   </button>
                 );
@@ -1201,22 +1247,15 @@ export default function ProductDetailsPage() {
           </div>
 
           <div>
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1 pr-2">
-                <h1 className="text-2xl sm:text-3xl font-bold mb-2 text-black dark:text-white">{product.name}</h1>
-                <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 mb-3">{product.description}</p>
-                <div className="text-xl sm:text-2xl font-semibold mb-2">{formatINR(product.price)}</div>
+            <div className="flex items-start justify-between">
+              <div className="pr-4">
+                <h1 className="text-3xl font-bold mb-2 text-black dark:text-white">{product.name}</h1>
+                <p className="text-gray-600 dark:text-gray-300 mb-4">{product.description}</p>
+                <div className="text-2xl font-semibold mb-2">{formatINR(product.price)}</div>
               </div>
 
               <div className="flex flex-col items-end gap-3">
-                <button
-                  onClick={handleTopWishlistToggle}
-                  disabled={wlBusyTop}
-                  aria-pressed={isWishlisted}
-                  aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
-                  title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
-                  className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white dark:bg-gray-800 border hover:shadow focus:outline-none"
-                >
+                <button onClick={handleTopWishlistToggle} disabled={wlBusyTop} aria-pressed={isWishlisted} aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white dark:bg-gray-800 border hover:shadow focus:outline-none">
                   <Heart className={`${isWishlisted ? "text-red-500" : "text-gray-600"} w-5 h-5`} />
                 </button>
               </div>
@@ -1237,7 +1276,7 @@ export default function ProductDetailsPage() {
             {requiresColor && (
               <div className="mb-4">
                 <div className="font-medium mb-2">Color</div>
-                <div className="flex gap-3 items-center flex-wrap">
+                <div className="flex gap-3 items-center">
                   {(product.colors || []).map((c, idx) => {
                     const name = typeof c === "string" ? c : (c && (c.label || c.name)) || String(c || "");
                     const hex = resolveColor(c);
@@ -1249,7 +1288,7 @@ export default function ProductDetailsPage() {
                         onClick={() => setSelectedColor(c)}
                         aria-label={`color-${name} ${hex ? `(${hex})` : ""}`}
                         aria-pressed={isSelected}
-                        className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full focus:outline-none ${isSelected ? "shadow-inner" : ""} ${border}`}
+                        className={`w-10 h-10 rounded-full focus:outline-none ${isSelected ? "shadow-inner" : ""} ${border}`}
                         style={{ backgroundColor: hex }}
                         title={`${name} ${hex ? `(${hex})` : ""}`}
                         type="button"
@@ -1268,17 +1307,11 @@ export default function ProductDetailsPage() {
             {requiresSize && (
               <div className="mb-4">
                 <div className="font-medium mb-2">Size</div>
-                <div className="flex gap-3 flex-wrap">
+                <div className="flex gap-3">
                   {(product.sizes || []).map((s) => {
                     const active = sizeEquals(s, selectedSize);
                     return (
-                      <button
-                        key={String(s)}
-                        onClick={() => setSelectedSize(s)}
-                        className={`px-3 sm:px-4 py-2 rounded-lg border ${active ? "bg-black text-white dark:bg-white dark:text-black" : "bg-gray-100 dark:bg-gray-800"}`}
-                        aria-pressed={active}
-                        type="button"
-                      >
+                      <button key={String(s)} onClick={() => setSelectedSize(s)} className={`px-4 py-2 rounded-lg border ${active ? "bg-black text-white dark:bg-white dark:text-black" : "bg-gray-100 dark:bg-gray-800"}`} aria-pressed={active} type="button">
                         {String(s)}
                       </button>
                     );
@@ -1296,8 +1329,7 @@ export default function ProductDetailsPage() {
               </div>
             </div>
 
-            {/* Desktop & tablet actions */}
-            <div className="hidden md:flex gap-3 items-center">
+            <div className="flex gap-3 items-center">
               <motion.button onClick={addedToCart ? goToCart : addToCartHandler} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} disabled={disablePurchase && !addedToCart} className={`cssbuttons-io small shadow-neon-black flex-1 py-2 rounded-full flex items-center justify-center gap-2 transition ${disablePurchase && !addedToCart ? "opacity-50 cursor-not-allowed" : "bg-black text-white"}`} aria-label={addedToCart ? "Go to cart" : "Add to cart"} type="button">
                 <ShoppingCart /> <span className="label">{addedToCart ? "Go to Cart" : "Add to Cart"}</span>
               </motion.button>
@@ -1311,10 +1343,10 @@ export default function ProductDetailsPage() {
               </button>
             </div>
 
-            <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
-              <input placeholder="PIN code (e.g. 123 456)" value={zipDisplay} onChange={(e) => formatZipInput(e.target.value)} className="p-3 border rounded-full max-w-xs w-full sm:w-48 bg-white dark:bg-gray-900 text-black dark:text-white" inputMode="numeric" aria-label="PIN code" />
-              <button onClick={checkDelivery} className={`${actionButtonClass} w-full sm:w-auto`} type="button"><MapPin size={16} /> Check</button>
-              <div className="text-sm text-gray-600 dark:text-gray-300 ml-0 sm:ml-4">
+            <div className="mt-6 flex items-center gap-3">
+              <input placeholder="PIN code (e.g. 123 456)" value={zipDisplay} onChange={(e) => formatZipInput(e.target.value)} className="p-3 border rounded-full w-48 bg-white dark:bg-gray-900 text-black dark:text-white" inputMode="numeric" aria-label="PIN code" />
+              <button onClick={checkDelivery} className={`${actionButtonClass}`} type="button"><MapPin size={16} /> Check</button>
+              <div className="text-sm text-gray-600 dark:text-gray-300 ml-4">
                 {deliveryMsg ? <span className={`${deliveryMsg.ok ? "text-black dark:text-white" : "text-red-600 dark:text-red-400"}`}>{deliveryMsg.text}</span> : <span>Check estimated delivery</span>}
               </div>
             </div>
@@ -1323,9 +1355,9 @@ export default function ProductDetailsPage() {
 
         {/* Lightbox modal */}
         {lightboxOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/80" onClick={closeLightbox} />
-            <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} className="relative w-full max-w-4xl mx-auto">
+            <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} className="relative max-w-5xl w-full mx-4">
               <div className="relative">
                 <img src={galleryImages[lightboxIndex]} alt={`Lightbox ${lightboxIndex + 1}`} className="w-full max-h-[80vh] object-contain rounded" />
                 <button onClick={closeLightbox} className="absolute top-3 right-3 bg-white/90 dark:bg-gray-800 text-black dark:text-white p-2 rounded-full" aria-label="Close lightbox"><X /></button>
@@ -1342,11 +1374,11 @@ export default function ProductDetailsPage() {
         <Reviews productId={productId} apiBase={API_BASE} currentUser={currentUser} showToast={showToast} />
 
         {/* Questions & Answers */}
-        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 sm:p-6 border border-gray-200/60 dark:border-gray-700/60">
+        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 border border-gray-200/60 dark:border-gray-700/60">
           <h3 className="text-lg font-semibold mb-4 text-black dark:text-white">Questions & Answers</h3>
 
           <div className="mb-4">
-            <div className="flex gap-3 flex-col sm:flex-row">
+            <div className="flex gap-3">
               <input value={questionText} onChange={(e) => setQuestionText(e.target.value)} placeholder="Ask a question..." className="flex-1 p-3 border rounded-lg bg-white dark:bg-gray-900 text-black dark:text-white" aria-label="Ask a question" />
               <button onClick={async () => {
                 if (!questionText.trim()) return showToast("Type your question first");
@@ -1508,9 +1540,9 @@ export default function ProductDetailsPage() {
         </section>
 
         {/* Related products */}
-        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 sm:p-6 border border-gray-200/60 dark:border-gray-700/60">
+        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 border border-gray-200/60 dark:border-gray-700/60">
           <h2 className="text-xl font-bold mb-4 text-black dark:text-white">You might be interested in</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {(relatedProducts && relatedProducts.length ? relatedProducts : [1, 2, 3, 4]).map((p, i) => (
               <ProductCard key={p?.id || p?._id || i} product={
                 typeof p === "object"
@@ -1520,19 +1552,6 @@ export default function ProductDetailsPage() {
             ))}
           </div>
         </section>
-      </div>
-
-      {/* Mobile fixed action bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-900 border-t md:hidden p-3 z-50">
-        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 flex gap-2">
-          <button onClick={addedToCart ? goToCart : addToCartHandler} disabled={disablePurchase && !addedToCart} className={`flex-1 py-3 rounded-full flex items-center justify-center gap-2 ${disablePurchase && !addedToCart ? "opacity-60 cursor-not-allowed bg-gray-200 dark:bg-gray-800" : "bg-black text-white"}`}>
-            <ShoppingCart /> <span>{addedToCart ? "Go to Cart" : "Add to Cart"}</span>
-          </button>
-
-          <button onClick={buyNowHandler} disabled={disablePurchase} className={`flex-1 py-3 rounded-full flex items-center justify-center gap-2 ${disablePurchase ? "opacity-60 cursor-not-allowed bg-white text-black border" : "bg-white text-black border"}`}>
-            <CreditCard /> <span>Buy</span>
-          </button>
-        </div>
       </div>
 
       {toast && (
