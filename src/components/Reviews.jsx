@@ -35,7 +35,6 @@ function ReadMore({ text }) {
 }
 
 function Lightbox({ item, onClose }) {
-  // accessible lightbox: close on Escape; focus trapping is not implemented but Esc works
   useEffect(() => {
     function onKey(e) {
       if (e.key === "Escape") onClose?.();
@@ -116,7 +115,6 @@ function stringToHslColor(str = "", s = 65, l = 45) {
   return `hsl(${h} ${s}% ${l}%)`;
 }
 
-// format relative time in minute/hour/day chunks (shows "0m ago" for <1min)
 function formatRelativeTime(isoOrDate) {
   if (!isoOrDate) return "";
   const date = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
@@ -126,7 +124,7 @@ function formatRelativeTime(isoOrDate) {
   const diffMinutes = Math.floor(diffSeconds / 60);
 
   if (diffMinutes < 60) {
-    return `${diffMinutes}m ago`; // 0m, 1m, 59m
+    return `${diffMinutes}m ago`;
   }
   const diffHours = Math.floor(diffMinutes / 60);
   if (diffHours < 24) {
@@ -136,7 +134,6 @@ function formatRelativeTime(isoOrDate) {
   if (diffDays < 30) {
     return `${diffDays}d ago`;
   }
-  // older -> show localized IST date/time for clarity
   try {
     return date.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
   } catch {
@@ -144,13 +141,8 @@ function formatRelativeTime(isoOrDate) {
   }
 }
 
-/**
- * HistogramBar - robust bar widget that guarantees visibility in flex layouts.
- * - pct: number 0..100
- */
 function HistogramBar({ pct = 0 }) {
   const pctNum = Number(pct) || 0;
-  // If pct is 0, show a small visible marker so the row is obvious.
   const foregroundWidth = pctNum > 0 ? `${pctNum}%` : "6px";
   return (
     <div
@@ -166,7 +158,6 @@ function HistogramBar({ pct = 0 }) {
         style={{
           width: foregroundWidth,
           backgroundColor: "#616467",
-          // use subtle shadow for contrast
           boxShadow: "inset 0 -1px 0 rgba(0,0,0,0.08)",
         }}
       />
@@ -205,7 +196,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
     toastTimerRef.current = setTimeout(() => showToast(null), ttl);
   }
 
-  // use uploader hook
   const { upload, isUploading: isUploadingFiles, error: uploadError } = useUploader(apiBase, {
     cloudName: CLOUDINARY_CLOUD_NAME,
     uploadPreset: CLOUDINARY_UPLOAD_PRESET,
@@ -254,10 +244,8 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         return { url, type: isVideo ? "video" : "image", name: url.split("/").pop() };
       }).filter(Boolean);
 
-      // keep imageUrl for backward compatibility but not used for avatar
       if (!clone.imageUrl && clone.media && clone.media.length > 0) clone.imageUrl = clone.media[0].url;
 
-      // ensure likes/dislikes exist (fallback 0)
       clone.likes = typeof clone.likes === "number" ? clone.likes : (typeof clone.like === "number" ? clone.like : 0);
       clone.dislikes = typeof clone.dislikes === "number" ? clone.dislikes : (typeof clone.dislike === "number" ? clone.dislike : 0);
 
@@ -265,7 +253,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
     });
   }
 
-  // fetch reviews then attempt to fetch votes for them
   async function fetchReviews() {
     try {
       const r = await fetch(`${apiBase}/api/reviews/product/${productId}`);
@@ -273,7 +260,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         const rjson = await r.json();
         const normalized = normalizeReviewsPayload(rjson);
         setReviews(normalized);
-        // fetch votes (likes/dislikes) for these reviews (batch or per-review fallback)
         await fetchVotesForReviews(normalized);
         return normalized;
       }
@@ -283,35 +269,29 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
     return reviews;
   }
 
-  // Try batch votes endpoint, fallback to per-review
   async function fetchVotesForReviews(revs = []) {
     if (!Array.isArray(revs) || revs.length === 0) return;
     const ids = revs.map((r) => r.id).filter(Boolean);
     if (ids.length === 0) return;
-
-    // 1) try batch endpoint: /api/votes?entityType=review&entityIds=id1,id2
     try {
       const q = `${apiBase}/api/votes?entityType=review&entityIds=${ids.join(",")}`;
       const res = await fetch(q);
       if (res.ok) {
         const json = await res.json();
-
         const map = {};
         let votesNode = null;
-
         if (json && typeof json === "object") {
           if (json.votes && typeof json.votes === "object") votesNode = json.votes;
           else votesNode = json;
         } else {
           votesNode = json;
         }
-
         if (Array.isArray(votesNode)) {
           votesNode.forEach((it) => {
             const id = String(it.entityId ?? it.id ?? it._id);
             if (!id) return;
             const likes = Number(it.like ?? it.likes ?? it.countLikes ?? it.likesCount ?? 0);
-            const dislikes = Number(it.dislike ?? it.dislikes ?? it.countDislikes ?? it.dislikesCount ?? 0);
+            const dislikes = Number(it.dislike ?? it.dislikes ?? it.countDisCounts ?? it.dislikesCount ?? 0);
             map[id] = { likes, dislikes };
           });
         } else if (votesNode && typeof votesNode === "object") {
@@ -323,7 +303,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
             map[String(k)] = { likes, dislikes };
           });
         }
-
         if (Object.keys(map).length > 0) {
           setReviews((prev) =>
             (Array.isArray(prev) ? prev : []).map((r) => {
@@ -336,10 +315,8 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         }
       }
     } catch (err) {
-      console.warn("Batch votes fetch failed, falling back to per-review", err);
+      console.warn("Batch votes fetch failed", err);
     }
-
-    // fallback per-review
     for (const r of revs) {
       try {
         const url = `${apiBase}/api/votes/review/${r.id}`;
@@ -351,7 +328,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         const dislikes = Number(votesObj?.dislike ?? votesObj?.dislikes ?? votesObj?.countDisLikes ?? votesObj?.dislikesCount ?? 0);
         setReviews((prev) => (Array.isArray(prev) ? prev.map((x) => (String(x.id) === String(r.id) ? { ...x, likes, dislikes } : x)) : prev));
       } catch (err) {
-        // ignore each error
+        // ignore
       }
     }
   }
@@ -372,6 +349,29 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         return;
       }
 
+      // First, try the verify endpoint which can return { canReview, hasReviewed }
+      try {
+        const token = localStorage.getItem("token");
+        const q = `${apiBase}/api/user/orders/verify?userId=${actingUser.id}&productId=${productId}`;
+        const res = await fetch(q, {
+          method: "GET",
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        });
+        if (res.ok) {
+          const json = await res.json();
+          // If the shape matches, use it directly
+          if (json && (typeof json.canReview === "boolean" || typeof json.hasReviewed === "boolean")) {
+            if (typeof json.canReview === "boolean") setUserCanReview(Boolean(json.canReview));
+            if (typeof json.hasReviewed === "boolean") setUserHasReviewed(Boolean(json.hasReviewed));
+            return;
+          }
+        }
+      } catch (err) {
+        // fallthrough to fallback logic below
+        // console.warn("verify endpoint failed", err);
+      }
+
+      // Fallback: try userHasPurchased (legacy)
       try {
         const purchased = await userHasPurchased(productId, actingUser);
         setUserCanReview(Boolean(purchased));
@@ -409,7 +409,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviews.length]);
 
-  // cleanup blob urls on component unmount
   useEffect(() => {
     return () => {
       try {
@@ -562,7 +561,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
     setReviewSubmitted(false);
 
     try {
-      // Upload attachments (if any) using the useUploader hook
       let uploaded = [];
       if (reviewFiles && reviewFiles.length > 0) {
         try {
@@ -573,15 +571,12 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         } catch (upErr) {
           console.error("Upload failed:", upErr);
           internalToast("Attachment upload failed. Please try again.");
-          // abort submission — do not submit blob: preview URLs
           setIsSubmittingReview(false);
-          // remove optimistic temp review
           setReviews((prev) => (Array.isArray(prev) ? prev.filter((r) => String(r.id) !== String(tempId)) : []));
           return;
         }
       }
 
-      // Build payload strictly from uploaded URLs (no blob fallback)
       const payload = {
         productId,
         userId: actingUser.id,
@@ -609,7 +604,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
 
       const created = await res.json();
 
-      // normalize created review
       const createdNormalized = {
         ...created,
         id: created?.id || created?._id || tempId,
@@ -639,7 +633,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
 
       setUserHasReviewed(true);
 
-      // cleanup previews & form
       setReviewRating(5);
       setReviewTitle("");
       setReviewText("");
@@ -746,7 +739,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
     });
   }, [reviews]);
 
-  // tiny helper to reset form
   function resetForm() {
     setReviewTitle("");
     setReviewText("");
@@ -758,8 +750,10 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
     setReviewRating(5);
   }
 
-  // defensive pct fallback
   const pctArray = Array.isArray(overall.pct) && overall.pct.length === 5 ? overall.pct : [0, 0, 0, 0, 0];
+
+  // show thanks message when user has reviewed (from verify endpoint) OR when review was just submitted
+  const showThanksMessage = Boolean(userHasReviewed) || Boolean(reviewSubmitted);
 
   return (
     <section id="reviews-section" className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 sm:p-6 border border-gray-200/60 dark:border-gray-700/60">
@@ -792,10 +786,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
                       className="flex items-center gap-3 text-sm mb-2 w-full"
                     >
                       <div className="w-8 text-right text-gray-700 dark:text-gray-300">{s}★</div>
-
-                      {/* robust histogram bar */}
                       <HistogramBar pct={pctArray[i]} />
-
                       <div className="w-12 text-right text-gray-700 dark:text-gray-300">
                         {pctArray[i] || 0}%
                       </div>
@@ -803,72 +794,85 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
                   ))}
                 </div>
 
-                <button
-                  onClick={async () => {
-                    const actingUser = currentUser || (() => {
-                      try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
-                    })();
-                    if (!actingUser) {
-                      internalToast("Please sign in to rate.");
-                      return;
-                    }
-                    if (!userCanReview) {
-                      alert("You did not buy this product — only verified buyers can write reviews.");
-                      setCanReviewFlag(false);
-                      return;
-                    }
-                    if (userHasReviewed) {
-                      internalToast("You already left a review. Delete it to submit a new one.");
-                      return;
-                    }
-                    setShowReviewForm(true);
-                    // scroll slightly on mobile to reveal form
-                    setTimeout(() => window.scrollTo({ top: window.scrollY + 300, behavior: "smooth" }), 200);
-                  }}
-                  disabled={!userCanReview || userHasReviewed}
-                  className={` ${BUTTON_CLASS} min-w-[140px] px-4 py-2 ${(!userCanReview || userHasReviewed) ? "opacity-50 cursor-not-allowed" : ""}`}
-                  type="button"
-                  aria-disabled={!userCanReview || userHasReviewed}
-                >
-                  Rate product
-                </button>
+                {/* If the user already reviewed (from verify) or review was just submitted => show thanks message */}
+                {showThanksMessage ? (
+                  <div className="text-sm text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 rounded px-4 py-2">
+                    Thanks for reviewing — we appreciate your feedback.
+                  </div>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      const actingUser = currentUser || (() => {
+                        try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
+                      })();
+                      if (!actingUser) {
+                        internalToast("Please sign in to rate.");
+                        return;
+                      }
+                      if (!userCanReview) {
+                        alert("You did not buy this product — only verified buyers can write reviews.");
+                        setCanReviewFlag(false);
+                        return;
+                      }
+                      if (userHasReviewed) {
+                        internalToast("You already left a review. Delete it to submit a new one.");
+                        return;
+                      }
+                      setShowReviewForm(true);
+                      setTimeout(() => window.scrollTo({ top: window.scrollY + 300, behavior: "smooth" }), 200);
+                    }}
+                    disabled={!userCanReview || userHasReviewed}
+                    className={` ${BUTTON_CLASS} min-w-[140px] px-4 py-2 ${(!userCanReview || userHasReviewed) ? "opacity-50 cursor-not-allowed" : ""}`}
+                    type="button"
+                    aria-disabled={!userCanReview || userHasReviewed}
+                  >
+                    Rate product
+                  </button>
+                )}
               </div>
             </div>
           </div>
 
           {!showReviewForm ? (
             <div className="mt-4 p-4 rounded-md bg-gray-50 dark:bg-gray-800/40 border">
-              <div className="text-sm text-gray-600 dark:text-gray-300">
-                Only verified buyers can leave reviews. Click{" "}
-                <button
-                  onClick={async () => {
-                    const actingUser = currentUser || (() => {
-                      try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
-                    })();
-                    if (!actingUser) {
-                      internalToast("Please sign in to rate.");
-                      return;
-                    }
-                    if (!userCanReview) {
-                      alert("You did not buy this product — only verified buyers can write reviews.");
-                      setCanReviewFlag(false);
-                      return;
-                    }
-                    if (userHasReviewed) {
-                      internalToast("You already left a review. Delete it to submit a new one.");
-                      return;
-                    }
-                    setShowReviewForm(true);
-                    setTimeout(() => window.scrollTo({ top: window.scrollY + 300, behavior: "smooth" }), 200);
-                  }}
-                  disabled={!userCanReview || userHasReviewed}
-                  className={`${(!userCanReview || userHasReviewed) ? "underline opacity-50 cursor-not-allowed" : "underline"}`}
-                  type="button"
-                >
-                  Rate product
-                </button>{" "}
-                to start writing.
-              </div>
+              {/* show thanks instead of action prompt when user already reviewed or just submitted */}
+              {showThanksMessage ? (
+                <div className="text-sm text-green-700 dark:text-green-300">
+                  Thanks for reviewing — we appreciate your feedback.
+                </div>
+              ) : (
+                <div className="text-sm text-gray-600 dark:text-gray-300">
+                  Only verified buyers can leave reviews. Click{" "}
+                  <button
+                    onClick={async () => {
+                      const actingUser = currentUser || (() => {
+                        try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
+                      })();
+                      if (!actingUser) {
+                        internalToast("Please sign in to rate.");
+                        return;
+                      }
+                      if (!userCanReview) {
+                        alert("You did not buy this product — only verified buyers can write reviews.");
+                        setCanReviewFlag(false);
+                        return;
+                      }
+                      if (userHasReviewed) {
+                        internalToast("You already left a review. Delete it to submit a new one.");
+                        return;
+                      }
+                      setShowReviewForm(true);
+                      setTimeout(() => window.scrollTo({ top: window.scrollY + 300, behavior: "smooth" }), 200);
+                    }}
+                    disabled={!userCanReview || userHasReviewed}
+                    className={`${(!userCanReview || userHasReviewed) ? "underline opacity-50 cursor-not-allowed" : "underline"}`}
+                    type="button"
+                  >
+                    Rate product
+                  </button>{" "}
+                  to start writing.
+                </div>
+              )}
             </div>
           ) : reviewSubmitted || userHasReviewed ? (
             <div className="mt-4 p-4 rounded-md bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
@@ -958,21 +962,21 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
               {[5, 4, 3, 2, 1].map((s, i) => (
                 <div key={`hist-side-${s}`} className="flex items-center gap-3 text-sm mb-2">
                   <div className="w-8 text-gray-700 dark:text-gray-300">{s}★</div>
-
-                  {/* use same robust histogram */}
                   <HistogramBar pct={pctArray[i]} />
-
                   <div className="w-10 text-right text-gray-700 dark:text-gray-300">{pctArray[i] || 0}%</div>
                 </div>
               ))}
             </div>
 
             <div className="mt-3">
-              <button onClick={() => { setShowReviewForm(true); setTimeout(() => window.scrollTo({ top: window.scrollY + 300, behavior: "smooth" }), 200); }} className={`${BUTTON_CLASS} w-full justify-center`} type="button">Write review</button>
+              {showThanksMessage ? (
+                <div className="text-sm text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 rounded px-3 py-2 text-center">Thanks for reviewing — we appreciate your feedback.</div>
+              ) : (
+                <button onClick={() => { setShowReviewForm(true); setTimeout(() => window.scrollTo({ top: window.scrollY + 300, behavior: "smooth" }), 200); }} className={`${BUTTON_CLASS} w-full justify-center`} type="button">Write review</button>
+              )}
             </div>
           </div>
 
-          {/* actions / submit area (non-sticky for mobile) */}
           <div className="w-full">
             {showReviewForm && !reviewSubmitted && !userHasReviewed && (
               <>
@@ -985,7 +989,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
             )}
           </div>
 
-          {/* summary visible on small screens below actions */}
           <div className="block lg:hidden p-4 rounded-md bg-gray-50 dark:bg-gray-800/30 border">
             <div className="flex items-center gap-3">
               <div className="text-2xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
@@ -1008,13 +1011,12 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         </div>
       </div>
 
-      {/* reviews list */}
       <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
         {displayedReviews.length === 0 && <div className="text-gray-500">No reviews yet — be the first to review.</div>}
         {displayedReviews.map((r) => {
           const authorName = r.userName || r.user_name || r.name || "Anonymous";
           const createdAt = r.created_at || r.createdAt || new Date().toISOString();
-          const avatarSrc = r.avatar || r.userAvatar || null; // do NOT use imageUrl or media as avatar
+          const avatarSrc = r.avatar || r.userAvatar || null;
           const initials = (authorName || "A").split(" ").map((p) => p?.[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "A";
 
           return (
@@ -1104,7 +1106,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
 
       <Lightbox item={lightboxItem} onClose={() => setLightboxItem(null)} />
 
-      {/* Mobile fixed action bar for submit/reset when the form is open */}
       {showReviewForm && !reviewSubmitted && !userHasReviewed && (
         <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-t p-3">
           <div className="max-w-screen-xl mx-auto px-4 flex gap-2">
