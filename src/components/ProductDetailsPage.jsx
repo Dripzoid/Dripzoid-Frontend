@@ -17,6 +17,7 @@ import {
   ThumbsDown,
   Heart,
   X,
+  Share2,
 } from "lucide-react";
 
 import { SketchPicker } from "react-color";
@@ -1339,7 +1340,7 @@ export default function ProductDetailsPage() {
               </motion.button>
 
               <button onClick={handleShare} type="button" className="p-2 rounded-full border ml-1 hover:scale-105 transition" aria-label="Share product">
-                <MessageCircle />
+                <Share2 />
               </button>
             </div>
 
