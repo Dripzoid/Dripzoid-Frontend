@@ -336,41 +336,63 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     }
   }
 
-  // ------------------ track-order ------------------
-  async function handleTrackOrder() {
-    if (!order) {
-      setInfo({ open: true, title: "Track order", message: "No order to track" });
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const url = apiUrl(`/api/shipping/track-order`);
-      const res = await fetch(url, {
-        method: "POST",
-        headers: authHeaders(true),
-        credentials: "same-origin",
-        body: JSON.stringify({ orderId: order.id }),
-      });
-
-      const payload = await parseJsonSafe(res);
-      if (!res.ok) throw new Error(payload?.message || `Track API error (${res.status})`);
-
-      setOrder((o) => ({
-        ...o,
-        tracking: payload.tracking ?? payload.tracking_info ?? o.tracking,
-        status: payload.status ?? o.status,
-        courier: payload.courier ?? o.courier,
-        history: payload.history ? [...payload.history, ...(o.history || [])] : o.history,
-      }));
-      setInfo({ open: true, title: "Tracking updated", message: payload?.message ?? "Latest tracking information received." });
-    } catch (err) {
-      console.error("Track order failed:", err);
-      setInfo({ open: true, title: "Tracking error", message: err.message || "Could not fetch live tracking." });
-    } finally {
-      setLoading(false);
-    }
+// ------------------ track-order ------------------
+async function handleTrackOrder() {
+  if (!order?.id) {
+    setInfo({
+      open: true,
+      title: "Track order",
+      message: "No order to track",
+    });
+    return;
   }
+
+  setLoading(true);
+  try {
+    const url = apiUrl(`/api/shipping/track-order`);
+    const res = await fetch(url, {
+      method: "GET", // ✅ using POST, not GET
+      headers: {
+        ...authHeaders(true),
+        "Content-Type": "application/json",
+      },
+      credentials: "same-origin",
+      body: JSON.stringify({ order_id: order.id }), // ✅ send order_id (no awb)
+    });
+
+    const payload = await parseJsonSafe(res);
+    if (!res.ok) {
+      throw new Error(payload?.message || `Track API error (${res.status})`);
+    }
+
+    // ✅ merge tracking info into current order
+    setOrder((prev) => ({
+      ...prev,
+      tracking: payload.tracking ?? prev.tracking,
+      status: payload.status ?? prev.status,
+      courier: payload.courier ?? prev.courier,
+      history: payload.history
+        ? [...payload.history, ...(prev.history || [])]
+        : prev.history,
+    }));
+
+    setInfo({
+      open: true,
+      title: "Tracking updated",
+      message: payload?.message ?? "Latest tracking information received.",
+    });
+  } catch (err) {
+    console.error("Track order failed:", err);
+    setInfo({
+      open: true,
+      title: "Tracking error",
+      message: err.message || "Could not fetch live tracking.",
+    });
+  } finally {
+    setLoading(false);
+  }
+}
+
 
   // ------------------ misc ------------------
   useEffect(() => {
