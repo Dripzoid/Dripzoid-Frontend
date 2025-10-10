@@ -11,30 +11,17 @@ import {
   Share2,
   XCircle,
 } from "lucide-react";
-import Reviews from "../components/Reviews"; // <-- uses the uploaded Reviews.jsx
+import Reviews from "../components/Reviews";
 
-/**
- * OrderDetailsPage - reads API that returns shape like:
- * {
- *   id, status, total_amount, created_at, user_name, payment_method,
- *   shipping_address: {...},
- *   items: [{ id, name, image, quantity, price, options: {color,size} }, ...]
- * }
- *
- * Normalizes that response for the UI and includes Authorization header
- * (Bearer token) if a token is found in localStorage or cookies.
- */
+/* ... unchanged helpers and constants (API_BASE, apiUrl, auth helpers, utils) ... */
+// (kept as in your original file)
 
-// -------------------- API base helper --------------------
-const API_BASE = process.env.REACT_APP_API_BASE || ""; // CRA default. For Vite use import.meta.env.VITE_API_BASE
-
+const API_BASE = process.env.REACT_APP_API_BASE || "";
 const apiUrl = (path = "") => {
   if (!path.startsWith("/")) path = `/${path}`;
   const combined = API_BASE ? `${API_BASE}${path}` : path;
   return combined.replace(/([^:]\/)\/+/g, "$1");
 };
-
-// -------------------- Auth helpers --------------------
 function getAuthToken() {
   if (typeof window === "undefined") return null;
   const ls = localStorage.getItem("token") || localStorage.getItem("authToken");
@@ -43,7 +30,6 @@ function getAuthToken() {
   if (m) return decodeURIComponent(m[1]);
   return null;
 }
-
 function authHeaders(hasJson = true) {
   const headers = {};
   if (hasJson) {
@@ -56,8 +42,6 @@ function authHeaders(hasJson = true) {
   if (token) headers["Authorization"] = `Bearer ${token}`;
   return headers;
 }
-
-// -------------------- utils --------------------
 function formatDateTime(iso) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -71,26 +55,22 @@ function currency(n) {
   return `₹${Number(n || 0).toLocaleString("en-IN")}`;
 }
 
-// -------------------- global button class --------------------
 const BTN =
   "transition-all duration-200 font-medium rounded-full px-4 py-2 " +
   "bg-black text-white dark:bg-white dark:text-black " +
   "hover:bg-white hover:text-black dark:hover:bg-black dark:hover:text-white " +
   "hover:ring-2 hover:ring-black dark:hover:ring-white hover:shadow-[0_8px_20px_rgba(0,0,0,0.12)] focus:outline-none";
 
-// marker constants
 const MARKER_SIZE_PX = 28;
 const MARKER_INNER_OFFSET_PX = 6;
 const LEFT_6_PX = 24;
 
 // -------------------- Main component --------------------
 export default function OrderDetailsPage({ orderId: propOrderId }) {
-  // If propOrderId not provided, extract from URL like /order-details/40
   const [orderId] = useState(() => {
     if (propOrderId) return String(propOrderId);
     if (typeof window === "undefined") return "38";
     const path = window.location.pathname || "";
-    // match /order-details/40 or last numeric segment
     const m = path.match(/\/order-details\/(\d+)(?:\/|$)/i);
     if (m) return m[1];
     const parts = path.split("/").filter(Boolean);
@@ -101,21 +81,18 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
 
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
-
   const [showCancel, setShowCancel] = useState(false);
   const [showReturn, setShowReturn] = useState(false);
   const [showEditAddress, setShowEditAddress] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
   const invoiceRef = useRef(null);
-
   const [infoModal, setInfo] = useState({ open: false, title: "", message: "" });
-
   const [currentUser, setCurrentUser] = useState(null);
-
-  // track which product review widgets are open (map productId -> boolean)
   const [openReviews, setOpenReviews] = useState({});
+  // track modal data
+  const [showTrackModal, setShowTrackModal] = useState(false);
+  const [trackInfo, setTrackInfo] = useState(null);
 
-  // normalize backend response into UI shape
   function normalizeApiOrder(payload) {
     if (!payload) return null;
 
@@ -186,7 +163,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       shipping,
       pricing,
       items,
-      tracking: payload.tracking ?? payload.tracking_info ?? [],
+      tracking: payload.tracking ?? payload.tracking_info ?? payload.tracking ?? [],
       courier: payload.courier ?? null,
       history: payload.history ?? [],
       raw: payload,
@@ -223,7 +200,6 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
   }, [orderId]);
 
   useEffect(() => {
-    // read current user from localStorage (used by Reviews component)
     try {
       const u = JSON.parse(localStorage.getItem("current_user") || "null");
       setCurrentUser(u);
@@ -235,10 +211,8 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
   const pricing = useMemo(() => (order ? { ...order.pricing } : null), [order]);
 
   // ------------------ backend-integrated actions ------------------
-  // Optimistic cancel: update UI immediately, revert if API fails
   async function handleCancel() {
     if (!order) return;
-    // optimistic update
     const prevOrder = order;
     const nowIso = new Date().toISOString();
     const optimistic = {
@@ -263,12 +237,10 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       if (!res.ok) throw new Error(payload?.message || `Cancel failed (${res.status})`);
 
       const normalized = normalizeApiOrder(payload?.order ?? payload) ?? { ...order, status: payload?.status ?? "cancelled" };
-      // merge normalized into optimistic state (server wins)
       setOrder((o) => ({ ...o, ...normalized }));
       setInfo({ open: true, title: "Cancelled", message: payload?.message ?? "Order cancelled" });
     } catch (err) {
       console.error("Cancel error:", err);
-      // revert to previous order
       setOrder(prevOrder);
       setInfo({ open: true, title: "Error", message: err.message || "Could not cancel order" });
     } finally {
@@ -336,65 +308,74 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     }
   }
 
-// ------------------ track-order ------------------
-async function handleTrackOrder() {
-  if (!order?.id) {
-    setInfo({
-      open: true,
-      title: "Track order",
-      message: "No order to track",
-    });
-    return;
-  }
-
-  setLoading(true);
-  try {
-    const url = apiUrl(`/api/shipping/track-order`);
-    const res = await fetch(url, {
-      method: "POST", // ✅ using POST, not GET
-      headers: {
-        ...authHeaders(true),
-        "Content-Type": "application/json",
-      },
-      credentials: "same-origin",
-      body: JSON.stringify({ order_id: order.id }), // ✅ send order_id (no awb)
-    });
-
-    const payload = await parseJsonSafe(res);
-    if (!res.ok) {
-      throw new Error(payload?.message || `Track API error (${res.status})`);
+  // ------------------ track-order (updated to show modal with details) ------------------
+  async function handleTrackOrder() {
+    if (!order?.id) {
+      setInfo({
+        open: true,
+        title: "Track order",
+        message: "No order to track",
+      });
+      return;
     }
 
-    // ✅ merge tracking info into current order
-    setOrder((prev) => ({
-      ...prev,
-      tracking: payload.tracking ?? prev.tracking,
-      status: payload.status ?? prev.status,
-      courier: payload.courier ?? prev.courier,
-      history: payload.history
-        ? [...payload.history, ...(prev.history || [])]
-        : prev.history,
-    }));
+    setLoading(true);
+    try {
+      const url = apiUrl(`/api/shipping/track-order`);
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          ...authHeaders(true),
+          "Content-Type": "application/json",
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({ order_id: order.id }),
+      });
 
-    setInfo({
-      open: true,
-      title: "Tracking updated",
-      message: payload?.message ?? "Latest tracking information received.",
-    });
-  } catch (err) {
-    console.error("Track order failed:", err);
-    setInfo({
-      open: true,
-      title: "Tracking error",
-      message: err.message || "Could not fetch live tracking.",
-    });
-  } finally {
-    setLoading(false);
+      const payload = await parseJsonSafe(res);
+      if (!res.ok) {
+        throw new Error(payload?.message || `Track API error (${res.status})`);
+      }
+
+      // Merge tracking info into order (server wins)
+      setOrder((prev) => ({
+        ...prev,
+        tracking: payload.tracking ?? prev.tracking,
+        status: payload.status ?? prev.status,
+        courier: payload.courier ?? prev.courier,
+        history: payload.history
+          ? [...payload.history, ...(prev.history || [])]
+          : prev.history,
+      }));
+
+      // set data for the track modal and open it
+      const info = payload.tracking ?? payload;
+      setTrackInfo(info);
+      setShowTrackModal(true);
+
+      setInfo({
+        open: true,
+        title: "Tracking updated",
+        message: payload?.message ?? "Latest tracking information received.",
+      });
+    } catch (err) {
+      console.error("Track order failed:", err);
+      setInfo({
+        open: true,
+        title: "Tracking error",
+        message: err.message || "Could not fetch live tracking.",
+      });
+
+      // still open modal with any available tracking info in order
+      if (order?.tracking) {
+        setTrackInfo(order.tracking);
+        setShowTrackModal(true);
+      }
+    } finally {
+      setLoading(false);
+    }
   }
-}
 
-
-  // ------------------ misc ------------------
   useEffect(() => {
     function onKey(e) {
       if (e.key === "Escape") {
@@ -402,6 +383,7 @@ async function handleTrackOrder() {
         setShowCancel(false);
         setShowReturn(false);
         setShowEditAddress(false);
+        setShowTrackModal(false);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -449,14 +431,12 @@ async function handleTrackOrder() {
     );
   }
 
-  const isDelivered = order.status?.toLowerCase() === "delivered" || order.tracking?.some((t) => (t.step || t.status)?.toString().toLowerCase() === "delivered" && (t.done || t.status === "delivered"));
+  const isDelivered = order.status?.toLowerCase() === "delivered" || order.tracking?.some?.((t) => (t.step || t.status)?.toString().toLowerCase() === "delivered" && (t.done || t.status === "delivered"));
   const isPacked = order.status?.toLowerCase() === "packed";
   const isCancelled = order.status?.toLowerCase() === "cancelled";
 
-  // -------------------- Render --------------------
   return (
     <div className="min-h-screen bg-white dark:bg-black text-neutral-900 dark:text-neutral-100 transition-colors duration-200">
-      {/* Breadcrumb */}
       <div className="bg-neutral-50 dark:bg-neutral-900/40 border-b border-neutral-200 dark:border-neutral-800">
         <div className="max-w-7xl mx-auto px-4 py-3 text-sm text-neutral-600 dark:text-neutral-400">
           Home &gt; My Account &gt; My Orders &gt; <span className="font-mono">{order.id}</span>
@@ -464,10 +444,7 @@ async function handleTrackOrder() {
       </div>
 
       <main className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left - Main (span 2 on lg) */}
         <section className="lg:col-span-2 space-y-6">
-          {/* ProductHeader intentionally removed (products are listed below) */}
-
           <TimelineCard
             order={order}
             onCancel={() => setShowCancel(true)}
@@ -488,7 +465,6 @@ async function handleTrackOrder() {
                   <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                     <div className="w-full sm:w-auto flex items-center gap-4">
                       <div className="w-20 h-20 flex-shrink-0 rounded overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-gray-50">
-                        {/* fallback image */}
                         <img
                           src={it.img || "/placeholder.png"}
                           alt={it.title}
@@ -509,7 +485,6 @@ async function handleTrackOrder() {
                         <div className="text-sm text-neutral-500">Qty: {it.qty}</div>
                       </div>
 
-                      {/* When delivered, show Submit review button for each product */}
                       {isDelivered && !isCancelled && (
                         <div className="flex-shrink-0">
                           <button
@@ -525,7 +500,6 @@ async function handleTrackOrder() {
                     </div>
                   </div>
 
-                  {/* Inline Reviews component for that product when toggled open */}
                   {openReviews[String(it.id)] && (
                     <div className="mt-4">
                       <Reviews productId={it.id} apiBase={API_BASE} currentUser={currentUser} showToast={(m) => setInfo({ open: true, title: "Notice", message: m || "" })} />
@@ -537,7 +511,6 @@ async function handleTrackOrder() {
           </div>
         </section>
 
-        {/* Right - Sidebar */}
         <aside className="space-y-6">
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-4">
             <div className="flex items-center justify-between">
@@ -583,7 +556,6 @@ async function handleTrackOrder() {
             </div>
           </div>
 
-          {/* Price details */}
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-4">
             <div className="flex items-center justify-between">
               <div className="font-medium">Price details</div>
@@ -639,7 +611,6 @@ async function handleTrackOrder() {
           </div>
         </aside>
 
-        {/* Hidden invoice content for print */}
         {showInvoice && (
           <div className="hidden" aria-hidden>
             <div ref={invoiceRef}>
@@ -648,7 +619,6 @@ async function handleTrackOrder() {
           </div>
         )}
 
-        {/* Modals */}
         <ConfirmModal
           open={!!showCancel}
           title="Cancel order"
@@ -685,6 +655,8 @@ async function handleTrackOrder() {
         />
 
         <InfoModal open={!!infoModal.open} title={infoModal.title} message={infoModal.message} onClose={() => setInfo({ open: false, title: "", message: "" })} />
+
+        <TrackModal open={showTrackModal} info={trackInfo} onClose={() => setShowTrackModal(false)} />
       </main>
     </div>
   );
@@ -711,7 +683,6 @@ function SkeletonPage() {
   );
 }
 
-/* ProductHeader left in file but not used — you can remove if you want */
 function ProductHeader({ order }) {
   const item = order.items?.[0] || { title: "", options: "", seller: "", price: 0, img: "" };
   return (
@@ -737,13 +708,7 @@ function ProductHeader({ order }) {
 }
 
 /**
- * TimelineCard
- *
- * - Shows Cancel/Return/Track UI.
- * - Rules:
- *    - If order is cancelled: hide Return and Track buttons entirely (no actions).
- *    - If delivered (and not cancelled): show ONLY the Return button (full-width).
- *    - If not delivered (and not cancelled): show Cancel and Track buttons side-by-side (equal width).
+ * TimelineCard (updated messages)
  */
 function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivered }) {
   const timelineRef = useRef(null);
@@ -753,12 +718,10 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
   const innerSize = MARKER_SIZE_PX - MARKER_INNER_OFFSET_PX;
   const isCancelled = order.status && order.status.toLowerCase() === "cancelled";
 
-  // 🔹 Define the timeline based on order status
   const allSteps = isCancelled
     ? ["Order Confirmed", "Cancelled"]
     : ["Order Confirmed", "Packed", "Shipped", "Out For Delivery", "Delivered"];
 
-  // 🔹 Map progress index based on order.status
   const progressMap = {
     pending: 0,
     confirmed: 0,
@@ -773,18 +736,41 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
   const normalizedStatus = (order.status || "").toLowerCase();
   const progressIndex = progressMap[normalizedStatus] ?? 0;
 
-  // 🔹 Build tracking data dynamically
-  const trackingToUse = allSteps.map((step, idx) => ({
-    step,
-    done: idx <= progressIndex,
-    date:
+  // use order.history to try find dates, fallback to created_at
+  const trackingToUse = allSteps.map((step, idx) => {
+    const done = idx <= progressIndex;
+    // choose a nice detail message per step
+    const detail =
+      step.toLowerCase().includes("cancel")
+        ? "Order cancelled"
+        : step.toLowerCase().includes("confirmed") || step.toLowerCase().includes("order confirmed")
+        ? "Order placed successfully."
+        : step.toLowerCase().includes("packed")
+        ? "Order packed and waiting for shipping partner to pickup."
+        : step.toLowerCase().includes("shipped")
+        ? "Shipped successfully — waiting for delivery partner to pick up."
+        : step.toLowerCase().includes("out for delivery")
+        ? "Out for delivery — with delivery partner."
+        : step.toLowerCase().includes("delivered")
+        ? "Delivered successfully. Share your feedback through review."
+        : done
+        ? "Completed"
+        : "";
+
+    const date =
       idx <= progressIndex
         ? order.history?.find((h) => (h.title || "").toString().toLowerCase().includes(step.toLowerCase()))?.time ||
           order.created_at ||
           null
-        : null,
-    detail: idx <= progressIndex ? (step === "Cancelled" ? "Order cancelled" : "Completed") : "",
-  }));
+        : null;
+
+    return {
+      step,
+      done,
+      date,
+      detail: done ? detail : "",
+    };
+  });
 
   const lastDoneIndex = trackingToUse.map((t) => t.done).lastIndexOf(true);
 
@@ -797,13 +783,12 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
         return;
       }
 
-      const containerRect = container.getBoundingClientRect();
-      const firstNode = nodes[0];
-
       if (lastDoneIndex < 0) {
         setOverlayRect(null);
         return;
       }
+      const containerRect = container.getBoundingClientRect();
+      const firstNode = nodes[0];
       const lastNode = nodes[lastDoneIndex] || firstNode;
       if (!firstNode || !lastNode) {
         setOverlayRect(null);
@@ -839,7 +824,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
   const spineLeftForCSS = LEFT_6_PX + MARKER_SIZE_PX / 2 - 2;
   const markerLeftPx = spineLeftForCSS - MARKER_SIZE_PX / 2;
 
-  const showActions = !isCancelled; // hide buttons for cancelled orders
+  const showActions = !isCancelled;
 
   return (
     <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-6">
@@ -871,7 +856,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
               top: `${overlayRect.topPx}px`,
               width: 4,
               height: `${overlayRect.heightPx}px`,
-              backgroundColor: isCancelled ? "rgb(239,68,68)" : "rgb(16,185,129)", // red for cancelled
+              backgroundColor: isCancelled ? "rgb(239,68,68)" : "rgb(16,185,129)",
               zIndex: 5,
               borderRadius: 2,
               transformOrigin: "top center",
@@ -975,12 +960,12 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
   );
 }
 
-// InvoiceTemplate, ConfirmModal, InputModal, InfoModal & parseJsonSafe (helpers)
+// InvoiceTemplate converted to Tailwind
 function InvoiceTemplate({ order, pricing }) {
   return (
-    <div style={{ padding: 20, maxWidth: 800 }}>
-      <h2>Invoice</h2>
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}>
+    <div className="p-6 max-w-3xl">
+      <h2 className="text-xl font-semibold">Invoice</h2>
+      <div className="mt-4 flex justify-between">
         <div>
           <div>
             <strong>Order ID:</strong> {order.id}
@@ -993,43 +978,45 @@ function InvoiceTemplate({ order, pricing }) {
           <div>
             <strong>Ship to:</strong>
           </div>
-          <div>{order.shipping?.name}</div>
-          <div style={{ maxWidth: 300 }}>{order.shipping?.address}</div>
+          <div className="font-medium">{order.shipping?.name}</div>
+          <div className="max-w-xs break-words">{order.shipping?.address}</div>
         </div>
       </div>
 
-      <table style={{ width: "100%", marginTop: 20, borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>Item</th>
-            <th style={{ textAlign: "right", borderBottom: "1px solid #ddd", padding: 8 }}>Qty</th>
-            <th style={{ textAlign: "right", borderBottom: "1px solid #ddd", padding: 8 }}>Price</th>
-          </tr>
-        </thead>
-        <tbody>
-          {order.items?.map((it) => (
-            <tr key={it.id}>
-              <td style={{ padding: 8, borderBottom: "1px solid #eee" }}>{it.title}</td>
-              <td style={{ padding: 8, borderBottom: "1px solid #eee", textAlign: "right" }}>{it.qty}</td>
-              <td style={{ padding: 8, borderBottom: "1px solid #eee", textAlign: "right" }}>{currency(it.price)}</td>
+      <div className="mt-6 border-t border-neutral-200 pt-4">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left">
+              <th className="pb-2">Item</th>
+              <th className="pb-2 text-right">Qty</th>
+              <th className="pb-2 text-right">Price</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {order.items?.map((it) => (
+              <tr key={it.id}>
+                <td className="py-2 border-t border-neutral-100">{it.title}</td>
+                <td className="py-2 border-t border-neutral-100 text-right">{it.qty}</td>
+                <td className="py-2 border-t border-neutral-100 text-right">{currency(it.price)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
 
-      <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end" }}>
-        <div style={{ width: 250 }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <div>Subtotal</div>
-            <div>{currency(order.pricing?.sellingPrice)}</div>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <div>Fees</div>
-            <div>{currency(order.pricing?.fees)}</div>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginTop: 8 }}>
-            <div>Total</div>
-            <div>{currency(pricing?.total ?? order.pricing?.total)}</div>
+        <div className="mt-6 flex justify-end">
+          <div className="w-64 text-sm">
+            <div className="flex justify-between">
+              <div>Subtotal</div>
+              <div>{currency(order.pricing?.sellingPrice)}</div>
+            </div>
+            <div className="flex justify-between">
+              <div>Fees</div>
+              <div>{currency(order.pricing?.fees)}</div>
+            </div>
+            <div className="flex justify-between font-semibold mt-3">
+              <div>Total</div>
+              <div>{currency(pricing?.total ?? order.pricing?.total)}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -1046,7 +1033,7 @@ function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose 
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <motion.div initial={{ scale: 0.98, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-md w-full p-6">
         <div className="flex items-start gap-4">
           <div className="p-2 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700">
@@ -1083,7 +1070,7 @@ function InputModal({ open, title, initialShipping = { name: "", phone: "", addr
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <motion.div initial={{ y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-lg w-full p-6">
         <h3 className="text-lg font-semibold">{title}</h3>
 
@@ -1135,6 +1122,102 @@ function InfoModal({ open, title = "", message = "", onClose = () => {} }) {
               </button>
             </div>
           </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+/* TrackModal: shows shipment_track and shipment_track_activities (pure Tailwind) */
+function TrackModal({ open, info, onClose }) {
+  if (!open) return null;
+
+  const shipmentTrack = info?.shipment_track ?? info?.shipmentTrack ?? [];
+  const activities = info?.shipment_track_activities ?? info?.shipment_track_activities ?? info?.shipmentTrackActivities ?? [];
+  const rawError = info?.raw?.error ?? info?.error ?? "";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-3xl w-full p-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">Track order</h3>
+            <div className="text-sm text-neutral-500">Latest shipment information</div>
+          </div>
+          <div>
+            <button onClick={onClose} className="text-sm underline text-neutral-500">Close</button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-neutral-50 dark:bg-neutral-800 rounded p-4">
+            <div className="text-sm text-neutral-500">Courier</div>
+            <div className="font-medium">{info?.courier_name ?? info?.courier?.name ?? "-"}</div>
+            <div className="text-sm text-neutral-500 mt-2">AWB</div>
+            <div className="font-medium">{info?.awb_code ?? info?.courier?.awb ?? "-"}</div>
+            <div className="text-sm text-neutral-500 mt-2">Current status</div>
+            <div className="font-medium">{info?.current_status ?? info?.status ?? "-"}</div>
+          </div>
+
+          <div className="bg-neutral-50 dark:bg-neutral-800 rounded p-4">
+            <div className="text-sm text-neutral-500">Origin</div>
+            <div className="font-medium">{info?.origin ?? info?.shipment?.origin ?? "-"}</div>
+            <div className="text-sm text-neutral-500 mt-2">Destination</div>
+            <div className="font-medium">{info?.destination ?? info?.shipment?.destination ?? "-"}</div>
+            <div className="text-sm text-neutral-500 mt-2">ETD</div>
+            <div className="font-medium">{info?.etd ?? "-"}</div>
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <h4 className="font-medium">Shipment activities</h4>
+          <div className="mt-3 space-y-3">
+            {Array.isArray(activities) && activities.length > 0 ? (
+              activities.map((act, i) => (
+                <div key={i} className="bg-white dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 rounded p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-medium">{act.status || act.activity || "Activity"}</div>
+                    <div className="text-xs text-neutral-500">{formatDateTime(act.time || act.timestamp || act.updated_time_stamp || act.date)}</div>
+                  </div>
+                  {act.description && <div className="text-sm text-neutral-500 mt-1">{act.description}</div>}
+                </div>
+              ))
+            ) : (
+              <div className="bg-white dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 rounded p-4 text-sm text-neutral-600">
+                No activities found.
+                {rawError ? <div className="mt-2 text-xs text-neutral-500">{rawError}</div> : null}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <h4 className="font-medium">Shipment track entries</h4>
+          <div className="mt-3 space-y-3">
+            {Array.isArray(shipmentTrack) && shipmentTrack.length > 0 ? (
+              shipmentTrack.map((s, i) => (
+                <div key={i} className="bg-white dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 rounded p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-medium">{s.courier_name || s.awb_code || `Entry ${i + 1}`}</div>
+                    <div className="text-xs text-neutral-500">{formatDateTime(s.updated_time_stamp || s.pickup_date || s.delivered_date)}</div>
+                  </div>
+                  <div className="text-sm text-neutral-500 mt-1">Pickup: {s.pickup_date || "-"}</div>
+                  <div className="text-sm text-neutral-500">Delivered: {s.delivered_date || "-"}</div>
+                  <div className="text-sm text-neutral-500">POD: {s.pod || s.pod_status || "-"}</div>
+                </div>
+              ))
+            ) : (
+              <div className="bg-white dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 rounded p-4 text-sm text-neutral-600">
+                No shipment track entries found.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <button onClick={onClose} className={BTN}>
+            Close
+          </button>
         </div>
       </motion.div>
     </div>
