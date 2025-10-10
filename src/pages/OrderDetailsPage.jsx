@@ -351,7 +351,7 @@ async function handleTrackOrder() {
   try {
     const url = apiUrl(`/api/shipping/track-order`);
     const res = await fetch(url, {
-      method: "GET", // ✅ using POST, not GET
+      method: "POST", // ✅ using POST, not GET
       headers: {
         ...authHeaders(true),
         "Content-Type": "application/json",
