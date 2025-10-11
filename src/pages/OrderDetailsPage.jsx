@@ -55,8 +55,9 @@ function currency(n) {
   return `₹${Number(n || 0).toLocaleString("en-IN")}`;
 }
 
+// smaller global buttons (reduced size per request)
 const BTN =
-  "transition-all duration-200 font-medium rounded-full px-4 py-2 " +
+  "transition-all duration-200 font-medium rounded-full px-3 py-1 " +
   "bg-black text-white dark:bg-white dark:text-black " +
   "hover:bg-white hover:text-black dark:hover:bg-black dark:hover:text-white " +
   "hover:ring-2 hover:ring-black dark:hover:ring-white hover:shadow-[0_8px_20px_rgba(0,0,0,0.12)] focus:outline-none";
@@ -104,6 +105,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       extraDiscount: payload.pricing?.extraDiscount ?? 0,
       specialPrice: payload.pricing?.specialPrice ?? 0,
       otherDiscount: payload.pricing?.otherDiscount ?? 0,
+      couponDiscount: payload.pricing?.couponDiscount ?? payload.pricing?.coupon ?? 0,
     };
 
     const sa = payload.shipping_address || payload.shipping || null;
@@ -208,7 +210,23 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     }
   }, []);
 
-  const pricing = useMemo(() => (order ? { ...order.pricing } : null), [order]);
+  // derived pricing: product price (sum of items), shipping charge (cod -> 25), coupon discount (if present), computed total
+  const computedPricing = useMemo(() => {
+    if (!order) return null;
+    const productPrice = (order.items || []).reduce((s, it) => s + (Number(it.price || 0) * Number(it.qty || 1)), 0);
+    const fees = Number(order.pricing?.fees || 0);
+    const couponDiscount = Number(order.pricing?.couponDiscount ?? order.pricing?.otherDiscount ?? 0);
+    const shippingCharge =
+      (order.paymentMethod || "").toString().toLowerCase() === "cod" ? 25 : 0;
+    const total = productPrice + fees + shippingCharge - couponDiscount;
+    return {
+      productPrice,
+      fees,
+      couponDiscount,
+      shippingCharge,
+      total,
+    };
+  }, [order]);
 
   // ------------------ backend-integrated actions ------------------
   async function handleCancel() {
@@ -392,7 +410,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
 
   function handleShare() {
     if (!order) return;
-    const shareText = `Order ${order.id} • ${order.items?.length ?? 0} items • ${currency(order.pricing?.total)}`;
+    const shareText = `Order ${order.id} • ${order.items?.length ?? 0} items • ${currency(computedPricing?.total ?? order.pricing?.total)}`;
     if (navigator.share) {
       navigator.share({ title: `Order ${order.id}`, text: shareText }).catch(() => setInfo({ open: true, title: "Share", message: "Sharing cancelled or not supported" }));
     } else {
@@ -411,13 +429,46 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     setInfo({ open: true, title: "Contact courier", message: `Call ${order.courier.phone}` });
   }
 
+  // UPDATED: use POST /api/shipping/download-invoice
   async function handleDownloadInvoice() {
+    if (!order?.id) {
+      setInfo({ open: true, title: "Download invoice", message: "No order available to download invoice." });
+      return;
+    }
+    setLoading(true);
     try {
-      const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/invoice`);
-      window.open(url, "_blank");
+      const url = apiUrl(`/api/shipping/download-invoice`);
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          ...authHeaders(true),
+          "Content-Type": "application/json",
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({ order_id: order.id }),
+      });
+
+      if (!res.ok) {
+        const payload = await parseJsonSafe(res);
+        throw new Error(payload?.message || `Invoice download failed (${res.status})`);
+      }
+
+      const blob = await res.blob();
+      const filename = `invoice-${order.id}.pdf`;
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+      setInfo({ open: true, title: "Downloaded", message: "Invoice downloaded." });
     } catch (err) {
       console.error("Download invoice failed:", err);
-      setInfo({ open: true, title: "Error", message: "Could not download invoice." });
+      setInfo({ open: true, title: "Error", message: err.message || "Could not download invoice." });
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -491,7 +542,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
                             onClick={() =>
                               setOpenReviews((prev) => ({ ...(prev || {}), [String(it.id)]: !Boolean(prev?.[String(it.id)]) }))
                             }
-                            className={`${BTN} text-sm px-3 py-2`}
+                            className={`${BTN} text-sm px-3 py-1`}
                           >
                             Submit review
                           </button>
@@ -563,34 +614,34 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
             </div>
 
             <div className="mt-3 text-sm space-y-2">
-              <div className="flex justify-between text-neutral-500">
-                <div>Listing price</div>
-                <div className="line-through">{currency(order.pricing?.listingPrice)}</div>
-              </div>
+              {/* Product price as sum of items */}
               <div className="flex justify-between">
-                <div>Selling price</div>
-                <div>{currency(order.pricing?.sellingPrice)}</div>
+                <div>Product price</div>
+                <div>{currency(computedPricing?.productPrice ?? 0)}</div>
               </div>
-              <div className="flex justify-between text-emerald-600">
-                <div>Extra discount</div>
-                <div>-{currency(order.pricing?.extraDiscount)}</div>
-              </div>
-              <div className="flex justify-between">
-                <div>Special price</div>
-                <div>{currency(order.pricing?.specialPrice)}</div>
-              </div>
-              <div className="flex justify-between text-emerald-600">
-                <div>Other discount</div>
-                <div>-{currency(order.pricing?.otherDiscount)}</div>
-              </div>
+
               <div className="flex justify-between text-neutral-500">
-                <div>Total fees</div>
-                <div>{currency(order.pricing?.fees)}</div>
+                <div>Fees</div>
+                <div>{currency(computedPricing?.fees ?? order.pricing?.fees ?? 0)}</div>
               </div>
+
+              {/* shipping charge if COD */}
+              <div className="flex justify-between">
+                <div>Shipping</div>
+                <div>{currency(computedPricing?.shippingCharge ?? 0)}</div>
+              </div>
+
+              {/* coupon discount if available */}
+              {computedPricing?.couponDiscount > 0 && (
+                <div className="flex justify-between text-emerald-600">
+                  <div>Coupon discount</div>
+                  <div>-{currency(computedPricing?.couponDiscount ?? 0)}</div>
+                </div>
+              )}
 
               <div className="mt-3 border-t border-neutral-100 dark:border-neutral-800 pt-3 flex items-center justify-between">
                 <div className="font-semibold">Total amount</div>
-                <div className="font-semibold">{currency(pricing?.total ?? order.pricing?.total)}</div>
+                <div className="font-semibold">{currency(computedPricing?.total ?? order.pricing?.total)}</div>
               </div>
 
               <div className="mt-3 text-sm text-neutral-500">
@@ -600,10 +651,10 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
 
             <div className="mt-4">
               <div className="flex gap-2">
-                <button onClick={handleShare} className={BTN + " flex-1 py-2 flex items-center justify-center gap-2"}>
+                <button onClick={handleShare} className={BTN + " flex-1 py-2 flex items-center justify-center gap-2 text-sm"}>
                   <Share2 size={16} /> Share
                 </button>
-                <button onClick={handleDownloadInvoice} className={BTN + " flex-1 py-2 px-3 flex items-center justify-center gap-2"}>
+                <button onClick={handleDownloadInvoice} className={BTN + " flex-1 py-2 px-3 flex items-center justify-center gap-2 text-sm"}>
                   <Download size={16} /> Download
                 </button>
               </div>
@@ -614,7 +665,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
         {showInvoice && (
           <div className="hidden" aria-hidden>
             <div ref={invoiceRef}>
-              <InvoiceTemplate order={order} pricing={pricing} />
+              <InvoiceTemplate order={order} pricing={computedPricing} />
             </div>
           </div>
         )}
@@ -736,14 +787,15 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
   const normalizedStatus = (order.status || "").toLowerCase();
   const progressIndex = progressMap[normalizedStatus] ?? 0;
 
-  // use order.history to try find dates, fallback to created_at
+  // Use only the current step to show date and detail. Previous steps should not show date/detail (as requested).
   const trackingToUse = allSteps.map((step, idx) => {
     const done = idx <= progressIndex;
+
     // choose a nice detail message per step
-    const detail =
+    const detailRaw =
       step.toLowerCase().includes("cancel")
         ? "Order cancelled"
-        : step.toLowerCase().includes("confirmed") || step.toLowerCase().includes("order confirmed")
+        : step.toLowerCase().includes("confirmed")
         ? "Order placed successfully."
         : step.toLowerCase().includes("packed")
         ? "Order packed and waiting for shipping partner to pickup."
@@ -753,22 +805,23 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
         ? "Out for delivery — with delivery partner."
         : step.toLowerCase().includes("delivered")
         ? "Delivered successfully. Share your feedback through review."
-        : done
-        ? "Completed"
         : "";
 
+    // Show date only for the current step index (progressIndex). When a step is crossed, its date/detail disappears.
     const date =
-      idx <= progressIndex
+      idx === progressIndex
         ? order.history?.find((h) => (h.title || "").toString().toLowerCase().includes(step.toLowerCase()))?.time ||
           order.created_at ||
           null
         : null;
 
+    const detail = idx === progressIndex && done ? detailRaw : "";
+
     return {
       step,
       done,
       date,
-      detail: done ? detail : "",
+      detail,
     };
   });
 
@@ -833,7 +886,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
           <Truck className="text-neutral-600 dark:text-neutral-300" />
           <div>
             <div className="text-sm text-neutral-500 dark:text-neutral-400">Tracking status</div>
-            <div className="font-semibold capitalize">{order.status}</div>
+            <div className="font-semibold capitalize">{order.status || "Order Confirmed"}</div>
           </div>
         </div>
 
@@ -936,16 +989,16 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
         <div className="flex-1 flex gap-3 w-full">
           {showActions && !isDelivered && (
             <>
-              <button onClick={onCancel} className={BTN + " flex-1 py-3 flex items-center justify-center gap-2"}>
+              <button onClick={onCancel} className={BTN + " flex-1 py-2 flex items-center justify-center gap-2 text-sm"}>
                 Cancel
               </button>
-              <button onClick={onTrackAll} className={BTN + " flex-1 py-3 flex items-center justify-center gap-2"}>
+              <button onClick={onTrackAll} className={BTN + " flex-1 py-2 flex items-center justify-center gap-2 text-sm"}>
                 <Truck size={16} /> Track order
               </button>
             </>
           )}
           {showActions && isDelivered && (
-            <button onClick={onRequestReturn} className={BTN + " flex-1 py-3 flex items-center justify-center gap-2"}>
+            <button onClick={onRequestReturn} className={BTN + " flex-1 py-2 flex items-center justify-center gap-2 text-sm"}>
               Return
             </button>
           )}
@@ -962,6 +1015,13 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
 
 // InvoiceTemplate converted to Tailwind
 function InvoiceTemplate({ order, pricing }) {
+  // pricing: computedPricing (productPrice, fees, couponDiscount, shippingCharge, total)
+  const productPrice = pricing?.productPrice ?? order.pricing?.sellingPrice ?? 0;
+  const fees = pricing?.fees ?? order.pricing?.fees ?? 0;
+  const couponDiscount = pricing?.couponDiscount ?? order.pricing?.couponDiscount ?? 0;
+  const shippingCharge = pricing?.shippingCharge ?? 0;
+  const total = pricing?.total ?? order.pricing?.total ?? productPrice + fees + shippingCharge - couponDiscount;
+
   return (
     <div className="p-6 max-w-3xl">
       <h2 className="text-xl font-semibold">Invoice</h2>
@@ -997,7 +1057,7 @@ function InvoiceTemplate({ order, pricing }) {
               <tr key={it.id}>
                 <td className="py-2 border-t border-neutral-100">{it.title}</td>
                 <td className="py-2 border-t border-neutral-100 text-right">{it.qty}</td>
-                <td className="py-2 border-t border-neutral-100 text-right">{currency(it.price)}</td>
+                <td className="py-2 border-t border-neutral-100 text-right">{currency(Number(it.price) * Number(it.qty || 1))}</td>
               </tr>
             ))}
           </tbody>
@@ -1007,15 +1067,25 @@ function InvoiceTemplate({ order, pricing }) {
           <div className="w-64 text-sm">
             <div className="flex justify-between">
               <div>Subtotal</div>
-              <div>{currency(order.pricing?.sellingPrice)}</div>
+              <div>{currency(productPrice)}</div>
             </div>
             <div className="flex justify-between">
               <div>Fees</div>
-              <div>{currency(order.pricing?.fees)}</div>
+              <div>{currency(fees)}</div>
             </div>
+            <div className="flex justify-between">
+              <div>Shipping</div>
+              <div>{currency(shippingCharge)}</div>
+            </div>
+            {couponDiscount > 0 && (
+              <div className="flex justify-between text-emerald-600">
+                <div>Coupon discount</div>
+                <div>-{currency(couponDiscount)}</div>
+              </div>
+            )}
             <div className="flex justify-between font-semibold mt-3">
               <div>Total</div>
-              <div>{currency(pricing?.total ?? order.pricing?.total)}</div>
+              <div>{currency(total)}</div>
             </div>
           </div>
         </div>
@@ -1043,10 +1113,10 @@ function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose 
             <h3 className="text-lg font-semibold">{title}</h3>
             <p className="text-sm text-neutral-600 dark:text-neutral-300 mt-2">{message}</p>
             <div className="mt-4 flex justify-end gap-3">
-              <button onClick={onClose} className={BTN}>
+              <button onClick={onClose} className={BTN + " text-sm px-3 py-1"}>
                 Cancel
               </button>
-              <button onClick={() => onConfirm()} className="px-4 py-2 rounded-full bg-emerald-600 text-white">
+              <button onClick={() => onConfirm()} className="px-3 py-1 rounded-full bg-emerald-600 text-white text-sm">
                 {confirmLabel}
               </button>
             </div>
@@ -1092,10 +1162,10 @@ function InputModal({ open, title, initialShipping = { name: "", phone: "", addr
         </div>
 
         <div className="mt-4 flex justify-end gap-3">
-          <button onClick={onClose} className={BTN}>
+          <button onClick={onClose} className={BTN + " text-sm px-3 py-1"}>
             Cancel
           </button>
-          <button onClick={() => onConfirm({ name: name.trim(), phone: phone.trim(), address: address.trim() })} className={BTN}>
+          <button onClick={() => onConfirm({ name: name.trim(), phone: phone.trim(), address: address.trim() })} className={BTN + " text-sm px-3 py-1"}>
             Save
           </button>
         </div>
@@ -1117,7 +1187,7 @@ function InfoModal({ open, title = "", message = "", onClose = () => {} }) {
             <div className="font-semibold">{title}</div>
             <div className="text-sm text-neutral-600 dark:text-neutral-300 mt-1">{message}</div>
             <div className="mt-3 text-right">
-              <button onClick={onClose} className={BTN}>
+              <button onClick={onClose} className={BTN + " text-sm px-3 py-1"}>
                 Close
               </button>
             </div>
@@ -1138,7 +1208,11 @@ function TrackModal({ open, info, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-      <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-3xl w-full p-6">
+      <motion.div
+        initial={{ y: 12, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-3xl w-full p-6 max-h-[80vh] overflow-y-auto"
+      >
         <div className="flex items-start justify-between">
           <div>
             <h3 className="text-lg font-semibold">Track order</h3>
@@ -1215,7 +1289,7 @@ function TrackModal({ open, info, onClose }) {
         </div>
 
         <div className="mt-6 flex justify-end">
-          <button onClick={onClose} className={BTN}>
+          <button onClick={onClose} className={BTN + " text-sm px-3 py-1"}>
             Close
           </button>
         </div>
