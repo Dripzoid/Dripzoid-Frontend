@@ -1,6 +1,11 @@
 import React, { useContext } from "react";
 import "./App.css";
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
 import { UserProvider, UserContext } from "./contexts/UserContext.js";
 import { CartProvider } from "./contexts/CartContext.jsx";
 
@@ -31,7 +36,7 @@ import AddressBook from "./pages/account/AddressBook.jsx";
 import PaymentMethods from "./pages/account/PaymentMethods.jsx";
 import AccountSettings from "./pages/account/AccountSettings.jsx";
 
-// 🛠️ Admin
+// 🛠️ Admin Pages
 import AdminLayout from "./admin/AdminLayout.jsx";
 import Dashboard from "./admin/Dashboard.jsx";
 import ProductsAdmin from "./admin/ProductsAdmin.jsx";
@@ -47,74 +52,68 @@ function App() {
     <UserProvider>
       <CartProvider>
         <Router>
-          <AppRoutes />
+          <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white flex flex-col">
+            {/* ✅ Navbar Always Visible */}
+            <Navbar />
+
+            {/* ✅ Routes */}
+            <main className="flex-grow">
+              <Routes>
+                {/* Public Routes */}
+                <Route path="/" element={<Home />} />
+                <Route path="/shop" element={<Shop />} />
+                <Route path="/men" element={<MenPage />} />
+                <Route path="/women" element={<WomenPage />} />
+                <Route path="/kids" element={<KidsPage />} />
+                <Route path="/cart" element={<CartPage />} />
+                <Route path="/product/:id" element={<ProductDetailsPage />} />
+                <Route path="/checkout" element={<CheckoutPage />} />
+                <Route path="/order-confirmation" element={<OrderConfirmation />} />
+                <Route path="/order-details/:id" element={<OrderDetailsPage />} />
+
+                {/* Auth */}
+                <Route path="/login" element={<AuthWrapper defaultForm="login" />} />
+                <Route path="/register" element={<AuthWrapper defaultForm="register" />} />
+
+                {/* Dashboard (Account) Routes */}
+                <Route path="/account" element={<DashboardLayout />}>
+                  <Route index element={<ProfileOverview />} />
+                  <Route path="profile" element={<ProfileOverview />} />
+                  <Route path="orders" element={<OrdersHistory />} />
+                  <Route path="wishlist" element={<Wishlist />} />
+                  <Route path="addresses" element={<AddressBook />} />
+                  <Route path="payment-methods" element={<PaymentMethods />} />
+                  <Route path="settings" element={<AccountSettings />} />
+                </Route>
+
+                {/* Admin Routes */}
+                <Route path="/admin" element={<AdminLayout />}>
+                  <Route index element={<Navigate to="dashboard" replace />} />
+                  <Route path="dashboard" element={<Dashboard />} />
+                  <Route path="products" element={<ProductsAdmin />} />
+                  <Route path="bulk-upload" element={<BulkUpload />} />
+                  <Route path="upload" element={<ImageUpload />} />
+                  <Route path="users" element={<UserManagement />} />
+                  <Route path="orders" element={<AdminOrdersDashboard />} />
+                  <Route path="labels" element={<LabelsManager />} />
+                  <Route path="coupons" element={<CouponManagement />} />
+                  <Route
+                    path="ads"
+                    element={<div className="p-6">Ads Management Coming Soon...</div>}
+                  />
+                </Route>
+              </Routes>
+            </main>
+
+            {/* ✅ Footer Always Visible */}
+            <Footer />
+
+            {/* ✅ Cart Sidebar Always Available */}
+            <CartSidebar />
+          </div>
         </Router>
       </CartProvider>
     </UserProvider>
-  );
-}
-
-function AppRoutes() {
-  const location = useLocation();
-
-  // Hide Navbar/Footer on dashboard and admin routes
-  const isDashboard = location.pathname.startsWith("/account");
-  const isAdmin = location.pathname.startsWith("/admin");
-
-  return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white">
-      {/* Show Navbar/Footer only on public pages */}
-      {!isDashboard && !isAdmin && <Navbar />}
-
-      <Routes>
-        {/* Public Routes */}
-        <Route path="/" element={<Home />} />
-        <Route path="/shop" element={<Shop />} />
-        <Route path="/men" element={<MenPage />} />
-        <Route path="/women" element={<WomenPage />} />
-        <Route path="/kids" element={<KidsPage />} />
-        <Route path="/cart" element={<CartPage />} />
-        <Route path="/product/:id" element={<ProductDetailsPage />} />
-        <Route path="/checkout" element={<CheckoutPage />} />
-        <Route path="/order-confirmation" element={<OrderConfirmation />} />
-        <Route path="/order-details/:id" element={<OrderDetailsPage />} />
-
-        {/* Auth */}
-        <Route path="/login" element={<AuthWrapper defaultForm="login" />} />
-        <Route path="/register" element={<AuthWrapper defaultForm="register" />} />
-
-        {/* Dashboard (Account) Routes */}
-        <Route path="/account" element={<DashboardLayout />}>
-          <Route index element={<ProfileOverview />} />
-          <Route path="profile" element={<ProfileOverview />} />
-          <Route path="orders" element={<OrdersHistory />} />
-          <Route path="wishlist" element={<Wishlist />} />
-          <Route path="addresses" element={<AddressBook />} />
-          <Route path="payment-methods" element={<PaymentMethods />} />
-          <Route path="settings" element={<AccountSettings />} />
-        </Route>
-
-        {/* Admin Routes */}
-        <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="products" element={<ProductsAdmin />} />
-          <Route path="bulk-upload" element={<BulkUpload />} />
-          <Route path="upload" element={<ImageUpload />} />
-          <Route path="users" element={<UserManagement />} />
-          <Route path="orders" element={<AdminOrdersDashboard />} />
-          <Route path="labels" element={<LabelsManager />} />
-          <Route path="coupons" element={<CouponManagement />} />
-          <Route path="ads" element={<div className="p-6">Ads Management Coming Soon...</div>} />
-        </Route>
-      </Routes>
-
-      {/* Show Footer only on public pages */}
-      {!isDashboard && !isAdmin && <Footer />}
-
-      {/* Cart Sidebar always available */}
-      <CartSidebar />
-    </div>
   );
 }
 
