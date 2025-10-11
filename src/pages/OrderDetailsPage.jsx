@@ -175,6 +175,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
   // ------------------ fetch order from backend ------------------
   useEffect(() => {
     let mounted = true;
+    const ac = new AbortController();
     (async () => {
       setLoading(true);
       try {
@@ -183,6 +184,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
           method: "GET",
           headers: authHeaders(false),
           credentials: "same-origin",
+          signal: ac.signal,
         });
 
         const payload = await parseJsonSafe(res);
@@ -192,13 +194,17 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
         if (!mounted) return;
         setOrder(normalized);
       } catch (err) {
+        if (err.name === "AbortError") return;
         console.error("Error loading order:", err);
         setInfo({ open: true, title: "Error", message: err.message || "Could not load order. Check network or try again." });
       } finally {
         if (mounted) setLoading(false);
       }
     })();
-    return () => (mounted = false);
+    return () => {
+      mounted = false;
+      ac.abort();
+    };
   }, [orderId]);
 
   useEffect(() => {
@@ -828,6 +834,9 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
   const lastDoneIndex = trackingToUse.map((t) => t.done).lastIndexOf(true);
 
   useEffect(() => {
+    // ensure markersRef length matches steps
+    markersRef.current = new Array(trackingToUse.length);
+
     function measure() {
       const container = timelineRef.current;
       const nodes = markersRef.current || [];
@@ -1102,9 +1111,11 @@ function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose 
   }, [open]);
 
   if (!open) return null;
+  // NOTE: backdrop is pointer-events-none so it won't block outside clicks.
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <motion.div initial={{ scale: 0.98, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-md w-full p-6">
+    <div className="fixed inset-0 z-50 pointer-events-none p-4">
+      <div className="absolute inset-0 bg-black/40 pointer-events-none" />
+      <motion.div initial={{ scale: 0.98, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="pointer-events-auto mx-auto relative top-1/4 bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-md w-full p-6">
         <div className="flex items-start gap-4">
           <div className="p-2 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700">
             <Info />
@@ -1139,9 +1150,11 @@ function InputModal({ open, title, initialShipping = { name: "", phone: "", addr
   }, [initialShipping, open]);
 
   if (!open) return null;
+  // non-blocking backdrop pattern used here too
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <motion.div initial={{ y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-lg w-full p-6">
+    <div className="fixed inset-0 z-50 pointer-events-none p-4">
+      <div className="absolute inset-0 bg-black/40 pointer-events-none" />
+      <motion.div initial={{ y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="pointer-events-auto mx-auto relative top-1/6 bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-lg w-full p-6">
         <h3 className="text-lg font-semibold">{title}</h3>
 
         <div className="mt-3 grid grid-cols-1 gap-3">
@@ -1176,9 +1189,11 @@ function InputModal({ open, title, initialShipping = { name: "", phone: "", addr
 
 function InfoModal({ open, title = "", message = "", onClose = () => {} }) {
   if (!open) return null;
+  // Important: this modal is informational, we don't want it to block navigation behind it
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-4">
-      <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white dark:bg-neutral-900 rounded-lg shadow-lg max-w-sm w-full p-4">
+    <div className="fixed inset-0 z-50 pointer-events-none p-4">
+      <div className="absolute inset-0 bg-transparent pointer-events-none" />
+      <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="pointer-events-auto mx-auto relative bottom-8 bg-white dark:bg-neutral-900 rounded-lg shadow-lg max-w-sm w-full p-4">
         <div className="flex items-start gap-3">
           <div className="p-2 rounded-full bg-emerald-50 text-emerald-600">
             <CheckCircle />
@@ -1206,12 +1221,14 @@ function TrackModal({ open, info, onClose }) {
   const activities = info?.shipment_track_activities ?? info?.shipment_track_activities ?? info?.shipmentTrackActivities ?? [];
   const rawError = info?.raw?.error ?? info?.error ?? "";
 
+  // non-blocking backdrop (so links and navigation can still be clicked if needed)
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+    <div className="fixed inset-0 z-50 pointer-events-none p-4">
+      <div className="absolute inset-0 bg-black/40 pointer-events-none" />
       <motion.div
         initial={{ y: 12, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-3xl w-full p-6 max-h-[80vh] overflow-y-auto"
+        className="pointer-events-auto mx-auto relative top-8 bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-3xl w-full p-6 max-h-[80vh] overflow-y-auto"
       >
         <div className="flex items-start justify-between">
           <div>
