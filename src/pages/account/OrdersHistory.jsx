@@ -15,15 +15,15 @@ import {
 /**
  * OrdersSection (updated)
  *
- * Changes made per request:
- * - Removed all filters/search/date/limit controls. Only kept sorting based on statuses.
- * - Pagination retained.
- * - Orders displayed as full-width horizontal cards (image left, details right).
- * - Clicking a card (outside of internal action buttons) redirects to:
- *     https://dripzoid.com/order-details/:id
- * - Invoice download now uses POST /api/shipping/download-invoice and downloads the returned PDF blob.
- * - UI uses pure Tailwind CSS only.
- * - Kept tracking/SSE/polling logic intact.
+ * Changes in this version:
+ * - Sorting by status is implemented according to the user's request (priority order).
+ *   The priority used (as requested) is: Confirmed → Shipped → Cancelled → Delivered.
+ *   Any unknown statuses fall to the end and are ordered by newest date within the same priority.
+ * - Invoice POST now sends the order id (multiple keys included for compatibility):
+ *     { orderId: order.id, order_id: order.id, id: order.id }
+ * - Added "confirmed" styling in statusColor and included "confirmed" as a stage in ShipmentProgress.
+ * - Full-width horizontal cards retained; clicking card redirects to order details page.
+ * - Pure Tailwind CSS UI.
  */
 
 const API_BASE = process.env.REACT_APP_API_BASE || "";
@@ -61,14 +61,17 @@ const escapeHtml = (str) => {
     .replaceAll("'", "&#39;");
 };
 
+/* Tailwind classes for status badges */
 const statusColor = (s) => {
   switch ((s || "").toLowerCase()) {
+    case "confirmed":
+      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30";
     case "delivered":
       return "bg-green-100 text-green-800 dark:bg-green-900/30";
     case "shipped":
       return "bg-blue-100 text-blue-800 dark:bg-blue-900/30";
     case "processing":
-      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30";
+      return "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30";
     case "cancelled":
       return "bg-rose-100 text-rose-800 dark:bg-rose-900/30";
     default:
@@ -378,16 +381,15 @@ export default function OrdersSection() {
       return copy;
     }
 
-    // "priority" ordering: processing -> shipped -> out_for_delivery -> delivered -> cancelled -> others
+    // Priority ordering according to user's request:
+    // Confirmed -> Shipped -> Cancelled -> Delivered
     const priority = {
-      processing: 1,
-      packed: 2,
-      shipped: 3,
-      out_for_delivery: 4,
-      "out for delivery": 4,
-      delivered: 5,
-      cancelled: 6,
+      confirmed: 1,
+      shipped: 2,
+      cancelled: 3,
+      delivered: 4,
     };
+
     copy.sort((a, b) => {
       const sa = (a.status || "").toLowerCase();
       const sb = (b.status || "").toLowerCase();
@@ -592,18 +594,24 @@ export default function OrdersSection() {
     }
   };
 
-  // download invoice now uses POST /api/shipping/download-invoice and downloads blob
+  // download invoice now uses POST /api/shipping/download-invoice and includes order id explicitly
   const downloadInvoice = async (order) => {
     if (!order?.id) return;
     setActionLoadingId(order.id);
     try {
+      const payload = {
+        orderId: order.id,
+        order_id: order.id,
+        id: order.id,
+      };
+
       const res = await fetch(`${API_BASE}/api/shipping/download-invoice`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ orderId: order.id }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -661,7 +669,7 @@ export default function OrdersSection() {
               className="px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm"
               title="Sort by status"
             >
-              <option value="priority">Status (Processing → Delivered)</option>
+              <option value="priority">Status (Confirmed → Shipped → Cancelled → Delivered)</option>
               <option value="alpha">Status (A → Z)</option>
             </select>
 
@@ -994,12 +1002,14 @@ export default function OrdersSection() {
   );
 }
 
-/** ShipmentProgress (unchanged) */
+/** ShipmentProgress (updated to include "confirmed" stage) */
 function ShipmentProgress({ status, checkpoints = [] }) {
-  const stages = ["processing", "shipped", "delivered"];
+  // Base stages: confirmed -> shipped -> delivered
+  const base = ["confirmed", "shipped", "delivered"];
   const lower = (status || "").toLowerCase();
   const hasOFD = Array.isArray(checkpoints) && checkpoints.some((c) => (c?.code || "").toLowerCase() === "out_for_delivery");
-  const fullStages = hasOFD ? ["processing", "shipped", "out_for_delivery", "delivered"] : stages;
+  const fullStages = hasOFD ? ["confirmed", "shipped", "out_for_delivery", "delivered"] : base;
+  // compute index; if status not in stages, idx will be -1 so use 0 as min
   const idx = Math.max(0, fullStages.indexOf(lower));
 
   return (
