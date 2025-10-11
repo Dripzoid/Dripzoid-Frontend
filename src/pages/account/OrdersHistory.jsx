@@ -13,17 +13,16 @@ import {
 } from "lucide-react";
 
 /**
- * OrdersSection (updated)
+ * OrdersSection (final update)
  *
- * Changes in this version:
- * - Sorting by status is implemented according to the user's request (priority order).
- *   The priority used (as requested) is: Confirmed → Shipped → Cancelled → Delivered.
- *   Any unknown statuses fall to the end and are ordered by newest date within the same priority.
- * - Invoice POST now sends the order id (multiple keys included for compatibility):
- *     { orderId: order.id, order_id: order.id, id: order.id }
- * - Added "confirmed" styling in statusColor and included "confirmed" as a stage in ShipmentProgress.
- * - Full-width horizontal cards retained; clicking card redirects to order details page.
- * - Pure Tailwind CSS UI.
+ * - Implements **status filtering**: select All / Confirmed / Shipped / Delivered / Cancelled.
+ *   When a status is selected the component requests the server with `?status=...` (if supported)
+ *   and also filters client-side as a fallback.
+ * - Keeps full-width horizontal cards; clicking a card redirects to:
+ *     https://dripzoid.com/order-details/:id
+ * - Invoice download POSTs to /api/shipping/download-invoice and sends order id in body.
+ * - Uses pure Tailwind CSS for layout.
+ * - Pagination retained and will use server meta when available.
  */
 
 const API_BASE = process.env.REACT_APP_API_BASE || "";
@@ -265,13 +264,15 @@ const formatAddressLines = (addr) => {
 
 /* ---------- main component ---------- */
 export default function OrdersSection() {
-  // query state - simplified per request (only status-based sorting + pagination)
+  // state
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [limit] = useState(12); // fixed page size for simplicity
+  const [limit] = useState(12);
   const [total, setTotal] = useState(0);
-  const [statusSortMode, setStatusSortMode] = useState("priority"); // "priority" | "alpha"
+
+  // status filter: All | Confirmed | Shipped | Delivered | Cancelled
+  const [statusFilter, setStatusFilter] = useState("All");
 
   // ui state
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -287,7 +288,7 @@ export default function OrdersSection() {
   const sseRef = useRef(null);
   const pollTimerRef = useRef(null);
 
-  // fetch orders
+  // fetch orders (includes status query param when a status is selected)
   const fetchOrders = async () => {
     try {
       abortRef.current?.abort?.();
@@ -300,6 +301,10 @@ export default function OrdersSection() {
       const params = new URLSearchParams();
       params.append("page", String(page));
       params.append("limit", String(limit));
+      if (statusFilter && statusFilter !== "All") {
+        // send lowercase status to API (many APIs expect lowercase); adjust if your API expects different casing
+        params.append("status", String(statusFilter).toLowerCase());
+      }
 
       const url = `${API_BASE}/api/user/orders${params.toString() ? `?${params.toString()}` : ""}`;
 
@@ -360,49 +365,34 @@ export default function OrdersSection() {
     }
   };
 
+  // fetch on mount / page / refresh / statusFilter change
   useEffect(() => {
-    fetchOrders();
+    // reset to page 1 when filter changes
+    setPage(1);
+    // small trick: use a microtask to ensure page resets before fetch (not strictly necessary)
+    setTimeout(() => {
+      fetchOrders();
+    }, 0);
     return () => abortRef.current?.abort?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, refreshKey]);
+  }, [page, refreshKey, statusFilter]);
 
   const pages = Math.max(1, Math.ceil((total || 0) / (limit || 12)));
 
   const openOrder = (order) => setSelectedOrder(order);
   const closeOrder = () => setSelectedOrder(null);
 
-  // Sorting strictly based on statuses (per request)
-  const sortedOrders = useMemo(() => {
+  // visible orders: if server doesn't filter for some reason, also filter client-side as fallback
+  const visibleOrders = useMemo(() => {
     const copy = [...orders];
-    if (statusSortMode === "alpha") {
-      copy.sort((a, b) =>
-        (a.status || "").localeCompare(b.status || "", undefined, { sensitivity: "base" })
-      );
-      return copy;
-    }
+    // always sort newest first
+    copy.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    if (!statusFilter || statusFilter === "All") return copy;
+    const want = String(statusFilter).toLowerCase();
+    return copy.filter((o) => (String(o.status || "").toLowerCase() === want));
+  }, [orders, statusFilter]);
 
-    // Priority ordering according to user's request:
-    // Confirmed -> Shipped -> Cancelled -> Delivered
-    const priority = {
-      confirmed: 1,
-      shipped: 2,
-      cancelled: 3,
-      delivered: 4,
-    };
-
-    copy.sort((a, b) => {
-      const sa = (a.status || "").toLowerCase();
-      const sb = (b.status || "").toLowerCase();
-      const pa = priority[sa] ?? 99;
-      const pb = priority[sb] ?? 99;
-      if (pa !== pb) return pa - pb;
-      // fallback to date (newest first) within same status
-      return new Date(b.created_at || 0) - new Date(a.created_at || 0);
-    });
-    return copy;
-  }, [orders, statusSortMode]);
-
-  // SSE / poll fallback (unchanged)
+  // SSE / poll fallback to keep tracking updated
   const applyTrackingUpdate = (orderId, payload) => {
     if (!orderId) return;
     setOrders((prev) => {
@@ -496,7 +486,7 @@ export default function OrdersSection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orders, token]);
 
-  // actions (cancel + reorder unchanged except small UX)
+  // actions
   const performCancel = async (orderId) => {
     if (!orderId) return;
     setCanceling(true);
@@ -594,7 +584,7 @@ export default function OrdersSection() {
     }
   };
 
-  // download invoice now uses POST /api/shipping/download-invoice and includes order id explicitly
+  // download invoice uses POST /api/shipping/download-invoice and includes order id explicitly
   const downloadInvoice = async (order) => {
     if (!order?.id) return;
     setActionLoadingId(order.id);
@@ -644,8 +634,7 @@ export default function OrdersSection() {
   };
 
   // card click redirect
-  const onCardClick = (order, e) => {
-    // If click originates from an element that called stopPropagation, it won't reach here.
+  const onCardClick = (order) => {
     if (!order?.id) return;
     window.location.href = `https://dripzoid.com/order-details/${encodeURIComponent(order.id)}`;
   };
@@ -657,20 +646,23 @@ export default function OrdersSection() {
         <div className="flex items-center justify-between gap-4 mb-6">
           <div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">My Orders</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Recent orders — sorted by status. Click a card to view details on Dripzoid.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Filter by status. Click a card to view details on Dripzoid.</p>
           </div>
 
-          {/* Status-based sorting (only control kept) */}
+          {/* Status filter */}
           <div className="flex items-center gap-3">
-            <label className="text-sm text-gray-600 dark:text-gray-300">Sort</label>
+            <label className="text-sm text-gray-600 dark:text-gray-300">Status</label>
             <select
-              value={statusSortMode}
-              onChange={(e) => setStatusSortMode(e.target.value)}
+              value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
               className="px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm"
-              title="Sort by status"
+              title="Filter by status"
             >
-              <option value="priority">Status (Confirmed → Shipped → Cancelled → Delivered)</option>
-              <option value="alpha">Status (A → Z)</option>
+              <option value="All">All</option>
+              <option value="Confirmed">Confirmed</option>
+              <option value="Shipped">Shipped</option>
+              <option value="Delivered">Delivered</option>
+              <option value="Cancelled">Cancelled</option>
             </select>
 
             <button
@@ -689,7 +681,7 @@ export default function OrdersSection() {
             <div className="space-y-4">
               {Array.from({ length: 4 }).map((_, i) => (<SkeletonCard key={i} />))}
             </div>
-          ) : sortedOrders.length === 0 ? (
+          ) : visibleOrders.length === 0 ? (
             <div className="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 p-8 text-center">
               <p className="text-gray-600 dark:text-gray-400 mb-3">No orders found</p>
               <button onClick={() => setRefreshKey((k) => k + 1)} className="px-4 py-2 rounded-md bg-black text-white dark:bg-white dark:text-black">Refresh</button>
@@ -697,10 +689,10 @@ export default function OrdersSection() {
           ) : (
             <>
               <div className="flex flex-col divide-y divide-gray-100 dark:divide-gray-800">
-                {sortedOrders.map((order) => (
+                {visibleOrders.map((order) => (
                   <article
                     key={order.id ?? Math.random().toString(36).slice(2, 8)}
-                    onClick={(e) => onCardClick(order, e)}
+                    onClick={() => onCardClick(order)}
                     role="button"
                     className="w-full flex gap-4 items-start p-4 hover:shadow-md transition-shadow bg-white dark:bg-gray-900 cursor-pointer"
                   >
@@ -744,7 +736,7 @@ export default function OrdersSection() {
                             Details
                           </button>
 
-                          {/* Download invoice uses POST /api/shipping/download-invoice */}
+                          {/* Download invoice */}
                           <button
                             onClick={async (e) => { e.stopPropagation(); await downloadInvoice(order); }}
                             className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -771,7 +763,6 @@ export default function OrdersSection() {
                         </div>
 
                         <div className="text-xs text-gray-500 dark:text-gray-400">
-                          {/* small tracking summary */}
                           {order.tracking?.checkpoints && order.tracking.checkpoints.length > 0
                             ? <span>{order.tracking.checkpoints[order.tracking.checkpoints.length - 1]?.note ?? order.tracking.checkpoints[order.tracking.checkpoints.length - 1]?.code}</span>
                             : <span>Tracking info not available</span>}
@@ -1009,7 +1000,6 @@ function ShipmentProgress({ status, checkpoints = [] }) {
   const lower = (status || "").toLowerCase();
   const hasOFD = Array.isArray(checkpoints) && checkpoints.some((c) => (c?.code || "").toLowerCase() === "out_for_delivery");
   const fullStages = hasOFD ? ["confirmed", "shipped", "out_for_delivery", "delivered"] : base;
-  // compute index; if status not in stages, idx will be -1 so use 0 as min
   const idx = Math.max(0, fullStages.indexOf(lower));
 
   return (
