@@ -54,7 +54,6 @@ function App() {
               <Route path="/product/:id" element={<ProductDetailsPage />} />
               <Route path="/checkout" element={<CheckoutPage />} /> {/* 🆕 Checkout route */}
               <Route path="/order-confirmation" element={<OrderConfirmation />} />
-              <Route path="/order-details/:id" element={<OrderDetailsPage />} />
               <Route path="/account" element={<DashboardLayout />}>
                 <Route index element={<ProfileOverview />} />
                 <Route path="profile" element={<ProfileOverview />} />
@@ -63,6 +62,7 @@ function App() {
                 <Route path="addresses" element={<AddressBook />} />
                 <Route path="payment-methods" element={<PaymentMethods />} />
                 <Route path="settings" element={<AccountSettings />} />
+                <Route path="/order-details/:id" element={<OrderDetailsPage />} />
               </Route>
               <Route
                 path="/login"
