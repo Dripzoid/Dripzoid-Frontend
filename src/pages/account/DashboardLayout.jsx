@@ -13,6 +13,17 @@ import {
   X as XIcon,
 } from "lucide-react";
 
+/**
+ * DashboardLayout
+ *
+ * Key points:
+ * - Sidebar is fixed on the left (mobile: slides in/out; desktop: fixed visible).
+ * - Main content has lg:ml-64 so it is not obscured by the sidebar on large screens.
+ * - Mobile topbar contains the hamburger + "Dashboard" text and a compact greeting + logout icon.
+ * - Desktop header (hidden < lg) displays full greeting and logout button.
+ * - Sidebar includes a "Dashboard" title area visible on desktop.
+ */
+
 export default function DashboardLayout() {
   const { user, login, logout } = useContext(UserContext);
   const navigate = useNavigate();
@@ -52,7 +63,7 @@ export default function DashboardLayout() {
     return res.json();
   };
 
-  // --- Auth check ---
+  // --- Auth check (reads token param or cookie/session) ---
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -69,8 +80,11 @@ export default function DashboardLayout() {
           try {
             const userData = await fetchMe(tokenFromUrl);
             if (!cancelled && isMountedRef.current) login(userData, tokenFromUrl);
-          } catch {}
-          finally {
+          } catch (err) {
+            // ignore - fallback below
+            console.warn("auth via token failed", err);
+          } finally {
+            // remove token from URL so we don't repeatedly try
             const newUrl = location.pathname + location.hash;
             window.history.replaceState({}, document.title, newUrl);
             if (!cancelled && isMountedRef.current) setCheckingAuth(false);
@@ -78,20 +92,27 @@ export default function DashboardLayout() {
           return;
         }
 
+        // Try cookie/session-based auth
         try {
           const data = await fetchMe();
           if (!cancelled && isMountedRef.current && data?.user) {
             login(data.user, null);
           }
-        } catch {}
+        } catch (err) {
+          // ignore and continue (user may not be logged in)
+          // console.warn("session auth failed", err);
+        }
       } catch (err) {
         console.error("Session check failed:", err);
       } finally {
         if (!cancelled && isMountedRef.current) setCheckingAuth(false);
       }
     })();
-    return () => (cancelled = true);
-  }, [location.search, login, user]);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // --- Redirect if not logged in ---
   useEffect(() => {
@@ -113,9 +134,10 @@ export default function DashboardLayout() {
       });
     } catch (err) {
       console.error("Logout error:", err);
+    } finally {
+      logout();
+      navigate("/login");
     }
-    logout();
-    navigate("/login");
   };
 
   const links = [
@@ -129,12 +151,13 @@ export default function DashboardLayout() {
   const closeSidebar = () => setSidebarOpen(false);
   const openSidebar = () => setSidebarOpen(true);
 
+  // close mobile sidebar on route change
   useEffect(() => {
-    // close mobile sidebar on route change
     closeSidebar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
+  // close on Escape
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && closeSidebar();
     window.addEventListener("keydown", onKey);
@@ -149,11 +172,11 @@ export default function DashboardLayout() {
     location.pathname.startsWith("/account/profile");
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-      {/* === MOBILE TOP BAR === */}
+    <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+      {/* MOBILE TOP BAR */}
       <div className="lg:hidden w-full bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          {/* Left section - Menu + Dashboard title */}
+          {/* Left - menu + "Dashboard" */}
           <div className="flex items-center gap-3">
             <button
               aria-label="Open menu"
@@ -165,9 +188,9 @@ export default function DashboardLayout() {
             <div className="text-base font-bold text-gray-900 dark:text-white">Dashboard</div>
           </div>
 
-          {/* Right section - Greeting + Logout Icon */}
+          {/* Right - compact greeting + logout icon */}
           <div className="flex items-center gap-3">
-            <div className="text-sm sm:text-base font-medium text-gray-700 dark:text-gray-200">
+            <div className="text-sm font-medium text-gray-700 dark:text-gray-200">
               Hi, {user?.name ? user.name.split(" ")[0] : "User"}
             </div>
             <button
@@ -181,7 +204,7 @@ export default function DashboardLayout() {
         </div>
       </div>
 
-      {/* === OVERLAY for MOBILE SIDEBAR === */}
+      {/* OVERLAY (mobile only) */}
       {sidebarOpen && (
         <button
           aria-hidden="true"
@@ -191,13 +214,13 @@ export default function DashboardLayout() {
         />
       )}
 
-      {/* === SIDEBAR (fixed across sizes) === */}
+      {/* SIDEBAR - fixed on left; slides in on mobile */}
       <aside
         className={`fixed top-0 left-0 z-50 h-full w-72 lg:w-64 bg-white dark:bg-gray-800 shadow-lg transform transition-transform duration-200
-          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}
+                    ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}
         aria-label="Sidebar"
       >
-        {/* Mobile sidebar header */}
+        {/* Mobile sidebar header (only visible < lg) */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 lg:hidden">
           <h2 className="text-xl font-extrabold text-gray-900 dark:text-white">Dashboard</h2>
           <button
@@ -209,13 +232,13 @@ export default function DashboardLayout() {
           </button>
         </div>
 
-        {/* Desktop sidebar title (appears above the nav on lg+) */}
+        {/* Desktop header above nav (visible on lg+) */}
         <div className="hidden lg:block px-6 py-6 border-b border-gray-100 dark:border-gray-700">
           <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white">Dashboard</h2>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Manage your account</p>
         </div>
 
-        {/* Sidebar navigation */}
+        {/* Navigation */}
         <nav className="flex flex-col flex-grow overflow-auto" role="navigation" aria-label="Account navigation">
           {links.map(({ to, label, icon }) => (
             <NavLink
@@ -237,7 +260,7 @@ export default function DashboardLayout() {
           ))}
         </nav>
 
-        {/* Footer of sidebar showing account */}
+        {/* Sidebar footer showing account (no logout button here) */}
         <div className="mt-auto p-4 text-xs text-center text-gray-500 dark:text-gray-400">
           <div>Logged in as</div>
           <div className="mt-1 font-medium text-gray-800 dark:text-gray-100">
@@ -246,14 +269,14 @@ export default function DashboardLayout() {
         </div>
       </aside>
 
-      {/* === MAIN CONTENT === */}
+      {/* MAIN content area — margin-left on lg to clear the sidebar */}
       <main
         className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950
                    lg:ml-64 rounded-tl-0 lg:rounded-tl-3xl lg:rounded-bl-3xl
                    shadow-none lg:shadow-lg min-h-screen overflow-auto"
       >
         <div className="max-w-7xl w-full mx-auto">
-          {/* Desktop header visible for lg+ */}
+          {/* Desktop header (visible on lg and up) */}
           <header className="hidden lg:flex items-center justify-between mb-8">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -274,7 +297,7 @@ export default function DashboardLayout() {
             </button>
           </header>
 
-          {/* Page content outlet */}
+          {/* Page content */}
           <Outlet />
         </div>
       </main>
