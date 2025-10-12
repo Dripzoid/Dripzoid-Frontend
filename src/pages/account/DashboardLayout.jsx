@@ -151,6 +151,7 @@ export default function DashboardLayout() {
       {/* === MOBILE TOP BAR === */}
       <div className="lg:hidden w-full bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          {/* Left section - Menu + Dashboard title */}
           <div className="flex items-center gap-3">
             <button
               aria-label="Open menu"
@@ -159,19 +160,24 @@ export default function DashboardLayout() {
             >
               <MenuIcon size={20} />
             </button>
-            <div className="text-sm sm:text-base font-medium text-gray-700 dark:text-gray-200">
-              Hi, {user?.name ? user.name.split(" ")[0] : "User"}
+            <div className="text-base font-bold text-gray-900 dark:text-white">
+              Dashboard
             </div>
           </div>
 
-          {/* Logout Icon (mobile only) */}
-          <button
-            onClick={handleLogout}
-            className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 text-rose-600 dark:text-rose-400"
-            aria-label="Logout"
-          >
-            <LogOut size={20} />
-          </button>
+          {/* Right section - Greeting + Logout Icon */}
+          <div className="flex items-center gap-3">
+            <div className="text-sm sm:text-base font-medium text-gray-700 dark:text-gray-200">
+              Hi, {user?.name ? user.name.split(" ")[0] : "User"}
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 text-rose-600 dark:text-rose-400"
+              aria-label="Logout"
+            >
+              <LogOut size={20} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -189,7 +195,7 @@ export default function DashboardLayout() {
       <aside
         className={`z-50 transform top-0 left-0 w-72 bg-white dark:bg-gray-800 shadow-lg flex flex-col fixed h-full transition-transform duration-200
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} 
-        lg:translate-x-0 lg:relative lg:h-auto lg:w-64`}
+        lg:translate-x-0 lg:static lg:w-64`}
       >
         {/* Mobile sidebar header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 lg:hidden">
@@ -204,6 +210,7 @@ export default function DashboardLayout() {
           <h2 className="text-2xl font-extrabold p-6 text-gray-900 dark:text-white">Dashboard</h2>
         </div>
 
+        {/* Sidebar navigation */}
         <nav className="flex flex-col flex-grow overflow-auto">
           {links.map(({ to, label, icon }) => (
             <NavLink
@@ -234,9 +241,13 @@ export default function DashboardLayout() {
       </aside>
 
       {/* === MAIN CONTENT === */}
-      <main className="flex-1 flex-shrink-0 min-w-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950 rounded-tl-0 lg:rounded-tl-3xl lg:rounded-bl-3xl shadow-none lg:shadow-lg min-h-screen overflow-auto">
+      <main
+        className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950
+                   lg:ml-64 rounded-tl-0 lg:rounded-tl-3xl lg:rounded-bl-3xl
+                   shadow-none lg:shadow-lg min-h-screen overflow-auto"
+      >
         <div className="max-w-7xl w-full mx-auto">
-          {/* Desktop header always visible for lg+ */}
+          {/* Desktop header visible for lg+ */}
           <header className="hidden lg:flex items-center justify-between mb-8">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -257,7 +268,7 @@ export default function DashboardLayout() {
             </button>
           </header>
 
-          {/* Actual page outlet */}
+          {/* Outlet (page content) */}
           <Outlet />
         </div>
       </main>
