@@ -1,7 +1,7 @@
-// src/pages/OrderConfirmation.jsx
 import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Barcode from "react-barcode";
+import axios from "axios";
 import {
   CheckCircle,
   DownloadCloud,
@@ -108,53 +108,6 @@ function useConfetti(duration = 2500) {
 }
 
 /* --------------------------
-   PDF & Barcode loaders (from CDN)
-   -------------------------- */
-async function loadJsPDF() {
-  if (window.jspdf && window.jspdf.jsPDF) return window.jspdf;
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector('script[data-asset="jspdf"]');
-    if (existing) {
-      existing.addEventListener("load", () => resolve(window.jspdf));
-      existing.addEventListener("error", reject);
-      return;
-    }
-    const s = document.createElement("script");
-    s.src = "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js";
-    s.async = true;
-    s.setAttribute("data-asset", "jspdf");
-    s.onload = () => {
-      if (window.jspdf && window.jspdf.jsPDF) resolve(window.jspdf);
-      else reject(new Error("jsPDF loaded but not available"));
-    };
-    s.onerror = reject;
-    document.head.appendChild(s);
-  });
-}
-
-async function loadJsBarcode() {
-  if (window.JsBarcode) return window.JsBarcode;
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector('script[data-asset="jsbarcode"]');
-    if (existing) {
-      existing.addEventListener("load", () => resolve(window.JsBarcode));
-      existing.addEventListener("error", reject);
-      return;
-    }
-    const s = document.createElement("script");
-    s.src = "https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js";
-    s.async = true;
-    s.setAttribute("data-asset", "jsbarcode");
-    s.onload = () => {
-      if (window.JsBarcode) resolve(window.JsBarcode);
-      else reject(new Error("JsBarcode loaded but not available"));
-    };
-    s.onerror = reject;
-    document.head.appendChild(s);
-  });
-}
-
-/* --------------------------
    Component
    -------------------------- */
 
@@ -163,7 +116,6 @@ export default function OrderConfirmation() {
   const navigate = useNavigate();
   const confettiCanvasRef = useConfetti(3000);
 
-  // Accept either location.state.order OR fallback to localStorage 'lastOrder' or demo
   const state = location.state ?? {};
   const incomingOrder = state.order ?? null;
 
@@ -171,7 +123,7 @@ export default function OrderConfirmation() {
     try {
       const raw = localStorage.getItem("lastOrder");
       if (raw) return JSON.parse(raw);
-    } catch (e) {
+    } catch {
       /* ignore */
     }
     return null;
@@ -186,166 +138,58 @@ export default function OrderConfirmation() {
     orderDate: new Date().toISOString(),
   };
 
-  // Normalize fields
   const items = Array.isArray(order.items) && order.items.length > 0 ? order.items : [];
-  const amount = typeof order.total === "number" ? order.total : items.reduce((s, it) => s + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+  const amount = typeof order.total === "number"
+    ? order.total
+    : items.reduce((s, it) => s + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+
   const orderId = order.orderId ?? generateOrderId();
   const orderDate = order.orderDate ? new Date(order.orderDate) : new Date();
-  const estimatedDelivery = new Date(orderDate.getTime() + (3 + Math.floor(Math.random() * 5)) * 24 * 60 * 60 * 1000);
+  const estimatedDelivery = new Date(orderDate.getTime() + (3 + Math.floor(Math.random() * 5)) * 86400000);
   const shipping = order.shipping ?? { name: "John Doe", address: "Demo address, City", phone: "9999999999" };
   const paymentMethod = order.paymentMethod ?? (order.paymentDetails ? "Online" : "COD");
-
   const [downloading, setDownloading] = useState(false);
 
-  // Generate a barcode PNG dataURL using JsBarcode (drawn to an offscreen canvas)
-  async function generateBarcodeDataURL(value, opts = {}) {
-    try {
-      await loadJsBarcode();
-      const canvas = document.createElement("canvas");
-      // JsBarcode supports rendering to canvas element
-      window.JsBarcode(canvas, String(value), {
-        format: opts.format || "CODE128",
-        displayValue: false,
-        height: opts.height || 40,
-        margin: opts.margin ?? 0,
-        width: opts.width || 2,
-      });
-      return canvas.toDataURL("image/png");
-    } catch (err) {
-      console.warn("Barcode generation failed:", err);
-      return null;
-    }
-  }
-
-  // Download invoice as a real PDF using jsPDF and embedded barcode
+  /* --------------------------
+     Download Invoice (API)
+     -------------------------- */
   const downloadInvoice = async () => {
-    setDownloading(true);
     try {
-      const jspdfMod = await loadJsPDF();
-      const { jsPDF } = jspdfMod;
-      const doc = new jsPDF({ unit: "pt", format: "a4" });
+      setDownloading(true);
+      const BASE = process.env.REACT_APP_API_BASE?.replace(/\/$/, "") || "";
+      const url = `${BASE}/api/shipping/download-invoice`;
 
-      const left = 40;
-      let cursorY = 48;
-
-      doc.setFontSize(18);
-      doc.text(`Invoice — ${orderId}`, left, cursorY);
-
-      // Try to add barcode image on right
-      try {
-        const barcodeDataUrl = await generateBarcodeDataURL(orderId, { height: 50, width: 2 });
-        if (barcodeDataUrl) {
-          // place at approx top-right
-          doc.addImage(barcodeDataUrl, "PNG", 360, 28, 180, 40);
+      const response = await axios.post(
+        url,
+        { order_id: orderId },
+        {
+          responseType: "blob",
+          headers: { "Content-Type": "application/json" },
+          withCredentials: true,
         }
-      } catch (e) {
-        // continue without barcode
-        console.warn("barcode to PDF failed", e);
-      }
+      );
 
-      doc.setFontSize(11);
-      cursorY += 26;
-      doc.text(`Order Date: ${prettyDate(orderDate)}`, left, cursorY);
-      doc.text(`Amount: ₹${fmtINR(amount)}`, 450, cursorY);
-
-      // Shipping block
-      cursorY += 22;
-      doc.setFontSize(12);
-      doc.text("Shipping to:", left, cursorY);
-      doc.setFontSize(10);
-      cursorY += 16;
-      doc.text(shipping.name || "", left, cursorY);
-      cursorY += 14;
-      const splitAddr = doc.splitTextToSize(String(shipping.address || ""), 480);
-      doc.text(splitAddr, left, cursorY);
-      cursorY += splitAddr.length * 12;
-      doc.text(String(shipping.phone || ""), left, cursorY);
-
-      // Items table header
-      cursorY += 26;
-      doc.setFontSize(11);
-      doc.text("Item", left, cursorY);
-      doc.text("Qty", 380, cursorY);
-      doc.text("Price", 460, cursorY);
-      cursorY += 8;
-      doc.setLineWidth(0.5);
-      doc.line(left, cursorY, 540, cursorY);
-      cursorY += 12;
-
-      // Rows
-      doc.setFontSize(10);
-      items.forEach((it, idx) => {
-        const lineY = cursorY + idx * 16;
-        const name = String(it.name || it.original?.name || "Item");
-        doc.text(name.length > 60 ? name.slice(0, 57) + "..." : name, left, lineY);
-        doc.text(String(it.quantity || 1), 380, lineY);
-        doc.text(`₹${fmtINR(Number(it.price || 0) * Number(it.quantity || 1))}`, 460, lineY);
-      });
-      cursorY += items.length * 16 + 12;
-
-      // Totals block
-      doc.setFontSize(11);
-      doc.text("Total", left, cursorY);
-      doc.text(`₹${fmtINR(amount)}`, 460, cursorY);
-
-      // Footer notes
-      cursorY += 28;
-      doc.setFontSize(9);
-      doc.text("Thank you for shopping with us. This is a demo invoice.", left, cursorY);
-
-      // Save PDF
-      doc.save(`invoice-${orderId}.pdf`);
+      const blob = new Blob([response.data], { type: "application/pdf" });
+      const link = document.createElement("a");
+      link.href = window.URL.createObjectURL(blob);
+      link.download = `invoice-${orderId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
     } catch (err) {
-      console.error("PDF generation failed, falling back to printable HTML", err);
-
-      // fallback printable HTML (auto-print)
-      const invoiceHtml = `
-        <!doctype html>
-        <html>
-        <head>
-          <meta charset="utf-8"/>
-          <title>Invoice - ${orderId}</title>
-          <meta name="viewport" content="width=device-width,initial-scale=1"/>
-          <style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#111;padding:20px} h1{font-size:20px} .row{display:flex;justify-content:space-between} table{width:100%;border-collapse:collapse;margin-top:12px} th,td{padding:8px;border-bottom:1px solid #e6e6e6;text-align:left}.total{font-weight:700;font-size:18px}</style>
-        </head>
-        <body>
-          <h1>Invoice — ${orderId}</h1>
-          <div class="row"><div>Order Date: ${prettyDate(orderDate)}</div><div>Amount: ₹${fmtINR(amount)}</div></div>
-          <div style="margin-top:12px"><strong>Shipping to</strong><div>${shipping.name}</div><div>${shipping.address}</div><div>${shipping.phone}</div></div>
-          <table><thead><tr><th>Item</th><th>Qty</th><th>Price</th></tr></thead><tbody>
-            ${items.map(it => `<tr><td>${it.name}</td><td>${it.quantity}</td><td>₹${fmtINR(Number(it.price)*Number(it.quantity))}</td></tr>`).join("")}
-          </tbody></table>
-          <div style="margin-top:16px" class="row"><div></div><div class="total">Total: ₹${fmtINR(amount)}</div></div>
-          <script>setTimeout(()=>{ window.print(); }, 500);</script>
-        </body>
-        </html>
-      `;
-      const w = window.open("", "_blank", "noopener,noreferrer");
-      if (!w) {
-        const blob = new Blob([invoiceHtml], { type: "text/html" });
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `invoice-${orderId}.html`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      } else {
-        w.document.write(invoiceHtml);
-        w.document.close();
-      }
+      console.error("Invoice download failed:", err);
+      alert("Unable to download invoice. Please try again later.");
     } finally {
       setDownloading(false);
     }
   };
 
+  /* --------------------------
+     Track Order Redirect
+     -------------------------- */
   const handleTrack = () => {
-    navigate(`/track-order/${orderId}`, { state: { orderId } });
+    window.location.href = `https://dripzoid.com/order-details/${orderId}`;
   };
-
-  // show confetti once when mounted
-  useEffect(() => {
-    // confetti already started by useConfetti
-  }, []);
 
   return (
     <div className="min-h-screen flex items-start justify-center py-10 px-4">
@@ -365,7 +209,9 @@ export default function OrderConfirmation() {
             </div>
 
             <div className="flex-1">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Thank you — your order is confirmed!</h1>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Thank you — your order is confirmed!
+              </h1>
               <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
                 We've received your order and will send you a confirmation email shortly.
               </p>
@@ -391,7 +237,8 @@ export default function OrderConfirmation() {
                   disabled={downloading}
                   className="flex items-center gap-2 px-4 py-2 rounded-full bg-black text-white dark:bg-white dark:text-black transition hover:scale-[1.02] shadow"
                 >
-                  <DownloadCloud className="w-4 h-4" /> {downloading ? "Preparing..." : "Download Invoice"}
+                  <DownloadCloud className="w-4 h-4" />{" "}
+                  {downloading ? "Preparing..." : "Download Invoice"}
                 </button>
 
                 <button
@@ -418,12 +265,13 @@ export default function OrderConfirmation() {
             </div>
           </div>
 
-          {/* Order summary card */}
+          {/* Order summary */}
           <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-gray-800 dark:text-gray-100">Items in your order</h3>
-                {/* Page barcode using react-barcode for visual */}
+                <h3 className="font-semibold text-gray-800 dark:text-gray-100">
+                  Items in your order
+                </h3>
                 <div className="hidden sm:block">
                   <Barcode value={String(orderId)} format="CODE128" height={40} displayValue={false} />
                 </div>
@@ -439,10 +287,12 @@ export default function OrderConfirmation() {
                     />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-gray-900 dark:text-white">{it.name}</div>
-                      <div className="text-sm text-gray-500 dark:text-gray-400">Qty: {it.quantity}</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                        Qty: {it.quantity}
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <div className="font-semibold">₹{fmtINR(Number(it.price) * Number(it.quantity))}</div>
+                    <div className="text-right font-semibold">
+                      ₹{fmtINR(Number(it.price) * Number(it.quantity))}
                     </div>
                   </li>
                 ))}
@@ -457,7 +307,7 @@ export default function OrderConfirmation() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span>Items ({items.reduce((s, i) => s + Number(i.quantity), 0)})</span>
-                  <span>₹{fmtINR(items.reduce((s, it) => s + Number(it.price) * Number(it.quantity), 0))}</span>
+                  <span>₹{fmtINR(amount)}</span>
                 </div>
 
                 <div className="flex justify-between">
@@ -480,12 +330,11 @@ export default function OrderConfirmation() {
               </div>
 
               <div className="mt-4 text-xs text-gray-500">
-                We will send tracking updates to your email and phone number. If you have questions, visit our Help Center.
+                We’ll send tracking updates to your email and phone number.
               </div>
             </div>
           </div>
 
-          {/* Shipping address */}
           <div className="mt-6 bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
             <h4 className="font-medium mb-2">Shipping Address</h4>
             <div className="text-sm text-gray-700 dark:text-gray-200">
@@ -496,10 +345,11 @@ export default function OrderConfirmation() {
           </div>
         </div>
 
-        {/* subtle footer note */}
         <div className="text-center text-xs text-gray-500 mt-4">
           Order ID <span className="font-medium">{orderId}</span> — Need help?{" "}
-          <button onClick={() => navigate("/help")} className="underline">Contact support</button>
+          <button onClick={() => navigate("/help")} className="underline">
+            Contact support
+          </button>
         </div>
       </div>
     </div>
