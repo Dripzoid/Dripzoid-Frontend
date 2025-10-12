@@ -19,9 +19,9 @@ export default function DashboardLayout() {
   const location = useLocation();
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1024);
 
-  // --- Handle screen resize ---
+  // detect desktop (used only for header differences)
+  const [isDesktop, setIsDesktop] = useState(() => (typeof window !== "undefined" ? window.innerWidth >= 1024 : false));
   useEffect(() => {
     const handleResize = () => setIsDesktop(window.innerWidth >= 1024);
     window.addEventListener("resize", handleResize);
@@ -95,9 +95,10 @@ export default function DashboardLayout() {
       }
     })();
     return () => (cancelled = true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- Redirect if not logged in ---
+  // redirect if not logged in
   useEffect(() => {
     if (!checkingAuth && !user && location.pathname !== "/login") {
       navigate("/login", { replace: true });
@@ -145,18 +146,32 @@ export default function DashboardLayout() {
 
   if (checkingAuth) return null;
 
-  const isProfileActive = (path) =>
+  const isProfileActive = () =>
     location.pathname === "/account" ||
     location.pathname === "/account/" ||
     location.pathname.startsWith("/account/profile");
 
+  /**
+   * ---- IMPORTANT FIXES ----
+   * 1) Keep sidebar width consistent across breakpoints: use w-64 (16rem / 256px) everywhere.
+   * 2) Use lg:ml-64 on the main container so content is shifted exactly by sidebar width.
+   * 3) Avoid centering the internal content into a narrow `max-w-7xl mx-auto` that creates a big visual gap;
+   *    instead use full width for the content container (w-full) and optionally a smaller max-w if you want
+   *    a constrained content column but without huge whitespace.
+   * 4) Add overflow-x-hidden to top-level wrapper to avoid horizontal scroll/blank gutter from transforms.
+   */
+
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-      {/* === SIDEBAR === */}
+    // added overflow-x-hidden to prevent accidental horizontal scroll/gaps
+    <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-x-hidden">
+      {/* === SIDEBAR ===
+          - use consistent width `w-64` (256px)
+          - mobile: fixed + translate; desktop: static (so main margin-left can match)
+      */}
       <aside
-        className={`z-50 transform top-0 left-0 w-72 bg-white dark:bg-gray-800 shadow-lg flex flex-col fixed h-full transition-transform duration-200
-        ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} 
-        lg:translate-x-0 lg:static lg:w-64`}
+        className={`z-50 transform top-0 left-0 w-64 bg-white dark:bg-gray-800 shadow-lg flex flex-col fixed h-full transition-transform duration-200
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} 
+          lg:translate-x-0 lg:static lg:w-64`}
       >
         {/* Mobile sidebar header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 lg:hidden">
@@ -171,7 +186,7 @@ export default function DashboardLayout() {
           <h2 className="text-2xl font-extrabold p-6 text-gray-900 dark:text-white">Dashboard</h2>
         </div>
 
-        {/* Sidebar navigation */}
+        {/* Navigation */}
         <nav className="flex flex-col flex-grow overflow-auto">
           {links.map(({ to, label, icon }) => (
             <NavLink
@@ -180,7 +195,7 @@ export default function DashboardLayout() {
               onClick={closeSidebar}
               className={({ isActive }) => {
                 const active =
-                  isActive || (to === "/account/profile" && isProfileActive(to));
+                  isActive || (to === "/account/profile" && isProfileActive());
                 return `flex items-center gap-3 px-6 py-4 font-semibold transition-colors duration-300 w-full ${
                   active
                     ? "bg-black text-white"
@@ -195,19 +210,21 @@ export default function DashboardLayout() {
 
         <div className="mt-auto p-4 text-xs text-center text-gray-500 dark:text-gray-400">
           <div>Logged in as</div>
-          <div className="mt-1 font-medium text-gray-800 dark:text-gray-100">
-            {user?.email ?? user?.name ?? "Account"}
-          </div>
+          <div className="mt-1 font-medium text-gray-800 dark:text-gray-100">{user?.email ?? user?.name ?? "Account"}</div>
         </div>
       </aside>
 
-      {/* === MAIN CONTENT === */}
+      {/* === MAIN CONTENT ===
+          - IMPORTANT: lg:ml-64 to match sidebar width exactly.
+          - inner container uses w-full (not centered max-w-7xl) so it fills remaining space next to sidebar.
+      */}
       <main
         className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950
                    lg:ml-64 rounded-tl-0 lg:rounded-tl-3xl lg:rounded-bl-3xl
                    shadow-none lg:shadow-lg min-h-screen overflow-auto"
       >
-        <div className="max-w-7xl w-full mx-auto">
+        {/* Use a full-width inner wrapper so we don't artificially center into a narrow column */}
+        <div className="w-full">
           {/* Conditional Header (Desktop vs Mobile) */}
           {isDesktop ? (
             <header className="flex items-center justify-between mb-8">
