@@ -14,7 +14,9 @@ import {
 import { UserContext } from "../../contexts/UserContext";
 
 /**
- * AccountSettings page — 2FA removed. Sidebar visibility fixed on desktop.
+ * AccountSettings page — renders sidebar conditionally using JS (matchMedia)
+ *  - Sidebar is rendered only when isDesktop === true (>= 768px)
+ *  - Mobile tabs remain the same
  * Uses REACT_APP_API_BASE for backend URLs.
  */
 
@@ -91,11 +93,44 @@ export default function AccountSettings() {
   const [sessions, setSessions] = useState([]);
   const [activity, setActivity] = useState([]);
 
+  // Desktop detection state (JS-driven)
+  const [isDesktop, setIsDesktop] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia && window.matchMedia("(min-width: 768px)").matches;
+  });
+
+  // mount guard
   const isMounted = useRef(true);
-  useEffect(() => () => { isMounted.current = false; }, []);
+  useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
+
+  // set up matchMedia listener to update isDesktop
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return undefined;
+    const mql = window.matchMedia("(min-width: 768px)");
+
+    const handler = (e) => {
+      setIsDesktop(!!e.matches);
+    };
+
+    // some browsers support addEventListener on MediaQueryList
+    if (mql.addEventListener) mql.addEventListener("change", handler);
+    else if (mql.addListener) mql.addListener(handler);
+
+    // ensure initial state is correct
+    setIsDesktop(!!mql.matches);
+
+    return () => {
+      if (mql.removeEventListener) mql.removeEventListener("change", handler);
+      else if (mql.removeListener) mql.removeListener(handler);
+    };
+  }, []);
 
   const getToken = () => ctxToken || null;
 
+  // central fetch helpers
   async function apiFetchAccount(path = "", opts = {}, { expectJson = true } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
@@ -179,6 +214,7 @@ export default function AccountSettings() {
     }
   }
 
+  // loads
   const loadAccount = async () => {
     setLoading(true);
     setError(null);
@@ -229,7 +265,6 @@ export default function AccountSettings() {
   }, []);
 
   // ---------- Handlers ----------
-
   async function handleChangePassword(e) {
     e.preventDefault();
     setSaving(true);
@@ -460,73 +495,54 @@ export default function AccountSettings() {
         {/* Mobile top tabs (visible on small screens) */}
         <div className="md:hidden mb-4">
           <div className="flex gap-2 overflow-x-auto no-scrollbar px-1">
-            <button
-              onClick={() => setActive("security")}
-              className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium ${active === "security" ? "bg-black text-white" : "bg-white/60 dark:bg-white/5 text-gray-700 dark:text-gray-200"}`}
-            >
-              Security
-            </button>
-            <button
-              onClick={() => setActive("notifications")}
-              className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium ${active === "notifications" ? "bg-black text-white" : "bg-white/60 dark:bg-white/5 text-gray-700 dark:text-gray-200"}`}
-            >
-              Notifications
-            </button>
-            <button
-              onClick={() => setActive("privacy")}
-              className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium ${active === "privacy" ? "bg-black text-white" : "bg-white/60 dark:bg-white/5 text-gray-700 dark:text-gray-200"}`}
-            >
-              Privacy
-            </button>
-            <button
-              onClick={() => setActive("activity")}
-              className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium ${active === "activity" ? "bg-black text-white" : "bg-white/60 dark:bg-white/5 text-gray-700 dark:text-gray-200"}`}
-            >
-              Activity
-            </button>
-            <button
-              onClick={() => setActive("sessions")}
-              className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium ${active === "sessions" ? "bg-black text-white" : "bg-white/60 dark:bg-white/5 text-gray-700 dark:text-gray-200"}`}
-            >
-              Sessions
-            </button>
+            {["security","notifications","privacy","activity","sessions"].map((id) => (
+              <button
+                key={id}
+                onClick={() => setActive(id)}
+                className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium ${active === id ? "bg-black text-white" : "bg-white/60 dark:bg-white/5 text-gray-700 dark:text-gray-200"}`}
+              >
+                {id.charAt(0).toUpperCase() + id.slice(1)}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* desktop grid: 4 cols so sidebar has stable width */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          {/* Sidebar (desktop only) */}
-          <aside className="hidden md:block md:col-span-1">
-            <div className="p-4 rounded-2xl bg-white/90 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-lg backdrop-blur-md z-10 md:sticky md:top-24">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-12 h-12 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center">
-                  <ShieldCheck className="w-6 h-6 text-black/60 dark:text-white/60" />
+        {/* desktop grid: conditional cols so sidebar has stable width when rendered */}
+        <div className={`grid grid-cols-1 ${isDesktop ? "md:grid-cols-4" : ""} gap-6`}>
+          {/* Sidebar (rendered only when isDesktop is true) */}
+          {isDesktop && (
+            <aside className="md:col-span-1">
+              <div className="p-4 rounded-2xl bg-white/90 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-lg backdrop-blur-md z-10 sticky top-24">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-12 h-12 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center">
+                    <ShieldCheck className="w-6 h-6 text-black/60 dark:text-white/60" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold">{user?.name || "Account"}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-300">{user?.email || "Settings Hub"}</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-sm font-semibold">{user?.name || "Account"}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-300">{user?.email || "Settings Hub"}</div>
-                </div>
+
+                <nav className="flex flex-col gap-2">
+                  <NavButton id="security" icon={Lock} label="Security" />
+                  <NavButton id="notifications" icon={Bell} label="Notifications" />
+                  <NavButton id="privacy" icon={Shield} label="Privacy & Data" />
+                  <NavButton id="activity" icon={Activity} label="Activity Log" />
+                  <NavButton id="sessions" icon={Settings} label="Sessions & Devices" />
+                </nav>
               </div>
+            </aside>
+          )}
 
-              <nav className="flex flex-col gap-2">
-                <NavButton id="security" icon={Lock} label="Security" />
-                <NavButton id="notifications" icon={Bell} label="Notifications" />
-                <NavButton id="privacy" icon={Shield} label="Privacy & Data" />
-                <NavButton id="activity" icon={Activity} label="Activity Log" />
-                <NavButton id="sessions" icon={Settings} label="Sessions & Devices" />
-              </nav>
-            </div>
-          </aside>
-
-          {/* Main content (spans 3 cols on desktop) */}
-          <main className="md:col-span-3">
+          {/* Main content (spans remaining columns when sidebar present) */}
+          <main className={isDesktop ? "md:col-span-3" : ""}>
             <div className="flex items-start justify-between mb-4">
               <div>
                 <h1 className="text-2xl font-semibold capitalize">{active.replace(/-/g, " ")}</h1>
                 <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage your account security, privacy and preferences.</div>
               </div>
 
-              {/* compact action group (removed permanent Logout button as requested) */}
+              {/* compact action group (no permanent logout button) */}
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleExportData}
