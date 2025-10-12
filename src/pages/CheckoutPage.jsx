@@ -10,7 +10,6 @@ import {
   MapPin,
   Wallet,
   Clock,
-  X,
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -22,9 +21,9 @@ import { UserContext } from "../contexts/UserContext";
  * - /api/payments/razorpay/create-order expects: { items, shipping, totalAmount }
  *
  * Changes made:
- * - UI redesigned with modern Tailwind patterns (cards, subtle shadows, labels).
- * - Shipping payload now includes `customerName` (shipping.name) as requested.
- * - Kept functional flow identical (razorpay + COD + local saves).
+ * - Sends product_name, sku and unit_price on COD place-order just like Razorpay.
+ * - UI styling improved for both light & dark themes (consistent input/button styles).
+ * - Place order button slightly wider and more prominent.
  */
 
 const API_BASE = process.env.REACT_APP_API_BASE;
@@ -129,7 +128,7 @@ export default function CheckoutPage() {
           }
         }
 
-        // Fetch payments
+        // Fetch payments (if endpoint available)
         const pRes = await fetch(`${API_BASE}/api/payments`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -154,8 +153,8 @@ export default function CheckoutPage() {
       const cartRowId = it.cart_id ?? it.id ?? null;
       const productId = it.product_id ?? prod.id ?? null;
       const uniqueId = productId ? `p-${productId}` : cartRowId ? `c-${cartRowId}` : `itm-${idx}`;
-      const name = prod.name ?? it.name ?? "Unnamed";
-      const price = Number(prod.price ?? it.price ?? 0);
+      const name = prod.name ?? it.name ?? it.product_name ?? "Unnamed";
+      const price = Number(prod.price ?? it.price ?? it.unit_price ?? 0);
       const quantity = Number(it.quantity ?? it.qty ?? 1);
       const images = Array.isArray(prod.images) ? prod.images.join(",") : prod.images ?? it.images ?? it.image ?? "";
 
@@ -174,9 +173,25 @@ export default function CheckoutPage() {
       const variantId =
         it.variantId ?? it.variant_id ?? prod.variantId ?? prod.variant_id ?? (it.variant && (it.variant.id || it.variant._id)) ?? null;
 
+      const sku = (prod && (prod.sku || prod.SKU)) || it.sku || `SKU-${productId ?? idx}`;
+
       const original = prod;
 
-      return { cart_id: cartRowId, product_id: productId, id: uniqueId, name, price, quantity, images, original, selectedColor, selectedSize, variantId };
+      return {
+        cart_id: cartRowId,
+        product_id: productId,
+        id: uniqueId,
+        name,
+        price,
+        quantity,
+        images,
+        original,
+        selectedColor,
+        selectedSize,
+        variantId,
+        sku,
+        unit_price: price,
+      };
     });
   }, [location.state, cart]);
 
@@ -433,8 +448,8 @@ export default function CheckoutPage() {
             variantId: it.variantId ?? null,
             product_snapshot: it.original ?? null,
             name: it.name ?? (it.original && it.original.name) ?? `Product ${pid}`,
-            sku: (it.original && it.original.sku) || `SKU-${pid}`,
-            unit_price: Number(it.price || 0),
+            sku: it.sku ?? ((it.original && it.original.sku) || `SKU-${pid}`),
+            unit_price: Number(it.unit_price || it.price || 0),
           };
         })
         .filter(Boolean);
@@ -460,8 +475,11 @@ export default function CheckoutPage() {
         buyNow: isBuyNowMode,
         items: itemsPayload.map((it) => ({
           product_id: it.product_id,
+          product_name: it.name,   // <-- include product name for COD backend & DB
+          sku: it.sku,
           quantity: it.quantity,
           price: it.price,
+          unit_price: it.unit_price,
           selectedColor: it.selectedColor,
           selectedSize: it.selectedSize,
         })),
@@ -626,7 +644,15 @@ export default function CheckoutPage() {
     const done = step > i;
     return (
       <div className="flex items-center gap-4">
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition ${done ? "bg-emerald-500 text-white" : active ? "bg-neutral-900 text-white" : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-500"}`}>
+        <div
+          className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition ${
+            done
+              ? "bg-emerald-500 text-white"
+              : active
+              ? "bg-neutral-900 text-white dark:bg-white dark:text-black"
+              : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-500"
+          }`}
+        >
           {done ? <Check size={16} /> : i}
         </div>
         <div className="text-sm">
@@ -636,6 +662,15 @@ export default function CheckoutPage() {
     );
   };
 
+  // Shared style tokens for inputs/buttons
+  const inputBase = "w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-offset-1 transition";
+  const inputLight = "bg-white border-gray-200 text-gray-900 focus:ring-indigo-500";
+  const inputDark = "dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:focus:ring-indigo-400";
+
+  const cardBase = "rounded-2xl shadow-sm";
+  const cardLight = "bg-white border border-gray-100";
+  const cardDark = "dark:bg-gray-900 dark:border-gray-800";
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
       <div className="mb-6 flex items-center justify-between">
@@ -644,18 +679,18 @@ export default function CheckoutPage() {
           <div className="text-sm text-gray-500">Secure payment & fast shipping</div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600">
-            <MapPin size={16} /> Shipping to: {shipping.city || "Select address"}
+          <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+            <MapPin size={16} /> Shipping to: <span className="ml-1 font-medium">{shipping.city || "Select address"}</span>
           </div>
-          <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600">
-            <UserIcon size={16} /> {user?.name ?? user?.email ?? "Guest"}
+          <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+            <UserIcon size={16} /> <span className="ml-1 font-medium">{user?.name ?? user?.email ?? "Guest"}</span>
           </div>
         </div>
       </div>
 
       {/* Step indicator */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
-        <div className="col-span-2 flex gap-3">
+        <div className="col-span-2 flex gap-3 items-center">
           <StepPill i={1} label="Review" />
           <div className="flex-1 border-t border-dashed mt-2" />
           <StepPill i={2} label="Shipping" />
@@ -664,7 +699,7 @@ export default function CheckoutPage() {
         </div>
 
         <div className="flex justify-end md:justify-end">
-          <div className="text-sm text-gray-500 flex items-center gap-2">
+          <div className="text-sm text-gray-500 dark:text-gray-300 flex items-center gap-2">
             <Clock size={14} /> Secure checkout
           </div>
         </div>
@@ -675,7 +710,7 @@ export default function CheckoutPage() {
         <div className="lg:col-span-2 space-y-6">
           {/* Step 1: Review */}
           {step === 1 && (
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-md p-6">
+            <div className={`${cardBase} ${cardLight} ${cardDark} p-6`}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold">Order summary</h3>
                 <div className="text-sm text-gray-500">Items: {checkoutItems.length}</div>
@@ -737,8 +772,8 @@ export default function CheckoutPage() {
                 <div className="rounded-lg border p-4 bg-gray-50 dark:bg-gray-800">
                   <div className="text-xs text-gray-600">Apply promo code</div>
                   <div className="mt-2 flex gap-2">
-                    <input aria-label="Promo code" placeholder="Promo code (demo)" value={promoCode} onChange={(e) => setPromoCode(e.target.value)} className="flex-1 rounded px-3 py-2 bg-white dark:bg-gray-900 border" />
-                    <button onClick={applyPromo} className="px-4 py-2 rounded bg-gradient-to-r from-neutral-900 to-neutral-700 text-white">Apply</button>
+                    <input aria-label="Promo code" placeholder="Promo code (demo)" value={promoCode} onChange={(e) => setPromoCode(e.target.value)} className={`${inputBase} ${inputLight} ${inputDark} py-2`} />
+                    <button onClick={applyPromo} className="px-4 py-2 rounded bg-gradient-to-r from-neutral-900 to-neutral-700 text-white hover:opacity-95 transition">Apply</button>
                   </div>
                   {promoApplied && <div className="mt-2 text-xs text-emerald-600">Applied: {promoApplied.code} — ₹{fmt(promoApplied.amount)} off</div>}
                 </div>
@@ -767,7 +802,7 @@ export default function CheckoutPage() {
 
           {/* Step 2: Shipping */}
           {step === 2 && (
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-md p-6">
+            <div className={`${cardBase} ${cardLight} ${cardDark} p-6`}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold">Shipping details</h3>
                 <div className="text-sm text-gray-500">Select or add an address</div>
@@ -797,55 +832,55 @@ export default function CheckoutPage() {
 
               <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-gray-600">Full name</label>
-                  <input aria-label="Name" placeholder="Full name" value={shipping.name} onChange={(e) => setShipping({ ...shipping, name: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                  <label className="text-xs text-gray-600 dark:text-gray-300">Full name</label>
+                  <input aria-label="Name" placeholder="Full name" value={shipping.name} onChange={(e) => setShipping({ ...shipping, name: e.target.value })} className={`${inputBase} ${inputLight} ${inputDark} mt-1`} />
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-600">Label</label>
-                  <input aria-label="Label" placeholder="Home / Office" value={shipping.label} onChange={(e) => setShipping({ ...shipping, label: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                  <label className="text-xs text-gray-600 dark:text-gray-300">Label</label>
+                  <input aria-label="Label" placeholder="Home / Office" value={shipping.label} onChange={(e) => setShipping({ ...shipping, label: e.target.value })} className={`${inputBase} ${inputLight} ${inputDark} mt-1`} />
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="text-xs text-gray-600">Address line 1</label>
-                  <input aria-label="Line1" placeholder="Flat, building, street" value={shipping.line1} onChange={(e) => setShipping({ ...shipping, line1: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                  <label className="text-xs text-gray-600 dark:text-gray-300">Address line 1</label>
+                  <input aria-label="Line1" placeholder="Flat, building, street" value={shipping.line1} onChange={(e) => setShipping({ ...shipping, line1: e.target.value })} className={`${inputBase} ${inputLight} ${inputDark} mt-1`} />
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-600">Address line 2</label>
-                  <input aria-label="Line2" placeholder="Area, landmark (optional)" value={shipping.line2} onChange={(e) => setShipping({ ...shipping, line2: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                  <label className="text-xs text-gray-600 dark:text-gray-300">Address line 2</label>
+                  <input aria-label="Line2" placeholder="Area, landmark (optional)" value={shipping.line2} onChange={(e) => setShipping({ ...shipping, line2: e.target.value })} className={`${inputBase} ${inputLight} ${inputDark} mt-1`} />
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-600">City</label>
-                  <input aria-label="City" placeholder="City" value={shipping.city} onChange={(e) => setShipping({ ...shipping, city: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                  <label className="text-xs text-gray-600 dark:text-gray-300">City</label>
+                  <input aria-label="City" placeholder="City" value={shipping.city} onChange={(e) => setShipping({ ...shipping, city: e.target.value })} className={`${inputBase} ${inputLight} ${inputDark} mt-1`} />
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-600">State</label>
-                  <input aria-label="State" placeholder="State" value={shipping.state} onChange={(e) => setShipping({ ...shipping, state: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                  <label className="text-xs text-gray-600 dark:text-gray-300">State</label>
+                  <input aria-label="State" placeholder="State" value={shipping.state} onChange={(e) => setShipping({ ...shipping, state: e.target.value })} className={`${inputBase} ${inputLight} ${inputDark} mt-1`} />
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-600">Pincode</label>
-                  <input aria-label="Pincode" placeholder="Pincode" value={shipping.pincode} onChange={(e) => setShipping({ ...shipping, pincode: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                  <label className="text-xs text-gray-600 dark:text-gray-300">Pincode</label>
+                  <input aria-label="Pincode" placeholder="Pincode" value={shipping.pincode} onChange={(e) => setShipping({ ...shipping, pincode: e.target.value })} className={`${inputBase} ${inputLight} ${inputDark} mt-1`} />
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-600">Phone</label>
-                  <input aria-label="Phone" placeholder="Phone" value={shipping.phone} onChange={(e) => setShipping({ ...shipping, phone: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                  <label className="text-xs text-gray-600 dark:text-gray-300">Phone</label>
+                  <input aria-label="Phone" placeholder="Phone" value={shipping.phone} onChange={(e) => setShipping({ ...shipping, phone: e.target.value })} className={`${inputBase} ${inputLight} ${inputDark} mt-1`} />
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-600">Country</label>
-                  <input aria-label="Country" placeholder="Country" value={shipping.country} onChange={(e) => setShipping({ ...shipping, country: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                  <label className="text-xs text-gray-600 dark:text-gray-300">Country</label>
+                  <input aria-label="Country" placeholder="Country" value={shipping.country} onChange={(e) => setShipping({ ...shipping, country: e.target.value })} className={`${inputBase} ${inputLight} ${inputDark} mt-1`} />
                 </div>
               </div>
 
               <div className="mt-4 flex items-center gap-3">
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={saveAddress} onChange={(e) => setSaveAddress(e.target.checked)} className="w-4 h-4" />
-                  <span className="text-sm">Save this address</span>
+                  <span className="text-sm text-gray-700 dark:text-gray-300">Save this address</span>
                 </label>
 
                 {saveAddress && (
@@ -857,7 +892,7 @@ export default function CheckoutPage() {
 
           {/* Step 3: Payment */}
           {step === 3 && (
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-md p-6">
+            <div className={`${cardBase} ${cardLight} ${cardDark} p-6`}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold">Payment</h3>
                 <div className="text-sm text-gray-500">Choose how you'd like to pay</div>
@@ -869,7 +904,11 @@ export default function CheckoutPage() {
                     setPaymentType("razorpay");
                     setSelectedPaymentId(null);
                   }}
-                  className={`w-full p-4 rounded-xl border flex items-center gap-4 text-left transition ${paymentType === "razorpay" ? "bg-gradient-to-r from-neutral-900 to-neutral-700 text-white shadow-lg" : "bg-white dark:bg-gray-900"}`}
+                  className={`w-full p-4 rounded-xl border flex items-center gap-4 text-left transition ${
+                    paymentType === "razorpay"
+                      ? "bg-gradient-to-r from-neutral-900 to-neutral-700 text-white shadow-lg"
+                      : "bg-white dark:bg-gray-900"
+                  }`}
                 >
                   <div className="p-2 rounded bg-white dark:bg-gray-800 border"><Wallet size={20} /></div>
                   <div className="flex-1">
@@ -884,7 +923,11 @@ export default function CheckoutPage() {
                     setPaymentType("cod");
                     setSelectedPaymentId(null);
                   }}
-                  className={`w-full p-4 rounded-xl border flex items-center gap-4 text-left transition ${paymentType === "cod" ? "bg-gradient-to-r from-amber-500 to-amber-400 text-white shadow-lg" : "bg-white dark:bg-gray-900"}`}
+                  className={`w-full p-4 rounded-xl border flex items-center gap-4 text-left transition ${
+                    paymentType === "cod"
+                      ? "bg-gradient-to-r from-amber-500 to-amber-400 text-white shadow-lg"
+                      : "bg-white dark:bg-gray-900"
+                  }`}
                 >
                   <div className="p-2 rounded bg-white dark:bg-gray-800 border"><Clock size={20} /></div>
                   <div className="flex-1">
@@ -935,10 +978,13 @@ export default function CheckoutPage() {
                         onClick={() => handlePayment()}
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
-                        className={`flex-1 py-2 rounded-full flex items-center justify-center gap-2 text-sm font-semibold ${(!isPaymentValid() || loading) ? "opacity-60 pointer-events-none bg-gray-400" : "bg-gradient-to-r from-neutral-900 to-neutral-700 text-white shadow-lg"}`}
+                        className={`flex-1 py-3 px-6 rounded-full flex items-center justify-center gap-2 text-sm font-semibold ${
+                          (!isPaymentValid() || loading) ? "opacity-60 pointer-events-none bg-gray-400" : "bg-gradient-to-r from-neutral-900 to-neutral-700 text-white shadow-lg"
+                        }`}
                         aria-label="Place Order"
                         type="button"
                         disabled={!isPaymentValid() || loading}
+                        style={{ minWidth: 240 }} // slightly increased width
                       >
                         <CreditCard size={16} />
                         <span className="label">{loading ? "Processing..." : `Place order ₹${fmt(grandTotal)}`}</span>
