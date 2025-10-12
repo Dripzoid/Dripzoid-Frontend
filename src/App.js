@@ -26,7 +26,7 @@ import CheckoutPage from "./pages/CheckoutPage.jsx";
 import OrderConfirmation from "./pages/OrderConfirmation.jsx";
 import OrderDetailsPage from "./pages/OrderDetailsPage.jsx";
 import Auth from "./pages/Auth.jsx";
-mport AboutUs from "./pages/AboutUs.jsx";
+import AboutUs from "./pages/AboutUs.jsx";
 import Contact from "./pages/Contact.jsx";
 import PrivacyPolicy from "./pages/PrivacyPolicy.jsx";
 
