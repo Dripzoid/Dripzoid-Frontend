@@ -266,36 +266,34 @@ export default function DashboardLayout() {
         </div>
       </aside>
 
-      {/* Main content */}
-      <main
-        className="flex-1 flex-shrink-0 min-w-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950
-                   rounded-tl-0 lg:rounded-tl-3xl lg:rounded-bl-3xl shadow-none lg:shadow-lg min-h-screen overflow-auto"
+    {/* Main content */}
+<main
+  className="flex-1 flex-shrink-0 min-w-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950
+             rounded-tl-0 lg:rounded-tl-3xl lg:rounded-bl-3xl shadow-none lg:shadow-lg 
+             min-h-screen overflow-auto"
+>
+  <div className="max-w-7xl w-full mx-auto">
+    {/* Unified Header for All Devices */}
+    <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-3">
+      <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
+        Welcome, {user?.name || "User"}!
+      </h1>
+
+      <button
+        onClick={handleLogout}
+        className="px-4 py-2 rounded-md bg-rose-100 text-rose-700 hover:bg-rose-200 
+                   dark:bg-rose-900/40 dark:text-rose-300 dark:hover:bg-rose-900/60 
+                   font-semibold text-sm flex items-center gap-2 transition"
       >
-        <div className="max-w-7xl w-full mx-auto">
-          {/* Desktop header (shows name & optional controls) */}
-          <header className="hidden lg:flex items-center justify-between mb-8">
-            <h1 className="text-3xl font-bold">Welcome, {user?.name || "User"}!</h1>
-            <div className="flex items-center gap-4">
-              <button
-                onClick={handleLogout}
-                className="px-3 py-2 rounded-md bg-rose-50 text-rose-600 font-semibold"
-              >
-                <LogOut size={16} className="inline-block mr-2" /> Logout
-              </button>
-            </div>
-          </header>
+        <LogOut size={16} /> Logout
+      </button>
+    </header>
 
-          {/* Mobile header (when not using the top bar) */}
-          <header className="lg:hidden mb-4">
-            {/* show simple greeting on mobile content area */}
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold">Hello, {user?.name || "User"}!</h2>
-            </div>
-          </header>
+    {/* Page Content */}
+    <Outlet />
+  </div>
+</main>
 
-          <Outlet />
-        </div>
-      </main>
     </div>
   );
 }
