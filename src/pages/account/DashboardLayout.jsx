@@ -32,11 +32,6 @@ export default function DashboardLayout() {
     };
   }, []);
 
-  const removeQueryParams = () => {
-    const newUrl = location.pathname + location.hash;
-    window.history.replaceState({}, document.title, newUrl);
-  };
-
   const fetchWithTimeout = async (url, options = {}, timeoutMs = 10000) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -57,7 +52,7 @@ export default function DashboardLayout() {
     return res.json();
   };
 
-  // ---------- Session Check ----------
+  // --- Auth check ---
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -73,13 +68,11 @@ export default function DashboardLayout() {
         if (tokenFromUrl) {
           try {
             const userData = await fetchMe(tokenFromUrl);
-            if (!cancelled && isMountedRef.current) {
-              login(userData, tokenFromUrl);
-            }
-          } catch {
-            /* ignore */
-          } finally {
-            removeQueryParams();
+            if (!cancelled && isMountedRef.current) login(userData, tokenFromUrl);
+          } catch {}
+          finally {
+            const newUrl = location.pathname + location.hash;
+            window.history.replaceState({}, document.title, newUrl);
             if (!cancelled && isMountedRef.current) setCheckingAuth(false);
           }
           return;
@@ -90,28 +83,22 @@ export default function DashboardLayout() {
           if (!cancelled && isMountedRef.current && data?.user) {
             login(data.user, null);
           }
-        } catch {
-          /* ignore */
-        }
+        } catch {}
       } catch (err) {
         console.error("Session check failed:", err);
       } finally {
         if (!cancelled && isMountedRef.current) setCheckingAuth(false);
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => (cancelled = true);
   }, []);
 
-  // ---------- Redirects ----------
+  // --- Redirect if not logged in ---
   useEffect(() => {
     if (!checkingAuth && !user && location.pathname !== "/login") {
       navigate("/login", { replace: true });
     }
-  }, [checkingAuth, user, navigate, location.pathname]);
+  }, [checkingAuth, user, location.pathname, navigate]);
 
   const handleLogout = async () => {
     try {
@@ -147,9 +134,7 @@ export default function DashboardLayout() {
   }, [location.pathname]);
 
   useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === "Escape") closeSidebar();
-    };
+    const onKey = (e) => e.key === "Escape" && closeSidebar();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
@@ -163,7 +148,7 @@ export default function DashboardLayout() {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-      {/* ===== MOBILE TOP BAR ===== */}
+      {/* === MOBILE TOP BAR === */}
       <div className="lg:hidden w-full bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -179,7 +164,7 @@ export default function DashboardLayout() {
             </div>
           </div>
 
-          {/* Logout Icon only on mobile */}
+          {/* Logout Icon (mobile only) */}
           <button
             onClick={handleLogout}
             className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 text-rose-600 dark:text-rose-400"
@@ -190,7 +175,7 @@ export default function DashboardLayout() {
         </div>
       </div>
 
-      {/* ===== Overlay for mobile sidebar ===== */}
+      {/* === OVERLAY for MOBILE SIDEBAR === */}
       {sidebarOpen && (
         <button
           aria-hidden="true"
@@ -200,28 +185,23 @@ export default function DashboardLayout() {
         />
       )}
 
-      {/* ===== SIDEBAR ===== */}
+      {/* === SIDEBAR === */}
       <aside
         className={`z-50 transform top-0 left-0 w-72 bg-white dark:bg-gray-800 shadow-lg flex flex-col fixed h-full transition-transform duration-200
-          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 lg:relative lg:h-auto lg:w-64`}
+        ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} 
+        lg:translate-x-0 lg:relative lg:h-auto lg:w-64`}
       >
-        {/* Mobile header inside sidebar */}
+        {/* Mobile sidebar header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 lg:hidden">
           <h2 className="text-xl font-extrabold text-gray-900 dark:text-white">Dashboard</h2>
-          <button
-            onClick={closeSidebar}
-            aria-label="Close menu"
-            className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
-          >
+          <button onClick={closeSidebar} aria-label="Close menu" className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
             <XIcon size={20} />
           </button>
         </div>
 
-        {/* Desktop header */}
+        {/* Desktop sidebar title */}
         <div className="hidden lg:block">
-          <h2 className="text-2xl font-extrabold p-6 text-gray-900 dark:text-white">
-            Dashboard
-          </h2>
+          <h2 className="text-2xl font-extrabold p-6 text-gray-900 dark:text-white">Dashboard</h2>
         </div>
 
         <nav className="flex flex-col flex-grow overflow-auto">
@@ -253,20 +233,17 @@ export default function DashboardLayout() {
         </div>
       </aside>
 
-      {/* ===== MAIN CONTENT ===== */}
-      <main
-        className="flex-1 flex-shrink-0 min-w-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950
-                   rounded-tl-0 lg:rounded-tl-3xl lg:rounded-bl-3xl shadow-none lg:shadow-lg min-h-screen overflow-auto"
-      >
+      {/* === MAIN CONTENT === */}
+      <main className="flex-1 flex-shrink-0 min-w-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950 rounded-tl-0 lg:rounded-tl-3xl lg:rounded-bl-3xl shadow-none lg:shadow-lg min-h-screen overflow-auto">
         <div className="max-w-7xl w-full mx-auto">
-          {/* Desktop Header */}
+          {/* Desktop header always visible for lg+ */}
           <header className="hidden lg:flex items-center justify-between mb-8">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
                 Welcome, {user?.name || "User"}!
               </h1>
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                Manage your account, orders and preferences from here.
+                Manage your account, orders, and preferences from here.
               </p>
             </div>
 
@@ -280,7 +257,7 @@ export default function DashboardLayout() {
             </button>
           </header>
 
-          {/* Page Content */}
+          {/* Actual page outlet */}
           <Outlet />
         </div>
       </main>
