@@ -13,21 +13,13 @@ import {
   X as XIcon,
 } from "lucide-react";
 
-/**
- * DashboardLayout
- *
- * - Mobile: hamburger toggles an off-canvas accessible drawer with an overlay.
- * - Sidebar logout removed (logout exists in header only).
- * - Sidebar auto-closes on navigation and Escape.
- * - Session check & redirect logic unchanged.
- */
-
 export default function DashboardLayout() {
   const { user, login, logout } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
 
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const BASE = process.env.REACT_APP_API_BASE?.replace(/\/$/, "") || "";
   const AUTH_ME = `${BASE}/api/auth/me`;
@@ -68,7 +60,6 @@ export default function DashboardLayout() {
   // ---------- Session Check ----------
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
       if (user) {
         setCheckingAuth(false);
@@ -79,7 +70,6 @@ export default function DashboardLayout() {
         const params = new URLSearchParams(location.search);
         const tokenFromUrl = params.get("token");
 
-        // OAuth redirect handling
         if (tokenFromUrl) {
           try {
             const userData = await fetchMe(tokenFromUrl);
@@ -95,7 +85,6 @@ export default function DashboardLayout() {
           return;
         }
 
-        // Cookie session fallback
         try {
           const data = await fetchMe();
           if (!cancelled && isMountedRef.current && data?.user) {
@@ -126,8 +115,7 @@ export default function DashboardLayout() {
 
   const handleLogout = async () => {
     try {
-      const token = localStorage.getItem("token"); // get token from localStorage
-
+      const token = localStorage.getItem("token");
       await fetch(`${ACCOUNT_BASE}/signout-session`, {
         method: "POST",
         headers: {
@@ -139,13 +127,10 @@ export default function DashboardLayout() {
     } catch (err) {
       console.error("Logout error:", err);
     }
-
-    // Clear frontend state regardless of backend response
     logout();
     navigate("/login");
   };
 
-  // Sidebar links (Payment Methods removed)
   const links = [
     { to: "/account/profile", label: "Profile Overview", icon: <UserIcon size={18} /> },
     { to: "/account/orders", label: "My Orders", icon: <ShoppingBag size={18} /> },
@@ -154,18 +139,13 @@ export default function DashboardLayout() {
     { to: "/account/settings", label: "Account Settings", icon: <Settings size={18} /> },
   ];
 
-  // Mobile sidebar state
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const closeSidebar = () => setSidebarOpen(false);
   const openSidebar = () => setSidebarOpen(true);
 
-  // Close sidebar on navigation (mobile)
   useEffect(() => {
     closeSidebar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
-  // Close on Escape
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "Escape") closeSidebar();
@@ -174,17 +154,16 @@ export default function DashboardLayout() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Don't render dashboard until auth check is done
   if (checkingAuth) return null;
 
-  const isProfileActive = (path) => {
-    // treat "/account" and "/account/profile" as profile active
-    return location.pathname === "/account" || location.pathname === "/account/" || location.pathname.startsWith("/account/profile");
-  };
+  const isProfileActive = (path) =>
+    location.pathname === "/account" ||
+    location.pathname === "/account/" ||
+    location.pathname.startsWith("/account/profile");
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-      {/* Mobile: top bar with hamburger - simplified (no greeting/logout duplication) */}
+      {/* ===== MOBILE TOP BAR ===== */}
       <div className="lg:hidden w-full bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -195,17 +174,23 @@ export default function DashboardLayout() {
             >
               <MenuIcon size={20} />
             </button>
-            <div className="text-lg font-bold">Dashboard</div>
+            <div className="text-sm sm:text-base font-medium text-gray-700 dark:text-gray-200">
+              Hi, {user?.name ? user.name.split(" ")[0] : "User"}
+            </div>
           </div>
 
-          {/* Small user avatar / name or icon could go here if desired (kept minimal to avoid duplicate greeting) */}
-          <div className="flex items-center gap-3">
-            <div className="text-sm text-gray-700 dark:text-gray-200">Hi, {user?.name ? user.name.split(" ")[0] : "User"}</div>
-          </div>
+          {/* Logout Icon only on mobile */}
+          <button
+            onClick={handleLogout}
+            className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 text-rose-600 dark:text-rose-400"
+            aria-label="Logout"
+          >
+            <LogOut size={20} />
+          </button>
         </div>
       </div>
 
-      {/* Overlay for mobile when sidebar open */}
+      {/* ===== Overlay for mobile sidebar ===== */}
       {sidebarOpen && (
         <button
           aria-hidden="true"
@@ -215,23 +200,28 @@ export default function DashboardLayout() {
         />
       )}
 
-      {/* Sidebar - desktop visible, mobile off-canvas */}
+      {/* ===== SIDEBAR ===== */}
       <aside
         className={`z-50 transform top-0 left-0 w-72 bg-white dark:bg-gray-800 shadow-lg flex flex-col fixed h-full transition-transform duration-200
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 lg:relative lg:h-auto lg:w-64`}
-        aria-hidden={!(sidebarOpen || typeof window !== "undefined" && window.innerWidth >= 1024)}
       >
         {/* Mobile header inside sidebar */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 lg:hidden">
           <h2 className="text-xl font-extrabold text-gray-900 dark:text-white">Dashboard</h2>
-          <button onClick={closeSidebar} aria-label="Close menu" className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
+          <button
+            onClick={closeSidebar}
+            aria-label="Close menu"
+            className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
             <XIcon size={20} />
           </button>
         </div>
 
-        {/* Desktop header (hidden on mobile) */}
+        {/* Desktop header */}
         <div className="hidden lg:block">
-          <h2 className="text-2xl font-extrabold p-6 text-gray-900 dark:text-white">Dashboard</h2>
+          <h2 className="text-2xl font-extrabold p-6 text-gray-900 dark:text-white">
+            Dashboard
+          </h2>
         </div>
 
         <nav className="flex flex-col flex-grow overflow-auto">
@@ -239,11 +229,14 @@ export default function DashboardLayout() {
             <NavLink
               key={to}
               to={to}
-              onClick={() => closeSidebar()}
+              onClick={closeSidebar}
               className={({ isActive }) => {
-                const active = isActive || (to === "/account/profile" && isProfileActive(to));
+                const active =
+                  isActive || (to === "/account/profile" && isProfileActive(to));
                 return `flex items-center gap-3 px-6 py-4 font-semibold transition-colors duration-300 w-full ${
-                  active ? "bg-black text-white" : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                  active
+                    ? "bg-black text-white"
+                    : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
                 }`;
               }}
             >
@@ -252,25 +245,24 @@ export default function DashboardLayout() {
           ))}
         </nav>
 
-        {/* Removed sidebar logout button — logout now in the header */}
         <div className="mt-auto p-4 text-xs text-center text-gray-500 dark:text-gray-400">
           <div>Logged in as</div>
-          <div className="mt-1 font-medium text-gray-800 dark:text-gray-100">{user?.email ?? user?.name ?? "Account"}</div>
+          <div className="mt-1 font-medium text-gray-800 dark:text-gray-100">
+            {user?.email ?? user?.name ?? "Account"}
+          </div>
         </div>
       </aside>
 
-      {/* Main content */}
+      {/* ===== MAIN CONTENT ===== */}
       <main
         className="flex-1 flex-shrink-0 min-w-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950
                    rounded-tl-0 lg:rounded-tl-3xl lg:rounded-bl-3xl shadow-none lg:shadow-lg min-h-screen overflow-auto"
       >
         <div className="max-w-7xl w-full mx-auto">
-          {/* Header that shows greeting & logout — visible on all screen sizes,
-              responsive layout (stacks on small screens). This prevents duplicate
-              greeting/logout on mobile because mobile topbar no longer contains them. */}
-          <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-3">
+          {/* Desktop Header */}
+          <header className="hidden lg:flex items-center justify-between mb-8">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
                 Welcome, {user?.name || "User"}!
               </h1>
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
@@ -278,16 +270,14 @@ export default function DashboardLayout() {
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleLogout}
-                className="px-4 py-2 rounded-md bg-rose-100 text-rose-700 hover:bg-rose-200 
-                           dark:bg-rose-900/40 dark:text-rose-300 dark:hover:bg-rose-900/60 
-                           font-semibold text-sm flex items-center gap-2 transition"
-              >
-                <LogOut size={16} /> Logout
-              </button>
-            </div>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 rounded-md bg-rose-100 text-rose-700 hover:bg-rose-200 
+                         dark:bg-rose-900/40 dark:text-rose-300 dark:hover:bg-rose-900/60 
+                         font-semibold text-sm flex items-center gap-2 transition"
+            >
+              <LogOut size={16} /> Logout
+            </button>
           </header>
 
           {/* Page Content */}
