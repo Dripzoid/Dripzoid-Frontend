@@ -91,7 +91,7 @@ export default function DashboardLayout() {
       }
     })();
     return () => (cancelled = true);
-  }, []);
+  }, [location.search, login, user]);
 
   // --- Redirect if not logged in ---
   useEffect(() => {
@@ -130,7 +130,9 @@ export default function DashboardLayout() {
   const openSidebar = () => setSidebarOpen(true);
 
   useEffect(() => {
+    // close mobile sidebar on route change
     closeSidebar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
   useEffect(() => {
@@ -160,9 +162,7 @@ export default function DashboardLayout() {
             >
               <MenuIcon size={20} />
             </button>
-            <div className="text-base font-bold text-gray-900 dark:text-white">
-              Dashboard
-            </div>
+            <div className="text-base font-bold text-gray-900 dark:text-white">Dashboard</div>
           </div>
 
           {/* Right section - Greeting + Logout Icon */}
@@ -191,35 +191,39 @@ export default function DashboardLayout() {
         />
       )}
 
-      {/* === SIDEBAR === */}
+      {/* === SIDEBAR (fixed across sizes) === */}
       <aside
-        className={`z-50 transform top-0 left-0 w-72 bg-white dark:bg-gray-800 shadow-lg flex flex-col fixed h-full transition-transform duration-200
-        ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} 
-        lg:translate-x-0 lg:static lg:w-64`}
+        className={`fixed top-0 left-0 z-50 h-full w-72 lg:w-64 bg-white dark:bg-gray-800 shadow-lg transform transition-transform duration-200
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}
+        aria-label="Sidebar"
       >
         {/* Mobile sidebar header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 lg:hidden">
           <h2 className="text-xl font-extrabold text-gray-900 dark:text-white">Dashboard</h2>
-          <button onClick={closeSidebar} aria-label="Close menu" className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
+          <button
+            onClick={closeSidebar}
+            aria-label="Close menu"
+            className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
             <XIcon size={20} />
           </button>
         </div>
 
-        {/* Desktop sidebar title */}
-        <div className="hidden lg:block">
-          <h2 className="text-2xl font-extrabold p-6 text-gray-900 dark:text-white">Dashboard</h2>
+        {/* Desktop sidebar title (appears above the nav on lg+) */}
+        <div className="hidden lg:block px-6 py-6 border-b border-gray-100 dark:border-gray-700">
+          <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white">Dashboard</h2>
+          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Manage your account</p>
         </div>
 
         {/* Sidebar navigation */}
-        <nav className="flex flex-col flex-grow overflow-auto">
+        <nav className="flex flex-col flex-grow overflow-auto" role="navigation" aria-label="Account navigation">
           {links.map(({ to, label, icon }) => (
             <NavLink
               key={to}
               to={to}
               onClick={closeSidebar}
               className={({ isActive }) => {
-                const active =
-                  isActive || (to === "/account/profile" && isProfileActive(to));
+                const active = isActive || (to === "/account/profile" && isProfileActive(to));
                 return `flex items-center gap-3 px-6 py-4 font-semibold transition-colors duration-300 w-full ${
                   active
                     ? "bg-black text-white"
@@ -227,11 +231,13 @@ export default function DashboardLayout() {
                 }`;
               }}
             >
-              {icon} <span>{label}</span>
+              {icon}
+              <span>{label}</span>
             </NavLink>
           ))}
         </nav>
 
+        {/* Footer of sidebar showing account */}
         <div className="mt-auto p-4 text-xs text-center text-gray-500 dark:text-gray-400">
           <div>Logged in as</div>
           <div className="mt-1 font-medium text-gray-800 dark:text-gray-100">
@@ -268,7 +274,7 @@ export default function DashboardLayout() {
             </button>
           </header>
 
-          {/* Outlet (page content) */}
+          {/* Page content outlet */}
           <Outlet />
         </div>
       </main>
