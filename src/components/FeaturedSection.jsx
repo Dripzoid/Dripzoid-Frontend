@@ -1,19 +1,22 @@
 // src/components/FeaturedSection.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { ShoppingCart, Check } from "lucide-react";
+import { ShoppingCart, Check, Heart, HeartBroken } from "lucide-react";
 import { useCart } from "../contexts/CartContext";
+import { useWishlist } from "../contexts/WishlistContext";
 import { normalizeImages } from "../utils/images"; // safer image handling
 
 const API_BASE = process.env.REACT_APP_API_BASE;
 
 export default function FeaturedSection() {
   const { addToCart: contextAddToCart, cart = [] } = useCart();
+  const { wishlist, addToWishlist, removeFromWishlist } = useWishlist();
 
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAll, setShowAll] = useState(false);
   const [addingId, setAddingId] = useState(null);
+  const [wishlistUpdatingId, setWishlistUpdatingId] = useState(null);
 
   // Build a Set of product IDs currently present in cart
   const inCartIds = useMemo(() => {
@@ -32,9 +35,25 @@ export default function FeaturedSection() {
     return s;
   }, [cart]);
 
+  const wishlistIds = useMemo(() => {
+    const s = new Set();
+    if (!Array.isArray(wishlist)) return s;
+    for (const it of wishlist) {
+      if (!it) continue;
+      const id = it.product_id ?? it.id ?? it.productId;
+      if (id !== undefined && id !== null) s.add(Number(id));
+    }
+    return s;
+  }, [wishlist]);
+
   const isInCart = (productId) => {
     if (productId === undefined || productId === null) return false;
     return inCartIds.has(Number(productId));
+  };
+
+  const isInWishlist = (productId) => {
+    if (productId === undefined || productId === null) return false;
+    return wishlistIds.has(Number(productId));
   };
 
   useEffect(() => {
@@ -42,7 +61,7 @@ export default function FeaturedSection() {
     setLoading(true);
 
     axios
-      .get(`${API_BASE}/api/products?featured=true`)
+      .get(`${API_BASE}/api/featured?featured=true`)
       .then((res) => {
         if (!mounted) return;
         const payload = res?.data ?? [];
@@ -84,6 +103,23 @@ export default function FeaturedSection() {
     }
   };
 
+  const handleWishlistToggle = async (product) => {
+    if (!product) return;
+    const inWishlist = isInWishlist(product.id);
+    try {
+      setWishlistUpdatingId(product.id);
+      if (inWishlist) {
+        await removeFromWishlist(product.id);
+      } else {
+        await addToWishlist(product.id);
+      }
+    } catch (err) {
+      console.error("Wishlist update failed", err);
+    } finally {
+      setWishlistUpdatingId(null);
+    }
+  };
+
   const visibleProducts = showAll ? products : products.slice(0, 5);
 
   return (
@@ -111,10 +147,13 @@ export default function FeaturedSection() {
           <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
             {visibleProducts.map((p) => {
               const inCart = isInCart(p.id);
+              const inWishlist = isInWishlist(p.id);
+
               return (
                 <article
                   key={p.id ?? p._id ?? p.name}
-                  className="relative group border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden shadow hover:shadow-lg transition"
+                  className="relative group border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden shadow hover:shadow-lg transition cursor-pointer"
+                  onClick={() => window.open(`https://dripzoid.com/product/${p.id}`, "_blank")}
                 >
                   <div className="aspect-[4/5] w-full overflow-hidden bg-gray-50 dark:bg-gray-900">
                     <img
@@ -132,38 +171,81 @@ export default function FeaturedSection() {
                       <p className="mt-1 text-lg font-semibold text-black dark:text-white">₹{p.price}</p>
                     </div>
 
-                    <button
-                      onClick={() => handleAddToCart(p)}
-                      disabled={addingId === p.id || inCart}
-                      aria-disabled={addingId === p.id || inCart}
-                      className={`p-3 rounded-full focus:outline-none transition ${
-                        inCart
-                          ? "bg-black/50 text-white dark:bg-white/50 dark:text-black cursor-not-allowed"
-                          : "bg-black text-white dark:bg-white dark:text-black"
-                      }`}
-                    >
-                      {addingId === p.id ? (
-                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                          <circle
-                            className="opacity-25"
-                            cx="12"
-                            cy="12"
-                            r="10"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                          ></circle>
-                          <path
-                            className="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-                          ></path>
-                        </svg>
-                      ) : inCart ? (
-                        <Check size={18} />
-                      ) : (
-                        <ShoppingCart size={18} />
-                      )}
-                    </button>
+                    <div className="flex flex-col items-center gap-2">
+                      {/* Cart Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAddToCart(p);
+                        }}
+                        disabled={addingId === p.id || inCart}
+                        aria-disabled={addingId === p.id || inCart}
+                        className={`p-3 rounded-full focus:outline-none transition ${
+                          inCart
+                            ? "bg-black/50 text-white dark:bg-white/50 dark:text-black cursor-not-allowed"
+                            : "bg-black text-white dark:bg-white dark:text-black"
+                        }`}
+                      >
+                        {addingId === p.id ? (
+                          <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                            ></circle>
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                            ></path>
+                          </svg>
+                        ) : inCart ? (
+                          <Check size={18} />
+                        ) : (
+                          <ShoppingCart size={18} />
+                        )}
+                      </button>
+
+                      {/* Wishlist Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleWishlistToggle(p);
+                        }}
+                        disabled={wishlistUpdatingId === p.id}
+                        aria-disabled={wishlistUpdatingId === p.id}
+                        className={`p-3 rounded-full focus:outline-none transition ${
+                          inWishlist
+                            ? "bg-red-500 text-white dark:bg-red-500 dark:text-white"
+                            : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                        }`}
+                      >
+                        {wishlistUpdatingId === p.id ? (
+                          <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                            ></circle>
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                            ></path>
+                          </svg>
+                        ) : inWishlist ? (
+                          <Heart size={18} />
+                        ) : (
+                          <HeartBroken size={18} />
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </article>
               );
