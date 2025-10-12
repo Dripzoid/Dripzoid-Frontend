@@ -543,12 +543,6 @@ export default function AccountSettings() {
       </div>
     </aside>
   )}
-
-  <main className="flex-1">
-    {/* Keep all your existing <main> content here */}
-  </main>
-</div>
-
           {/* Main content (spans remaining columns when sidebar present) */}
           <main className={isDesktop ? "md:col-span-3" : ""}>
             <div className="flex items-start justify-between mb-4">
