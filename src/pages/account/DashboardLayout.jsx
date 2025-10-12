@@ -23,10 +23,6 @@ import {
  *   - When opened, the sidebar appears as an accessible off-canvas drawer with an overlay.
  * - Sidebar closes automatically on navigation or when pressing Escape.
  * - Kept existing session / auth logic intact.
- *
- * Minor fixes:
- * - Force remount of Outlet on route changes via key={location.pathname}
- * - Use navigate(..., { replace: true }) after logout to avoid history clutter
  */
 
 export default function DashboardLayout() {
@@ -149,7 +145,7 @@ export default function DashboardLayout() {
 
     // Clear frontend state regardless of backend response
     logout();
-    navigate("/login", { replace: true });
+    navigate("/login");
   };
 
   // Sidebar links - removed Payment Methods entry
@@ -297,8 +293,7 @@ export default function DashboardLayout() {
             </div>
           </header>
 
-          {/* Force outlet to remount on pathname change to ensure immediate render when route changes */}
-          <Outlet key={location.pathname} />
+          <Outlet />
         </div>
       </main>
     </div>
