@@ -14,7 +14,7 @@ import {
 import { UserContext } from "../../contexts/UserContext";
 
 /**
- * AccountSettings page — cleaned up (2FA removed) and mobile responsive.
+ * AccountSettings page — 2FA removed. Sidebar visibility fixed on desktop.
  * Uses REACT_APP_API_BASE for backend URLs.
  */
 
@@ -32,7 +32,6 @@ function buildApiUrl(path = "") {
   return `${API_BASE}/${String(path).replace(/^\/+/, "")}`;
 }
 
-// convert timestamps to localized IST
 function formatToIST(timestamp) {
   if (!timestamp) return "";
 
@@ -97,7 +96,6 @@ export default function AccountSettings() {
 
   const getToken = () => ctxToken || null;
 
-  // central fetch helpers
   async function apiFetchAccount(path = "", opts = {}, { expectJson = true } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
@@ -173,7 +171,7 @@ export default function AccountSettings() {
     try {
       setUser(body.user ?? null);
       setNotifications((prev) => ({ ...prev, ...normalizeNotifications(body.notifications ?? body.notification_settings ?? {}) }));
-      setSessions(Array.isArray(body.sessions) ? body.sessions : []); // keep if account route includes sessions
+      setSessions(Array.isArray(body.sessions) ? body.sessions : []);
       setActivity(Array.isArray(body.activity) ? body.activity : []);
     } catch (err) {
       console.error("AccountSettings.applyAccountResponse error:", err);
@@ -495,10 +493,11 @@ export default function AccountSettings() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Sidebar (desktop) */}
-          <aside className="hidden md:block md:col-span-1 sticky top-6">
-            <div className="p-4 rounded-2xl bg-white/60 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-sm backdrop-blur">
+        {/* desktop grid: 4 cols so sidebar has stable width */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          {/* Sidebar (desktop only) */}
+          <aside className="hidden md:block md:col-span-1">
+            <div className="p-4 rounded-2xl bg-white/90 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-lg backdrop-blur-md z-10 md:sticky md:top-24">
               <div className="flex items-center gap-4 mb-4">
                 <div className="w-12 h-12 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center">
                   <ShieldCheck className="w-6 h-6 text-black/60 dark:text-white/60" />
@@ -519,15 +518,15 @@ export default function AccountSettings() {
             </div>
           </aside>
 
-          {/* Main content */}
-          <main className="md:col-span-2">
+          {/* Main content (spans 3 cols on desktop) */}
+          <main className="md:col-span-3">
             <div className="flex items-start justify-between mb-4">
               <div>
                 <h1 className="text-2xl font-semibold capitalize">{active.replace(/-/g, " ")}</h1>
                 <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage your account security, privacy and preferences.</div>
               </div>
 
-              {/* compact action group */}
+              {/* compact action group (removed permanent Logout button as requested) */}
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleExportData}
@@ -535,20 +534,14 @@ export default function AccountSettings() {
                 >
                   Export data
                 </button>
-                <button
-                  onClick={handleLogoutCurrent}
-                  className="px-3 py-2 rounded-full bg-red-50 dark:bg-red-900/10 text-sm text-red-600 dark:text-red-300 border border-red-100 dark:border-red-900/20 hover:scale-105 transition"
-                >
-                  Logout
-                </button>
               </div>
             </div>
 
             <div className="space-y-6">
-              {/* SECURITY (Change password only) */}
+              {/* SECURITY */}
               {active === "security" && (
                 <section className="grid grid-cols-1 gap-6">
-                  <div className="p-6 rounded-xl bg-white/60 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-sm">
+                  <div className="p-6 rounded-xl bg-white/90 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-sm">
                     <h3 className="font-semibold mb-4 text-lg">Change password</h3>
                     <form onSubmit={handleChangePassword} className="grid gap-4">
                       {["current", "newpw", "confirm"].map((field, idx) => (
@@ -596,7 +589,7 @@ export default function AccountSettings() {
               {/* NOTIFICATIONS */}
               {active === "notifications" && (
                 <section>
-                  <div className="p-4 rounded-xl bg-white/60 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-sm">
+                  <div className="p-4 rounded-xl bg-white/90 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-sm">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="font-semibold">Notification preferences</h3>
                       <div className="text-sm text-gray-500 dark:text-gray-300">Toggle what you receive</div>
@@ -637,7 +630,7 @@ export default function AccountSettings() {
               {active === "privacy" && (
                 <section>
                   <div className="grid md:grid-cols-2 gap-4">
-                    <div className="p-4 rounded-xl bg-white/60 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-sm">
+                    <div className="p-4 rounded-xl bg-white/90 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-sm">
                       <h3 className="font-semibold mb-2">Export your data</h3>
                       <p className="text-sm text-gray-600 dark:text-gray-300">Download a copy of your account data (JSON).</p>
                       <div className="mt-4">
@@ -647,7 +640,7 @@ export default function AccountSettings() {
                       </div>
                     </div>
 
-                    <div className="p-4 rounded-xl bg-white/60 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-sm">
+                    <div className="p-4 rounded-xl bg-white/90 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-sm">
                       <h3 className="font-semibold mb-2 text-red-600">Delete account</h3>
                       <p className="text-sm text-gray-600 dark:text-gray-300">Permanently remove your account and related settings.</p>
                       <div className="mt-4">
@@ -663,7 +656,7 @@ export default function AccountSettings() {
               {/* ACTIVITY */}
               {active === "activity" && (
                 <section>
-                  <div className="p-4 rounded-xl bg-white/60 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-sm">
+                  <div className="p-4 rounded-xl bg-white/90 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-sm">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="font-semibold">Recent activity</h3>
                       <div className="flex gap-2">
@@ -691,7 +684,7 @@ export default function AccountSettings() {
               {/* SESSIONS */}
               {active === "sessions" && (
                 <section>
-                  <div className="p-4 rounded-xl bg-white/60 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-sm">
+                  <div className="p-4 rounded-xl bg-white/90 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-sm">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="font-semibold">Sessions & devices</h3>
                       <div className="flex gap-2">
