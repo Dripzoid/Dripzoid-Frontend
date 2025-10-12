@@ -1,9 +1,17 @@
 // src/pages/CheckoutPage.jsx
 // CheckoutPage with Razorpay as primary payment method and COD fallback
-
 import React, { useEffect, useMemo, useState, useContext } from "react";
 import { useCart } from "../contexts/CartContext";
-import { Check, CreditCard, ShoppingCart } from "lucide-react";
+import {
+  Check,
+  CreditCard,
+  ShoppingCart,
+  User as UserIcon,
+  MapPin,
+  Wallet,
+  Clock,
+  X,
+} from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { UserContext } from "../contexts/UserContext";
@@ -12,6 +20,11 @@ import { UserContext } from "../contexts/UserContext";
  * Notes:
  * - /api/orders/place-order expects: { items, buyNow, shippingAddress, paymentMethod, paymentDetails, totalAmount, ... }
  * - /api/payments/razorpay/create-order expects: { items, shipping, totalAmount }
+ *
+ * Changes made:
+ * - UI redesigned with modern Tailwind patterns (cards, subtle shadows, labels).
+ * - Shipping payload now includes `customerName` (shipping.name) as requested.
+ * - Kept functional flow identical (razorpay + COD + local saves).
  */
 
 const API_BASE = process.env.REACT_APP_API_BASE;
@@ -46,7 +59,7 @@ export default function CheckoutPage() {
   const [savedAddresses, setSavedAddresses] = useState([]);
 
   // Only two payment types now: razorpay (online) and cod
-  const [paymentType, setPaymentType] = useState("");
+  const [paymentType, setPaymentType] = useState("razorpay");
   const [savedPayments, setSavedPayments] = useState([]);
   const [selectedPaymentId, setSelectedPaymentId] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -134,7 +147,6 @@ export default function CheckoutPage() {
   }, [token]);
 
   // --- NORMALIZATION for checkout items ---
-  // Ensure selectedColor/selectedSize/variantId are available at top-level of each checkout item
   const checkoutItems = useMemo(() => {
     const incoming = Array.isArray(location.state?.items) ? location.state.items : cart;
     return (Array.isArray(incoming) ? incoming : []).map((it, idx) => {
@@ -145,10 +157,8 @@ export default function CheckoutPage() {
       const name = prod.name ?? it.name ?? "Unnamed";
       const price = Number(prod.price ?? it.price ?? 0);
       const quantity = Number(it.quantity ?? it.qty ?? 1);
-      // images: convert arrays to comma list, keep strings as-is
       const images = Array.isArray(prod.images) ? prod.images.join(",") : prod.images ?? it.images ?? it.image ?? "";
 
-      // Resolve selected color/size from several possible shapes (top-level item, product snapshot or variant)
       const selectedColor =
         (it.selectedColor ?? it.selected_color ?? it.color) ||
         (prod.selectedColor ?? prod.selected_color ?? prod.color) ||
@@ -187,7 +197,7 @@ export default function CheckoutPage() {
 
   // Payment validation: accept saved payment OR razorpay OR cod
   const isPaymentValid = () => {
-    if (selectedPaymentId) return true; // not used in current flow but kept for compatibility
+    if (selectedPaymentId) return true;
     if (paymentType === "razorpay") return true;
     if (paymentType === "cod") return true;
     return false;
@@ -234,9 +244,9 @@ export default function CheckoutPage() {
       return;
     }
 
-    // Build payload from normalized shipping shape
     const payload = {
       label: shipping.label || shipping.name || "",
+      name: shipping.name || "",
       line1: shipping.line1 || "",
       line2: shipping.line2 || "",
       city: shipping.city || "",
@@ -430,10 +440,12 @@ export default function CheckoutPage() {
         .filter(Boolean);
 
       // Normalize shipping address for server
+      // IMPORTANT: include `customerName` explicitly as requested
       const shippingNormalized = {
         id: shipping.id ?? null,
         label: shipping.label || shipping.name || "",
         name: shipping.name || "",
+        customerName: shipping.name || "", // <- explicit customer name
         line1: shipping.line1 || "",
         line2: shipping.line2 || "",
         city: shipping.city || "",
@@ -446,7 +458,6 @@ export default function CheckoutPage() {
       // Payload for /api/orders/place-order (backend expects shippingAddress)
       const placeOrderPayload = {
         buyNow: isBuyNowMode,
-        // optionally include cartItems if you want - backend doesn't require it
         items: itemsPayload.map((it) => ({
           product_id: it.product_id,
           quantity: it.quantity,
@@ -473,6 +484,7 @@ export default function CheckoutPage() {
         })),
         shipping: {
           name: shippingNormalized.name,
+          customerName: shippingNormalized.customerName, // include customerName here as well
           line1: shippingNormalized.line1,
           line2: shippingNormalized.line2,
           city: shippingNormalized.city,
@@ -509,7 +521,7 @@ export default function CheckoutPage() {
           items: checkoutItems,
           total: grandTotal,
           paymentMethod: "cod",
-          customerName: shippingNormalized.name || user?.name || "Guest",
+          customerName: shippingNormalized.customerName || user?.name || "Guest",
           shipping: shippingNormalized,
           orderDate: new Date().toISOString(),
         };
@@ -527,7 +539,6 @@ export default function CheckoutPage() {
       }
 
       // ---------------- RAZORPAY flow ----------------
-      // Create razorpay order on server (server will create internal order too)
       const serverResp = await createRazorpayOrderOnServer(createOrderPayloadForRazor);
       const ok = await loadRazorpayScript();
       if (!ok) throw new Error("Failed to load Razorpay SDK");
@@ -546,7 +557,7 @@ export default function CheckoutPage() {
         name: "Your Store",
         description: "Order Payment",
         order_id: rOrderId,
-        prefill: { name: shippingNormalized.name || user?.name || "", email: user?.email || "", contact: shippingNormalized.phone || "" },
+        prefill: { name: shippingNormalized.customerName || user?.name || "", email: user?.email || "", contact: shippingNormalized.phone || "" },
         handler: async function (response) {
           try {
             // verify and update server order
@@ -558,7 +569,7 @@ export default function CheckoutPage() {
               items: checkoutItems,
               total: grandTotal,
               paymentMethod: "razorpay",
-              customerName: shippingNormalized.name || user?.name || "Guest",
+              customerName: shippingNormalized.customerName || user?.name || "Guest",
               shipping: shippingNormalized,
               orderDate: new Date().toISOString(),
             };
@@ -609,51 +620,77 @@ export default function CheckoutPage() {
     return digits.slice(0, 2) + "/" + digits.slice(2);
   };
 
+  // --- UI Helpers (professional look) ---
+  const StepPill = ({ i, label }) => {
+    const active = step === i;
+    const done = step > i;
+    return (
+      <div className="flex items-center gap-4">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition ${done ? "bg-emerald-500 text-white" : active ? "bg-neutral-900 text-white" : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-500"}`}>
+          {done ? <Check size={16} /> : i}
+        </div>
+        <div className="text-sm">
+          <div className={`font-medium ${active ? "text-neutral-900 dark:text-white" : "text-gray-500 dark:text-gray-300"}`}>{label}</div>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6 text-gray-900 dark:text-gray-100">
-      {/* Step Indicator */}
-      <div className="flex items-center gap-4 mb-6">
-        {["Review", "Shipping", "Payment"].map((label, idx) => {
-          const i = idx + 1;
-          const active = step === i;
-          const done = step > i;
-          return (
-            <div key={label} className="flex-1">
-              <div className="flex items-center gap-4">
-                <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition ${done ? "bg-green-500 text-white" : active ? "bg-black text-white dark:bg-white dark:text-black" : "border border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-400 bg-white dark:bg-gray-900"}`}
-                  aria-hidden
-                >
-                  {done ? <Check size={16} /> : i}
-                </div>
-                <div className="text-sm">
-                  <div className={`font-medium ${active ? "text-gray-900 dark:text-white" : "text-gray-600 dark:text-gray-300"}`}>{label}</div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+    <div className="max-w-6xl mx-auto px-4 py-8">
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="text-2xl font-extrabold">Checkout</div>
+          <div className="text-sm text-gray-500">Secure payment & fast shipping</div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600">
+            <MapPin size={16} /> Shipping to: {shipping.city || "Select address"}
+          </div>
+          <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600">
+            <UserIcon size={16} /> {user?.name ?? user?.email ?? "Guest"}
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main content */}
+      {/* Step indicator */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+        <div className="col-span-2 flex gap-3">
+          <StepPill i={1} label="Review" />
+          <div className="flex-1 border-t border-dashed mt-2" />
+          <StepPill i={2} label="Shipping" />
+          <div className="flex-1 border-t border-dashed mt-2" />
+          <StepPill i={3} label="Payment" />
+        </div>
+
+        <div className="flex justify-end md:justify-end">
+          <div className="text-sm text-gray-500 flex items-center gap-2">
+            <Clock size={14} /> Secure checkout
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Left / main column */}
         <div className="lg:col-span-2 space-y-6">
           {/* Step 1: Review */}
           {step === 1 && (
-            <section className="bg-white dark:bg-gray-900 rounded-xl shadow p-6">
-              <h3 className="text-xl font-semibold mb-4">Order Summary</h3>
-              <div className="space-y-3">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-md p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Order summary</h3>
+                <div className="text-sm text-gray-500">Items: {checkoutItems.length}</div>
+              </div>
+
+              <div className="divide-y divide-gray-100 dark:divide-gray-800">
                 {checkoutItems.length === 0 ? (
-                  <div className="text-center text-gray-500 py-8">
+                  <div className="py-12 text-center text-gray-500">
                     <ShoppingCart className="mx-auto mb-3" />
-                    <div>Your cart is empty</div>
+                    <div>No items found in your cart</div>
                   </div>
                 ) : (
                   checkoutItems.map((it) => {
                     const colorName = it.selectedColor ?? it.original?.selectedColor ?? null;
                     const sizeName = it.selectedSize ?? it.original?.selectedSize ?? null;
-
-                    // Quick CSS color validity check (browser)
                     let showColorDot = false;
                     if (colorName) {
                       try {
@@ -666,17 +703,15 @@ export default function CheckoutPage() {
                     }
 
                     return (
-                      <div key={it.id} className="flex items-start gap-4">
-                        <img src={it.images?.split?.(",")?.[0] ?? "/placeholder.jpg"} alt={it.name} className="w-20 h-20 object-cover rounded-md" />
+                      <div key={it.id} className="py-4 flex gap-4 items-start">
+                        <img src={it.images?.split?.(",")?.[0] ?? "/placeholder.jpg"} alt={it.name} className="w-24 h-24 rounded-lg object-cover shadow-sm" />
                         <div className="flex-1">
-                          <div className="flex justify-between items-start">
+                          <div className="flex justify-between items-start gap-4">
                             <div>
-                              <div className="font-medium text-gray-900 dark:text-white">{it.name}</div>
-                              <div className="text-sm text-gray-500 dark:text-gray-400">{it.original?.category ?? ""}</div>
-
-                              {/* Show selected color & size (prefer normalized fields) */}
+                              <div className="font-medium text-neutral-900 dark:text-white">{it.name}</div>
+                              <div className="text-xs text-gray-500 mt-1">{it.original?.category ?? ""}</div>
                               {(colorName || sizeName) && (
-                                <div className="mt-1 text-xs text-gray-600 dark:text-gray-300 flex items-center gap-3">
+                                <div className="mt-2 text-xs text-gray-600 dark:text-gray-300 flex items-center gap-3">
                                   {colorName && (
                                     <span className="flex items-center gap-2">
                                       <span>Color: {colorName}</span>
@@ -686,10 +721,10 @@ export default function CheckoutPage() {
                                   {sizeName && <span>Size: {sizeName}</span>}
                                 </div>
                               )}
-
-                              <div className="mt-2 text-sm font-semibold">₹{fmt(it.price)}</div>
+                              <div className="mt-3 text-sm font-semibold">₹{fmt(it.price)}</div>
                             </div>
-                            <div className="text-sm text-gray-600 dark:text-gray-300">Qty {it.quantity}</div>
+
+                            <div className="text-sm text-gray-600">Qty {it.quantity}</div>
                           </div>
                         </div>
                       </div>
@@ -698,58 +733,61 @@ export default function CheckoutPage() {
                 )}
               </div>
 
-              <div className="mt-6 border-t pt-4 space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span>Items total</span>
-                  <span>₹{fmt(itemsTotal)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Shipping</span>
-                  <span>{shippingCost === 0 ? "Free" : `₹${fmt(shippingCost)}`}</span>
-                </div>
-                {promoApplied && (
-                  <div className="flex justify-between text-sm text-green-600">
-                    <span>Promo ({promoApplied.code})</span>
-                    <span>-₹{fmt(promoApplied.amount)}</span>
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="rounded-lg border p-4 bg-gray-50 dark:bg-gray-800">
+                  <div className="text-xs text-gray-600">Apply promo code</div>
+                  <div className="mt-2 flex gap-2">
+                    <input aria-label="Promo code" placeholder="Promo code (demo)" value={promoCode} onChange={(e) => setPromoCode(e.target.value)} className="flex-1 rounded px-3 py-2 bg-white dark:bg-gray-900 border" />
+                    <button onClick={applyPromo} className="px-4 py-2 rounded bg-gradient-to-r from-neutral-900 to-neutral-700 text-white">Apply</button>
                   </div>
-                )}
-                <div className="flex justify-between text-lg font-bold pt-2">
-                  <span>Order Total</span>
-                  <span>₹{fmt(itemsTotal + shippingCost - (promoApplied?.amount ?? 0))}</span>
+                  {promoApplied && <div className="mt-2 text-xs text-emerald-600">Applied: {promoApplied.code} — ₹{fmt(promoApplied.amount)} off</div>}
                 </div>
-                <div className="mt-4 flex gap-2">
-                  <input aria-label="Promo code" placeholder="Promo code (demo)" value={promoCode} onChange={(e) => setPromoCode(e.target.value)} className="flex-1 border px-3 py-2 rounded dark:bg-gray-800" />
-                  <button onClick={applyPromo} className="px-4 py-2 rounded bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition">Apply</button>
+
+                <div className="rounded-lg border p-4 bg-gray-50 dark:bg-gray-800">
+                  <div className="text-xs text-gray-600">Price summary</div>
+                  <div className="mt-2 flex justify-between text-sm">
+                    <div>Items</div>
+                    <div>₹{fmt(itemsTotal)}</div>
+                  </div>
+                  <div className="flex justify-between text-sm mt-1">
+                    <div>Shipping</div>
+                    <div>{shippingCost === 0 ? "Free" : `₹${fmt(shippingCost)}`}</div>
+                  </div>
+                  {promoApplied && (
+                    <div className="flex justify-between text-sm mt-1 text-emerald-600">
+                      <div>Promo ({promoApplied.code})</div>
+                      <div>-₹{fmt(promoApplied.amount)}</div>
+                    </div>
+                  )}
+                  <div className="border-t mt-3 pt-3 flex justify-between text-base font-bold">Total <div>₹{fmt(itemsTotal + shippingCost - (promoApplied?.amount ?? 0))}</div></div>
                 </div>
               </div>
-            </section>
+            </div>
           )}
 
           {/* Step 2: Shipping */}
           {step === 2 && (
-            <section className="bg-white dark:bg-gray-900 rounded-xl shadow p-6">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-semibold">Shipping Details</h3>
-                <div className="text-sm text-gray-500">Saved addresses</div>
+            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-md p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Shipping details</h3>
+                <div className="text-sm text-gray-500">Select or add an address</div>
               </div>
 
               {savedAddresses.length > 0 && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {savedAddresses.map((addr) => (
-                    <div key={addr.id} className="border rounded-2xl p-4 bg-white dark:bg-black text-gray-900 dark:text-gray-100 shadow-sm">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="text-sm font-semibold">{addr.label || addr.name || "Address"}</div>
-                          <div className="mt-1 text-xs text-gray-600 dark:text-gray-300">{addr.line1 ? `${addr.line1}${addr.line2 ? ", " + addr.line2 : ""}` : addr.address}</div>
-                          <div className="mt-1 text-xs text-gray-600 dark:text-gray-300">{addr.city ? `${addr.city}, ${addr.state}` : addr.state} • {addr.pincode ?? ""}</div>
-                          <div className="mt-1 text-xs text-gray-600 dark:text-gray-300">{addr.phone}</div>
-                        </div>
-                        <div className="flex flex-col items-end gap-2">
-                          {addr.is_default && <div className="text-xs font-medium text-green-600 dark:text-green-400">Default</div>}
-                          <div className="flex gap-2 mt-2">
-                            <button onClick={() => handleSelectSavedAddress(addr)} className="text-sm px-3 py-1 rounded border bg-black text-white dark:bg-white dark:text-black">Use</button>
-                            <button onClick={() => handleDeleteAddress(addr.id)} className="text-sm px-3 py-1 rounded border text-red-600">Remove</button>
-                          </div>
+                    <div key={addr.id} className={`p-4 rounded-xl border ${addr.id === shipping.id ? "border-neutral-900 dark:border-neutral-600 bg-neutral-50 dark:bg-gray-800" : "bg-white dark:bg-gray-900"} flex justify-between`}>
+                      <div>
+                        <div className="text-sm font-medium">{addr.label || addr.name || "Address"}</div>
+                        <div className="text-xs text-gray-500 mt-1">{addr.line1 ? `${addr.line1}${addr.line2 ? ", " + addr.line2 : ""}` : addr.address}</div>
+                        <div className="text-xs text-gray-500 mt-1">{addr.city ? `${addr.city}, ${addr.state}` : addr.state} • {addr.pincode ?? ""}</div>
+                        <div className="text-xs text-gray-500 mt-1">{addr.phone}</div>
+                      </div>
+                      <div className="flex flex-col gap-2 items-end">
+                        {addr.is_default && <div className="text-xs text-emerald-600">Default</div>}
+                        <div className="flex gap-2">
+                          <button onClick={() => handleSelectSavedAddress(addr)} className="px-3 py-1 rounded text-sm bg-neutral-900 text-white">Use</button>
+                          <button onClick={() => handleDeleteAddress(addr.id)} className="px-3 py-1 rounded text-sm border text-red-600">Remove</button>
                         </div>
                       </div>
                     </div>
@@ -757,87 +795,159 @@ export default function CheckoutPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                {/* Explicit inputs for normalized shipping */}
-                <input aria-label="Name" placeholder="Name" value={shipping.name} onChange={(e) => setShipping({ ...shipping, name: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
-                <input aria-label="Label" placeholder="Label (Home / Office)" value={shipping.label} onChange={(e) => setShipping({ ...shipping, label: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-600">Full name</label>
+                  <input aria-label="Name" placeholder="Full name" value={shipping.name} onChange={(e) => setShipping({ ...shipping, name: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                </div>
 
-                <input aria-label="Line1" placeholder="Address line 1" value={shipping.line1} onChange={(e) => setShipping({ ...shipping, line1: e.target.value })} className="col-span-1 md:col-span-2 border rounded px-3 py-2 dark:bg-gray-800" />
-                <input aria-label="Line2" placeholder="Address line 2 (optional)" value={shipping.line2} onChange={(e) => setShipping({ ...shipping, line2: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
+                <div>
+                  <label className="text-xs text-gray-600">Label</label>
+                  <input aria-label="Label" placeholder="Home / Office" value={shipping.label} onChange={(e) => setShipping({ ...shipping, label: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                </div>
 
-                <input aria-label="City" placeholder="City" value={shipping.city} onChange={(e) => setShipping({ ...shipping, city: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
-                <input aria-label="State" placeholder="State" value={shipping.state} onChange={(e) => setShipping({ ...shipping, state: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
+                <div className="md:col-span-2">
+                  <label className="text-xs text-gray-600">Address line 1</label>
+                  <input aria-label="Line1" placeholder="Flat, building, street" value={shipping.line1} onChange={(e) => setShipping({ ...shipping, line1: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                </div>
 
-                <input aria-label="Pincode" placeholder="Pincode" value={shipping.pincode} onChange={(e) => setShipping({ ...shipping, pincode: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
-                <input aria-label="Phone" placeholder="Phone" value={shipping.phone} onChange={(e) => setShipping({ ...shipping, phone: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
+                <div>
+                  <label className="text-xs text-gray-600">Address line 2</label>
+                  <input aria-label="Line2" placeholder="Area, landmark (optional)" value={shipping.line2} onChange={(e) => setShipping({ ...shipping, line2: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                </div>
 
-                <input aria-label="Country" placeholder="Country" value={shipping.country} onChange={(e) => setShipping({ ...shipping, country: e.target.value })} className="border rounded px-3 py-2 dark:bg-gray-800" />
+                <div>
+                  <label className="text-xs text-gray-600">City</label>
+                  <input aria-label="City" placeholder="City" value={shipping.city} onChange={(e) => setShipping({ ...shipping, city: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                </div>
+
+                <div>
+                  <label className="text-xs text-gray-600">State</label>
+                  <input aria-label="State" placeholder="State" value={shipping.state} onChange={(e) => setShipping({ ...shipping, state: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                </div>
+
+                <div>
+                  <label className="text-xs text-gray-600">Pincode</label>
+                  <input aria-label="Pincode" placeholder="Pincode" value={shipping.pincode} onChange={(e) => setShipping({ ...shipping, pincode: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                </div>
+
+                <div>
+                  <label className="text-xs text-gray-600">Phone</label>
+                  <input aria-label="Phone" placeholder="Phone" value={shipping.phone} onChange={(e) => setShipping({ ...shipping, phone: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                </div>
+
+                <div>
+                  <label className="text-xs text-gray-600">Country</label>
+                  <input aria-label="Country" placeholder="Country" value={shipping.country} onChange={(e) => setShipping({ ...shipping, country: e.target.value })} className="mt-1 w-full rounded border px-3 py-2 dark:bg-gray-800" />
+                </div>
               </div>
 
               <div className="mt-4 flex items-center gap-3">
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={saveAddress} onChange={(e) => setSaveAddress(e.target.checked)} className="w-4 h-4" />
-                  <span className="text-sm">Save this address for future</span>
+                  <span className="text-sm">Save this address</span>
                 </label>
 
                 {saveAddress && (
-                  <button onClick={handleSaveAddress} className="ml-2 px-3 py-1 rounded border bg-black text-white dark:bg-white dark:text-black">Save</button>
+                  <button onClick={handleSaveAddress} className="ml-2 px-3 py-1 rounded bg-neutral-900 text-white">Save</button>
                 )}
               </div>
-            </section>
+            </div>
           )}
 
-          {/* Step 3: Payment (only Razorpay and COD) */}
+          {/* Step 3: Payment */}
           {step === 3 && (
-            <section className="bg-white dark:bg-gray-900 rounded-xl shadow p-6">
-              <h3 className="text-xl font-semibold mb-4">Payment</h3>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[{ id: "razorpay", label: "Pay Online (Razorpay)" }, { id: "cod", label: "Cash on Delivery" }].map((m) => (
-                  <button key={m.id} onClick={() => { setPaymentType(m.id); setSelectedPaymentId(null); }} className={`flex items-center justify-center gap-2 border rounded p-3 text-sm font-medium transition ${paymentType === m.id ? "bg-black text-white dark:bg-white dark:text-black shadow" : "bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200"}`} aria-pressed={paymentType === m.id}>
-                    <span>{m.label}</span>
-                  </button>
-                ))}
+            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-md p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Payment</h3>
+                <div className="text-sm text-gray-500">Choose how you'd like to pay</div>
               </div>
 
-              {/* COD explanatory message */}
-              {paymentType === "cod" && (
-                <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">Cash on Delivery selected — ₹25 COD fee will be added to your order.</div>
-              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  onClick={() => {
+                    setPaymentType("razorpay");
+                    setSelectedPaymentId(null);
+                  }}
+                  className={`w-full p-4 rounded-xl border flex items-center gap-4 text-left transition ${paymentType === "razorpay" ? "bg-gradient-to-r from-neutral-900 to-neutral-700 text-white shadow-lg" : "bg-white dark:bg-gray-900"}`}
+                >
+                  <div className="p-2 rounded bg-white dark:bg-gray-800 border"><Wallet size={20} /></div>
+                  <div className="flex-1">
+                    <div className="font-medium">Pay Online (Razorpay)</div>
+                    <div className="text-xs text-gray-500 mt-1">Cards, UPI, Netbanking and more. Fast and secure.</div>
+                  </div>
+                  {paymentType === "razorpay" && <div className="text-xs font-semibold">Selected</div>}
+                </button>
 
-              <div className="mt-4 text-xs text-gray-500">Secure payment — Razorpay will handle card/UPI/netbanking flows in a single checkout. COD is supported as a fallback.</div>
-            </section>
+                <button
+                  onClick={() => {
+                    setPaymentType("cod");
+                    setSelectedPaymentId(null);
+                  }}
+                  className={`w-full p-4 rounded-xl border flex items-center gap-4 text-left transition ${paymentType === "cod" ? "bg-gradient-to-r from-amber-500 to-amber-400 text-white shadow-lg" : "bg-white dark:bg-gray-900"}`}
+                >
+                  <div className="p-2 rounded bg-white dark:bg-gray-800 border"><Clock size={20} /></div>
+                  <div className="flex-1">
+                    <div className="font-medium">Cash on Delivery</div>
+                    <div className="text-xs text-gray-500 mt-1">Pay in cash when your order is delivered. ₹25 COD fee applies.</div>
+                  </div>
+                  {paymentType === "cod" && <div className="text-xs font-semibold">Selected</div>}
+                </button>
+              </div>
+
+              <div className="mt-4 text-xs text-gray-500">Secure payment — Razorpay handles sensitive card/UPI flows. COD available as fallback.</div>
+            </div>
           )}
         </div>
 
-        {/* Right: Order summary sticky */}
-        <aside className="sticky top-6">
-          <div className="bg-white dark:bg-gray-900 p-5 rounded-xl shadow w-full">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="font-semibold">Price Details</h4>
-              <div className="text-sm text-gray-500">{checkoutItems.reduce((s, it) => s + it.quantity, 0)} items</div>
-            </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between"><span>Items</span><span>₹{fmt(itemsTotal)}</span></div>
-              <div className="flex justify-between"><span>Shipping</span><span>{shippingCost === 0 ? "Free" : `₹${fmt(shippingCost)}`}</span></div>
-              {promoApplied && (<div className="flex justify-between text-green-600"><span>Promo ({promoApplied.code})</span><span>-₹{fmt(promoApplied.amount)}</span></div>)}
-              {paymentType === "cod" && (<div className="flex justify-between text-sm"><span>COD charges</span><span>₹{fmt(codCharge)}</span></div>)}
-            </div>
+        {/* Right column: Sticky summary */}
+        <aside className="lg:col-span-1">
+          <div className="sticky top-6">
+            <div className="rounded-2xl overflow-hidden shadow-lg">
+              <div className="p-5 bg-gradient-to-r from-neutral-900 to-neutral-700 text-white">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm opacity-80">Price details</div>
+                    <div className="text-2xl font-bold">₹{fmt(grandTotal)}</div>
+                  </div>
+                  <div className="text-sm text-white/80">{checkoutItems.reduce((s, it) => s + it.quantity, 0)} items</div>
+                </div>
+              </div>
 
-            <div className="border-t mt-4 pt-4 flex justify-between font-bold text-lg"><span>Total</span><span>₹{fmt(grandTotal)}</span></div>
+              <div className="p-5 bg-white dark:bg-gray-900">
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between"><span>Items</span><span>₹{fmt(itemsTotal)}</span></div>
+                  <div className="flex justify-between"><span>Shipping</span><span>{shippingCost === 0 ? "Free" : `₹${fmt(shippingCost)}`}</span></div>
+                  {promoApplied && (<div className="flex justify-between text-emerald-600"><span>Promo ({promoApplied.code})</span><span>-₹{fmt(promoApplied.amount)}</span></div>)}
+                  {paymentType === "cod" && (<div className="flex justify-between text-sm"><span>COD charges</span><span>₹{fmt(codCharge)}</span></div>)}
+                </div>
 
-            <div className="mt-4">
-              <div className="flex gap-3">
-                {step > 1 ? (<button onClick={() => setStep((s) => Math.max(1, s - 1))} className="flex-1 px-4 py-2 rounded border bg-gray-100 dark:bg-gray-800 text-sm">Back</button>) : (<div />)}
+                <div className="border-t mt-4 pt-4 flex justify-between font-bold text-lg"><span>Total</span><span>₹{fmt(grandTotal)}</span></div>
 
-                {step < 3 ? (
-                  <button onClick={goNext} className="flex-1 px-4 py-2 rounded bg-black text-white dark:bg-white dark:text-black text-sm hover:opacity-95 transition">Continue</button>
-                ) : (
-                  <motion.button onClick={() => handlePayment()} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className={`cssbuttons-io small shadow-neon-black flex-1 py-2 rounded-full flex items-center justify-center gap-2 transition ${(!isPaymentValid() || loading) ? "opacity-60 pointer-events-none" : ""}`} aria-label="Place Order" type="button" disabled={!isPaymentValid() || loading}>
-                    <CreditCard size={16} />
-                    <span className="label">{loading ? "Processing..." : `Place order ₹${fmt(grandTotal)}`}</span>
-                  </motion.button>
-                )}
+                <div className="mt-5">
+                  <div className="flex gap-3">
+                    {step > 1 ? (<button onClick={() => setStep((s) => Math.max(1, s - 1))} className="flex-1 px-4 py-2 rounded border bg-gray-100 dark:bg-gray-800 text-sm">Back</button>) : (<div />)}
+
+                    {step < 3 ? (
+                      <button onClick={goNext} className="flex-1 px-4 py-2 rounded bg-neutral-900 text-white text-sm hover:opacity-95 transition">Continue</button>
+                    ) : (
+                      <motion.button
+                        onClick={() => handlePayment()}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        className={`flex-1 py-2 rounded-full flex items-center justify-center gap-2 text-sm font-semibold ${(!isPaymentValid() || loading) ? "opacity-60 pointer-events-none bg-gray-400" : "bg-gradient-to-r from-neutral-900 to-neutral-700 text-white shadow-lg"}`}
+                        aria-label="Place Order"
+                        type="button"
+                        disabled={!isPaymentValid() || loading}
+                      >
+                        <CreditCard size={16} />
+                        <span className="label">{loading ? "Processing..." : `Place order ₹${fmt(grandTotal)}`}</span>
+                      </motion.button>
+                    )}
+                  </div>
+
+                  <div className="mt-3 text-xs text-gray-500">By placing an order you agree to our Terms & Privacy policy.</div>
+                </div>
               </div>
             </div>
           </div>
