@@ -16,13 +16,10 @@ import {
 /**
  * DashboardLayout
  *
- * Changes:
- * - Removed "Payment Methods" section from the sidebar.
- * - Added mobile-responsive sidebar:
- *   - On small screens the sidebar is hidden by default and toggled via a hamburger button.
- *   - When opened, the sidebar appears as an accessible off-canvas drawer with an overlay.
- * - Sidebar closes automatically on navigation or when pressing Escape.
- * - Kept existing session / auth logic intact.
+ * - Mobile: hamburger toggles an off-canvas accessible drawer with an overlay.
+ * - Sidebar logout removed (logout exists in header only).
+ * - Sidebar auto-closes on navigation and Escape.
+ * - Session check & redirect logic unchanged.
  */
 
 export default function DashboardLayout() {
@@ -148,7 +145,7 @@ export default function DashboardLayout() {
     navigate("/login");
   };
 
-  // Sidebar links - removed Payment Methods entry
+  // Sidebar links (Payment Methods removed)
   const links = [
     { to: "/account/profile", label: "Profile Overview", icon: <UserIcon size={18} /> },
     { to: "/account/orders", label: "My Orders", icon: <ShoppingBag size={18} /> },
@@ -162,7 +159,7 @@ export default function DashboardLayout() {
   const closeSidebar = () => setSidebarOpen(false);
   const openSidebar = () => setSidebarOpen(true);
 
-  // Close sidebar on navigation
+  // Close sidebar on navigation (mobile)
   useEffect(() => {
     closeSidebar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -180,9 +177,14 @@ export default function DashboardLayout() {
   // Don't render dashboard until auth check is done
   if (checkingAuth) return null;
 
+  const isProfileActive = (path) => {
+    // treat "/account" and "/account/profile" as profile active
+    return location.pathname === "/account" || location.pathname === "/account/" || location.pathname.startsWith("/account/profile");
+  };
+
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-      {/* Mobile: top bar with hamburger */}
+      {/* Mobile: top bar with hamburger - simplified (no greeting/logout duplication) */}
       <div className="lg:hidden w-full bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -196,32 +198,28 @@ export default function DashboardLayout() {
             <div className="text-lg font-bold">Dashboard</div>
           </div>
 
+          {/* Small user avatar / name or icon could go here if desired (kept minimal to avoid duplicate greeting) */}
           <div className="flex items-center gap-3">
-            <div className="text-sm">Welcome, {user?.name || "User"}</div>
-            <button
-              onClick={handleLogout}
-              className="px-3 py-1 rounded-md bg-rose-50 text-rose-600 text-sm"
-            >
-              <LogOut size={16} className="inline-block mr-2" /> Logout
-            </button>
+            <div className="text-sm text-gray-700 dark:text-gray-200">Hi, {user?.name ? user.name.split(" ")[0] : "User"}</div>
           </div>
         </div>
       </div>
 
-      {/* Sidebar - desktop visible, mobile off-canvas */}
-      {/* Overlay for mobile when open */}
+      {/* Overlay for mobile when sidebar open */}
       {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-          onClick={closeSidebar}
+        <button
           aria-hidden="true"
+          onClick={closeSidebar}
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          tabIndex={-1}
         />
       )}
 
+      {/* Sidebar - desktop visible, mobile off-canvas */}
       <aside
         className={`z-50 transform top-0 left-0 w-72 bg-white dark:bg-gray-800 shadow-lg flex flex-col fixed h-full transition-transform duration-200
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 lg:relative lg:h-auto lg:w-64`}
-        aria-hidden={!sidebarOpen && window.innerWidth < 1024}
+        aria-hidden={!(sidebarOpen || typeof window !== "undefined" && window.innerWidth >= 1024)}
       >
         {/* Mobile header inside sidebar */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 lg:hidden">
@@ -231,7 +229,7 @@ export default function DashboardLayout() {
           </button>
         </div>
 
-        {/* Desktop header (hidden on mobile because topbar shows title) */}
+        {/* Desktop header (hidden on mobile) */}
         <div className="hidden lg:block">
           <h2 className="text-2xl font-extrabold p-6 text-gray-900 dark:text-white">Dashboard</h2>
         </div>
@@ -242,58 +240,60 @@ export default function DashboardLayout() {
               key={to}
               to={to}
               onClick={() => closeSidebar()}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-6 py-4 font-semibold transition-colors duration-300 w-full ${(to === "/account/profile" &&
-                  (location.pathname === "/account" || isActive)) ||
-                  isActive
-                  ? "bg-black text-white"
-                  : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
-                }`
-              }
+              className={({ isActive }) => {
+                const active = isActive || (to === "/account/profile" && isProfileActive(to));
+                return `flex items-center gap-3 px-6 py-4 font-semibold transition-colors duration-300 w-full ${
+                  active ? "bg-black text-white" : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                }`;
+              }}
             >
-              {icon} {label}
+              {icon} <span>{label}</span>
             </NavLink>
           ))}
         </nav>
 
-        <div className="mt-auto">
-          <button
-            onClick={() => { closeSidebar(); handleLogout(); }}
-            className="w-full flex items-center gap-3 px-6 py-4 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors duration-300 font-semibold"
-          >
-            <LogOut size={20} /> Logout
-          </button>
+        {/* Removed sidebar logout button — logout now in the header */}
+        <div className="mt-auto p-4 text-xs text-center text-gray-500 dark:text-gray-400">
+          <div>Logged in as</div>
+          <div className="mt-1 font-medium text-gray-800 dark:text-gray-100">{user?.email ?? user?.name ?? "Account"}</div>
         </div>
       </aside>
 
-    {/* Main content */}
-<main
-  className="flex-1 flex-shrink-0 min-w-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950
-             rounded-tl-0 lg:rounded-tl-3xl lg:rounded-bl-3xl shadow-none lg:shadow-lg 
-             min-h-screen overflow-auto"
->
-  <div className="max-w-7xl w-full mx-auto">
-    {/* Unified Header for All Devices */}
-    <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-3">
-      <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
-        Welcome, {user?.name || "User"}!
-      </h1>
-
-      <button
-        onClick={handleLogout}
-        className="px-4 py-2 rounded-md bg-rose-100 text-rose-700 hover:bg-rose-200 
-                   dark:bg-rose-900/40 dark:text-rose-300 dark:hover:bg-rose-900/60 
-                   font-semibold text-sm flex items-center gap-2 transition"
+      {/* Main content */}
+      <main
+        className="flex-1 flex-shrink-0 min-w-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950
+                   rounded-tl-0 lg:rounded-tl-3xl lg:rounded-bl-3xl shadow-none lg:shadow-lg min-h-screen overflow-auto"
       >
-        <LogOut size={16} /> Logout
-      </button>
-    </header>
+        <div className="max-w-7xl w-full mx-auto">
+          {/* Header that shows greeting & logout — visible on all screen sizes,
+              responsive layout (stacks on small screens). This prevents duplicate
+              greeting/logout on mobile because mobile topbar no longer contains them. */}
+          <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-3">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
+                Welcome, {user?.name || "User"}!
+              </h1>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                Manage your account, orders and preferences from here.
+              </p>
+            </div>
 
-    {/* Page Content */}
-    <Outlet />
-  </div>
-</main>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 rounded-md bg-rose-100 text-rose-700 hover:bg-rose-200 
+                           dark:bg-rose-900/40 dark:text-rose-300 dark:hover:bg-rose-900/60 
+                           font-semibold text-sm flex items-center gap-2 transition"
+              >
+                <LogOut size={16} /> Logout
+              </button>
+            </div>
+          </header>
 
+          {/* Page Content */}
+          <Outlet />
+        </div>
+      </main>
     </div>
   );
 }
