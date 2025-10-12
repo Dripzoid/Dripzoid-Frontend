@@ -194,7 +194,14 @@ function reducer(state, action) {
       return data;
     }
     case "add": {
-      const next = [{ ...action.payload, id: action.payload?.id || crypto.randomUUID(), created_at: action.payload?.created_at || new Date().toISOString() }, ...state];
+      const next = [
+        {
+          ...action.payload,
+          id: action.payload?.id || crypto.randomUUID(),
+          created_at: action.payload?.created_at || new Date().toISOString(),
+        },
+        ...state,
+      ];
       saveLS(next);
       return next;
     }
@@ -222,6 +229,7 @@ function reducer(state, action) {
 /* Validation (uses server field names) */
 function validateAddress(values) {
   const errors = {};
+  if (!values.name?.trim()) errors.name = "Full name is required";
   if (!values.line1?.trim()) errors.line1 = "Address line 1 is required";
   if (!values.city?.trim()) errors.city = "City is required";
   if (!values.state?.trim()) errors.state = "State is required";
@@ -233,6 +241,7 @@ function validateAddress(values) {
 /* fmt for copying */
 const fmtAddress = (a) =>
   [
+    a.name ? `${a.name}` : null,
     a.line1,
     a.line2,
     `${a.city}, ${a.state} ${a.pincode}`,
@@ -366,6 +375,7 @@ const INDIA_STATES = [
    --------------------------- */
 function AddressForm({ open, onOpenChange, initial, onSubmit }) {
   const [values, setValues] = useState({
+    name: "",
     label: "home",
     line1: "",
     line2: "",
@@ -382,6 +392,7 @@ function AddressForm({ open, onOpenChange, initial, onSubmit }) {
   useEffect(() => {
     if (initial) {
       setValues({
+        name: initial.name || "",
         label: initial.label || "home",
         line1: initial.line1 || "",
         line2: initial.line2 || "",
@@ -394,6 +405,7 @@ function AddressForm({ open, onOpenChange, initial, onSubmit }) {
       });
     } else {
       setValues({
+        name: "",
         label: "home",
         line1: "",
         line2: "",
@@ -444,6 +456,7 @@ function AddressForm({ open, onOpenChange, initial, onSubmit }) {
         // parent may throw; show basic feedback
         console.warn("Failed to submit address:", err);
         // you may want to surface a user-visible message here
+        throw err;
       } finally {
         setIsSubmitting(false);
       }
@@ -458,6 +471,12 @@ function AddressForm({ open, onOpenChange, initial, onSubmit }) {
         </DialogHeader>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-6 pb-4">
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="name">Full name</Label>
+            <Input id="name" name="name" value={values.name} onChange={handleInputChange} placeholder="Recipient full name" />
+            {errors.name && <p className="text-xs text-red-400">{errors.name}</p>}
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="label">Label</Label>
             <div className="flex gap-2">
@@ -596,6 +615,8 @@ function AddressCard({ a, onEdit, onDelete, onSetDefault }) {
             <div className="flex items-start gap-2">
               <MapPin className="h-4 w-4 mt-0.5" />
               <div className="whitespace-pre-wrap leading-6 text-neutral-100">
+                {/* show the name if present */}
+                {a.name ? `${a.name}\n` : ""}
                 {a.line1}
                 {a.line2 ? `\n${a.line2}` : ""}
                 {`\n${a.city}, ${a.state} ${a.pincode}`}
@@ -709,10 +730,14 @@ export default function AddressBook() {
     setFormOpen(true);
   };
 
-  // Save handler: sends server-shaped payloads
+  // Save handler: sends server-shaped payloads (includes name)
   const handleSave = async (values) => {
     // ensure pincode is 6-digit string without spaces
-    const payload = { ...values, pincode: (values.pincode || "").toString().replace(/\D/g, "").slice(0, 6), is_default: values.is_default ? 1 : 0 };
+    const payload = {
+      ...values,
+      pincode: (values.pincode || "").toString().replace(/\D/g, "").slice(0, 6),
+      is_default: values.is_default ? 1 : 0,
+    };
 
     if (editing) {
       try {
