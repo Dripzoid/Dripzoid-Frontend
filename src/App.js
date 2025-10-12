@@ -26,6 +26,9 @@ import CheckoutPage from "./pages/CheckoutPage.jsx";
 import OrderConfirmation from "./pages/OrderConfirmation.jsx";
 import OrderDetailsPage from "./pages/OrderDetailsPage.jsx";
 import Auth from "./pages/Auth.jsx";
+mport AboutUs from "./pages/AboutUs";
+import Contact from "./pages/Contact";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
 
 // 👤 Account Pages
 import DashboardLayout from "./pages/account/DashboardLayout.jsx";
@@ -70,6 +73,9 @@ function App() {
                 <Route path="/checkout" element={<CheckoutPage />} />
                 <Route path="/order-confirmation" element={<OrderConfirmation />} />
                 <Route path="/order-details/:id" element={<OrderDetailsPage />} />
+                <Route path="/about-us" element={<AboutUs />} />
+                <Route path="/contact" element={<Contact />} />
+                <Route path="/privacy-policy" element={<PrivacyPolicy />} />
 
                 {/* Auth */}
                 <Route path="/login" element={<AuthWrapper defaultForm="login" />} />
