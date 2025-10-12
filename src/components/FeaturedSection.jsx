@@ -1,7 +1,7 @@
 // src/components/FeaturedSection.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { ShoppingCart, Check, Heart, HeartBroken } from "lucide-react";
+import { ShoppingCart, Check, Heart } from "lucide-react";
 import { useCart } from "../contexts/CartContext";
 import { useWishlist } from "../contexts/WishlistContext";
 import { normalizeImages } from "../utils/images"; // safer image handling
@@ -223,27 +223,7 @@ export default function FeaturedSection() {
                             : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
                         }`}
                       >
-                        {wishlistUpdatingId === p.id ? (
-                          <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                            <circle
-                              className="opacity-25"
-                              cx="12"
-                              cy="12"
-                              r="10"
-                              stroke="currentColor"
-                              strokeWidth="4"
-                            ></circle>
-                            <path
-                              className="opacity-75"
-                              fill="currentColor"
-                              d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-                            ></path>
-                          </svg>
-                        ) : inWishlist ? (
-                          <Heart size={18} />
-                        ) : (
-                          <HeartBroken size={18} />
-                        )}
+                        <Heart size={18} />
                       </button>
                     </div>
                   </div>
