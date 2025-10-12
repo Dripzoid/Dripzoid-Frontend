@@ -17,9 +17,16 @@ export default function DashboardLayout() {
   const { user, login, logout } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
-
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1024);
+
+  // --- Handle screen resize ---
+  useEffect(() => {
+    const handleResize = () => setIsDesktop(window.innerWidth >= 1024);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const BASE = process.env.REACT_APP_API_BASE?.replace(/\/$/, "") || "";
   const AUTH_ME = `${BASE}/api/auth/me`;
@@ -60,11 +67,9 @@ export default function DashboardLayout() {
         setCheckingAuth(false);
         return;
       }
-
       try {
         const params = new URLSearchParams(location.search);
         const tokenFromUrl = params.get("token");
-
         if (tokenFromUrl) {
           try {
             const userData = await fetchMe(tokenFromUrl);
@@ -77,7 +82,6 @@ export default function DashboardLayout() {
           }
           return;
         }
-
         try {
           const data = await fetchMe();
           if (!cancelled && isMountedRef.current && data?.user) {
@@ -91,7 +95,7 @@ export default function DashboardLayout() {
       }
     })();
     return () => (cancelled = true);
-  }, [location.search, login, user]);
+  }, []);
 
   // --- Redirect if not logged in ---
   useEffect(() => {
@@ -146,74 +150,25 @@ export default function DashboardLayout() {
     location.pathname === "/account/" ||
     location.pathname.startsWith("/account/profile");
 
-  // Use a short display name (first name or fallback)
-  const firstName =
-    (user?.name && user.name.split && user.name.split(" ")[0]) ||
-    (user?.email && user.email.split("@")[0]) ||
-    "User";
-
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-      {/* === MOBILE TOP BAR === */}
-      <div className="lg:hidden w-full bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          {/* Left section - Menu + Dashboard title */}
-          <div className="flex items-center gap-3">
-            <button
-              aria-label="Open menu"
-              onClick={openSidebar}
-              className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
-              <MenuIcon size={20} />
-            </button>
-            <div className="text-base font-bold text-gray-900 dark:text-white">Dashboard</div>
-          </div>
-
-          {/* Right section - Greeting + Logout Icon (mobile: icon only) */}
-          <div className="flex items-center gap-3">
-            <div className="text-sm sm:text-base font-medium text-gray-700 dark:text-gray-200">
-              Hi, {firstName}
-            </div>
-            <button
-              onClick={handleLogout}
-              className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 text-rose-600 dark:text-rose-400"
-              aria-label="Logout"
-            >
-              <LogOut size={20} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* === OVERLAY for MOBILE SIDEBAR === */}
-      {sidebarOpen && (
-        <button
-          aria-hidden="true"
-          onClick={closeSidebar}
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-          tabIndex={-1}
-        />
-      )}
-
       {/* === SIDEBAR === */}
       <aside
         className={`z-50 transform top-0 left-0 w-72 bg-white dark:bg-gray-800 shadow-lg flex flex-col fixed h-full transition-transform duration-200
-        ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+        ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} 
         lg:translate-x-0 lg:static lg:w-64`}
-        aria-label="Account navigation"
       >
         {/* Mobile sidebar header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 lg:hidden">
           <h2 className="text-xl font-extrabold text-gray-900 dark:text-white">Dashboard</h2>
-          <button onClick={closeSidebar} aria-label="Close menu" className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
+          <button onClick={closeSidebar} className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
             <XIcon size={20} />
           </button>
         </div>
 
         {/* Desktop sidebar title */}
-        <div className="hidden lg:block px-6 py-6 border-b border-gray-100 dark:border-gray-700">
-          <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white">Dashboard</h2>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Manage your account</p>
+        <div className="hidden lg:block">
+          <h2 className="text-2xl font-extrabold p-6 text-gray-900 dark:text-white">Dashboard</h2>
         </div>
 
         {/* Sidebar navigation */}
@@ -224,7 +179,8 @@ export default function DashboardLayout() {
               to={to}
               onClick={closeSidebar}
               className={({ isActive }) => {
-                const active = isActive || (to === "/account/profile" && isProfileActive(to));
+                const active =
+                  isActive || (to === "/account/profile" && isProfileActive(to));
                 return `flex items-center gap-3 px-6 py-4 font-semibold transition-colors duration-300 w-full ${
                   active
                     ? "bg-black text-white"
@@ -232,8 +188,7 @@ export default function DashboardLayout() {
                 }`;
               }}
             >
-              {icon}
-              <span>{label}</span>
+              {icon} <span>{label}</span>
             </NavLink>
           ))}
         </nav>
@@ -253,27 +208,49 @@ export default function DashboardLayout() {
                    shadow-none lg:shadow-lg min-h-screen overflow-auto"
       >
         <div className="max-w-7xl w-full mx-auto">
-          {/* Desktop header visible for lg+ (greeting same as mobile: short first name) */}
-          <header className="hidden lg:flex items-center justify-between mb-8">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Hi, {firstName}!</h1>
-              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                Manage your account, orders, and preferences from here.
-              </p>
-            </div>
+          {/* Conditional Header (Desktop vs Mobile) */}
+          {isDesktop ? (
+            <header className="flex items-center justify-between mb-8">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                  Welcome, {user?.name || "User"}!
+                </h1>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  Manage your account, orders, and preferences from here.
+                </p>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 rounded-md bg-rose-100 text-rose-700 hover:bg-rose-200 
+                          dark:bg-rose-900/40 dark:text-rose-300 dark:hover:bg-rose-900/60 
+                          font-semibold text-sm flex items-center gap-2 transition"
+              >
+                <LogOut size={16} /> Logout
+              </button>
+            </header>
+          ) : (
+            <header className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={openSidebar}
+                  className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <MenuIcon size={20} />
+                </button>
+                <span className="text-lg font-semibold">
+                  Hi, {user?.name ? user.name.split(" ")[0] : "User"}
+                </span>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 text-rose-600"
+              >
+                <LogOut size={20} />
+              </button>
+            </header>
+          )}
 
-            {/* Desktop: logout button with icon + text */}
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 rounded-md bg-rose-100 text-rose-700 hover:bg-rose-200
-                         dark:bg-rose-900/40 dark:text-rose-300 dark:hover:bg-rose-900/60
-                         font-semibold text-sm flex items-center gap-2 transition"
-            >
-              <LogOut size={16} /> Logout
-            </button>
-          </header>
-
-          {/* Page content */}
+          {/* Page Content */}
           <Outlet />
         </div>
       </main>
