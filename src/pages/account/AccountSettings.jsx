@@ -508,31 +508,46 @@ export default function AccountSettings() {
         </div>
 
         {/* desktop grid: conditional cols so sidebar has stable width when rendered */}
-        <div className={`grid grid-cols-1 ${isDesktop ? "md:grid-cols-4" : ""} gap-6`}>
-          {/* Sidebar (rendered only when isDesktop is true) */}
-          {isDesktop && (
-            <aside className="md:col-span-1">
-              <div className="p-4 rounded-2xl bg-white/90 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-lg backdrop-blur-md z-10 sticky top-24">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="w-12 h-12 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center">
-                    <ShieldCheck className="w-6 h-6 text-black/60 dark:text-white/60" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold">{user?.name || "Account"}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-300">{user?.email || "Settings Hub"}</div>
-                  </div>
-                </div>
+   {/* Desktop layout fix */}
+<div
+  className={`${
+    isDesktop
+      ? "flex gap-6"
+      : "grid grid-cols-1 gap-6"
+  }`}
+>
+  {isDesktop && (
+    <aside className="w-64 flex-shrink-0">
+      <div className="p-4 rounded-2xl bg-white/90 dark:bg-black/20 border border-black/5 dark:border-white/5 shadow-lg backdrop-blur-md sticky top-24">
+        <div className="flex items-center gap-4 mb-4">
+          <div className="w-12 h-12 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center">
+            <ShieldCheck className="w-6 h-6 text-black/60 dark:text-white/60" />
+          </div>
+          <div>
+            <div className="text-sm font-semibold">
+              {user?.name || "Account"}
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-300">
+              {user?.email || "Settings Hub"}
+            </div>
+          </div>
+        </div>
 
-                <nav className="flex flex-col gap-2">
-                  <NavButton id="security" icon={Lock} label="Security" />
-                  <NavButton id="notifications" icon={Bell} label="Notifications" />
-                  <NavButton id="privacy" icon={Shield} label="Privacy & Data" />
-                  <NavButton id="activity" icon={Activity} label="Activity Log" />
-                  <NavButton id="sessions" icon={Settings} label="Sessions & Devices" />
-                </nav>
-              </div>
-            </aside>
-          )}
+        <nav className="flex flex-col gap-2">
+          <NavButton id="security" icon={Lock} label="Security" />
+          <NavButton id="notifications" icon={Bell} label="Notifications" />
+          <NavButton id="privacy" icon={Shield} label="Privacy & Data" />
+          <NavButton id="activity" icon={Activity} label="Activity Log" />
+          <NavButton id="sessions" icon={Settings} label="Sessions & Devices" />
+        </nav>
+      </div>
+    </aside>
+  )}
+
+  <main className="flex-1">
+    {/* Keep all your existing <main> content here */}
+  </main>
+</div>
 
           {/* Main content (spans remaining columns when sidebar present) */}
           <main className={isDesktop ? "md:col-span-3" : ""}>
