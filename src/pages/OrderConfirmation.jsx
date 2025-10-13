@@ -106,7 +106,7 @@ function useConfetti(duration = 2500) {
 }
 
 /* --------------------------
-   Reusable button (monochrome / unified)
+   Reusable button
    -------------------------- */
 function ActionButton({ children, onClick, className = "", disabled = false, ariaLabel }) {
   const base =
@@ -147,6 +147,7 @@ export default function OrderConfirmation() {
     return null;
   })();
 
+  // Merge incoming order with stored order
   const baseOrder = incomingOrder ?? stored ?? {
     orderId: generateOrderId(),
     items: [{ id: "demo-1", name: "Demo Product", price: 799, quantity: 1, images: "" }],
@@ -154,7 +155,7 @@ export default function OrderConfirmation() {
     paymentMethod: "COD",
     shipping: { name: "John Doe", address: "Demo address, City", phone: "9999999999" },
     orderDate: new Date().toISOString(),
-    estimatedDelivery: new Date().toISOString(), // fallback
+    deliveryDate: new Date().toISOString(),
   };
 
   const items = Array.isArray(baseOrder.items) && baseOrder.items.length > 0 ? baseOrder.items : [];
@@ -169,7 +170,7 @@ export default function OrderConfirmation() {
 
   const [downloading, setDownloading] = useState(false);
 
-  const estimatedDelivery = baseOrder.estimatedDelivery ? new Date(baseOrder.estimatedDelivery) : null;
+  const estimatedDelivery = baseOrder.deliveryDate ? new Date(baseOrder.deliveryDate) : null;
 
   const BASE = process.env.REACT_APP_API_BASE?.replace(/\/$/, "") || "";
 
@@ -181,7 +182,7 @@ export default function OrderConfirmation() {
   }, [baseOrder, orderId]);
 
   /* --------------------------
-     Download Invoice (API)
+     Download Invoice
      -------------------------- */
   const downloadInvoice = async () => {
     try {
