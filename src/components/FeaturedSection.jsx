@@ -1,39 +1,19 @@
 // src/components/FeaturedSection.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { ShoppingCart, Check, Heart } from "lucide-react";
-import { useCart } from "../contexts/CartContext";
+import { Heart } from "lucide-react";
 import { useWishlist } from "../contexts/WishlistContext";
 import { normalizeImages } from "../utils/images"; // safer image handling
 
 const API_BASE = process.env.REACT_APP_API_BASE;
 
 export default function FeaturedSection() {
-  const { addToCart: contextAddToCart, cart = [] } = useCart();
   const { wishlist, addToWishlist, removeFromWishlist } = useWishlist();
 
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAll, setShowAll] = useState(false);
-  const [addingId, setAddingId] = useState(null);
   const [wishlistUpdatingId, setWishlistUpdatingId] = useState(null);
-
-  // Build a Set of product IDs currently present in cart
-  const inCartIds = useMemo(() => {
-    const s = new Set();
-    if (!Array.isArray(cart)) return s;
-    for (const it of cart) {
-      if (!it) continue;
-      if (it.id !== undefined && it.id !== null) s.add(Number(it.id));
-      if (it.product_id !== undefined && it.product_id !== null) s.add(Number(it.product_id));
-      if (it.productId !== undefined && it.productId !== null) s.add(Number(it.productId));
-      if (it.product && (it.product.id || it.product._id)) {
-        s.add(Number(it.product.id ?? it.product._id));
-      }
-      if (it.product && it.product.product_id) s.add(Number(it.product.product_id));
-    }
-    return s;
-  }, [cart]);
 
   const wishlistIds = useMemo(() => {
     const s = new Set();
@@ -45,11 +25,6 @@ export default function FeaturedSection() {
     }
     return s;
   }, [wishlist]);
-
-  const isInCart = (productId) => {
-    if (productId === undefined || productId === null) return false;
-    return inCartIds.has(Number(productId));
-  };
 
   const isInWishlist = (productId) => {
     if (productId === undefined || productId === null) return false;
@@ -86,21 +61,6 @@ export default function FeaturedSection() {
   const firstImage = (images) => {
     const arr = normalizeImages(images);
     return arr[0] || "/fallback-product.png";
-  };
-
-  const handleAddToCart = async (product) => {
-    if (!product) return;
-    if (isInCart(product.id)) return;
-
-    try {
-      setAddingId(product.id);
-      await contextAddToCart(product, 1, null, null);
-    } catch (err) {
-      console.error("Add to cart failed:", err);
-      alert("Failed to add to cart. Please login or check console for details.");
-    } finally {
-      setAddingId(null);
-    }
   };
 
   const handleWishlistToggle = async (product) => {
@@ -146,7 +106,6 @@ export default function FeaturedSection() {
         ) : (
           <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
             {visibleProducts.map((p) => {
-              const inCart = isInCart(p.id);
               const inWishlist = isInWishlist(p.id);
 
               return (
@@ -172,43 +131,6 @@ export default function FeaturedSection() {
                     </div>
 
                     <div className="flex flex-col items-center gap-2">
-                      {/* Cart Button */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleAddToCart(p);
-                        }}
-                        disabled={addingId === p.id || inCart}
-                        aria-disabled={addingId === p.id || inCart}
-                        className={`p-3 rounded-full focus:outline-none transition ${
-                          inCart
-                            ? "bg-black/50 text-white dark:bg-white/50 dark:text-black cursor-not-allowed"
-                            : "bg-black text-white dark:bg-white dark:text-black"
-                        }`}
-                      >
-                        {addingId === p.id ? (
-                          <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                            <circle
-                              className="opacity-25"
-                              cx="12"
-                              cy="12"
-                              r="10"
-                              stroke="currentColor"
-                              strokeWidth="4"
-                            ></circle>
-                            <path
-                              className="opacity-75"
-                              fill="currentColor"
-                              d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-                            ></path>
-                          </svg>
-                        ) : inCart ? (
-                          <Check size={18} />
-                        ) : (
-                          <ShoppingCart size={18} />
-                        )}
-                      </button>
-
                       {/* Wishlist Button */}
                       <button
                         onClick={(e) => {
