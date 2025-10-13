@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Barcode from "react-barcode";
-import axios from "axios";
 import {
   CheckCircle,
   DownloadCloud,
@@ -15,7 +14,6 @@ import {
 /* --------------------------
    Helpers
    -------------------------- */
-
 function generateOrderId() {
   const t = Date.now().toString(36).toUpperCase();
   return `ORD-${t.slice(-8)}`;
@@ -113,7 +111,6 @@ function useConfetti(duration = 2500) {
 function ActionButton({ children, onClick, className = "", disabled = false, ariaLabel }) {
   const base =
     "inline-flex items-center gap-2 px-4 py-2 rounded-full transition-transform focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed";
-  // monochrome style
   const style =
     "bg-black text-white dark:bg-white dark:text-black shadow-md hover:scale-[1.02] active:scale-[0.99] ring-black/20 dark:ring-white/20";
 
@@ -157,6 +154,7 @@ export default function OrderConfirmation() {
     paymentMethod: "COD",
     shipping: { name: "John Doe", address: "Demo address, City", phone: "9999999999" },
     orderDate: new Date().toISOString(),
+    estimatedDelivery: new Date().toISOString(), // fallback
   };
 
   const items = Array.isArray(baseOrder.items) && baseOrder.items.length > 0 ? baseOrder.items : [];
@@ -170,62 +168,10 @@ export default function OrderConfirmation() {
   const paymentMethod = baseOrder.paymentMethod ?? (baseOrder.paymentDetails ? "Online" : "COD");
 
   const [downloading, setDownloading] = useState(false);
-  const [loadingEstimate, setLoadingEstimate] = useState(true);
-  const [estimatedDelivery, setEstimatedDelivery] = useState(null);
-  const [errorEstimate, setErrorEstimate] = useState(null);
+
+  const estimatedDelivery = baseOrder.estimatedDelivery ? new Date(baseOrder.estimatedDelivery) : null;
 
   const BASE = process.env.REACT_APP_API_BASE?.replace(/\/$/, "") || "";
-
-  /* --------------------------
-     Fetch estimated delivery (GET /api/shipping/estimate)
-     - tries to call: GET ${BASE}/api/shipping/estimate?order_id=${orderId}
-     - supports response shapes: { estimated_delivery_date: '2025-10-20' } or { estimated_days: 4 }
-     -------------------------- */
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchEstimate() {
-      setLoadingEstimate(true);
-      setErrorEstimate(null);
-
-      try {
-        const url = `${BASE}/api/shipping/estimate`;
-        const resp = await axios.get(url, { params: { order_id: orderId }, withCredentials: true });
-
-        if (cancelled) return;
-
-        const data = resp && resp.data ? resp.data : {};
-
-        // Defensive parsing
-        if (data.estimated_delivery_date) {
-          const d = new Date(data.estimated_delivery_date);
-          if (!isNaN(d)) setEstimatedDelivery(d);
-        } else if (typeof data.estimated_days === "number") {
-          const d = new Date(orderDate.getTime() + data.estimated_days * 86400000);
-          setEstimatedDelivery(d);
-        } else if (data.estimated && typeof data.estimated === "string") {
-          const d = new Date(data.estimated);
-          if (!isNaN(d)) setEstimatedDelivery(d);
-        } else {
-          // Fallback: use a 3-7 day window (randomised for demo)
-          const fallback = new Date(orderDate.getTime() + (3 + Math.floor(Math.random() * 5)) * 86400000);
-          setEstimatedDelivery(fallback);
-          setErrorEstimate("Using fallback estimate");
-        }
-      } catch (err) {
-        console.warn("Estimate fetch failed", err);
-        if (!cancelled) {
-          setErrorEstimate("Unable to fetch shipping estimate");
-          const fallback = new Date(orderDate.getTime() + (3 + Math.floor(Math.random() * 5)) * 86400000);
-          setEstimatedDelivery(fallback);
-        }
-      } finally {
-        if (!cancelled) setLoadingEstimate(false);
-      }
-    }
-
-    fetchEstimate();
-    return () => { cancelled = true; };
-  }, [BASE, orderId]);
 
   useEffect(() => {
     // persist last order for quick re-open
@@ -242,17 +188,14 @@ export default function OrderConfirmation() {
       setDownloading(true);
       const url = `${BASE}/api/shipping/download-invoice`;
 
-      const response = await axios.post(
-        url,
-        { order_id: orderId },
-        {
-          responseType: "blob",
-          headers: { "Content-Type": "application/json" },
-          withCredentials: true,
-        }
-      );
+      const response = await fetch(url, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_id: orderId }),
+      });
 
-      const blob = new Blob([response.data], { type: "application/pdf" });
+      const blob = await response.blob();
       const link = document.createElement("a");
       link.href = window.URL.createObjectURL(blob);
       link.download = `invoice-${orderId}.pdf`;
@@ -268,7 +211,6 @@ export default function OrderConfirmation() {
   };
 
   const handleTrack = () => {
-    // external order details page
     window.location.href = `https://dripzoid.com/order-details/${orderId}`;
   };
 
@@ -312,8 +254,7 @@ export default function OrderConfirmation() {
 
                     <div className="p-3 rounded-lg border bg-gray-50 dark:bg-gray-900">
                       <div className="text-xs text-gray-500">Est. Delivery</div>
-                      <div className="font-medium mt-1">{loadingEstimate ? "Loading..." : estimatedDelivery ? prettyDate(estimatedDelivery) : "—"}</div>
-                      {errorEstimate && <div className="text-xs text-gray-400 mt-1">{errorEstimate}</div>}
+                      <div className="font-medium mt-1">{estimatedDelivery ? prettyDate(estimatedDelivery) : "—"}</div>
                     </div>
                   </div>
 
@@ -373,7 +314,7 @@ export default function OrderConfirmation() {
                 </ul>
               </div>
 
-              {/* Shipping address (mobile placed inside left column) */}
+              {/* Shipping address */}
               <div className="mt-6 bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
                 <h4 className="font-medium mb-2">Shipping Address</h4>
                 <div className="text-sm text-gray-700 dark:text-gray-200">
@@ -425,7 +366,7 @@ export default function OrderConfirmation() {
 
           <div className="p-4 text-center text-xs text-gray-500">
             Order ID <span className="font-medium">{orderId}</span> — Need help?{' '}
-            <button onClick={() => navigate('/help')} className="underline">Contact support</button>
+            <button onClick={() => navigate('/contact')} className="underline">Contact support</button>
           </div>
         </div>
       </div>
