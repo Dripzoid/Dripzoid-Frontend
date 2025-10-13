@@ -796,40 +796,53 @@ export default function AddressBook() {
 
   const list = useMemo(() => addresses, [addresses]);
 
-  return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-6 text-neutral-100">
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Address Book</h2>
-          <p className="text-sm text-neutral-400">Manage shipping addresses. Stored locally and synced to your API when available (port 5000).</p>
-        </div>
+ return (
+  <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-6 text-gray-900 dark:text-gray-100 transition-colors duration-300">
+    <div className="mb-6 flex items-start justify-between gap-4">
+      <div>
+        <h2 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
+          Address Book
+        </h2>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Manage shipping addresses. Stored locally and synced to your API when available (port 5000).
+        </p>
       </div>
-
-      <Toolbar onNew={openNew} />
-
-      <Separator className="my-4 bg-neutral-800" />
-
-      {list.length === 0 ? (
-        <div className="rounded-2xl border border-neutral-800 p-10 text-center bg-neutral-950">
-          <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full border border-neutral-800 mb-4">
-            <MapPin className="h-6 w-6 text-neutral-400" />
-          </div>
-          <p className="text-neutral-300">No addresses yet.</p>
-          <Button onClick={openNew} className="mt-4 bg-neutral-100 text-neutral-900 hover:bg-white px-4 py-2">
-            <Plus className="mr-2 h-4 w-4" /> Add Address
-          </Button>
-        </div>
-      ) : (
-        <AnimatePresence mode="popLayout">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {list.map((a) => (
-              <AddressCard key={a.id} a={a} onEdit={openEdit} onDelete={handleDelete} onSetDefault={handleSetDefault} />
-            ))}
-          </div>
-        </AnimatePresence>
-      )}
-
-      <AddressForm open={formOpen} onOpenChange={setFormOpen} initial={editing} onSubmit={handleSave} />
     </div>
-  );
-}
+
+    <Toolbar onNew={openNew} />
+
+    <Separator className="my-4 bg-gray-200 dark:bg-neutral-800" />
+
+    {list.length === 0 ? (
+      <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 p-10 text-center bg-gray-50 dark:bg-neutral-950 transition-colors duration-300">
+        <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full border border-gray-300 dark:border-neutral-800 mb-4">
+          <MapPin className="h-6 w-6 text-gray-500 dark:text-neutral-400" />
+        </div>
+        <p className="text-gray-700 dark:text-neutral-300">No addresses yet.</p>
+        <Button
+          onClick={openNew}
+          className="mt-4 bg-gray-900 dark:bg-neutral-100 text-white dark:text-neutral-900 hover:bg-gray-800 dark:hover:bg-white px-4 py-2"
+        >
+          <Plus className="mr-2 h-4 w-4" /> Add Address
+        </Button>
+      </div>
+    ) : (
+      <AnimatePresence mode="popLayout">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {list.map((a) => (
+            <AddressCard
+              key={a.id}
+              a={a}
+              onEdit={openEdit}
+              onDelete={handleDelete}
+              onSetDefault={handleSetDefault}
+            />
+          ))}
+        </div>
+      </AnimatePresence>
+    )}
+
+    <AddressForm open={formOpen} onOpenChange={setFormOpen} initial={editing} onSubmit={handleSave} />
+  </div>
+);
+
