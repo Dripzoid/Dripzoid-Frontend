@@ -416,10 +416,16 @@ export default function Wishlist() {
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-2xl font-semibold text-white">Wishlist</h2>
-          <p className="text-sm text-gray-300">Saved items</p>
-        </div>
+  <div>
+    <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">
+      Wishlist
+    </h2>
+    <p className="text-sm text-gray-600 dark:text-gray-300">
+      Saved items
+    </p>
+  </div>
+</div>
+
 
         <div className="flex items-center gap-3">
           <button
