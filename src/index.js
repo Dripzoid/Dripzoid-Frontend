@@ -22,4 +22,4 @@ root.render(
 );
 
 serviceWorkerRegistration.unregister();
-reportWebVitals(); Update this
+reportWebVitals();
