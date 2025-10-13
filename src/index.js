@@ -10,7 +10,7 @@ import { CartProvider } from "./contexts/CartContext.jsx";
 import { WishlistProvider } from "./contexts/WishlistContext.jsx";
 
 // SEO & Metadata
-import { HelmetProvider } from "react-helmet-async";
+import { HelmetProvider } from  "@react-helmet-async/react-helmet-async";
 
 // PWA & Performance
 import * as serviceWorkerRegistration from "./serviceWorkerRegistration.js";
