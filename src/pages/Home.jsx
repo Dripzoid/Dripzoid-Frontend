@@ -1,7 +1,7 @@
 // src/pages/Home.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Helmet } from "react-helmet-async";
+import { Helmet } from  "@react-helmet-async/react-helmet-async";
 import { motion, AnimatePresence } from "framer-motion";
 import Hero from "../components/Hero";
 import Featured from "../components/FeaturedSection";
