@@ -1,12 +1,21 @@
 // src/pages/account/Wishlist.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Trash2, Heart, Star, StarHalf } from "lucide-react";
+import {
+  Trash2,
+  Heart,
+  Star,
+  StarHalf,
+  X,
+  AlertTriangle,
+  RefreshCw,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWishlist } from "../../contexts/WishlistContext";
 
 const API_BASE = process.env.REACT_APP_API_BASE || "";
 
+/** Normalize images field -> returns array of urls */
 function parseImagesField(raw) {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw.map(String).map((u) => u.trim()).filter(Boolean);
@@ -41,17 +50,41 @@ export default function Wishlist() {
   const navigate = useNavigate();
   const { wishlist = [], fetchWishlist, removeFromWishlist } = useWishlist();
 
+  // UI state
   const [selected, setSelected] = useState(new Set());
   const [loadingIds, setLoadingIds] = useState(new Set());
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // show skeletons initially
   const [error, setError] = useState(null);
 
+  // modal for bulk deletes (selected or all)
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmTargetIds, setConfirmTargetIds] = useState([]); // product ids to delete
+  const [confirmLoading, setConfirmLoading] = useState(false);
+
   useEffect(() => {
-    if (typeof fetchWishlist === "function") {
-      fetchWishlist().catch((e) => console.warn("fetchWishlist error:", e));
-    }
+    // load wishlist, show skeleton for a short while for nicer UX
+    let cancelled = false;
+    (async () => {
+      try {
+        if (typeof fetchWishlist === "function") await fetchWishlist();
+      } catch (e) {
+        console.warn("fetchWishlist error:", e);
+      } finally {
+        // keep skeleton for a short minimum duration even if data is fast
+        const min = setTimeout(() => {
+          if (!cancelled) setLoading(false);
+        }, 300);
+        // cleanup
+        return () => {
+          cancelled = true;
+          clearTimeout(min);
+        };
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // derived items
   const itemsWithMeta = useMemo(() => {
     return (wishlist || []).map((r) => {
       const product = {
@@ -65,8 +98,8 @@ export default function Wishlist() {
         seller: r.seller ?? "",
         images: r.images ?? r.image ?? "",
         wishlistRowId: r.id,
+        created_at: r.created_at,
       };
-
       const images = parseImagesField(product.images);
       const firstImage = images.length ? images[0] : "https://via.placeholder.com/400";
       const price = Number(product.price) || 0;
@@ -78,6 +111,7 @@ export default function Wishlist() {
     });
   }, [wishlist]);
 
+  // selection helpers
   const toggleSelect = (idKey) => {
     setSelected((s) => {
       const copy = new Set(s);
@@ -86,7 +120,6 @@ export default function Wishlist() {
       return copy;
     });
   };
-
   const selectAll = () => setSelected(new Set(itemsWithMeta.map((it) => it.idKey)));
   const clearSelection = () => setSelected(new Set());
 
@@ -102,6 +135,7 @@ export default function Wishlist() {
     return headers;
   };
 
+  // single remove
   const handleRemove = async (it) => {
     const pid = it.product?.id;
     if (!pid) return;
@@ -132,43 +166,69 @@ export default function Wishlist() {
     }
   };
 
-  const handleRemoveSelected = async () => {
-    const keys = Array.from(selected);
-    if (keys.length === 0) return;
-    const productIds = keys
-      .map((k) => itemsWithMeta.find((x) => x.idKey === k))
-      .filter(Boolean)
-      .map((x) => x.product.id);
+  // open confirmation modal for selected or all
+  const openBulkConfirm = (mode = "selected") => {
+    if (mode === "selected") {
+      const keys = Array.from(selected);
+      const productIds = keys
+        .map((k) => itemsWithMeta.find((x) => x.idKey === k))
+        .filter(Boolean)
+        .map((x) => x.product.id);
+      if (productIds.length === 0) return;
+      setConfirmTargetIds(productIds);
+    } else if (mode === "all") {
+      const productIds = itemsWithMeta.map((it) => it.product.id).filter(Boolean);
+      if (productIds.length === 0) return;
+      setConfirmTargetIds(productIds);
+    }
+    setConfirmOpen(true);
+  };
 
-    if (!productIds.length) return;
-    setLoading(true);
+  // confirm delete handler (for selected or all based on confirmTargetIds)
+  const confirmDelete = async () => {
+    if (!confirmTargetIds.length) {
+      setConfirmOpen(false);
+      return;
+    }
+    setConfirmLoading(true);
+    setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/wishlist/bulk`, {
-        method: "DELETE",
-        headers: getHeaders(),
-        body: JSON.stringify({ productIds }),
-      });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json?.error || `${res.status} ${res.statusText}`);
+      // try using context helper removeFromWishlist in loop if available
+      if (typeof removeFromWishlist === "function") {
+        // remove in parallel with Promise.allSettled to continue on partial failures
+        await Promise.allSettled(confirmTargetIds.map((pid) => removeFromWishlist(pid)));
+        if (typeof fetchWishlist === "function") await fetchWishlist();
+      } else {
+        // use bulk endpoint
+        const res = await fetch(`${API_BASE}/api/wishlist/bulk`, {
+          method: "DELETE",
+          headers: getHeaders(),
+          body: JSON.stringify({ productIds: confirmTargetIds }),
+        });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json?.error || `${res.status} ${res.statusText}`);
+        }
+        if (typeof fetchWishlist === "function") await fetchWishlist();
       }
-      if (typeof fetchWishlist === "function") await fetchWishlist();
       clearSelection();
+      setConfirmOpen(false);
     } catch (err) {
       console.error("Bulk delete failed", err);
-      setError("Could not remove selected items");
+      setError("Could not delete selected items. Try again.");
     } finally {
-      setLoading(false);
+      setConfirmLoading(false);
     }
   };
 
   const handleView = (it) => {
-    const id = it.product?.id;
-    if (id) navigate(`/product/${id}`);
+    if (!it?.product?.id) return;
+    navigate(`/product/${encodeURIComponent(it.product.id)}`);
   };
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 min-h-screen bg-white dark:bg-black text-gray-900 dark:text-gray-100">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">Wishlist</h2>
@@ -179,63 +239,68 @@ export default function Wishlist() {
           <button
             onClick={selectAll}
             className="px-3 py-2 rounded-md bg-black text-white text-sm hover:opacity-95"
+            aria-label="Select all wishlist items"
           >
             Select all
           </button>
 
           <button
-            onClick={handleRemoveSelected}
-            disabled={selected.size === 0 || loading}
+            onClick={() => openBulkConfirm("selected")}
+            disabled={selected.size === 0}
             className="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200 bg-transparent disabled:opacity-50"
+            aria-disabled={selected.size === 0}
           >
             Remove selected
           </button>
 
           <button
-            onClick={() => {
-              if (itemsWithMeta.length === 0) return;
-              const pids = itemsWithMeta.map((it) => it.product.id);
-              setLoading(true);
-              (async () => {
-                try {
-                  const res = await fetch(`${API_BASE}/api/wishlist/bulk`, {
-                    method: "DELETE",
-                    headers: getHeaders(),
-                    body: JSON.stringify({ productIds: pids }),
-                  });
-                  if (!res.ok) {
-                    const json = await res.json().catch(() => ({}));
-                    throw new Error(json?.error || `${res.status} ${res.statusText}`);
-                  }
-                  if (typeof fetchWishlist === "function") await fetchWishlist();
-                  clearSelection();
-                } catch (err) {
-                  console.error("Clear wishlist failed", err);
-                  setError("Could not clear wishlist");
-                } finally {
-                  setLoading(false);
-                }
-              })();
-            }}
-            disabled={itemsWithMeta.length === 0 || loading}
+            onClick={() => openBulkConfirm("all")}
+            disabled={itemsWithMeta.length === 0}
             className="px-3 py-2 rounded-md border border-red-700 text-sm text-red-600 hover:bg-red-900/5 disabled:opacity-50"
+            aria-disabled={itemsWithMeta.length === 0}
           >
             <Trash2 size={14} />
-            <span className="ml-2">Clear</span>
+            <span className="ml-2 hidden sm:inline">Clear all</span>
+          </button>
+
+          <button
+            onClick={() => typeof fetchWishlist === "function" && fetchWishlist().catch((e) => console.warn(e))}
+            className="px-3 py-2 rounded-md bg-black text-white text-sm"
+            title="Refresh wishlist"
+          >
+            <RefreshCw size={14} />
+            <span className="ml-2 hidden sm:inline">Refresh</span>
           </button>
         </div>
       </div>
 
-      {loading && !itemsWithMeta.length ? (
-        <div className="py-28 text-center text-gray-400">Loading wishlist…</div>
+      {/* Skeleton loaders */}
+      {loading ? (
+        <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden bg-gray-50 dark:bg-gray-900 animate-pulse"
+            >
+              <div className="aspect-[4/3] bg-gray-200 dark:bg-gray-800" />
+              <div className="p-4">
+                <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-3/4 mb-3" />
+                <div className="h-6 bg-gray-200 dark:bg-gray-800 rounded w-1/2 mb-2" />
+                <div className="h-3 bg-gray-200 dark:bg-gray-800 rounded w-1/4" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : itemsWithMeta.length === 0 ? (
-        <div className="py-28 text-center text-gray-400">
-          <Heart size={64} className="mx-auto mb-4 text-gray-600 dark:text-gray-300" />
+        // empty state
+        <div className="py-28 text-center text-gray-500 dark:text-gray-400">
+          <Heart size={72} className="mx-auto mb-4 text-gray-600 dark:text-gray-300" />
           <h3 className="text-xl font-medium text-gray-900 dark:text-white mb-2">Your wishlist is empty</h3>
-          <p className="max-w-md mx-auto text-gray-600 dark:text-gray-300">Tap the heart on any product to save it here for later.</p>
+          <p className="max-w-md mx-auto text-gray-600 dark:text-gray-400">Tap the heart on any product to save it for later.</p>
         </div>
       ) : (
         <>
+          {/* Cards grid */}
           <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             <AnimatePresence initial={false}>
               {itemsWithMeta.map((it) => (
@@ -245,12 +310,13 @@ export default function Wishlist() {
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
-                  whileHover={{ translateY: -6, boxShadow: "0 10px 30px rgba(0,0,0,0.12)" }}
+                  whileHover={{ y: -6, boxShadow: "0 12px 30px rgba(0,0,0,0.12)" }}
                   className="relative bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl p-4 shadow-sm hover:shadow-lg transition cursor-pointer flex flex-col"
                   onClick={() => handleView(it)}
                 >
-                  <div className="flex items-start gap-4">
-                    <div className="w-28 h-28 flex-shrink-0 rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-800">
+                  <div className="flex gap-4 items-start">
+                    {/* thumbnail */}
+                    <div className="w-28 h-28 rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-800 flex-shrink-0">
                       <img
                         src={it.firstImage}
                         alt={it.product?.name}
@@ -262,6 +328,7 @@ export default function Wishlist() {
                       />
                     </div>
 
+                    {/* main */}
                     <div className="flex-1 min-w-0">
                       <h3 className="text-base font-semibold text-gray-900 dark:text-white truncate" title={it.product?.name}>
                         {it.product?.name}
@@ -274,7 +341,9 @@ export default function Wishlist() {
                       </div>
                     </div>
 
+                    {/* price & select */}
                     <div className="flex flex-col items-end gap-3">
+                      {/* compact select checkbox */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -286,9 +355,7 @@ export default function Wishlist() {
                         aria-checked={selected.has(it.idKey)}
                         className={
                           "w-6 h-6 flex items-center justify-center rounded-sm border-2 " +
-                          (selected.has(it.idKey)
-                            ? "bg-black text-white border-black"
-                            : "bg-transparent border-gray-300 text-gray-700")
+                          (selected.has(it.idKey) ? "bg-black text-white border-black" : "bg-transparent border-gray-300 text-gray-700")
                         }
                       >
                         {selected.has(it.idKey) ? "✓" : ""}
@@ -306,6 +373,7 @@ export default function Wishlist() {
                     </div>
                   </div>
 
+                  {/* bottom actions */}
                   <div
                     className="mt-4 flex items-center justify-between gap-3 pt-3 border-t border-gray-100 dark:border-gray-800"
                     onClick={(e) => e.stopPropagation()}
@@ -315,10 +383,23 @@ export default function Wishlist() {
                     </div>
 
                     <div className="flex items-center gap-2">
+                      {/* compact icon-only remove on small screens */}
                       <button
                         onClick={() => handleRemove(it)}
                         disabled={loadingIds.has(it.idKey)}
-                        className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-red-700 text-red-600 text-sm hover:bg-red-50 dark:hover:bg-red-900/10 disabled:opacity-50"
+                        className="p-2 rounded-full bg-transparent border border-red-700 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/10 md:hidden"
+                        title="Remove"
+                        aria-label="Remove from wishlist"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+
+                      {/* full button on md+ */}
+                      <button
+                        onClick={() => handleRemove(it)}
+                        disabled={loadingIds.has(it.idKey)}
+                        className="hidden md:inline-flex items-center gap-2 px-3 py-2 rounded-md border border-red-700 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/10"
+                        aria-label="Remove from wishlist"
                       >
                         <Trash2 size={14} />
                         <span>{loadingIds.has(it.idKey) ? "Removing..." : "Remove"}</span>
@@ -330,6 +411,7 @@ export default function Wishlist() {
             </AnimatePresence>
           </div>
 
+          {/* footer actions */}
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="text-sm text-gray-600 dark:text-gray-400">
               Showing <strong>{itemsWithMeta.length}</strong> item{itemsWithMeta.length !== 1 ? "s" : ""}
@@ -344,9 +426,7 @@ export default function Wishlist() {
               </button>
 
               <button
-                onClick={() => {
-                  if (typeof fetchWishlist === "function") fetchWishlist().catch((e) => console.warn(e));
-                }}
+                onClick={() => typeof fetchWishlist === "function" && fetchWishlist().catch((e) => console.warn(e))}
                 className="px-3 py-2 rounded-md bg-black text-white text-sm"
               >
                 Refresh
@@ -356,7 +436,78 @@ export default function Wishlist() {
         </>
       )}
 
+      {/* Error */}
       {error && <div className="mt-4 text-sm text-red-500">Error: {error}</div>}
+
+      {/* Confirmation modal (simple accessible modal) */}
+      <AnimatePresence>
+        {confirmOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-6"
+            aria-modal="true"
+            role="dialog"
+          >
+            <div
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => !confirmLoading && setConfirmOpen(false)}
+            />
+            <motion.div
+              initial={{ scale: 0.98, y: 8, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.98, y: 8, opacity: 0 }}
+              className="relative z-10 max-w-md w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-xl shadow-lg overflow-hidden"
+            >
+              <div className="p-5">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-md bg-red-50 dark:bg-red-900/20">
+                    <AlertTriangle className="text-red-600" size={22} />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold">Confirm deletion</h3>
+                    <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                      {confirmTargetIds.length === itemsWithMeta.length
+                        ? "Are you sure you want to clear your entire wishlist? This action cannot be undone."
+                        : `Are you sure you want to remove ${confirmTargetIds.length} selected item${confirmTargetIds.length > 1 ? "s" : ""}?`}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex items-center justify-end gap-3">
+                  <button
+                    onClick={() => !confirmLoading && setConfirmOpen(false)}
+                    className="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200"
+                    disabled={confirmLoading}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    onClick={confirmDelete}
+                    className="px-3 py-2 rounded-md bg-red-600 text-white text-sm disabled:opacity-60 flex items-center gap-2"
+                    disabled={confirmLoading}
+                  >
+                    <Trash2 size={14} />
+                    <span>{confirmLoading ? "Removing..." : "Remove"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* small close button */}
+              <button
+                onClick={() => !confirmLoading && setConfirmOpen(false)}
+                className="absolute top-3 right-3 p-1 rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+                aria-label="Close"
+                disabled={confirmLoading}
+              >
+                <X size={16} />
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
