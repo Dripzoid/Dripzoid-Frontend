@@ -1,4 +1,3 @@
-// src/layouts/DashboardLayout.jsx
 import React, { useContext, useEffect, useState, useRef } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { UserContext } from "../../contexts/UserContext";
@@ -20,8 +19,9 @@ export default function DashboardLayout() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // detect desktop (used only for header differences)
-  const [isDesktop, setIsDesktop] = useState(() => (typeof window !== "undefined" ? window.innerWidth >= 1024 : false));
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth >= 1024 : false
+  );
   useEffect(() => {
     const handleResize = () => setIsDesktop(window.innerWidth >= 1024);
     window.addEventListener("resize", handleResize);
@@ -74,8 +74,8 @@ export default function DashboardLayout() {
           try {
             const userData = await fetchMe(tokenFromUrl);
             if (!cancelled && isMountedRef.current) login(userData, tokenFromUrl);
-          } catch {}
-          finally {
+          } catch {
+          } finally {
             const newUrl = location.pathname + location.hash;
             window.history.replaceState({}, document.title, newUrl);
             if (!cancelled && isMountedRef.current) setCheckingAuth(false);
@@ -152,21 +152,16 @@ export default function DashboardLayout() {
     location.pathname.startsWith("/account/profile");
 
   return (
-    // keep overflow-x-hidden to avoid horizontal gaps from transforms
-    <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-x-hidden">
-      {/* SIDEBAR
-          - On mobile: fixed + translate to behave as an overlay.
-          - On desktop (lg+): static and part of the flow (so no manual margin on main).
-          - Keep consistent width w-64 and prevent shrinking.
-      */}
+    <div className="relative flex flex-col lg:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+      {/* SIDEBAR */}
       <aside
-        className={`z-50 transform top-0 left-0 w-64 bg-white dark:bg-gray-800 shadow-lg flex flex-col
-          fixed h-full transition-transform duration-200 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-          lg:static lg:translate-x-0 lg:h-auto lg:flex-shrink-0`}
-        aria-hidden={!sidebarOpen && !isDesktop}
+        className={`fixed lg:static top-0 left-0 z-40 w-64 bg-white dark:bg-gray-800 shadow-lg flex flex-col
+          h-full transition-transform duration-200 transform
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+          lg:translate-x-0 lg:h-auto lg:flex-shrink-0`}
       >
-        {/* Mobile header inside sidebar */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 lg:hidden">
+        {/* Mobile Header inside sidebar */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 lg:hidden">
           <h2 className="text-xl font-extrabold text-gray-900 dark:text-white">Dashboard</h2>
           <button onClick={closeSidebar} className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
             <XIcon size={20} />
@@ -199,7 +194,7 @@ export default function DashboardLayout() {
           ))}
         </nav>
 
-        <div className="mt-auto p-4 text-xs text-center text-gray-500 dark:text-gray-400">
+        <div className="mt-auto p-4 text-xs text-center text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700">
           <div>Logged in as</div>
           <div className="mt-1 font-medium text-gray-800 dark:text-gray-100">
             {user?.email ?? user?.name ?? "Account"}
@@ -207,18 +202,22 @@ export default function DashboardLayout() {
         </div>
       </aside>
 
-      {/* MAIN CONTENT
-          - No lg:ml-64 here: sidebar is static in desktop flow so main simply sits beside it.
-          - min-w-0 helps flex children shrink correctly.
-      */}
+      {/* OVERLAY for mobile sidebar */}
+      {sidebarOpen && (
+        <div
+          onClick={closeSidebar}
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-30 lg:hidden"
+        ></div>
+      )}
+
+      {/* MAIN CONTENT */}
       <main
-        className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950
-                   rounded-tl-0 lg:rounded-tl-3xl lg:rounded-bl-3xl
-                   shadow-none lg:shadow-lg min-h-screen overflow-auto"
+        className="relative flex-1 min-w-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950 
+                   rounded-tl-none lg:rounded-tl-3xl lg:rounded-bl-3xl
+                   shadow-none lg:shadow-lg overflow-auto"
       >
-        {/* Inner wrapper left-aligned and full width — avoids artificial centering that created huge gaps */}
         <div className="w-full">
-          {/* Desktop header */}
+          {/* Desktop Header */}
           {isDesktop ? (
             <header className="flex items-center justify-between mb-8">
               <div>
