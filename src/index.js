@@ -1,40 +1,25 @@
-// src/index.jsx
-import React from "react";
-import ReactDOM from "react-dom/client";
-import "./index.css";
-import App from "./App.js";
-
-// Context Providers
-import { UserProvider } from "./contexts/UserContext.js";
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import './index.css';
+import App from './App.js';
+import { UserProvider } from './contexts/UserContext.js';
 import { CartProvider } from "./contexts/CartContext.jsx";
-import { WishlistProvider } from "./contexts/WishlistContext.jsx";
+import { WishlistProvider } from "./contexts/WishlistContext.jsx";  // ✅ import WishlistProvider
+import * as serviceWorkerRegistration from './serviceWorkerRegistration.js';
+import reportWebVitals from './reportWebVitals.js';
 
-// SEO & Metadata
-import { HelmetProvider } from  "@react-helmet-async/react-helmet-async";
-
-// PWA & Performance
-import * as serviceWorkerRegistration from "./serviceWorkerRegistration.js";
-import reportWebVitals from "./reportWebVitals.js";
-
-// Root render
-const root = ReactDOM.createRoot(document.getElementById("root"));
-
+const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <HelmetProvider>
-      <UserProvider>
-        <CartProvider>
-          <WishlistProvider>
-            <App />
-          </WishlistProvider>
-        </CartProvider>
-      </UserProvider>
-    </HelmetProvider>
+    <UserProvider>
+      <CartProvider>
+        <WishlistProvider>
+          <App />
+        </WishlistProvider>
+      </CartProvider>
+    </UserProvider>
   </React.StrictMode>
 );
 
-// PWA setup
 serviceWorkerRegistration.unregister();
-
-// Performance metrics
-reportWebVitals();
+reportWebVitals(); Update this
