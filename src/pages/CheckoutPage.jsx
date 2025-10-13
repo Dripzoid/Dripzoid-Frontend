@@ -24,6 +24,8 @@ import { UserContext } from "../contexts/UserContext";
  * - Sends product_name, sku and unit_price on COD place-order just like Razorpay.
  * - UI styling improved for both light & dark themes (consistent input/button styles).
  * - Place order button slightly wider and more prominent.
+ * - Sends deliveryDate (from place-order response) to order confirmation page/localStorage.
+ * - Payment selector styling: selected = black in light mode, white in dark mode (text color flips).
  */
 
 const API_BASE = process.env.REACT_APP_API_BASE;
@@ -407,6 +409,17 @@ export default function CheckoutPage() {
     }
   };
 
+  // small helper to extract delivery date from various response shapes
+  const extractDeliveryDate = (resp) => {
+    if (!resp) return null;
+    return (
+      resp.deliveryDate ??
+      resp.delivery_date ??
+      (resp.order && (resp.order.delivery_date ?? resp.order.deliveryDate)) ??
+      null
+    );
+  };
+
   // Main payment handler
   const handlePayment = async ({ fromCart = fromCartDefault } = {}) => {
     if (!isPaymentValid()) {
@@ -475,7 +488,7 @@ export default function CheckoutPage() {
         buyNow: isBuyNowMode,
         items: itemsPayload.map((it) => ({
           product_id: it.product_id,
-          product_name: it.name,   // <-- include product name for COD backend & DB
+          product_name: it.name, // include product name for COD backend & DB
           sku: it.sku,
           quantity: it.quantity,
           price: it.price,
@@ -533,6 +546,9 @@ export default function CheckoutPage() {
           return;
         }
 
+        // Extract deliveryDate from API response (if backend provided it)
+        const deliveryDate = extractDeliveryDate(data);
+
         // Save order locally and navigate
         const order = {
           orderId: data?.orderId ?? data?.order?.id ?? null,
@@ -542,6 +558,7 @@ export default function CheckoutPage() {
           customerName: shippingNormalized.customerName || user?.name || "Guest",
           shipping: shippingNormalized,
           orderDate: new Date().toISOString(),
+          deliveryDate: deliveryDate ?? null,
         };
         try {
           localStorage.setItem("lastOrder", JSON.stringify(order));
@@ -582,6 +599,10 @@ export default function CheckoutPage() {
             const verifyResp = await verifyRazorpayPayment({ ...response, internalOrderId, orderPayload: createOrderPayloadForRazor });
             const orderInfo = verifyResp?.order || { orderId: internalOrderId };
 
+            // Attempt to read delivery date from verify response or fallback to serverResp
+            const deliveryDate =
+              extractDeliveryDate(verifyResp) || extractDeliveryDate(serverResp) || null;
+
             const order = {
               orderId: orderInfo?.id ?? orderInfo?.orderId ?? internalOrderId,
               items: checkoutItems,
@@ -590,6 +611,7 @@ export default function CheckoutPage() {
               customerName: shippingNormalized.customerName || user?.name || "Guest",
               shipping: shippingNormalized,
               orderDate: new Date().toISOString(),
+              deliveryDate,
             };
 
             try {
@@ -670,6 +692,15 @@ export default function CheckoutPage() {
   const cardBase = "rounded-2xl shadow-sm";
   const cardLight = "bg-white border border-gray-100";
   const cardDark = "dark:bg-gray-900 dark:border-gray-800";
+
+  // Payment selector style helper: selected -> black in light, white in dark (and text flips)
+  const selectedBtnClass = "shadow-lg"; // common
+  const unselectedBtnClass = "bg-white dark:bg-gray-900";
+
+  const selectedCommon =
+    // light mode: bg-neutral-900 text-white
+    // dark mode: bg-white text-black
+    "bg-neutral-900 text-white dark:bg-white dark:text-black";
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -899,37 +930,39 @@ export default function CheckoutPage() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Razorpay button */}
                 <button
                   onClick={() => {
                     setPaymentType("razorpay");
                     setSelectedPaymentId(null);
                   }}
                   className={`w-full p-4 rounded-xl border flex items-center gap-4 text-left transition ${
-                    paymentType === "razorpay"
-                      ? "bg-gradient-to-r from-neutral-900 to-neutral-700 text-white shadow-lg"
-                      : "bg-white dark:bg-gray-900"
+                    paymentType === "razorpay" ? `${selectedCommon} ${selectedBtnClass}` : `${unselectedBtnClass}`
                   }`}
                 >
-                  <div className="p-2 rounded bg-white dark:bg-gray-800 border"><Wallet size={20} /></div>
+                  <div className={`p-2 rounded ${paymentType === "razorpay" ? "bg-white dark:bg-gray-800 border" : "bg-white dark:bg-gray-800 border"}`}>
+                    <Wallet size={20} />
+                  </div>
                   <div className="flex-1">
                     <div className="font-medium">Pay Online (Razorpay)</div>
                     <div className="text-xs text-gray-500 mt-1">Cards, UPI, Netbanking and more. Fast and secure.</div>
                   </div>
-                  {paymentType === "razorpay" && <div className="text-xs font-semibold">Selected</div>}
+                  {paymentType === "razorpay" && <div className="text-xs font-semibold">{/* visually indicates selected */}Selected</div>}
                 </button>
 
+                {/* COD button */}
                 <button
                   onClick={() => {
                     setPaymentType("cod");
                     setSelectedPaymentId(null);
                   }}
                   className={`w-full p-4 rounded-xl border flex items-center gap-4 text-left transition ${
-                    paymentType === "cod"
-                      ? "bg-gradient-to-r from-amber-500 to-amber-400 text-white shadow-lg"
-                      : "bg-white dark:bg-gray-900"
+                    paymentType === "cod" ? `${selectedCommon} ${selectedBtnClass}` : `${unselectedBtnClass}`
                   }`}
                 >
-                  <div className="p-2 rounded bg-white dark:bg-gray-800 border"><Clock size={20} /></div>
+                  <div className={`p-2 rounded ${paymentType === "cod" ? "bg-white dark:bg-gray-800 border" : "bg-white dark:bg-gray-800 border"}`}>
+                    <Clock size={20} />
+                  </div>
                   <div className="flex-1">
                     <div className="font-medium">Cash on Delivery</div>
                     <div className="text-xs text-gray-500 mt-1">Pay in cash when your order is delivered. ₹25 COD fee applies.</div>
