@@ -424,7 +424,6 @@ export default function Wishlist() {
       Saved items
     </p>
   </div>
-</div>
 
 
         <div className="flex items-center gap-3">
