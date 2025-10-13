@@ -230,7 +230,7 @@ export default function Wishlist() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">Wishlist</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-300">Saved items — manage your favorites</p>
+          <p className="text-sm text-gray-600 dark:text-gray-300">Saved Items — Manage Your Favorites</p>
         </div>
 
         <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -331,9 +331,11 @@ export default function Wishlist() {
                   {/* Content */}
                   <div className="flex-1 p-2 md:p-4 flex flex-col justify-between w-full">
                     <div>
-                      <h3 className="text-lg md:text-xl font-semibold text-gray-900 dark:text-white truncate">
-                        {it.product?.name}
-                      </h3>
+                     <h3 className="text-lg md:text-xl font-semibold text-gray-900 dark:text-white">
+  {it.product?.name?.length > 75
+    ? `${it.product.name.substring(0, 75)}...`
+    : it.product?.name}
+</h3>
                       <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 truncate">
                         {it.product?.category || it.product?.seller}
                       </p>
