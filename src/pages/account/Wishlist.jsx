@@ -50,15 +50,19 @@ export default function Wishlist() {
   const navigate = useNavigate();
   const { wishlist = [], fetchWishlist, removeFromWishlist } = useWishlist();
 
+  // UI state
   const [selected, setSelected] = useState(new Set());
   const [loadingIds, setLoadingIds] = useState(new Set());
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // show skeletons initially
   const [error, setError] = useState(null);
+
+  // modal for bulk deletes (selected or all)
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmTargetIds, setConfirmTargetIds] = useState([]);
+  const [confirmTargetIds, setConfirmTargetIds] = useState([]); // product ids to delete
   const [confirmLoading, setConfirmLoading] = useState(false);
 
   useEffect(() => {
+    // load wishlist, show skeleton for a short while for nicer UX
     let cancelled = false;
     (async () => {
       try {
@@ -66,18 +70,21 @@ export default function Wishlist() {
       } catch (e) {
         console.warn("fetchWishlist error:", e);
       } finally {
-        const timer = setTimeout(() => {
+        // keep skeleton for a short minimum duration even if data is fast
+        const min = setTimeout(() => {
           if (!cancelled) setLoading(false);
         }, 300);
+        // cleanup
         return () => {
           cancelled = true;
-          clearTimeout(timer);
+          clearTimeout(min);
         };
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // derived items
   const itemsWithMeta = useMemo(() => {
     return (wishlist || []).map((r) => {
       const product = {
@@ -102,6 +109,7 @@ export default function Wishlist() {
     });
   }, [wishlist]);
 
+  // selection helpers
   const toggleSelect = (idKey) => {
     setSelected((s) => {
       const copy = new Set(s);
@@ -110,6 +118,8 @@ export default function Wishlist() {
       return copy;
     });
   };
+  const selectAll = () => setSelected(new Set(itemsWithMeta.map((it) => it.idKey)));
+  const clearSelection = () => setSelected(new Set());
 
   const getHeaders = (isJson = true) => {
     const headers = {};
@@ -123,6 +133,7 @@ export default function Wishlist() {
     return headers;
   };
 
+  // single remove
   const handleRemove = async (it) => {
     const pid = it.product?.id;
     if (!pid) return;
@@ -135,7 +146,10 @@ export default function Wishlist() {
           method: "DELETE",
           headers: getHeaders(),
         });
-        if (!res.ok) throw new Error("Remove failed");
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json?.error || `${res.status} ${res.statusText}`);
+        }
         if (typeof fetchWishlist === "function") await fetchWishlist();
       }
     } catch (err) {
@@ -147,6 +161,61 @@ export default function Wishlist() {
         copy.delete(it.idKey);
         return copy;
       });
+    }
+  };
+
+  // open confirmation modal for selected or all
+  const openBulkConfirm = (mode = "selected") => {
+    if (mode === "selected") {
+      const keys = Array.from(selected);
+      const productIds = keys
+        .map((k) => itemsWithMeta.find((x) => x.idKey === k))
+        .filter(Boolean)
+        .map((x) => x.product.id);
+      if (productIds.length === 0) return;
+      setConfirmTargetIds(productIds);
+    } else if (mode === "all") {
+      const productIds = itemsWithMeta.map((it) => it.product.id).filter(Boolean);
+      if (productIds.length === 0) return;
+      setConfirmTargetIds(productIds);
+    }
+    setConfirmOpen(true);
+  };
+
+  // confirm delete handler (for selected or all based on confirmTargetIds)
+  const confirmDelete = async () => {
+    if (!confirmTargetIds.length) {
+      setConfirmOpen(false);
+      return;
+    }
+    setConfirmLoading(true);
+    setError(null);
+    try {
+      // try using context helper removeFromWishlist in loop if available
+      if (typeof removeFromWishlist === "function") {
+        // remove in parallel with Promise.allSettled to continue on partial failures
+        await Promise.allSettled(confirmTargetIds.map((pid) => removeFromWishlist(pid)));
+        if (typeof fetchWishlist === "function") await fetchWishlist();
+      } else {
+        // use bulk endpoint
+        const res = await fetch(`${API_BASE}/api/wishlist/bulk`, {
+          method: "DELETE",
+          headers: getHeaders(),
+          body: JSON.stringify({ productIds: confirmTargetIds }),
+        });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json?.error || `${res.status} ${res.statusText}`);
+        }
+        if (typeof fetchWishlist === "function") await fetchWishlist();
+      }
+      clearSelection();
+      setConfirmOpen(false);
+    } catch (err) {
+      console.error("Bulk delete failed", err);
+      setError("Could not delete selected items. Try again.");
+    } finally {
+      setConfirmLoading(false);
     }
   };
 
@@ -164,113 +233,200 @@ export default function Wishlist() {
           <p className="text-sm text-gray-600 dark:text-gray-300">Saved items — manage your favorites</p>
         </div>
 
-        <button
-          onClick={() => typeof fetchWishlist === "function" && fetchWishlist().catch((e) => console.warn(e))}
-          className="px-3 py-2 rounded-md bg-black text-white text-sm flex items-center gap-2"
-        >
-          <RefreshCw size={14} />
-          <span className="hidden sm:inline">Refresh</span>
-        </button>
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <button
+            onClick={selectAll}
+            className="px-3 py-2 rounded-md bg-black text-white text-sm hover:opacity-95"
+            aria-label="Select all wishlist items"
+          >
+            Select all
+          </button>
+
+          <button
+            onClick={() => openBulkConfirm("selected")}
+            disabled={selected.size === 0}
+            className="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200 bg-transparent disabled:opacity-50"
+            aria-disabled={selected.size === 0}
+          >
+            Remove selected
+          </button>
+
+          <button
+            onClick={() => openBulkConfirm("all")}
+            disabled={itemsWithMeta.length === 0}
+            className="px-3 py-2 rounded-md border border-red-700 text-sm text-red-600 hover:bg-red-900/5 disabled:opacity-50"
+            aria-disabled={itemsWithMeta.length === 0}
+          >
+            <Trash2 size={14} />
+            <span className="ml-2 hidden sm:inline">Clear all</span>
+          </button>
+
+          <button
+            onClick={() => typeof fetchWishlist === "function" && fetchWishlist().catch((e) => console.warn(e))}
+            className="px-3 py-2 rounded-md bg-black text-white text-sm"
+            title="Refresh wishlist"
+          >
+            <RefreshCw size={14} />
+            <span className="ml-2 hidden sm:inline">Refresh</span>
+          </button>
+        </div>
       </div>
 
-      {/* Skeleton Loaders */}
+      {/* Skeleton loaders */}
       {loading ? (
-        <div className="grid gap-6 grid-cols-1">
+        <div className="space-y-5">
           {Array.from({ length: 5 }).map((_, i) => (
             <div
               key={i}
-              className="flex items-center gap-4 rounded-2xl border border-gray-200 dark:border-gray-800 p-4 bg-gray-50 dark:bg-gray-900 animate-pulse"
+              className="flex flex-col md:flex-row items-center gap-4 rounded-2xl bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-800 p-4 animate-pulse"
             >
-              <div className="w-28 h-28 bg-gray-200 dark:bg-gray-800 rounded-xl" />
-              <div className="flex-1 space-y-3">
+              <div className="w-full md:w-48 h-44 md:h-32 bg-gray-200 dark:bg-gray-800 rounded-lg" />
+              <div className="flex-1 space-y-3 w-full">
                 <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-3/4" />
                 <div className="h-6 bg-gray-200 dark:bg-gray-800 rounded w-1/2" />
                 <div className="h-3 bg-gray-200 dark:bg-gray-800 rounded w-1/4" />
+              </div>
+              <div className="w-full md:w-32 flex items-center justify-end">
+                <div className="w-10 h-10 bg-gray-200 dark:bg-gray-800 rounded-full" />
               </div>
             </div>
           ))}
         </div>
       ) : itemsWithMeta.length === 0 ? (
+        // empty state
         <div className="py-28 text-center text-gray-500 dark:text-gray-400">
           <Heart size={72} className="mx-auto mb-4 text-gray-600 dark:text-gray-300" />
           <h3 className="text-xl font-medium text-gray-900 dark:text-white mb-2">Your wishlist is empty</h3>
           <p className="max-w-md mx-auto text-gray-600 dark:text-gray-400">Tap the heart on any product to save it for later.</p>
         </div>
       ) : (
-        <div className="space-y-5">
-          {itemsWithMeta.map((it) => (
-            <motion.article
-              key={it.idKey}
-              layout
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              className="flex flex-col md:flex-row items-center md:items-stretch gap-4 rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-md hover:shadow-lg transition-all cursor-pointer"
-              onClick={() => handleView(it)}
-            >
-              {/* Image */}
-              <div className="md:w-48 w-full h-48 md:h-auto rounded-2xl overflow-hidden bg-gray-50 dark:bg-gray-800">
-                <img
-                  src={it.firstImage}
-                  alt={it.product?.name}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    e.currentTarget.onerror = null;
-                    e.currentTarget.src = 'https://via.placeholder.com/400';
-                  }}
-                />
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 p-4 flex flex-col justify-between w-full">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">{it.product?.name}</h3>
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 truncate">
-                    {it.product?.category || it.product?.seller}
-                  </p>
-
-                  <div className="mt-2 flex items-center gap-3">
-                    <div className="flex items-center gap-1">{renderStars(it.product?.rating)}</div>
-                    <span className="text-xs text-gray-400">({it.product?.reviews ?? 0})</span>
+        <>
+          {/* Cards list (horizontal on md+) */}
+          <div className="space-y-5">
+            <AnimatePresence initial={false}>
+              {itemsWithMeta.map((it) => (
+                <motion.article
+                  key={it.idKey}
+                  layout
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  whileHover={{ y: -8, boxShadow: "0 20px 40px rgba(0,0,0,0.12)" }}
+                  className="group relative flex flex-col md:flex-row items-center md:items-stretch gap-4 rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 p-4 shadow-lg transition-transform transform hover:-translate-y-1 cursor-pointer"
+                  onClick={() => handleView(it)}
+                >
+                  {/* Thumbnail */}
+                  <div className="w-full md:w-48 h-48 md:h-auto rounded-2xl overflow-hidden bg-gray-50 dark:bg-gray-800 flex-shrink-0">
+                    <img
+                      src={it.firstImage}
+                      alt={it.product?.name}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = "https://via.placeholder.com/400";
+                      }}
+                    />
                   </div>
-                </div>
 
-                <div className="mt-3 flex items-center justify-between">
-                  <div>
-                    <div className="text-lg font-bold text-gray-900 dark:text-white">{fmtCurrency(it.price)}</div>
-                    {it.hasDiscount && (
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="text-xs line-through text-gray-400">{fmtCurrency(it.originalPrice)}</div>
-                        <div className="text-[11px] bg-black text-white dark:bg-white dark:text-black px-2 py-0.5 rounded-full">
-                          {it.discountPercent}% OFF
-                        </div>
+                  {/* Content */}
+                  <div className="flex-1 p-2 md:p-4 flex flex-col justify-between w-full">
+                    <div>
+                      <h3 className="text-lg md:text-xl font-semibold text-gray-900 dark:text-white truncate">
+                        {it.product?.name}
+                      </h3>
+                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 truncate">
+                        {it.product?.category || it.product?.seller}
+                      </p>
+
+                      <div className="mt-3 flex items-center gap-3">
+                        <div className="flex items-center gap-1">{renderStars(it.product?.rating)}</div>
+                        <span className="text-xs text-gray-400">({it.product?.reviews ?? 0})</span>
                       </div>
-                    )}
-                  </div>
+                    </div>
 
-                  {/* Delete icon (always icon-only) */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemove(it);
-                    }}
-                    disabled={loadingIds.has(it.idKey)}
-                    className="p-2 rounded-full border border-red-700 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                    title="Remove from wishlist"
-                    aria-label="Remove from wishlist"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              </div>
-            </motion.article>
-          ))}
-        </div>
+                    {/* Price & actions row */}
+                    <div className="mt-4 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="text-lg font-bold text-gray-900 dark:text-white">{fmtCurrency(it.price)}</div>
+                        {it.hasDiscount && (
+                          <div className="flex items-center gap-2 mt-1">
+                            <div className="text-xs line-through text-gray-400">{fmtCurrency(it.originalPrice)}</div>
+                            <div className="text-[11px] bg-black text-white dark:bg-white dark:text-black px-2 py-0.5 rounded-full">
+                              {it.discountPercent}% OFF
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* selection checkbox + delete icon only */}
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSelect(it.idKey);
+                          }}
+                          aria-pressed={selected.has(it.idKey)}
+                          aria-label={selected.has(it.idKey) ? "Deselect item" : "Select item"}
+                          role="checkbox"
+                          aria-checked={selected.has(it.idKey)}
+                          className={
+                            "w-7 h-7 flex items-center justify-center rounded-sm border-2 " +
+                            (selected.has(it.idKey)
+                              ? "bg-black text-white border-black"
+                              : "bg-transparent border-gray-300 text-gray-700")
+                          }
+                        >
+                          {selected.has(it.idKey) ? "✓" : ""}
+                        </button>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemove(it);
+                          }}
+                          disabled={loadingIds.has(it.idKey)}
+                          className="p-2 rounded-full border border-red-700 text-red-600 bg-white dark:bg-gray-900 hover:bg-red-50 dark:hover:bg-red-900/10"
+                          title="Remove from wishlist"
+                          aria-label="Remove from wishlist"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </motion.article>
+              ))}
+            </AnimatePresence>
+          </div>
+
+          {/* footer actions */}
+          <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              Showing <strong>{itemsWithMeta.length}</strong> item{itemsWithMeta.length !== 1 ? "s" : ""}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={clearSelection}
+                className="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200"
+              >
+                Clear selection
+              </button>
+
+              <button
+                onClick={() => typeof fetchWishlist === "function" && fetchWishlist().catch((e) => console.warn(e))}
+                className="px-3 py-2 rounded-md bg-black text-white text-sm"
+              >
+                Refresh
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
       {error && <div className="mt-4 text-sm text-red-500">Error: {error}</div>}
 
-      {/* Confirmation Modal */}
+      {/* Confirmation modal (simple accessible modal) */}
       <AnimatePresence>
         {confirmOpen && (
           <motion.div
@@ -299,7 +455,9 @@ export default function Wishlist() {
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold">Confirm deletion</h3>
                     <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                      Are you sure you want to remove these items? This action cannot be undone.
+                      {confirmTargetIds.length === itemsWithMeta.length
+                        ? "Are you sure you want to clear your entire wishlist? This action cannot be undone."
+                        : `Are you sure you want to remove ${confirmTargetIds.length} selected item${confirmTargetIds.length > 1 ? "s" : ""}?`}
                     </p>
                   </div>
                 </div>
@@ -314,7 +472,7 @@ export default function Wishlist() {
                   </button>
 
                   <button
-                    onClick={() => confirmDelete()}
+                    onClick={confirmDelete}
                     className="px-3 py-2 rounded-md bg-red-600 text-white text-sm disabled:opacity-60 flex items-center gap-2"
                     disabled={confirmLoading}
                   >
@@ -324,6 +482,7 @@ export default function Wishlist() {
                 </div>
               </div>
 
+              {/* small close button */}
               <button
                 onClick={() => !confirmLoading && setConfirmOpen(false)}
                 className="absolute top-3 right-3 p-1 rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
