@@ -3,7 +3,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import Hero from "../components/Hero";
-import Featured from "../components/FeaturedSection";
 
 // -----------------------------
 // Helper data
@@ -26,7 +25,7 @@ const productSeed = (count = 8) =>
   }));
 
 // -----------------------------
-// Small UI components
+// UI Components
 // -----------------------------
 function IconSearch(props) {
   return (
@@ -112,7 +111,9 @@ function ProductCard({ product, onQuickView }) {
   );
 }
 
-// Newsletter
+// -----------------------------
+// Newsletter Form
+// -----------------------------
 function NewsletterForm() {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState(null);
@@ -145,7 +146,9 @@ function NewsletterForm() {
   );
 }
 
+// -----------------------------
 // Testimonials
+// -----------------------------
 function TestimonialCarousel({ items = [] }) {
   const [index, setIndex] = useState(0);
   useEffect(() => {
@@ -154,7 +157,7 @@ function TestimonialCarousel({ items = [] }) {
   }, [items.length]);
 
   return (
-    <div className="relative">
+    <div className="relative max-w-3xl mx-auto mt-12">
       <div className="overflow-hidden rounded-2xl bg-white dark:bg-black border border-slate-100 dark:border-slate-800 p-6">
         <AnimatePresence mode="wait">
           <motion.div
@@ -185,7 +188,9 @@ function TestimonialCarousel({ items = [] }) {
   );
 }
 
+// -----------------------------
 // Quick view modal
+// -----------------------------
 function QuickViewModal({ product, onClose }) {
   return (
     <AnimatePresence>
@@ -225,8 +230,6 @@ export default function HomePage() {
   const [featured, setFeatured] = useState(() => productSeed(6));
   const [sale, setSale] = useState(() => productSeed(6).map((p, i) => ({ ...p, salePrice: p.price - 200 - i * 50 })));
   const [quickView, setQuickView] = useState(null);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const testimonials = useMemo(
     () => [
@@ -238,9 +241,46 @@ export default function HomePage() {
   );
 
   return (
-    <div className="min-h-screen bg-white text-black dark:bg-black dark:text-white antialiased">
-      {/* Announcement, nav, search, hero, featured, trending, sale, newsletter, testimonials, footer CTA */}
-      {/* Use the same sections as before (omitted here for brevity) */}
+    <div className="min-h-screen bg-white text-black dark:bg-black dark:text-white antialiased space-y-20">
+      {/* Hero */}
+      <Hero slides={slides} />
+
+      {/* Featured Products */}
+      <section className="max-w-6xl mx-auto px-4">
+        <SectionHeader title="Featured" to="/shop" />
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6 mt-6">
+          {featured.map((p) => <ProductCard key={p.id} product={p} onQuickView={setQuickView} />)}
+        </div>
+      </section>
+
+      {/* Trending Products */}
+      <section className="max-w-6xl mx-auto px-4">
+        <SectionHeader title="Trending" />
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6 mt-6">
+          {trending.map((p) => <ProductCard key={p.id} product={p} onQuickView={setQuickView} />)}
+        </div>
+      </section>
+
+      {/* Sale Products */}
+      <section className="max-w-6xl mx-auto px-4">
+        <SectionHeader title="On Sale" />
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6 mt-6">
+          {sale.map((p) => <ProductCard key={p.id} product={p} onQuickView={setQuickView} />)}
+        </div>
+      </section>
+
+      {/* Newsletter */}
+      <section className="bg-slate-50 dark:bg-slate-900 py-16">
+        <h3 className="text-center text-2xl font-bold mb-6">Subscribe to our Newsletter</h3>
+        <NewsletterForm />
+      </section>
+
+      {/* Testimonials */}
+      <section className="py-16">
+        <SectionHeader title="Testimonials" />
+        <TestimonialCarousel items={testimonials} />
+      </section>
+
       {/* Quick view modal */}
       <QuickViewModal product={quickView} onClose={() => setQuickView(null)} />
     </div>
