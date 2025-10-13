@@ -50,6 +50,7 @@
     "ua-parser-js": "^2.0.4",
     "nearest-color": "^0.4.4",
     "web-vitals": "^5.1.0",
+    "react-helmet-async": "^2.0.4",
     "recharts": "^2.12.7"
   },
   "scripts": {
