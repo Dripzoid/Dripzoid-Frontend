@@ -91,15 +91,27 @@ export default function HomePage() {
       {/* Hero / Carousel */}
       <Hero slides={slides} />
 
-      {/* On Sale Section (moved to top per your request) */}
-      <section id="sale" className="relative max-w-6xl mx-auto px-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold">On Sale</h3>
-          <Link to="/shop?filter=sale" className="text-sm underline-offset-4 hover:underline">
-            View all
+      {/* Shop Now CTA (theme-friendly) */}
+      <div className="max-w-6xl mx-auto px-4">
+        <div className="rounded-2xl p-8 text-center shadow-lg overflow-hidden relative">
+          {/* background adapts to theme */}
+          <div className="absolute inset-0 -z-10 bg-gradient-to-r from-white to-slate-100 dark:from-slate-900 dark:to-slate-800" />
+
+          <h2 className="text-3xl md:text-4xl font-bold mb-4">Shop the Drop</h2>
+          <p className="text-sm text-slate-700 dark:text-slate-300 mb-6">Discover new arrivals, limited editions and curated favourites.</p>
+
+          <Link
+            to="/shop"
+            className="inline-block px-8 py-4 rounded-lg font-semibold shadow transition-colors bg-slate-900 text-white dark:bg-white dark:text-slate-900 border border-transparent hover:opacity-95"
+            aria-label="Shop Now"
+          >
+            Shop Now
           </Link>
         </div>
+      </div>
 
+      {/* On Sale Section (moved below CTA and above Featured) */}
+      <section id="sale" className="relative max-w-6xl mx-auto px-4">
         {/* overlay arrows (desktop) — scrolls the first horizontal container inside the OnSale component */}
         <button
           aria-label="Scroll Sale left"
@@ -124,43 +136,10 @@ export default function HomePage() {
         <div className="mt-2">
           <OnSale />
         </div>
-
-        <div className="mt-3 flex items-center justify-center gap-2 md:hidden">
-          <span className="text-xs text-slate-500">Swipe</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-            <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
       </section>
 
-      {/* Shop Now CTA (theme-friendly) */}
-      <div className="max-w-6xl mx-auto px-4">
-        <div className="rounded-2xl p-8 text-center shadow-lg overflow-hidden relative">
-          {/* background adapts to theme */}
-          <div className="absolute inset-0 -z-10 bg-gradient-to-r from-white to-slate-100 dark:from-slate-900 dark:to-slate-800" />
-
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">Shop the Drop</h2>
-          <p className="text-sm text-slate-700 dark:text-slate-300 mb-6">Discover new arrivals, limited editions and curated favourites.</p>
-
-          <Link
-            to="/shop"
-            className="inline-block px-8 py-4 rounded-lg font-semibold shadow transition-colors bg-slate-900 text-white dark:bg-white dark:text-slate-900 border border-transparent hover:opacity-95"
-            aria-label="Shop Now"
-          >
-            Shop Now
-          </Link>
-        </div>
-      </div>
-
-      {/* Featured Section */}
+      {/* Featured Section (no header text here — the component handles its own title) */}
       <section id="featured" className="relative max-w-6xl mx-auto px-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold">Featured</h3>
-          <Link to="/shop" className="text-sm underline-offset-4 hover:underline">
-            View all
-          </Link>
-        </div>
-
         <button
           aria-label="Scroll Featured left"
           onClick={() => scrollSectionById("featured", "left")}
@@ -184,24 +163,10 @@ export default function HomePage() {
         <div className="mt-2">
           <FeaturedSection />
         </div>
-
-        <div className="mt-3 flex items-center justify-center gap-2 md:hidden">
-          <span className="text-xs text-slate-500">Swipe</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-            <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
       </section>
 
-      {/* Trending Section */}
+      {/* Trending Section (no header text here — the component handles its own title) */}
       <section id="trending" className="relative max-w-6xl mx-auto px-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold">Trending</h3>
-          <Link to="/shop?sort=trending" className="text-sm underline-offset-4 hover:underline">
-            View all
-          </Link>
-        </div>
-
         <button
           aria-label="Scroll Trending left"
           onClick={() => scrollSectionById("trending", "left")}
@@ -224,13 +189,6 @@ export default function HomePage() {
 
         <div className="mt-2">
           <TrendingSection />
-        </div>
-
-        <div className="mt-3 flex items-center justify-center gap-2 md:hidden">
-          <span className="text-xs text-slate-500">Swipe</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-            <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
         </div>
       </section>
 
