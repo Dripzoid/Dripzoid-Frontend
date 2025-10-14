@@ -9,9 +9,21 @@ import OnSale from "../components/OnSale";
 // Helper data (only used by Hero)
 // -----------------------------
 const slides = [
-  { id: 1, src: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1755031336/my_project/zvipefqerhrrwazser7f.jpg", title: "Festive Sale — Up to 15% off" },
-  { id: 2, src: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1755031334/my_project/nfozagnujns4vatuaht5.jpg", title: "New Arrivals At Dripzoid" },
-  { id: 3, src: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1755030052/my_project/f7iaebagidtamdcquino.jpg", title: "Dripzoid's First Drop" },
+  {
+    id: 1,
+    src: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1755031336/my_project/zvipefqerhrrwazser7f.jpg",
+    title: "Festive Sale — Up to 15% off",
+  },
+  {
+    id: 2,
+    src: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1755031334/my_project/nfozagnujns4vatuaht5.jpg",
+    title: "New Arrivals At Dripzoid",
+  },
+  {
+    id: 3,
+    src: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1755030052/my_project/f7iaebagidtamdcquino.jpg",
+    title: "Dripzoid's First Drop",
+  },
 ];
 
 // -----------------------------
@@ -39,7 +51,11 @@ function scrollSectionById(sectionId, direction = "right") {
     if (found) {
       // make sure it actually scrolls horizontally
       const style = window.getComputedStyle(found);
-      if (style.overflowX === "auto" || style.overflowX === "scroll" || found.scrollWidth > found.clientWidth) {
+      if (
+        style.overflowX === "auto" ||
+        style.overflowX === "scroll" ||
+        found.scrollWidth > found.clientWidth
+      ) {
         el = found;
         break;
       }
@@ -75,20 +91,60 @@ export default function HomePage() {
       {/* Hero / Carousel */}
       <Hero slides={slides} />
 
+      {/* On Sale Section (moved to top per your request) */}
+      <section id="sale" className="relative max-w-6xl mx-auto px-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold">On Sale</h3>
+          <Link to="/shop?filter=sale" className="text-sm underline-offset-4 hover:underline">
+            View all
+          </Link>
+        </div>
+
+        {/* overlay arrows (desktop) — scrolls the first horizontal container inside the OnSale component */}
+        <button
+          aria-label="Scroll Sale left"
+          onClick={() => scrollSectionById("sale", "left")}
+          className="hidden md:flex items-center justify-center absolute left-4 top-1/2 -translate-y-1/2 z-50 w-10 h-10 rounded-full bg-white/95 dark:bg-black/75 shadow-md border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+
+        <button
+          aria-label="Scroll Sale right"
+          onClick={() => scrollSectionById("sale", "right")}
+          className="hidden md:flex items-center justify-center absolute right-4 top-1/2 -translate-y-1/2 z-50 w-10 h-10 rounded-full bg-white/95 dark:bg-black/75 shadow-md border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+
+        <div className="mt-2">
+          <OnSale />
+        </div>
+
+        <div className="mt-3 flex items-center justify-center gap-2 md:hidden">
+          <span className="text-xs text-slate-500">Swipe</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+      </section>
+
       {/* Shop Now CTA (theme-friendly) */}
-      <div className="max-w-6xl mx-auto px-4 -mt-8">
+      <div className="max-w-6xl mx-auto px-4">
         <div className="rounded-2xl p-8 text-center shadow-lg overflow-hidden relative">
-          {/* background adapts to theme: subtle light gradient in light mode, stronger gradient in dark mode */}
+          {/* background adapts to theme */}
           <div className="absolute inset-0 -z-10 bg-gradient-to-r from-white to-slate-100 dark:from-slate-900 dark:to-slate-800" />
 
           <h2 className="text-3xl md:text-4xl font-bold mb-4">Shop the Drop</h2>
           <p className="text-sm text-slate-700 dark:text-slate-300 mb-6">Discover new arrivals, limited editions and curated favourites.</p>
 
-          {/* Button styling flips to remain visible in both themes */}
           <Link
             to="/shop"
-            className="inline-block px-8 py-4 rounded-lg font-semibold shadow transition-colors
-                       bg-slate-900 text-white dark:bg-white dark:text-slate-900 border border-transparent hover:opacity-95"
+            className="inline-block px-8 py-4 rounded-lg font-semibold shadow transition-colors bg-slate-900 text-white dark:bg-white dark:text-slate-900 border border-transparent hover:opacity-95"
             aria-label="Shop Now"
           >
             Shop Now
@@ -96,13 +152,15 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Featured Section (imported component) */}
+      {/* Featured Section */}
       <section id="featured" className="relative max-w-6xl mx-auto px-4">
         <div className="flex items-center justify-between mb-4">
-          <Link to="/shop" className="text-sm underline-offset-4 hover:underline">View all</Link>
+          <h3 className="text-lg font-semibold">Featured</h3>
+          <Link to="/shop" className="text-sm underline-offset-4 hover:underline">
+            View all
+          </Link>
         </div>
 
-        {/* overlay arrows (desktop) — these try to scroll the first horizontal container inside the imported component */}
         <button
           aria-label="Scroll Featured left"
           onClick={() => scrollSectionById("featured", "left")}
@@ -123,12 +181,10 @@ export default function HomePage() {
           </svg>
         </button>
 
-        {/* the imported component that contains the products */}
         <div className="mt-2">
           <FeaturedSection />
         </div>
 
-        {/* mobile swipe hint */}
         <div className="mt-3 flex items-center justify-center gap-2 md:hidden">
           <span className="text-xs text-slate-500">Swipe</span>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
@@ -139,6 +195,11 @@ export default function HomePage() {
 
       {/* Trending Section */}
       <section id="trending" className="relative max-w-6xl mx-auto px-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold">Trending</h3>
+          <Link to="/shop?sort=trending" className="text-sm underline-offset-4 hover:underline">
+            View all
+          </Link>
         </div>
 
         <button
@@ -173,43 +234,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* On Sale Section */}
-      <section id="sale" className="relative max-w-6xl mx-auto px-4">
-        </div>
-
-        <button
-          aria-label="Scroll Sale left"
-          onClick={() => scrollSectionById("sale", "left")}
-          className="hidden md:flex items-center justify-center absolute left-4 top-1/2 -translate-y-1/2 z-50 w-10 h-10 rounded-full bg-white/95 dark:bg-black/75 shadow-md border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-            <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-
-        <button
-          aria-label="Scroll Sale right"
-          onClick={() => scrollSectionById("sale", "right")}
-          className="hidden md:flex items-center justify-center absolute right-4 top-1/2 -translate-y-1/2 z-50 w-10 h-10 rounded-full bg-white/95 dark:bg-black/75 shadow-md border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-            <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-
-        <div className="mt-2">
-          <OnSale />
-        </div>
-
-        <div className="mt-3 flex items-center justify-center gap-2 md:hidden">
-          <span className="text-xs text-slate-500">Swipe</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-            <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
-      </section>
-
-      {/* small re-render helper (not used visually) */}
+      {/* invisible re-render helper (not used visually) */}
       <div style={{ display: "none" }} aria-hidden />
     </div>
   );
