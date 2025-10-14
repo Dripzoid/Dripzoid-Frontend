@@ -99,7 +99,6 @@ export default function HomePage() {
       {/* Featured Section (imported component) */}
       <section id="featured" className="relative max-w-6xl mx-auto px-4">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-2xl font-bold tracking-tight">Featured</h3>
           <Link to="/shop" className="text-sm underline-offset-4 hover:underline">View all</Link>
         </div>
 
@@ -140,9 +139,6 @@ export default function HomePage() {
 
       {/* Trending Section */}
       <section id="trending" className="relative max-w-6xl mx-auto px-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-2xl font-bold tracking-tight">Trending</h3>
-          <div />
         </div>
 
         <button
@@ -179,9 +175,6 @@ export default function HomePage() {
 
       {/* On Sale Section */}
       <section id="sale" className="relative max-w-6xl mx-auto px-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-2xl font-bold tracking-tight">On Sale</h3>
-          <div />
         </div>
 
         <button
