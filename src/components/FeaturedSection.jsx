@@ -1,9 +1,8 @@
-// src/components/FeaturedSection.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { Heart } from "lucide-react";
 import { useWishlist } from "../contexts/WishlistContext";
-import { normalizeImages } from "../utils/images"; // safer image handling
+import { normalizeImages } from "../utils/images";
 
 const API_BASE = process.env.REACT_APP_API_BASE;
 
@@ -12,9 +11,9 @@ export default function FeaturedSection() {
 
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showAll, setShowAll] = useState(false);
   const [wishlistUpdatingId, setWishlistUpdatingId] = useState(null);
 
+  // derive wishlist IDs set (robust)
   const wishlistIds = useMemo(() => {
     const s = new Set();
     if (!Array.isArray(wishlist)) return s;
@@ -80,19 +79,12 @@ export default function FeaturedSection() {
     }
   };
 
-  const visibleProducts = showAll ? products : products.slice(0, 5);
-
   return (
-    <section className="py-12 bg-white dark:bg-black">
-      <div className="container mx-auto px-6 lg:px-8">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-3xl font-bold text-black dark:text-white">Featured Picks</h2>
-          <button
-            onClick={() => setShowAll((s) => !s)}
-            className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:underline"
-          >
-            {showAll ? "Show less" : `See all (${products.length})`}
-          </button>
+    <section className="py-6 bg-white dark:bg-black">
+      <div className="container mx-auto px-4 lg:px-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl md:text-3xl font-bold text-black dark:text-white">Featured Picks</h2>
+          <div className="text-sm text-slate-600 dark:text-slate-300">{products.length} items</div>
         </div>
 
         {loading ? (
@@ -104,34 +96,35 @@ export default function FeaturedSection() {
             No featured products available.
           </div>
         ) : (
-          <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-            {visibleProducts.map((p) => {
-              const inWishlist = isInWishlist(p.id);
-
-              return (
+          <>
+            {/* Horizontal scroller: data-scroll ensures scrollSectionById picks it up */}
+            <div
+              data-scroll="true"
+              className="flex gap-4 overflow-x-auto no-scrollbar snap-x snap-mandatory py-2 px-4 md:px-6"
+            >
+              {products.map((p) => (
                 <article
                   key={p.id ?? p._id ?? p.name}
-                  className="relative group border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden shadow hover:shadow-lg transition cursor-pointer"
+                  className="flex-none w-1/2 md:w-1/4 snap-start bg-white dark:bg-black border border-slate-100 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer"
                   onClick={() => window.open(`https://dripzoid.com/product/${p.id}`, "_blank")}
                 >
                   <div className="aspect-[4/5] w-full overflow-hidden bg-gray-50 dark:bg-gray-900">
                     <img
                       src={firstImage(p.images)}
                       alt={p.name}
-                      className="w-full h-full object-cover object-center transition-transform duration-300 group-hover:scale-105"
+                      className="w-full h-full object-cover object-center transition-transform duration-300 hover:scale-105"
                       loading="lazy"
                       draggable="false"
                     />
                   </div>
 
-                  <div className="p-4 flex items-center justify-between">
-                    <div className="pr-2">
-                      <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">{p.name}</h3>
-                      <p className="mt-1 text-lg font-semibold text-black dark:text-white">₹{p.price}</p>
+                  <div className="p-3 flex items-center justify-between">
+                    <div className="pr-2 min-w-0">
+                      <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{p.name}</h3>
+                      <p className="mt-1 text-base font-semibold text-black dark:text-white">₹{p.price}</p>
                     </div>
 
-                    <div className="flex flex-col items-center gap-2">
-                      {/* Wishlist Button */}
+                    <div className="flex flex-col items-center gap-2 ml-2">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -139,20 +132,29 @@ export default function FeaturedSection() {
                         }}
                         disabled={wishlistUpdatingId === p.id}
                         aria-disabled={wishlistUpdatingId === p.id}
-                        className={`p-3 rounded-full focus:outline-none transition ${
-                          inWishlist
+                        className={`p-2 rounded-full focus:outline-none transition ${
+                          isInWishlist(p.id)
                             ? "bg-red-500 text-white dark:bg-red-500 dark:text-white"
                             : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
                         }`}
+                        title={isInWishlist(p.id) ? "Remove from wishlist" : "Add to wishlist"}
                       >
-                        <Heart size={18} />
+                        <Heart size={16} />
                       </button>
                     </div>
                   </div>
                 </article>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+
+            {/* mobile swipe hint (optional, Home also shows one) */}
+            <div className="mt-3 flex items-center justify-center gap-2 md:hidden">
+              <span className="text-xs text-slate-500">Swipe</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+          </>
         )}
       </div>
     </section>
