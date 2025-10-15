@@ -1120,38 +1120,49 @@ export default function ProductDetailsPage() {
     }
   };
 
-  const disablePurchase = availableStock <= 0 || (requiresColor && !selectedColor) || (requiresSize && !selectedSize);
+ // ✅ Place this at the top level of your component, not inside any if/else/return
+const touchStartXRef = useRef(null);
 
-  const actionButtonClass =
-    "shadow-[inset_0_0_0_2px_#616467] text-black px-6 py-2 rounded-full tracking-widest uppercase font-bold bg-transparent hover:bg-[#616467] hover:text-white dark:text-neutral-200 transition duration-200 flex items-center gap-2 justify-center";
+const disablePurchase =
+  availableStock <= 0 ||
+  (requiresColor && !selectedColor) ||
+  (requiresSize && !selectedSize);
 
-  /* shortDescLimit and derived description variables can remain here */
-  const shortDescLimit = 160;
-  const descriptionText = product.description || "";
-  const isLongDescription = descriptionText.length > shortDescLimit;
+const actionButtonClass =
+  "shadow-[inset_0_0_0_2px_#616467] text-black px-6 py-2 rounded-full tracking-widest uppercase font-bold bg-transparent hover:bg-[#616467] hover:text-white dark:text-neutral-200 transition duration-200 flex items-center gap-2 justify-center";
 
-  /* ---- touch handlers for gallery swipe (mobile) ---- */
-  const touchStartXRef = useRef(null);
-  function onTouchStart(e) {
-    try {
-      touchStartXRef.current = e.touches && e.touches[0] ? e.touches[0].clientX : null;
-    } catch {}
-  }
-  function onTouchEnd(e) {
-    try {
-      const startX = touchStartXRef.current;
-      const endX = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : null;
-      if (startX == null || endX == null) return;
-      const diff = startX - endX;
-      const threshold = 40;
-      if (diff > threshold) {
-        nextImage();
-      } else if (diff < -threshold) {
-        prevImage();
-      }
-      touchStartXRef.current = null;
-    } catch {}
-  }
+/* shortDescLimit and derived description variables can remain here */
+const shortDescLimit = 160;
+const descriptionText = product.description || "";
+const isLongDescription = descriptionText.length > shortDescLimit;
+
+/* ---- touch handlers for gallery swipe (mobile) ---- */
+function onTouchStart(e) {
+  try {
+    touchStartXRef.current =
+      e.touches && e.touches[0] ? e.touches[0].clientX : null;
+  } catch {}
+}
+
+function onTouchEnd(e) {
+  try {
+    const startX = touchStartXRef.current;
+    const endX =
+      e.changedTouches && e.changedTouches[0]
+        ? e.changedTouches[0].clientX
+        : null;
+    if (startX == null || endX == null) return;
+    const diff = startX - endX;
+    const threshold = 40;
+    if (diff > threshold) {
+      nextImage();
+    } else if (diff < -threshold) {
+      prevImage();
+    }
+    touchStartXRef.current = null;
+  } catch {}
+}
+
 
   return (
     <div className="bg-white dark:bg-black min-h-screen text-black dark:text-white pb-24">
