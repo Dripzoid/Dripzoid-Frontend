@@ -15,6 +15,7 @@ const MAX_FILE_SIZE_BYTES = 12 * 1024 * 1024; // 12MB
 const BUTTON_CLASS =
   "shadow-[inset_0_0_0_2px_#616467] text-black px-4 py-2 rounded text-sm flex items-center gap-2 bg-transparent hover:bg-[#616467] hover:text-white dark:text-neutral-200 transition duration-200";
 
+/* ---------- Helpers & small components ---------- */
 function ReadMore({ text }) {
   const [open, setOpen] = useState(false);
   if (!text) return null;
@@ -165,7 +166,64 @@ function HistogramBar({ pct = 0 }) {
   );
 }
 
+/* ---------- MAIN Reviews component with duplicate-instance protection ---------- */
 export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, currentUser = null, showToast = () => {} }) {
+  /**
+   * Problem addressed:
+   * When the page has two placements of <Reviews /> (one for desktop and one for mobile),
+   * both instances could sometimes be visible or the desktop one could be hidden depending
+   * on initial page sizing and load order — leading to either duplicate visible sections (mobile)
+   * or not-visible-on-desktop behavior. To mitigate we keep a small render-tracker per breakpoint.
+   *
+   * Implementation: synchronous check at mount-time (safe for hooks order) using window.innerWidth.
+   * We keep window.__REVIEWS_RENDER_TRACKER = { mobileRendered: bool, desktopRendered: bool }.
+   * Only the first mounted instance for the current breakpoint will render; subsequent instances
+   * will render nothing. On unmount we clear that flag so SPA navigation won't permanently block rendering.
+   *
+   * Note: this is minimal, robust, and avoids touching the calling components (ProductDetailsPage).
+   */
+
+  // determine initial breakpoint and whether to render this instance
+  const isClient = typeof window !== "undefined" && typeof window.innerWidth === "number";
+  const isMobileInitial = isClient ? window.innerWidth < 1024 : false; // Tailwind's lg breakpoint ~ 1024px
+  const initialShouldRender = (() => {
+    if (!isClient) return true; // server-side: render (no duplication server-side)
+    // init tracker if absent
+    if (!window.__REVIEWS_RENDER_TRACKER) window.__REVIEWS_RENDER_TRACKER = { mobileRendered: false, desktopRendered: false };
+    const tracker = window.__REVIEWS_RENDER_TRACKER;
+    if (isMobileInitial) {
+      if (tracker.mobileRendered) return false;
+      tracker.mobileRendered = true;
+      return true;
+    } else {
+      if (tracker.desktopRendered) return false;
+      tracker.desktopRendered = true;
+      return true;
+    }
+  })();
+
+  const [shouldRender, setShouldRender] = useState(initialShouldRender);
+
+  // Clean up tracker flag on unmount for this breakpoint (so navigating back will allow re-render)
+  useEffect(() => {
+    return () => {
+      try {
+        if (typeof window !== "undefined" && window.__REVIEWS_RENDER_TRACKER) {
+          if (isMobileInitial) window.__REVIEWS_RENDER_TRACKER.mobileRendered = false;
+          else window.__REVIEWS_RENDER_TRACKER.desktopRendered = false;
+        }
+      } catch {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once
+
+  // You can optionally handle resizes by toggling visibility, but that can be noisy.
+  // For now we keep initial decision stable (prevents flicker/duplication at mount).
+
+  // If this instance should not render (because another instance for this breakpoint already did), return null:
+  if (!shouldRender) return null;
+
+  /* ---------- regular state/hooks ---------- */
   const [reviews, setReviews] = useState([]);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewTitle, setReviewTitle] = useState("");
@@ -368,7 +426,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         }
       } catch (err) {
         // fallthrough to fallback logic below
-        // console.warn("verify endpoint failed", err);
       }
 
       // Fallback: try userHasPurchased (legacy)
@@ -989,6 +1046,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
             )}
           </div>
 
+          {/* compact mobile summary */}
           <div className="block lg:hidden p-4 rounded-md bg-gray-50 dark:bg-gray-800/30 border">
             <div className="flex items-center gap-3">
               <div className="text-2xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
