@@ -258,6 +258,53 @@ function sizeEquals(a, b) {
   return normalizeVariantValue(a) === normalizeVariantValue(b);
 }
 
+/* -------------------- ColorDisplay component moved to top-level to obey Hooks rules -------------------- */
+function ColorDisplay({ color }) {
+  const name = typeof color === "string" ? color : (color && (color.label || color.name)) || String(color || "");
+  const final = resolveColor(color);
+  const nearestLabel = getNearestColorLabel(color);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerColor, setPickerColor] = useState(final);
+
+  useEffect(() => {
+    setPickerColor(final);
+  }, [final]);
+
+  return (
+    <div className="flex items-center gap-3 ml-2 relative">
+      <button onClick={() => setPickerOpen((s) => !s)} aria-label={`Color ${name}`} type="button" className="p-0 border-0">
+        <div aria-hidden style={{ backgroundColor: final, width: 20, height: 20, borderRadius: 6, border: "1px solid rgba(0,0,0,0.12)" }} title={final} />
+      </button>
+
+      <div className="text-xs text-gray-600 dark:text-gray-300 leading-none">
+        <div className="leading-none">{String(name)}</div>
+        <div className="text-[11px] leading-none">{String(final).toUpperCase()} • {nearestLabel}</div>
+      </div>
+
+      {pickerOpen && (
+        <div className="absolute z-40 top-full right-0 mt-2">
+          <div className="bg-white dark:bg-gray-900 p-2 rounded shadow">
+            <SketchPicker
+              color={pickerColor}
+              onChange={(col) => {
+                setPickerColor(col.hex);
+              }}
+              onChangeComplete={(col) => {
+                setPickerColor(col.hex);
+              }}
+            />
+            <div className="mt-2 flex gap-2">
+              <button onClick={() => setPickerOpen(false)} className="px-3 py-1 rounded border bg-white dark:bg-gray-800 text-black dark:text-white">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* -------------------- MAIN COMPONENT -------------------- */
 export default function ProductDetailsPage() {
   const { id: routeProductId } = useParams();
@@ -1071,53 +1118,6 @@ export default function ProductDetailsPage() {
 
   const actionButtonClass =
     "shadow-[inset_0_0_0_2px_#616467] text-black px-6 py-2 rounded-full tracking-widest uppercase font-bold bg-transparent hover:bg-[#616467] hover:text-white dark:text-neutral-200 transition duration-200 flex items-center gap-2 justify-center";
-
-  /* Color display small component */
-  function ColorDisplay({ color }) {
-    const name = typeof color === "string" ? color : (color && (color.label || color.name)) || String(color || "");
-    const final = resolveColor(color);
-    const nearestLabel = getNearestColorLabel(color);
-    const [pickerOpen, setPickerOpen] = useState(false);
-    const [pickerColor, setPickerColor] = useState(final);
-
-    useEffect(() => {
-      setPickerColor(final);
-    }, [final]);
-
-    return (
-      <div className="flex items-center gap-3 ml-2 relative">
-        <button onClick={() => setPickerOpen((s) => !s)} aria-label={`Color ${name}`} type="button" className="p-0 border-0">
-          <div aria-hidden style={{ backgroundColor: final, width: 20, height: 20, borderRadius: 6, border: "1px solid rgba(0,0,0,0.12)" }} title={final} />
-        </button>
-
-        <div className="text-xs text-gray-600 dark:text-gray-300 leading-none">
-          <div className="leading-none">{String(name)}</div>
-          <div className="text-[11px] leading-none">{String(final).toUpperCase()} • {nearestLabel}</div>
-        </div>
-
-        {pickerOpen && (
-          <div className="absolute z-40 top-full right-0 mt-2">
-            <div className="bg-white dark:bg-gray-900 p-2 rounded shadow">
-              <SketchPicker
-                color={pickerColor}
-                onChange={(col) => {
-                  setPickerColor(col.hex);
-                }}
-                onChangeComplete={(col) => {
-                  setPickerColor(col.hex);
-                }}
-              />
-              <div className="mt-2 flex gap-2">
-                <button onClick={() => setPickerOpen(false)} className="px-3 py-1 rounded border bg-white dark:bg-gray-800 text-black dark:text-white">
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
 
   // --------- NEW: Read more toggle for product description ----------
   const [descExpanded, setDescExpanded] = useState(false);
