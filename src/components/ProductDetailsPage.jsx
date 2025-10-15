@@ -780,7 +780,8 @@ export default function ProductDetailsPage() {
         setAddedToCart(false);
         return;
       }
-
+       // ✅ Place this at the top level of your component, not inside any if/else/return
+      const touchStartXRef = useRef(null);
       const prodKey = String(product.id ?? product._id ?? product.productId ?? product.product_id ?? productId ?? "");
       const selColorNormalized = selectedColor ? selectedColor : "";
       const selSizeNormalized = selectedSize ? selectedSize : "";
@@ -1120,8 +1121,7 @@ export default function ProductDetailsPage() {
     }
   };
 
- // ✅ Place this at the top level of your component, not inside any if/else/return
-const touchStartXRef = useRef(null);
+
 
 const disablePurchase =
   availableStock <= 0 ||
