@@ -33,27 +33,19 @@ import { UserContext } from "../contexts/UserContext.js";
 // --------- CONFIG ----------
 const API_BASE = process.env.REACT_APP_API_BASE || "";
 
-/* ---------- Helpers ---------- */
+/* ---------- Helpers (unchanged from your original file) ---------- */
 function normalizeColorString(str) {
   return String(str || "").trim().toLowerCase();
 }
-
-/** sanitize color name for lookup: lowercased + remove spaces */
 function sanitizeColorNameForLookup(name) {
   if (!name || typeof name !== "string") return "";
   return name.trim().toLowerCase().replace(/\s+/g, "");
 }
-
 function normalizeVariantValue(v) {
   if (v === null || v === undefined) return "";
   return String(v).trim().toLowerCase();
 }
 
-/**
- * Color name detection + nearest-color integration
- */
-
-// --- nearest-color setup ---
 const CUSTOM_NAMED_COLORS = {
   black: "#000000",
   cornsilk: "#FFF8DC",
@@ -81,7 +73,6 @@ function detectColorTextName(color) {
   }
   const s = String(color).trim();
   if (!s) return "";
-  // hex?
   if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s)) {
     const hex = s.toUpperCase();
     if (nearest) {
@@ -92,8 +83,6 @@ function detectColorTextName(color) {
     }
     return hex;
   }
-
-  // try browser accept
   try {
     if (typeof document !== "undefined") {
       const st = document.createElement("span").style;
@@ -118,27 +107,15 @@ function detectColorTextName(color) {
       }
     }
   } catch {}
-
   if (nearest) {
     const key = Object.keys(CUSTOM_NAMED_COLORS).find(
       (k) => sanitizeColorNameForLookup(k) === sanitizeColorNameForLookup(s)
     );
     if (key) return key;
   }
-
   return s;
 }
 
-/**
- * Try to resolve a CSS color name (or hex string) into a hex value.
- * Approach:
- *  - If input is already a hex -> return it.
- *  - Attempt to resolve named CSS color by creating a temporary element,
- *    setting its color, reading computed style (rgb) and converting that to hex.
- *  - Fall back to '#808080'.
- *
- * Works only in browser (guards for SSR).
- */
 function rgbStringToHex(rgb) {
   if (!rgb || typeof rgb !== "string") return null;
   const m = rgb.match(/rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/i);
@@ -155,7 +132,7 @@ function rgbStringToHex(rgb) {
 
 function nameToHex(name) {
   if (!name || typeof name !== "string") return null;
-  if (typeof document === "undefined") return null; // SSR guard
+  if (typeof document === "undefined") return null;
   try {
     const span = document.createElement("span");
     span.style.color = "";
@@ -172,7 +149,6 @@ function nameToHex(name) {
   return null;
 }
 
-/** Try to resolve provided color (string or object) to a usable CSS color hex. */
 function resolveColor(c) {
   if (!c) return "#808080";
   if (typeof c === "object") {
@@ -182,13 +158,10 @@ function resolveColor(c) {
   }
   const s = String(c).trim();
   if (!s) return "#808080";
-  // hex candidate?
   if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s)) return s.toUpperCase();
-  // try name -> hex
   const sanitized = sanitizeColorNameForLookup(s);
   const fromName = nameToHex(sanitized) || nameToHex(s);
   if (fromName) return fromName;
-  // try DOM accept
   try {
     if (typeof document !== "undefined") {
       const st = document.createElement("span").style;
@@ -199,7 +172,6 @@ function resolveColor(c) {
   return "#808080";
 }
 
-// Helper: return friendly nearest name (falls back to detectColorTextName)
 function getNearestColorLabel(c) {
   const hex = resolveColor(c);
   if (!hex) return detectColorTextName(c);
@@ -212,7 +184,6 @@ function getNearestColorLabel(c) {
   return detectColorTextName(c);
 }
 
-/* Format timestamp into IST string */
 function formatIST(isoOrDate) {
   try {
     if (!isoOrDate) return "";
@@ -223,12 +194,11 @@ function formatIST(isoOrDate) {
   }
 }
 
-/* Relative time (uses device clock) */
 function formatRelativeIST(dateString) {
   if (!dateString) return "";
   const date = new Date(dateString);
   const now = new Date();
-  const diff = Math.floor((now - date) / 1000); // seconds
+  const diff = Math.floor((now - date) / 1000);
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
@@ -236,7 +206,6 @@ function formatRelativeIST(dateString) {
   return formatIST(date);
 }
 
-// deterministic HSL color generator for avatar backgrounds
 function stringToHslColor(str = "", s = 65, l = 40) {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -247,12 +216,6 @@ function stringToHslColor(str = "", s = 65, l = 40) {
   return `hsl(${h} ${s}% ${l}%)`;
 }
 
-/* -------------------- COLOR / SIZE COMPARISON HELPERS -------------------- */
-
-/**
- * Get a sanitized name string from a color input (object/string).
- * Returns lowercased, whitespace-collapsed string.
- */
 function colorNameFromInput(v) {
   if (!v && v !== 0) return "";
   if (typeof v === "object") {
@@ -262,10 +225,6 @@ function colorNameFromInput(v) {
   return sanitizeColorNameForLookup(String(v || ""));
 }
 
-/**
- * Get resolved hex (uppercase) for an input where possible.
- * May return null if resolution fails (e.g. SSR or unknown name).
- */
 function colorHexFromInput(v) {
   try {
     const hex = resolveColor(v);
@@ -274,30 +233,18 @@ function colorHexFromInput(v) {
   return null;
 }
 
-/**
- * Compare two color inputs tolerant of name-vs-hex vs object differences.
- * Returns true if they are likely the same color.
- */
 function colorEquals(a, b) {
   if (!a && !b) return true;
   if (!a || !b) return false;
-
-  // If direct string equality after trimming (fast path)
   const sa = String(a).trim().toLowerCase();
   const sb = String(b).trim().toLowerCase();
   if (sa && sb && sa === sb) return true;
-
-  // Compare sanitized friendly names
   const na = colorNameFromInput(a);
   const nb = colorNameFromInput(b);
   if (na && nb && na === nb) return true;
-
-  // Compare resolved hex values (if any)
   const ha = colorHexFromInput(a);
   const hb = colorHexFromInput(b);
   if (ha && hb && ha === hb) return true;
-
-  // Try nearest-name mapping via CUSTOM_NAMED_COLORS (fallback)
   if (nearest) {
     try {
       const ra = ha ? nearest(ha) : nearest(colorNameFromInput(a));
@@ -307,20 +254,76 @@ function colorEquals(a, b) {
       if (rna && rnb && rna === rnb) return true;
     } catch {}
   }
-
   return false;
 }
 
-/**
- * Compare two size inputs (normalized strings)
- */
 function sizeEquals(a, b) {
   if (!a && !b) return true;
   if (!a || !b) return false;
   return normalizeVariantValue(a) === normalizeVariantValue(b);
 }
 
-/* -------------------- MAIN COMPONENT -------------------- */
+/* -------------------- Small UI helpers added -------------------- */
+
+/** ReadMore component for product description */
+function ReadMore({ text = "", initialChars = 160 }) {
+  const [open, setOpen] = useState(false);
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (trimmed.length <= initialChars) {
+    return <p className="text-gray-600 dark:text-gray-300 leading-relaxed">{trimmed}</p>;
+  }
+  const preview = trimmed.slice(0, initialChars).trim();
+  return (
+    <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
+      {open ? trimmed : preview + "…"}
+      <button
+        aria-expanded={open}
+        onClick={() => setOpen((s) => !s)}
+        className="ml-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+        type="button"
+      >
+        {open ? "Read less" : "Read more"}
+      </button>
+    </p>
+  );
+}
+
+/**
+ * SafeReviews ensures only one Reviews instance is mounted per productId.
+ * This is a lightweight guard for UI frameworks that may re-mount sections on small screens.
+ */
+function SafeReviews(props) {
+  const { productId } = props;
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    // Guard for SSR
+    if (typeof window === "undefined") {
+      setMounted(true);
+      return;
+    }
+    const key = `__reviews_mounted_${productId}`;
+    // If already mounted for this product, don't mount again
+    if (window[key]) {
+      setMounted(false);
+      return;
+    }
+    window[key] = true;
+    setMounted(true);
+    return () => {
+      // cleanup when component unmounts
+      try {
+        window[key] = false;
+      } catch {}
+    };
+  }, [productId]);
+
+  if (!mounted) return null;
+  return <Reviews {...props} />;
+}
+
+/* -------------------- MAIN COMPONENT (modified UI & hooks preserved) -------------------- */
 export default function ProductDetailsPage() {
   const { id: routeProductId } = useParams();
   const productId = routeProductId || "demo-kurta-1";
@@ -367,12 +370,10 @@ export default function ProductDetailsPage() {
     };
   }, []);
 
-  // keep currentUser synced with UserContext if it becomes available
   useEffect(() => {
     if (ctxUser) setCurrentUser(ctxUser);
   }, [ctxUser]);
 
-  // wishlist top
   const [wlBusyTop, setWlBusyTop] = useState(false);
   const canonicalPid = useMemo(
     () =>
@@ -413,7 +414,7 @@ export default function ProductDetailsPage() {
     }
   };
 
-  /* ---------- load product + qa + related ---------- */
+  /* ---------- load product + qa + related (kept intact) ---------- */
   useEffect(() => {
     const ac = new AbortController();
     let mounted = true;
@@ -452,7 +453,6 @@ export default function ProductDetailsPage() {
 
         await enrichQAWithUserNames(qjson, ac.signal);
 
-        // related products
         try {
           let list = [];
           const rr = await fetch(`${API_BASE}/api/products/related/${productId}`, { signal: ac.signal });
@@ -488,7 +488,6 @@ export default function ProductDetailsPage() {
     };
   }, [productId]);
 
-  // Enrich QA with user names and fetch votes for answers
   async function enrichQAWithUserNames(qList = [], signal = null) {
     const list = Array.isArray(qList) ? qList : [];
     if (list.length === 0) {
@@ -551,7 +550,6 @@ export default function ProductDetailsPage() {
       });
       setQuestions(enriched);
 
-      // fetch votes map for answers if any
       (async () => {
         try {
           const allAnswerIds = enriched.flatMap((q) => (q.answers || []).map((a) => a.id).filter(Boolean));
@@ -596,7 +594,6 @@ export default function ProductDetailsPage() {
   const requiresColor = Array.isArray(product?.colors) && product.colors.length > 0;
   const requiresSize = Array.isArray(product?.sizes) && product.sizes.length > 0;
 
-  // Build a mapping of colorKey -> images slice
   const colorImageMap = useMemo(() => {
     const imgs = Array.isArray(product?.images) ? product.images.slice() : [];
     const colors = Array.isArray(product?.colors) && product.colors.length ? product.colors.slice() : [];
@@ -643,7 +640,6 @@ export default function ProductDetailsPage() {
     return map;
   }, [product?.images, product?.colors]);
 
-  // Helper: derive a readable list of color names (advanced detection)
   const allColorNames = useMemo(() => {
     const colors = Array.isArray(product?.colors) ? product.colors : [];
     return colors.map((c) => getNearestColorLabel(c));
@@ -654,7 +650,6 @@ export default function ProductDetailsPage() {
     if (!requiresColor) {
       return imgsAll.length ? imgsAll : ["/placeholder.png"];
     }
-
     const key = sanitizeColorNameForLookup(String(selectedColor || ""));
     let imgs = colorImageMap[key];
 
@@ -678,7 +673,6 @@ export default function ProductDetailsPage() {
     setSelectedImage(0);
   }, [galleryImages.length, selectedColor]);
 
-  // Lightbox
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   useEffect(() => {
@@ -698,7 +692,6 @@ export default function ProductDetailsPage() {
   };
   const closeLightbox = () => setLightboxOpen(false);
 
-  /* ---------- variant-aware stock & quantity safety ---------- */
   const selectedVariant = useMemo(() => {
     const variants = Array.isArray(product?.variants) ? product.variants : [];
     if (!variants.length) return null;
@@ -729,26 +722,17 @@ export default function ProductDetailsPage() {
     });
   }, [availableStock]);
 
-  /* ---------- ensure cart detection persists across refresh ---------- */
-
-  // Prevent repeated fetchCart calls by only invoking it once when it first becomes available.
   const cartFetchedRef = useRef(false);
   useEffect(() => {
     if (cartFetchedRef.current) return;
     if (typeof fetchCart === "function") {
       cartFetchedRef.current = true;
       try {
-        fetchCart().catch(() => {
-          // If fetch fails, we don't flip the ref back to false here (avoid retry storms).
-          // If you want retry logic, implement an explicit retry/backoff mechanism.
-        });
-      } catch {
-        // ignore
-      }
+        fetchCart().catch(() => {});
+      } catch {}
     }
   }, [fetchCart]);
 
-  // Helper: check if a cart item matches current product + selection (color/size/variant)
   function cartItemMatchesSelection(item, prodKey, selColor, selSize, selVariantId) {
     if (!item) return false;
     const pid = String(item.product_id ?? item.productId ?? item.product?.id ?? item.product?._id ?? item.id ?? "");
@@ -857,7 +841,6 @@ export default function ProductDetailsPage() {
     }
   }, [cart, product, productId, selectedColor, selectedSize, selectedVariant]);
 
-  /* ---------- actions ---------- */
   async function addToCartHandler() {
     const needSelectionError = (requiresColor && !selectedColor) || (requiresSize && !selectedSize);
     if (needSelectionError) {
@@ -892,11 +875,9 @@ export default function ProductDetailsPage() {
         try {
           await addToCart(itemForCart);
         } catch (err) {
-          // backward compatibility: older addToCart signature
           try {
             await addToCart(product, Number(quantity || 1), selectedSize, selectedColor, variantInfo);
           } catch (err2) {
-            // ignore and rethrow
             throw err2;
           }
         }
@@ -957,7 +938,6 @@ export default function ProductDetailsPage() {
     showToast("Proceeding to checkout...");
   }
 
-  // ---- FIXED: Define handleVote + handlePostAnswer so ESLint/no-undef stops failing ----
   const handleVote = async (entityId, entityType, voteType) => {
     try {
       const res = await fetch(`${API_BASE}/api/votes`, {
@@ -1037,8 +1017,6 @@ export default function ProductDetailsPage() {
     }
   };
 
-  // ------------------------------------------------------------------------------
-
   async function handleShare() {
     try {
       const shareUrl = window.location.href;
@@ -1074,70 +1052,67 @@ export default function ProductDetailsPage() {
     else setZipDisplay(digits.slice(0, 3) + " " + digits.slice(3));
   }
 
- async function checkDelivery() {
-  const pin = zipRaw.trim();
+  async function checkDelivery() {
+    const pin = zipRaw.trim();
 
-  // Basic validation
-  if (!/^\d{6}$/.test(pin)) {
-    setDeliveryMsg({ ok: false, text: "Please enter a valid 6-digit PIN" });
-    return;
-  }
-
-  try {
-    const url = `${API_BASE}/api/shipping/estimate?pin=${encodeURIComponent(
-      pin
-    )}&cod=0`;
-    const res = await fetch(url);
-
-    if (!res.ok) {
-      setDeliveryMsg({ ok: false, text: "Could not fetch delivery estimate" });
+    if (!/^\d{6}$/.test(pin)) {
+      setDeliveryMsg({ ok: false, text: "Please enter a valid 6-digit PIN" });
       return;
     }
 
-    const json = await res.json();
+    try {
+      const url = `${API_BASE}/api/shipping/estimate?pin=${encodeURIComponent(
+        pin
+      )}&cod=0`;
+      const res = await fetch(url);
 
-    const companies = json?.estimate || [];
-
-    if (Array.isArray(companies) && companies.length > 0) {
-      // Pick the earliest delivery date (ETD)
-      const sorted = companies
-        .filter((c) => c && c.etd)
-        .sort((a, b) => new Date(a.etd) - new Date(b.etd));
-
-      const best = sorted[0] || companies[0];
-      const etdRaw = best.etd || best.estimated_delivery;
-
-      if (etdRaw) {
-        const date = new Date(etdRaw);
-        const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-        const dayName = days[date.getDay()];
-        const day = String(date.getDate()).padStart(2, "0");
-        const month = months[date.getMonth()];
-        const year = date.getFullYear();
-
-        setDeliveryMsg({
-          ok: true,
-          text: `Delivery Expected by ${dayName}, ${day}-${month}-${year}`,
-        });
+      if (!res.ok) {
+        setDeliveryMsg({ ok: false, text: "Could not fetch delivery estimate" });
         return;
       }
+
+      const json = await res.json();
+
+      const companies = json?.estimate || [];
+
+      if (Array.isArray(companies) && companies.length > 0) {
+        const sorted = companies
+          .filter((c) => c && c.etd)
+          .sort((a, b) => new Date(a.etd) - new Date(b.etd));
+
+        const best = sorted[0] || companies[0];
+        const etdRaw = best.etd || best.estimated_delivery;
+
+        if (etdRaw) {
+          const date = new Date(etdRaw);
+          const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+          const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+          const dayName = days[date.getDay()];
+          const day = String(date.getDate()).padStart(2, "0");
+          const month = months[date.getMonth()];
+          const year = date.getFullYear();
+
+          setDeliveryMsg({
+            ok: true,
+            text: `Delivery Expected by ${dayName}, ${day}-${month}-${year}`,
+          });
+          return;
+        }
+      }
+
+      setDeliveryMsg({
+        ok: false,
+        text: "Sorry, delivery is not available to this PIN",
+      });
+    } catch (err) {
+      console.warn("shipping estimate failed", err);
+      setDeliveryMsg({
+        ok: false,
+        text: "Could not fetch delivery estimate",
+      });
     }
-
-    setDeliveryMsg({
-      ok: false,
-      text: "Sorry, delivery is not available to this PIN",
-    });
-  } catch (err) {
-    console.warn("shipping estimate failed", err);
-    setDeliveryMsg({
-      ok: false,
-      text: "Could not fetch delivery estimate",
-    });
   }
-}
-
 
   if (!product)
     return (
@@ -1162,9 +1137,8 @@ export default function ProductDetailsPage() {
   const disablePurchase = availableStock <= 0 || (requiresColor && !selectedColor) || (requiresSize && !selectedSize);
 
   const actionButtonClass =
-    "shadow-[inset_0_0_0_2px_#616467] text-black px-6 py-2 rounded-full tracking-widest uppercase font-bold bg-transparent hover:bg-[#616467] hover:text-white dark:text-neutral-200 transition duration-200 flex items-center gap-2 justify-center";
+    "shadow-[inset_0_0_0_2px_#616467] text-black px-5 py-2 rounded-full tracking-wide uppercase font-semibold bg-transparent hover:bg-[#616467] hover:text-white dark:text-neutral-200 transition duration-200 flex items-center gap-2 justify-center";
 
-  /* Color display small component */
   function ColorDisplay({ color }) {
     const name = typeof color === "string" ? color : (color && (color.label || color.name)) || String(color || "");
     const final = resolveColor(color);
@@ -1189,7 +1163,7 @@ export default function ProductDetailsPage() {
 
         {pickerOpen && (
           <div className="absolute z-40 top-full right-0 mt-2">
-            <div className="bg-white dark:bg-gray-900 p-2 rounded shadow">
+            <div className="bg-white dark:bg-gray-900 p-2 rounded shadow-lg">
               <SketchPicker
                 color={pickerColor}
                 onChange={(col) => {
@@ -1212,33 +1186,33 @@ export default function ProductDetailsPage() {
   }
 
   return (
-    <div className="bg-white dark:bg-black min-h-screen text-black dark:text-white pb-20">
-      <div className="container mx-auto p-6 space-y-8">
+    <div className="bg-gray-50 dark:bg-gray-900 min-h-screen text-black dark:text-white pb-24">
+      <div className="max-w-7xl mx-auto p-6 space-y-8">
         {/* Gallery + details */}
-        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 border border-gray-200/60 dark:border-gray-700/60">
+        <section className="rounded-2xl shadow-lg bg-white dark:bg-gray-800 p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 border border-gray-200/60 dark:border-gray-700/60">
           <div className="relative">
-            <div className="relative">
-              <button type="button" onClick={() => openLightbox(selectedImage)} aria-label="Open gallery" className="w-full block">
-                <img src={galleryImages[selectedImage]} alt={`${product.name} - image ${selectedImage + 1}`} className="w-full h-[460px] object-cover rounded-xl shadow" />
+            <div className="relative group">
+              <button type="button" onClick={() => openLightbox(selectedImage)} aria-label="Open gallery" className="w-full block rounded-lg overflow-hidden">
+                <img src={galleryImages[selectedImage]} alt={`${product.name} - image ${selectedImage + 1}`} className="w-full h-[420px] md:h-[520px] object-cover rounded-xl shadow-sm transition-transform transform group-hover:scale-105" />
               </button>
-              <div className="absolute top-4 left-4 bg-black/60 text-white px-2 py-1 rounded">
+              <div className="absolute top-4 left-4 bg-black/70 text-white px-2 py-1 rounded text-xs">
                 {selectedImage + 1}/{galleryImages.length}
               </div>
 
-              <button onClick={prevImage} type="button" className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-black/70 text-black dark:text-white p-2 rounded-full shadow z-30" aria-label="Previous image">
+              <button onClick={prevImage} type="button" className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-gray-800/80 text-black dark:text-white p-2 rounded-full shadow z-30" aria-label="Previous image">
                 <ChevronLeft />
               </button>
-              <button onClick={nextImage} type="button" className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-black/70 text-black dark:text-white p-2 rounded-full shadow z-30" aria-label="Next image">
+              <button onClick={nextImage} type="button" className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-gray-800/80 text-black dark:text-white p-2 rounded-full shadow z-30" aria-label="Next image">
                 <ChevronRight />
               </button>
             </div>
 
-            <div className="flex gap-3 mt-4 overflow-x-auto thumbs-container py-1" role="tablist" aria-label="Product images">
+            <div className="flex gap-3 mt-4 overflow-x-auto pb-2">
               {galleryImages.map((g, i) => {
                 const isActive = i === selectedImage;
                 return (
-                  <button key={`${g}-${i}`} onClick={() => setSelectedImage(i)} aria-selected={isActive} aria-label={`Image ${i + 1}`} title={`Image ${i + 1}`} type="button" role="tab" className="relative flex-shrink-0 w-20 h-20 rounded-md overflow-hidden focus:outline-none">
-                    <div className={`w-full h-full rounded-md border transition-all duration-200 overflow-hidden ${isActive ? "border-2 border-black dark:border-white shadow-md" : "border border-gray-300 dark:border-gray-700 hover:border-gray-500"}`}>
+                  <button key={`${g}-${i}`} onClick={() => setSelectedImage(i)} aria-selected={isActive} aria-label={`Image ${i + 1}`} title={`Image ${i + 1}`} type="button" className="relative flex-shrink-0 w-20 h-20 rounded-md overflow-hidden focus:outline-none">
+                    <div className={`w-full h-full rounded-md transition-all duration-200 overflow-hidden ${isActive ? "ring-2 ring-offset-2 ring-indigo-500 shadow-md" : "border border-gray-200 dark:border-gray-700 hover:scale-105"}`}>
                       <img src={g} alt={`Thumbnail ${i + 1}`} className="w-full h-full object-cover" />
                     </div>
                   </button>
@@ -1248,21 +1222,26 @@ export default function ProductDetailsPage() {
           </div>
 
           <div>
-            <div className="flex items-start justify-between">
-              <div className="pr-4">
-                <h1 className="text-3xl font-bold mb-2 text-black dark:text-white">{product.name}</h1>
-                <p className="text-gray-600 dark:text-gray-300 mb-4">{product.description}</p>
-                <div className="text-2xl font-semibold mb-2">{formatINR(product.price)}</div>
+            <div className="flex items-start justify-between gap-4">
+              <div className="pr-4 flex-1">
+                <h1 className="text-3xl font-extrabold mb-2 leading-tight text-gray-900 dark:text-white">{product.name}</h1>
+                <div className="mb-3">
+                  <ReadMore text={product.description} initialChars={180} />
+                </div>
+                <div className="text-3xl font-bold mb-2 text-gray-900 dark:text-white">{formatINR(product.price)}</div>
               </div>
 
               <div className="flex flex-col items-end gap-3">
-                <button onClick={handleTopWishlistToggle} disabled={wlBusyTop} aria-pressed={isWishlisted} aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white dark:bg-gray-800 border hover:shadow focus:outline-none">
+                <button onClick={handleTopWishlistToggle} disabled={wlBusyTop} aria-pressed={isWishlisted} aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-white dark:bg-gray-800 border hover:shadow focus:outline-none">
                   <Heart className={`${isWishlisted ? "text-red-500" : "text-gray-600"} w-5 h-5`} />
+                </button>
+                <button onClick={handleShare} type="button" className="inline-flex items-center gap-2 px-3 py-1 rounded-full border bg-white dark:bg-gray-800 text-sm">
+                  <Share2 size={14} /> Share
                 </button>
               </div>
             </div>
 
-            <div className="mb-4">
+            <div className="mb-4 mt-4">
               {availableStock <= 0 ? (
                 <div className="inline-block px-3 py-1 rounded-full bg-red-600 text-white text-sm font-semibold">Out of stock</div>
               ) : availableStock <= 10 ? (
@@ -1282,7 +1261,7 @@ export default function ProductDetailsPage() {
                     const name = typeof c === "string" ? c : (c && (c.label || c.name)) || String(c || "");
                     const hex = resolveColor(c);
                     const isSelected = colorEquals(c, selectedColor);
-                    const border = isSelected ? "ring-2 ring-offset-1 ring-black dark:ring-white" : "border border-gray-300 dark:border-gray-700";
+                    const border = isSelected ? "ring-2 ring-offset-2 ring-indigo-500" : "border border-gray-200 dark:border-gray-700";
                     return (
                       <button
                         key={`${String(name)}-${idx}`}
@@ -1301,18 +1280,18 @@ export default function ProductDetailsPage() {
                   {selectedColor ? <ColorDisplay color={selectedColor} /> : null}
                 </div>
 
-                {allColorNames && allColorNames.length > 0 && <div className="mt-2 text-xs text-gray-500">Available colors: {allColorNames.join(" — ")}</div>}
+                {allColorNames && allColorNames.length > 0 && <div className="mt-2 text-xs text-gray-500">Available colors: {allColorNames.join(" • ")}</div>}
               </div>
             )}
 
             {requiresSize && (
               <div className="mb-4">
                 <div className="font-medium mb-2">Size</div>
-                <div className="flex gap-3">
+                <div className="flex gap-3 flex-wrap">
                   {(product.sizes || []).map((s) => {
                     const active = sizeEquals(s, selectedSize);
                     return (
-                      <button key={String(s)} onClick={() => setSelectedSize(s)} className={`px-4 py-2 rounded-lg border ${active ? "bg-black text-white dark:bg-white dark:text-black" : "bg-gray-100 dark:bg-gray-800"}`} aria-pressed={active} type="button">
+                      <button key={String(s)} onClick={() => setSelectedSize(s)} className={`px-4 py-2 rounded-lg border ${active ? "bg-indigo-600 text-white shadow-md" : "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200"}`} aria-pressed={active} type="button">
                         {String(s)}
                       </button>
                     );
@@ -1325,30 +1304,26 @@ export default function ProductDetailsPage() {
               <div className="font-medium mb-2">Quantity</div>
               <div className="flex items-center gap-3">
                 <button onClick={() => setQuantity((q) => Math.max(1, q - 1))} className="px-3 py-1 border rounded" type="button" aria-label="Decrease quantity">-</button>
-                <span className="min-w-[36px] text-center" aria-live="polite">{quantity}</span>
+                <span className="min-w-[44px] text-center" aria-live="polite">{quantity}</span>
                 <button onClick={() => setQuantity((q) => Math.min(availableStock || q, q + 1))} className={`px-3 py-1 border rounded ${availableStock <= 0 || quantity >= availableStock ? "opacity-50 cursor-not-allowed" : ""}`} type="button" disabled={availableStock <= 0 || quantity >= availableStock} aria-label="Increase quantity">+</button>
               </div>
             </div>
 
             <div className="flex gap-3 items-center">
-              <motion.button onClick={addedToCart ? goToCart : addToCartHandler} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} disabled={disablePurchase && !addedToCart} className={`cssbuttons-io small shadow-neon-black flex-1 py-2 rounded-full flex items-center justify-center gap-2 transition ${disablePurchase && !addedToCart ? "opacity-50 cursor-not-allowed" : "bg-black text-white"}`} aria-label={addedToCart ? "Go to cart" : "Add to cart"} type="button">
+              <motion.button onClick={addedToCart ? goToCart : addToCartHandler} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} disabled={disablePurchase && !addedToCart} className={`flex-1 py-3 rounded-full flex items-center justify-center gap-2 transition ${disablePurchase && !addedToCart ? "opacity-60 cursor-not-allowed bg-gray-300 text-gray-700" : "bg-indigo-600 text-white shadow-lg"}`} aria-label={addedToCart ? "Go to cart" : "Add to cart"} type="button">
                 <ShoppingCart /> <span className="label">{addedToCart ? "Go to Cart" : "Add to Cart"}</span>
               </motion.button>
 
-              <motion.button onClick={buyNowHandler} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} disabled={disablePurchase} className={`cssbuttons-io small shadow-neon-black flex-1 py-2 rounded-full flex items-center justify-center gap-2 transition ${disablePurchase ? "opacity-50 cursor-not-allowed bg-white text-black border" : "bg-white text-black border"}`} aria-label="Buy now" type="button">
+              <motion.button onClick={buyNowHandler} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} disabled={disablePurchase} className={`flex-1 py-3 rounded-full flex items-center justify-center gap-2 transition ${disablePurchase ? "opacity-60 cursor-not-allowed bg-white text-gray-700 border" : "bg-white text-gray-900 border"}`} aria-label="Buy now" type="button">
                 <CreditCard /> <span className="label">Buy Now</span>
               </motion.button>
-
-              <button onClick={handleShare} type="button" className="p-2 rounded-full border ml-1 hover:scale-105 transition" aria-label="Share product">
-                <Share2 />
-              </button>
             </div>
 
-            <div className="mt-6 flex items-center gap-3">
-              <input placeholder="PIN code (e.g. 123 456)" value={zipDisplay} onChange={(e) => formatZipInput(e.target.value)} className="p-3 border rounded-full w-48 bg-white dark:bg-gray-900 text-black dark:text-white" inputMode="numeric" aria-label="PIN code" />
+            <div className="mt-6 flex flex-col sm:flex-row sm:items-center gap-3">
+              <input placeholder="PIN code (e.g. 123 456)" value={zipDisplay} onChange={(e) => formatZipInput(e.target.value)} className="p-3 border rounded-full w-full sm:w-48 bg-white dark:bg-gray-900 text-black dark:text-white" inputMode="numeric" aria-label="PIN code" />
               <button onClick={checkDelivery} className={`${actionButtonClass}`} type="button"><MapPin size={16} /> Check</button>
-              <div className="text-sm text-gray-600 dark:text-gray-300 ml-4">
-                {deliveryMsg ? <span className={`${deliveryMsg.ok ? "text-black dark:text-white" : "text-red-600 dark:text-red-400"}`}>{deliveryMsg.text}</span> : <span>Check estimated delivery</span>}
+              <div className="text-sm text-gray-600 dark:text-gray-300 ml-0 sm:ml-4">
+                {deliveryMsg ? <span className={`${deliveryMsg.ok ? "text-gray-900 dark:text-white" : "text-red-600 dark:text-red-400"}`}>{deliveryMsg.text}</span> : <span>Check estimated delivery</span>}
               </div>
             </div>
           </div>
@@ -1371,12 +1346,12 @@ export default function ProductDetailsPage() {
           </div>
         )}
 
-        {/* Reviews */}
-        <Reviews productId={productId} apiBase={API_BASE} currentUser={currentUser} showToast={showToast} />
+        {/* Reviews: wrapped with SafeReviews to avoid double-mount on small screens */}
+        <SafeReviews productId={productId} apiBase={API_BASE} currentUser={currentUser} showToast={showToast} />
 
         {/* Questions & Answers */}
-        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 border border-gray-200/60 dark:border-gray-700/60">
-          <h3 className="text-lg font-semibold mb-4 text-black dark:text-white">Questions & Answers</h3>
+        <section className="rounded-2xl shadow-lg bg-white dark:bg-gray-800 p-6 border border-gray-200/60 dark:border-gray-700/60">
+          <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Questions & Answers</h3>
 
           <div className="mb-4">
             <div className="flex gap-3">
@@ -1425,7 +1400,7 @@ export default function ProductDetailsPage() {
                 } finally {
                   setIsAsking(false);
                 }
-              }} disabled={isAsking || !questionText.trim()} className={`px-4 py-2 rounded-lg ${isAsking || !questionText.trim() ? "opacity-60 cursor-not-allowed bg-gray-200 dark:bg-gray-800" : "bg-black text-white"}`} type="button">
+              }} disabled={isAsking || !questionText.trim()} className={`px-4 py-2 rounded-lg ${isAsking || !questionText.trim() ? "opacity-60 cursor-not-allowed bg-gray-200 dark:bg-gray-700" : "bg-indigo-600 text-white"}`} type="button">
                 <MessageCircle size={16} /> {isAsking ? "Posting..." : "Ask"}
               </button>
             </div>
@@ -1459,11 +1434,11 @@ export default function ProductDetailsPage() {
 
                       <div className="flex-1">
                         <div>
-                          <p className="font-medium text-black dark:text-white">{displayName}</p>
+                          <p className="font-medium text-gray-900 dark:text-white">{displayName}</p>
                           <p className="text-xs text-gray-500 mt-0.5">{q.createdAt ? formatRelativeIST(q.createdAt) : ""}</p>
                         </div>
 
-                        <div className="mt-2 bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
+                        <div className="mt-2 bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
                           <p className="text-sm text-gray-900 dark:text-gray-100">{q.text}</p>
                         </div>
                       </div>
@@ -1490,19 +1465,19 @@ export default function ProductDetailsPage() {
                               <div className="flex-1">
                                 <div className="flex items-center justify-between">
                                   <div>
-                                    <p className="text-sm font-medium text-black dark:text-white">{aName}</p>
+                                    <p className="text-sm font-medium text-gray-900 dark:text-white">{aName}</p>
                                     <p className="text-xs text-gray-500 mt-0.5">{a.createdAt ? formatRelativeIST(a.createdAt) : ""}{a.optimistic ? " (sending...)" : ""}</p>
                                   </div>
                                   <div className="flex items-center gap-2 text-xs text-gray-600">
-                                    <button onClick={() => { handleVote(aId, "answer", "like"); }} className={`flex items-center gap-1 px-2 py-1 rounded ${userVotes[aId] === "like" ? "bg-green-100 dark:bg-green-900/40" : "hover:bg-gray-100 dark:hover:bg-gray-800"}`} type="button" aria-label="Like answer">
+                                    <button onClick={() => { handleVote(aId, "answer", "like"); }} className={`flex items-center gap-1 px-2 py-1 rounded ${userVotes[aId] === "like" ? "bg-green-100 dark:bg-green-900/40" : "hover:bg-gray-100 dark:hover:bg-gray-700"}`} type="button" aria-label="Like answer">
                                       <ThumbsUp size={14} /> <span>{a.likes || 0}</span>
                                     </button>
-                                    <button onClick={() => { handleVote(aId, "answer", "dislike"); }} className={`flex items-center gap-1 px-2 py-1 rounded ${userVotes[aId] === "dislike" ? "bg-red-100 dark:bg-red-900/30" : "hover:bg-gray-100 dark:hover:bg-gray-800"}`} type="button" aria-label="Dislike answer">
+                                    <button onClick={() => { handleVote(aId, "answer", "dislike"); }} className={`flex items-center gap-1 px-2 py-1 rounded ${userVotes[aId] === "dislike" ? "bg-red-100 dark:bg-red-900/30" : "hover:bg-gray-100 dark:hover:bg-gray-700"}`} type="button" aria-label="Dislike answer">
                                       <ThumbsDown size={14} /> <span>{a.dislikes || 0}</span>
                                     </button>
                                   </div>
                                 </div>
-                                <div className="mt-1 bg-gray-50 dark:bg-gray-800/70 rounded-lg p-3">
+                                <div className="mt-1 bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
                                   <p className="text-sm text-gray-900 dark:text-gray-100">{a.text}</p>
                                 </div>
                               </div>
@@ -1527,7 +1502,7 @@ export default function ProductDetailsPage() {
                         } finally {
                           setAnswerLoading((s) => ({ ...s, [qid]: false }));
                         }
-                      }} disabled={(answerLoading[qid] === true) || !(answerInputs[qid] && answerInputs[qid].trim())} className={`px-3 py-2 rounded-full border ${answerLoading[qid] ? "opacity-60 cursor-not-allowed" : "bg-black text-white"}`} type="button" aria-label={`Post answer to question ${qid}`}>
+                      }} disabled={(answerLoading[qid] === true) || !(answerInputs[qid] && answerInputs[qid].trim())} className={`px-3 py-2 rounded-full border ${answerLoading[qid] ? "opacity-60 cursor-not-allowed" : "bg-indigo-600 text-white"}`} type="button" aria-label={`Post answer to question ${qid}`}>
                         {answerLoading[qid] ? "..." : <Send size={14} />}
                       </button>
                     </div>
@@ -1541,8 +1516,8 @@ export default function ProductDetailsPage() {
         </section>
 
         {/* Related products */}
-        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 border border-gray-200/60 dark:border-gray-700/60">
-          <h2 className="text-xl font-bold mb-4 text-black dark:text-white">You might be interested in</h2>
+        <section className="rounded-2xl shadow-lg bg-white dark:bg-gray-800 p-6 border border-gray-200/60 dark:border-gray-700/60">
+          <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">You might be interested in</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {(relatedProducts && relatedProducts.length ? relatedProducts : [1, 2, 3, 4]).map((p, i) => (
               <ProductCard key={p?.id || p?._id || i} product={
@@ -1557,7 +1532,7 @@ export default function ProductDetailsPage() {
 
       {toast && (
         <div className="fixed right-6 top-6 z-60">
-          <div className="px-4 py-2 rounded shadow bg-black text-white">{toast}</div>
+          <div className="px-4 py-2 rounded shadow bg-indigo-600 text-white">{toast}</div>
         </div>
       )}
     </div>
