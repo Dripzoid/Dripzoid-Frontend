@@ -339,6 +339,9 @@ export default function ProductDetailsPage() {
   const [zipDisplay, setZipDisplay] = useState("");
   const [deliveryMsg, setDeliveryMsg] = useState(null);
 
+  // ---- MOVED: descExpanded hook must be declared unconditionally (moved here) ----
+  const [descExpanded, setDescExpanded] = useState(false);
+
   const [toast, setToast] = useState(null);
   const toastTimerRef = useRef(null);
   function showToast(message, ttl = 4000) {
@@ -1119,8 +1122,7 @@ export default function ProductDetailsPage() {
   const actionButtonClass =
     "shadow-[inset_0_0_0_2px_#616467] text-black px-6 py-2 rounded-full tracking-widest uppercase font-bold bg-transparent hover:bg-[#616467] hover:text-white dark:text-neutral-200 transition duration-200 flex items-center gap-2 justify-center";
 
-  // --------- NEW: Read more toggle for product description ----------
-  const [descExpanded, setDescExpanded] = useState(false);
+  /* shortDescLimit and derived description variables can remain here */
   const shortDescLimit = 160;
   const descriptionText = product.description || "";
   const isLongDescription = descriptionText.length > shortDescLimit;
