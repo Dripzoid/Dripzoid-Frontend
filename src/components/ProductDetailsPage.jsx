@@ -339,6 +339,8 @@ export default function ProductDetailsPage() {
   const [zipDisplay, setZipDisplay] = useState("");
   const [deliveryMsg, setDeliveryMsg] = useState(null);
   const [isCheckingDelivery, setIsCheckingDelivery] = useState(false);
+   // ✅ Place this at the top level of your component, not inside any if/else/return
+  const touchStartXRef = useRef(null);
 
   // ---- MOVED: descExpanded hook must be declared unconditionally (moved here) ----
   const [descExpanded, setDescExpanded] = useState(false);
@@ -780,8 +782,6 @@ export default function ProductDetailsPage() {
         setAddedToCart(false);
         return;
       }
-       // ✅ Place this at the top level of your component, not inside any if/else/return
-      const touchStartXRef = useRef(null);
       const prodKey = String(product.id ?? product._id ?? product.productId ?? product.product_id ?? productId ?? "");
       const selColorNormalized = selectedColor ? selectedColor : "";
       const selSizeNormalized = selectedSize ? selectedSize : "";
