@@ -220,9 +220,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
   // You can optionally handle resizes by toggling visibility, but that can be noisy.
   // For now we keep initial decision stable (prevents flicker/duplication at mount).
 
-  // If this instance should not render (because another instance for this breakpoint already did), return null:
-  if (!shouldRender) return null;
-
   /* ---------- regular state/hooks ---------- */
   const [reviews, setReviews] = useState([]);
   const [reviewRating, setReviewRating] = useState(5);
@@ -811,6 +808,9 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
 
   // show thanks message when user has reviewed (from verify endpoint) OR when review was just submitted
   const showThanksMessage = Boolean(userHasReviewed) || Boolean(reviewSubmitted);
+
+  // IMPORTANT: we allow hooks to run always. Only decide final rendering here:
+  if (!shouldRender) return null;
 
   return (
     <section id="reviews-section" className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 sm:p-6 border border-gray-200/60 dark:border-gray-700/60">
