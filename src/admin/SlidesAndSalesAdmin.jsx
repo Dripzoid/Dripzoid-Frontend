@@ -11,10 +11,11 @@ import React, { useEffect, useRef, useState } from "react";
 
 export default function SlidesAndSalesAdmin() {
   // env-friendly API base resolution
-  const API_BASE =
-    (typeof process !== "undefined" && (process.env.REACT_APP_API_BASE || process.env.API_BASE)) ||
-    (typeof window !== "undefined" && window.__API_BASE__) ||
-    "";
+ const API_BASE =
+  (typeof process !== "undefined" && (process.env.REACT_APP_API_BASE || process.env.API_BASE)) ||
+  (typeof window !== "undefined" && window.__API_BASE__) ||
+  "https://api.dripzoid.com";
+
 
   function buildUrl(path) {
     // if path already absolute, return as-is
