@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 
 /**
- * SlidesAndSalesAdmin.jsx — Full corrected component
+ * SlidesAndSalesAdmin.jsx — Fixed + defensive
  * - Uses localStorage key "token" for Authorization
- * - Defensive error parsing to avoid runtime crashes (blank page)
- * - Modern Tailwind UI preserved
+ * - Defensive error parsing and fetch handling to avoid blank page
+ * - Preserves modern Tailwind styles and B/W dark-mode buttons
  */
 
 export default function SlidesAndSalesAdmin() {
@@ -35,10 +35,10 @@ export default function SlidesAndSalesAdmin() {
   // Styling helpers
   function primaryBtnClass(extra = "") {
     // Black in light mode, white in dark mode
-    return `inline-flex items-center gap-2 px-4 py-2 rounded-full font-semibold shadow-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${"bg-black text-white dark:bg-white dark:text-black"} ${extra}`;
+    return `inline-flex items-center gap-2 px-4 py-2 rounded-full font-semibold shadow-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-black text-white dark:bg-white dark:text-black ${extra}`;
   }
   function secondaryBtnClass(extra = "") {
-    return `inline-flex items-center gap-2 px-3 py-1 rounded-md font-medium transition border ${"border-neutral-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-100 bg-transparent"} ${extra}`;
+    return `inline-flex items-center gap-2 px-3 py-1 rounded-md font-medium transition border border-neutral-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-100 bg-transparent ${extra}`;
   }
 
   function setNoteWithAutoClear(n, timeout = 6000) {
@@ -59,15 +59,17 @@ export default function SlidesAndSalesAdmin() {
 
   // Parse error responses gracefully (JSON or XML). Defensive to avoid runtime crashes.
   async function parseErrorResponse(res) {
+    // Defensive: if res is not a Response-like object, return safe message
     try {
-      const ct = (res && res.headers && res.headers.get && res.headers.get("content-type")) || "";
-      const text = await (res && res.text ? res.text() : Promise.resolve(""));
+      if (!res || typeof res.text !== "function") return String(res || "Unknown error");
+      const ct = (res.headers && typeof res.headers.get === "function") ? (res.headers.get("content-type") || "") : "";
+      const text = await res.text();
       if (ct.includes("application/json")) {
         try {
           const json = JSON.parse(text);
           return json.message || json.error || JSON.stringify(json);
         } catch {
-          return text || `${res.status} ${res.statusText}`;
+          return text || `${res.status || "error"} ${res.statusText || ""}`;
         }
       }
       if (text && text.includes("<")) {
@@ -78,23 +80,39 @@ export default function SlidesAndSalesAdmin() {
         if (codeMatch && codeMatch[1]) return `Storage error: ${codeMatch[1].trim()}`;
         return `Server returned XML error: ${text.slice(0, 240)}...`;
       }
-      return text || `${res.status} ${res.statusText}`;
+      return text || `${res.status || "error"} ${res.statusText || ""}`;
     } catch (err) {
-      // fallback generic message
       return `Network error or malformed error response`;
     }
   }
 
   // safe fetch -> parse, throw friendly message
   async function safeFetchJson(url, opts = {}) {
-    const res = await fetch(url, opts);
+    let res;
+    try {
+      res = await fetch(url, opts);
+    } catch (fetchErr) {
+      // network-level error
+      throw new Error(`Network error: ${fetchErr.message || fetchErr}`);
+    }
+
     if (!res.ok) {
       const parsed = await parseErrorResponse(res);
       throw new Error(parsed);
     }
-    const ct = res.headers.get("content-type") || "";
-    if (ct.includes("application/json")) return res.json();
-    const txt = await res.text();
+
+    const ct = (res.headers && res.headers.get ? res.headers.get("content-type") : "") || "";
+    if (ct.includes("application/json")) {
+      try {
+        return await res.json();
+      } catch (e) {
+        // malformed JSON, return text
+        const txt = await res.text().catch(() => "");
+        return { data: txt };
+      }
+    }
+    // fallback: try parse text to JSON else return text
+    const txt = await res.text().catch(() => "");
     try {
       return JSON.parse(txt);
     } catch {
@@ -107,11 +125,12 @@ export default function SlidesAndSalesAdmin() {
     return safeFetchJson(url, { credentials: "include", headers: getAuthHeaders(false) });
   }
   async function apiPost(url, body, isFormData = false) {
-    const opts = { method: "POST", credentials: "include", headers: {} };
+    const opts = { method: "POST", credentials: "include" };
     if (isFormData) {
       opts.body = body;
+      // add auth header if token exists
       const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      if (token) opts.headers["Authorization"] = `Bearer ${token}`;
+      if (token) opts.headers = { Authorization: `Bearer ${token}` };
     } else {
       opts.headers = getAuthHeaders(true);
       opts.body = JSON.stringify(body);
@@ -125,10 +144,17 @@ export default function SlidesAndSalesAdmin() {
     return safeFetchJson(url, { method: "DELETE", credentials: "include", headers: getAuthHeaders(false) });
   }
 
-  // Load on mount
+  // Load on mount — use IIFE to safely await and catch errors
   useEffect(() => {
-    loadSlides();
-    loadSales();
+    (async () => {
+      try {
+        await loadSlides();
+        await loadSales();
+      } catch (err) {
+        // already handled in the individual loaders, but guard here too
+        console.error("initial load error:", err);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -138,10 +164,12 @@ export default function SlidesAndSalesAdmin() {
     try {
       const data = await apiGet("/api/admin/slides");
       const arr = Array.isArray(data) ? data : data.slides || data.data || [];
-      setSlides(arr);
+      // ensure arr is array
+      setSlides(Array.isArray(arr) ? arr : []);
     } catch (err) {
       console.error("loadSlides error:", err);
       setNoteWithAutoClear({ type: "error", text: `Failed to load slides — ${err.message || err}` }, 10000);
+      setSlides([]); // be explicit
     } finally {
       setLoadingSlides(false);
     }
@@ -153,10 +181,11 @@ export default function SlidesAndSalesAdmin() {
     try {
       const data = await apiGet("/api/admin/sales");
       const arr = Array.isArray(data) ? data : data.sales || data.data || [];
-      setSales(arr);
+      setSales(Array.isArray(arr) ? arr : []);
     } catch (err) {
       console.error("loadSales error:", err);
       setNoteWithAutoClear({ type: "error", text: `Failed to load sales — ${err.message || err}` }, 8000);
+      setSales([]);
     } finally {
       setLoadingSales(false);
     }
@@ -178,7 +207,7 @@ export default function SlidesAndSalesAdmin() {
         }
         throw new Error(parsed);
       }
-      const json = await res.json();
+      const json = await res.json().catch(() => null);
       if (!json || !(json.url || json.secure_url)) throw new Error("Upload succeeded but server returned no 'url' field.");
       return json.url || json.secure_url;
     } catch (err) {
@@ -193,7 +222,7 @@ export default function SlidesAndSalesAdmin() {
     try {
       const url = await uploadImageToCloudinary(file);
       const saved = await apiPost("/api/admin/slides", { name, link, image_url: url });
-      const newSlide = saved.slide || (saved.id ? { id: saved.id, name, link, image_url: url } : { id: Date.now(), name, link, image_url: url });
+      const newSlide = saved?.slide || (saved?.id ? { id: saved.id, name, link, image_url: url } : { id: Date.now(), name, link, image_url: url });
       setSlides((s) => [...s, newSlide]);
       setNoteWithAutoClear({ type: "success", text: "Slide added" }, 5000);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -209,7 +238,7 @@ export default function SlidesAndSalesAdmin() {
     if (!window.confirm("Delete this slide?")) return;
     try {
       await apiDelete(`/api/admin/slides/${id}`);
-      setSlides((s) => s.filter((x) => x.id !== id));
+      setSlides((s) => s.filter((x) => x?.id !== id));
       setNoteWithAutoClear({ type: "success", text: "Slide removed" }, 4000);
     } catch (err) {
       console.error("handleDeleteSlide error:", err);
@@ -219,7 +248,8 @@ export default function SlidesAndSalesAdmin() {
 
   function moveSlide(id, dir) {
     setSlides((list) => {
-      const i = list.findIndex((x) => x.id === id);
+      if (!Array.isArray(list)) return list;
+      const i = list.findIndex((x) => x?.id === id);
       if (i < 0) return list;
       const j = dir === "up" ? i - 1 : i + 1;
       if (j < 0 || j >= list.length) return list;
@@ -234,7 +264,7 @@ export default function SlidesAndSalesAdmin() {
 
   async function updateSlidesOrder(newOrder) {
     try {
-      await apiPost("/api/admin/slides/reorder", { order: newOrder.map((s) => s.id) });
+      await apiPost("/api/admin/slides/reorder", { order: newOrder.map((s) => s?.id) });
       setNoteWithAutoClear({ type: "success", text: "Slides reordered" }, 4000);
     } catch (err) {
       console.error("updateSlidesOrder error:", err);
@@ -255,10 +285,11 @@ export default function SlidesAndSalesAdmin() {
       q.set("page", String(page));
       const json = await apiGet(`/api/admin/products?${q.toString()}`);
       const arr = Array.isArray(json) ? json : json.products || json.data || [];
-      setProducts(arr);
+      setProducts(Array.isArray(arr) ? arr : []);
     } catch (err) {
       console.error("loadProducts error:", err);
       setNoteWithAutoClear({ type: "error", text: `Failed to load products — ${err.message || err}` }, 8000);
+      setProducts([]);
     } finally {
       setProductsLoading(false);
     }
@@ -266,7 +297,9 @@ export default function SlidesAndSalesAdmin() {
 
   // debounce-like trigger
   useEffect(() => {
-    const t = setTimeout(() => loadProducts(), 300);
+    const t = setTimeout(() => {
+      loadProducts().catch((e) => console.error("debounced loadProducts error:", e));
+    }, 300);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productQuery, productSort]);
@@ -274,8 +307,10 @@ export default function SlidesAndSalesAdmin() {
   function toggleSelectProduct(product) {
     setSelectedProductIds((prev) => {
       const copy = new Set(prev);
-      if (copy.has(product.id)) copy.delete(product.id);
-      else copy.add(product.id);
+      const id = product?.id;
+      if (id == null) return copy;
+      if (copy.has(id)) copy.delete(id);
+      else copy.add(id);
       return copy;
     });
   }
@@ -289,8 +324,8 @@ export default function SlidesAndSalesAdmin() {
     try {
       const payload = { name, productIds: Array.from(selectedProductIds) };
       const saved = await apiPost("/api/admin/sales", payload);
-      const newSale = saved.sale || (saved.id ? { id: saved.id, name, productIds: payload.productIds, enabled: true } : { id: Date.now(), name, productIds: payload.productIds, enabled: true });
-      setSales((s) => [...s, newSale]);
+      const newSale = saved?.sale || (saved?.id ? { id: saved.id, name, productIds: payload.productIds, enabled: true } : { id: Date.now(), name, productIds: payload.productIds, enabled: true });
+      setSales((s) => [...(Array.isArray(s) ? s : []), newSale]);
       setSelectedProductIds(new Set());
       setNoteWithAutoClear({ type: "success", text: "Sale created" }, 5000);
     } catch (err) {
@@ -303,10 +338,10 @@ export default function SlidesAndSalesAdmin() {
 
   async function toggleSaleEnabled(saleId) {
     try {
-      const sale = sales.find((s) => s.id === saleId);
+      const sale = sales.find((s) => s?.id === saleId);
       if (!sale) return;
       const updated = await apiPatch(`/api/admin/sales/${saleId}/toggle`, { enabled: !sale.enabled });
-      setSales((list) => list.map((s) => (s.id === saleId ? { ...s, enabled: updated.enabled } : s)));
+      setSales((list) => (Array.isArray(list) ? list.map((s) => (s?.id === saleId ? { ...s, enabled: updated?.enabled ?? !s.enabled } : s)) : list));
       setNoteWithAutoClear({ type: "success", text: "Sale updated" }, 4000);
     } catch (err) {
       console.error("toggleSaleEnabled error:", err);
@@ -365,7 +400,7 @@ export default function SlidesAndSalesAdmin() {
     }, [file]);
 
     function onFile(e) {
-      const f = e.target.files?.[0];
+      const f = e?.target?.files?.[0];
       if (f) setFile(f);
     }
 
@@ -424,7 +459,7 @@ export default function SlidesAndSalesAdmin() {
             <button onClick={() => setSlides([])} title="Clear local view" className={secondaryBtnClass()}>
               Clear View
             </button>
-            <button onClick={loadSlides} className={secondaryBtnClass()}>
+            <button onClick={() => loadSlides().catch((e) => console.error("manual reload slides error:", e))} className={secondaryBtnClass()}>
               Reload
             </button>
           </div>
@@ -486,7 +521,7 @@ export default function SlidesAndSalesAdmin() {
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold">Sales ({sales.length})</h3>
           <div className="flex items-center gap-2">
-            <button onClick={loadSales} className={secondaryBtnClass()}>
+            <button onClick={() => loadSales().catch((e) => console.error("manual reload sales error:", e))} className={secondaryBtnClass()}>
               Reload
             </button>
           </div>
@@ -497,7 +532,7 @@ export default function SlidesAndSalesAdmin() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {sales.map((sale) => (
-              <div key={sale?.id} className="p-3 rounded-2xl border flex flex-col gap-2 bg-neutral-50 dark:bg-neutral-800 shadow-sm">
+              <div key={sale?.id ?? Math.random()} className="p-3 rounded-2xl border flex flex-col gap-2 bg-neutral-50 dark:bg-neutral-800 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="font-semibold">{sale?.name || "Unnamed sale"}</div>
@@ -557,7 +592,7 @@ export default function SlidesAndSalesAdmin() {
                 <div className="p-3 rounded border">Loading products...</div>
               ) : (
                 products.map((p) => (
-                  <label key={p?.id} className="p-3 rounded border flex items-center gap-3 bg-neutral-50 dark:bg-neutral-800 cursor-pointer">
+                  <label key={p?.id ?? Math.random()} className="p-3 rounded border flex items-center gap-3 bg-neutral-50 dark:bg-neutral-800 cursor-pointer">
                     <input type="checkbox" checked={selectedProductIds.has(p?.id)} onChange={() => toggleSelectProduct(p)} className="accent-black dark:accent-white" />
                     <div className="flex-1">
                       <div className="font-semibold text-sm">{p?.name}</div>
