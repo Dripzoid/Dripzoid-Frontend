@@ -1,13 +1,30 @@
 import React, { useEffect, useRef, useState } from "react";
 
 /**
- * SlidesAndSalesAdmin.jsx — Fixed + defensive
+ * SlidesAndSalesAdmin.jsx — Updated
+ * - Uses env API_BASE (REACT_APP_API_BASE or API_BASE)
+ * - Upload route: /api/upload
+ * - Loads all products once into allProducts; search/sort is client-side
+ * - Defensive network/error handling to avoid blank page
  * - Uses localStorage key "token" for Authorization
- * - Defensive error parsing and fetch handling to avoid blank page
- * - Preserves modern Tailwind styles and B/W dark-mode buttons
  */
 
 export default function SlidesAndSalesAdmin() {
+  // env-friendly API base resolution
+  const API_BASE =
+    (typeof process !== "undefined" && (process.env.REACT_APP_API_BASE || process.env.API_BASE)) ||
+    (typeof window !== "undefined" && window.__API_BASE__) ||
+    "";
+
+  function buildUrl(path) {
+    // if path already absolute, return as-is
+    if (!path) return path;
+    if (/^https?:\/\//i.test(path)) return path;
+    const base = API_BASE.replace(/\/+$/, ""); // remove trailing slash
+    const p = path.startsWith("/") ? path : `/${path}`;
+    return base ? `${base}${p}` : p;
+  }
+
   const [mode, setMode] = useState("slides");
 
   // Slides
@@ -21,7 +38,8 @@ export default function SlidesAndSalesAdmin() {
   const [loadingSales, setLoadingSales] = useState(false);
   const [creatingSale, setCreatingSale] = useState(false);
 
-  // Products
+  // Products (allProducts holds full list; products is filtered/sorted view used in the UI)
+  const [allProducts, setAllProducts] = useState([]);
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [productQuery, setProductQuery] = useState("");
@@ -34,7 +52,6 @@ export default function SlidesAndSalesAdmin() {
 
   // Styling helpers
   function primaryBtnClass(extra = "") {
-    // Black in light mode, white in dark mode
     return `inline-flex items-center gap-2 px-4 py-2 rounded-full font-semibold shadow-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-black text-white dark:bg-white dark:text-black ${extra}`;
   }
   function secondaryBtnClass(extra = "") {
@@ -57,9 +74,8 @@ export default function SlidesAndSalesAdmin() {
     return headers;
   }
 
-  // Parse error responses gracefully (JSON or XML). Defensive to avoid runtime crashes.
+  // Defensive parse error
   async function parseErrorResponse(res) {
-    // Defensive: if res is not a Response-like object, return safe message
     try {
       if (!res || typeof res.text !== "function") return String(res || "Unknown error");
       const ct = (res.headers && typeof res.headers.get === "function") ? (res.headers.get("content-type") || "") : "";
@@ -73,7 +89,6 @@ export default function SlidesAndSalesAdmin() {
         }
       }
       if (text && text.includes("<")) {
-        // look for <Message> or <Code>
         const msgMatch = text.match(/<Message>([\s\S]*?)<\/Message>/i) || text.match(/<Message>([\s\S]*?)<\//i);
         if (msgMatch && msgMatch[1]) return msgMatch[1].trim();
         const codeMatch = text.match(/<Code>([\s\S]*?)<\/Code>/i) || text.match(/<Code>([\s\S]*?)<\//i);
@@ -81,18 +96,17 @@ export default function SlidesAndSalesAdmin() {
         return `Server returned XML error: ${text.slice(0, 240)}...`;
       }
       return text || `${res.status || "error"} ${res.statusText || ""}`;
-    } catch (err) {
+    } catch {
       return `Network error or malformed error response`;
     }
   }
 
-  // safe fetch -> parse, throw friendly message
+  // safe fetch
   async function safeFetchJson(url, opts = {}) {
     let res;
     try {
       res = await fetch(url, opts);
     } catch (fetchErr) {
-      // network-level error
       throw new Error(`Network error: ${fetchErr.message || fetchErr}`);
     }
 
@@ -105,13 +119,11 @@ export default function SlidesAndSalesAdmin() {
     if (ct.includes("application/json")) {
       try {
         return await res.json();
-      } catch (e) {
-        // malformed JSON, return text
+      } catch {
         const txt = await res.text().catch(() => "");
         return { data: txt };
       }
     }
-    // fallback: try parse text to JSON else return text
     const txt = await res.text().catch(() => "");
     try {
       return JSON.parse(txt);
@@ -120,15 +132,15 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // API helpers (include Authorization header if present)
-  async function apiGet(url) {
-    return safeFetchJson(url, { credentials: "include", headers: getAuthHeaders(false) });
+  // API helpers
+  async function apiGet(path) {
+    return safeFetchJson(buildUrl(path), { credentials: "include", headers: getAuthHeaders(false) });
   }
-  async function apiPost(url, body, isFormData = false) {
+  async function apiPost(path, body, isFormData = false) {
+    const url = buildUrl(path);
     const opts = { method: "POST", credentials: "include" };
     if (isFormData) {
       opts.body = body;
-      // add auth header if token exists
       const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
       if (token) opts.headers = { Authorization: `Bearer ${token}` };
     } else {
@@ -137,100 +149,40 @@ export default function SlidesAndSalesAdmin() {
     }
     return safeFetchJson(url, opts);
   }
-  async function apiPatch(url, body) {
-    return safeFetchJson(url, { method: "PATCH", credentials: "include", headers: getAuthHeaders(true), body: JSON.stringify(body) });
+  async function apiPatch(path, body) {
+    return safeFetchJson(buildUrl(path), { method: "PATCH", credentials: "include", headers: getAuthHeaders(true), body: JSON.stringify(body) });
   }
-  async function apiDelete(url) {
-    return safeFetchJson(url, { method: "DELETE", credentials: "include", headers: getAuthHeaders(false) });
+  async function apiDelete(path) {
+    return safeFetchJson(buildUrl(path), { method: "DELETE", credentials: "include", headers: getAuthHeaders(false) });
   }
 
-  // Load on mount — use IIFE to safely await and catch errors
+  // initial load: slides, sales, products
   useEffect(() => {
     (async () => {
       try {
         await loadSlides();
         await loadSales();
+        await loadAllProducts(); // load all products once for sale UI
       } catch (err) {
-        // already handled in the individual loaders, but guard here too
         console.error("initial load error:", err);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load slides
+  // Slides
   async function loadSlides() {
     setLoadingSlides(true);
     try {
       const data = await apiGet("/api/admin/slides");
       const arr = Array.isArray(data) ? data : data.slides || data.data || [];
-      // ensure arr is array
       setSlides(Array.isArray(arr) ? arr : []);
     } catch (err) {
       console.error("loadSlides error:", err);
       setNoteWithAutoClear({ type: "error", text: `Failed to load slides — ${err.message || err}` }, 10000);
-      setSlides([]); // be explicit
+      setSlides([]);
     } finally {
       setLoadingSlides(false);
-    }
-  }
-
-  // Load sales
-  async function loadSales() {
-    setLoadingSales(true);
-    try {
-      const data = await apiGet("/api/admin/sales");
-      const arr = Array.isArray(data) ? data : data.sales || data.data || [];
-      setSales(Array.isArray(arr) ? arr : []);
-    } catch (err) {
-      console.error("loadSales error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to load sales — ${err.message || err}` }, 8000);
-      setSales([]);
-    } finally {
-      setLoadingSales(false);
-    }
-  }
-
-  // Upload image (Cloudinary)
-  async function uploadImageToCloudinary(file) {
-    if (!file) throw new Error("No file provided");
-    const fd = new FormData();
-    fd.append("image", file);
-    try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-      const res = await fetch("/api/uploads/cloudinary", { method: "POST", body: fd, credentials: "include", headers });
-      if (!res.ok) {
-        const parsed = await parseErrorResponse(res);
-        if (/(BlobNotFound|NoSuchKey|NotFound|404)/i.test(parsed)) {
-          throw new Error(`${parsed} — check your storage/container or backend upload logic.`);
-        }
-        throw new Error(parsed);
-      }
-      const json = await res.json().catch(() => null);
-      if (!json || !(json.url || json.secure_url)) throw new Error("Upload succeeded but server returned no 'url' field.");
-      return json.url || json.secure_url;
-    } catch (err) {
-      console.error("uploadImageToCloudinary error:", err);
-      throw err;
-    }
-  }
-
-  // Slides actions
-  async function handleAddSlide({ file, name, link }) {
-    setAddingSlide(true);
-    try {
-      const url = await uploadImageToCloudinary(file);
-      const saved = await apiPost("/api/admin/slides", { name, link, image_url: url });
-      const newSlide = saved?.slide || (saved?.id ? { id: saved.id, name, link, image_url: url } : { id: Date.now(), name, link, image_url: url });
-      setSlides((s) => [...s, newSlide]);
-      setNoteWithAutoClear({ type: "success", text: "Slide added" }, 5000);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    } catch (err) {
-      console.error("handleAddSlide error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to add slide — ${err.message || err}` }, 10000);
-    } finally {
-      setAddingSlide(false);
     }
   }
 
@@ -272,47 +224,63 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // Products loading for sale creator
-  async function loadProducts({ page = 1 } = {}) {
-    setProductsLoading(true);
+  // Upload route must be /api/upload (per your instruction)
+  async function uploadImage(file) {
+    if (!file) throw new Error("No file provided");
+    const fd = new FormData();
+    fd.append("image", file);
     try {
-      const q = new URLSearchParams();
-      if (productQuery) q.set("q", productQuery);
-      if (productFilters.category) q.set("category", productFilters.category);
-      if (productFilters.priceMin) q.set("priceMin", productFilters.priceMin);
-      if (productFilters.priceMax) q.set("priceMax", productFilters.priceMax);
-      if (productSort) q.set("sort", productSort);
-      q.set("page", String(page));
-      const json = await apiGet(`/api/admin/products?${q.toString()}`);
-      const arr = Array.isArray(json) ? json : json.products || json.data || [];
-      setProducts(Array.isArray(arr) ? arr : []);
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+      const res = await fetch(buildUrl("/api/upload"), { method: "POST", body: fd, credentials: "include", headers });
+      if (!res.ok) {
+        const parsed = await parseErrorResponse(res);
+        throw new Error(parsed);
+      }
+      const json = await res.json().catch(() => null);
+      if (!json) throw new Error("Upload returned empty response");
+      // accept multiple possible field names
+      const url = json.url || json.secure_url || json.imageUrl || json.image_url || json.data?.url;
+      if (!url) throw new Error("Upload succeeded but server returned no 'url' field.");
+      return url;
     } catch (err) {
-      console.error("loadProducts error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to load products — ${err.message || err}` }, 8000);
-      setProducts([]);
-    } finally {
-      setProductsLoading(false);
+      console.error("uploadImage error:", err);
+      throw err;
     }
   }
 
-  // debounce-like trigger
-  useEffect(() => {
-    const t = setTimeout(() => {
-      loadProducts().catch((e) => console.error("debounced loadProducts error:", e));
-    }, 300);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productQuery, productSort]);
+  // Add slide
+  async function handleAddSlide({ file, name, link }) {
+    setAddingSlide(true);
+    try {
+      const url = await uploadImage(file);
+      const saved = await apiPost("/api/admin/slides", { name, link, image_url: url });
+      const newSlide = saved?.slide || (saved?.id ? { id: saved.id, name, link, image_url: url } : { id: Date.now(), name, link, image_url: url });
+      setSlides((s) => [...(Array.isArray(s) ? s : []), newSlide]);
+      setNoteWithAutoClear({ type: "success", text: "Slide added" }, 5000);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (err) {
+      console.error("handleAddSlide error:", err);
+      setNoteWithAutoClear({ type: "error", text: `Failed to add slide — ${err.message || err}` }, 10000);
+    } finally {
+      setAddingSlide(false);
+    }
+  }
 
-  function toggleSelectProduct(product) {
-    setSelectedProductIds((prev) => {
-      const copy = new Set(prev);
-      const id = product?.id;
-      if (id == null) return copy;
-      if (copy.has(id)) copy.delete(id);
-      else copy.add(id);
-      return copy;
-    });
+  // Sales
+  async function loadSales() {
+    setLoadingSales(true);
+    try {
+      const data = await apiGet("/api/admin/sales");
+      const arr = Array.isArray(data) ? data : data.sales || data.data || [];
+      setSales(Array.isArray(arr) ? arr : []);
+    } catch (err) {
+      console.error("loadSales error:", err);
+      setNoteWithAutoClear({ type: "error", text: `Failed to load sales — ${err.message || err}` }, 8000);
+      setSales([]);
+    } finally {
+      setLoadingSales(false);
+    }
   }
 
   async function handleCreateSale({ name }) {
@@ -349,7 +317,81 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // --- Small UI components ---
+  // Products: load all once, then client-side filter/sort
+  async function loadAllProducts() {
+    setProductsLoading(true);
+    try {
+      const data = await apiGet("/api/admin/products");
+      const arr = Array.isArray(data) ? data : data.products || data.data || [];
+      const safeArr = Array.isArray(arr) ? arr : [];
+      setAllProducts(safeArr);
+      // initialize products view
+      setProducts(safeArr);
+    } catch (err) {
+      console.error("loadAllProducts error:", err);
+      setNoteWithAutoClear({ type: "error", text: `Failed to load products — ${err.message || err}` }, 8000);
+      setAllProducts([]);
+      setProducts([]);
+    } finally {
+      setProductsLoading(false);
+    }
+  }
+
+  // client-side filtering + sorting
+  useEffect(() => {
+    // run synchronously on changes
+    try {
+      let list = Array.isArray(allProducts) ? [...allProducts] : [];
+      // simple text filter (search in name or id)
+      const q = (productQuery || "").trim().toLowerCase();
+      if (q) {
+        list = list.filter((p) => {
+          const name = (p?.name || "").toString().toLowerCase();
+          const id = p?.id?.toString?.() || "";
+          return name.includes(q) || id.includes(q);
+        });
+      }
+      // basic filters (if implemented)
+      if (productFilters.category) {
+        list = list.filter((p) => (p?.category || "") === productFilters.category);
+      }
+      if (productFilters.priceMin) {
+        const min = Number(productFilters.priceMin);
+        if (!Number.isNaN(min)) list = list.filter((p) => Number(p?.price || 0) >= min);
+      }
+      if (productFilters.priceMax) {
+        const max = Number(productFilters.priceMax);
+        if (!Number.isNaN(max)) list = list.filter((p) => Number(p?.price || 0) <= max);
+      }
+      // sort
+      if (productSort === "priceAsc") list.sort((a, b) => (Number(a?.price || 0) - Number(b?.price || 0)));
+      else if (productSort === "priceDesc") list.sort((a, b) => (Number(b?.price || 0) - Number(a?.price || 0)));
+      else if (productSort === "newest") list.sort((a, b) => (new Date(b?.createdAt || b?.created || 0) - new Date(a?.createdAt || a?.created || 0)));
+      // else relevance or default -> leave order as loaded
+      setProducts(list);
+    } catch (err) {
+      console.error("filterProducts error:", err);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productQuery, productSort, productFilters, allProducts]);
+
+  // debounce search (for UX only) — update query after short delay
+  // (We already filter client-side synchronously; productQuery is typically updated by input directly.
+  // if you'd rather debounce the input updates, move this logic into input handler.)
+  // For now we keep immediate filtering.
+
+  function toggleSelectProduct(product) {
+    setSelectedProductIds((prev) => {
+      const copy = new Set(prev);
+      const id = product?.id;
+      if (id == null) return copy;
+      if (copy.has(id)) copy.delete(id);
+      else copy.add(id);
+      return copy;
+    });
+  }
+
+  // --- small UI components ---
   function CenterToggle() {
     return (
       <div className="w-full flex justify-center my-6">
@@ -470,7 +512,6 @@ export default function SlidesAndSalesAdmin() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {slides.map((s, idx) => {
-              // defensive image field fallbacks
               const image = s?.image_url || s?.image || s?.imageUrl || s?.imageurl || "";
               return (
                 <div key={s?.id ?? idx} className="p-3 rounded-2xl border flex gap-3 items-center bg-neutral-50 dark:bg-neutral-800 shadow-sm">
@@ -483,9 +524,7 @@ export default function SlidesAndSalesAdmin() {
                         onError={(e) => {
                           try {
                             e.target.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250'><rect width='100%' height='100%' fill='%23f3f4f6'/><text x='50%' y='50%' font-size='18' fill='%23999' dominant-baseline='middle' text-anchor='middle'>Image not found</text></svg>";
-                          } catch {
-                            /* ignore */
-                          }
+                          } catch {}
                         }}
                       />
                     ) : (
@@ -608,6 +647,7 @@ export default function SlidesAndSalesAdmin() {
     );
   }
 
+  // render
   return (
     <div className="min-h-screen p-6 bg-white text-black dark:bg-black dark:text-white transition-colors">
       <div className="max-w-6xl mx-auto">
@@ -629,7 +669,7 @@ export default function SlidesAndSalesAdmin() {
           </div>
         )}
 
-        <div className="mt-8 text-xs text-neutral-400">Pro tip: Wire these endpoints to your Express routes: POST /api/uploads/cloudinary, GET/POST/DELETE /api/admin/slides, /api/admin/slides/reorder, GET/POST /api/admin/sales, PATCH /api/admin/sales/:id/toggle, GET /api/admin/products</div>
+        <div className="mt-8 text-xs text-neutral-400">Pro tip: Wire these endpoints to your Express routes: POST /api/upload, GET/POST/DELETE /api/admin/slides, /api/admin/slides/reorder, GET/POST /api/admin/sales, PATCH /api/admin/sales/:id/toggle, GET /api/admin/products</div>
       </div>
     </div>
   );
