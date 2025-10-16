@@ -49,6 +49,7 @@ import AdminOrdersDashboard from "./admin/OrderManagement.jsx";
 import UserManagement from "./admin/UserManagement.jsx";
 import CouponManagement from "./admin/CouponManagement.jsx";
 import LabelsManager from "./admin/LabelsDownload.jsx";
+import SlidesAndSalesManagement from "./admin/SlidesAndSalesAdmin.jsx";
 
 function App() {
   return (
@@ -99,10 +100,11 @@ function App() {
                   <Route path="products" element={<ProductsAdmin />} />
                   <Route path="bulk-upload" element={<BulkUpload />} />
                   <Route path="upload" element={<ImageUpload />} />
-                  <Route path="users" element={<UserManagement />} />
+                  <Route path="users" element={<UserManagement />} />          
                   <Route path="orders" element={<AdminOrdersDashboard />} />
                   <Route path="labels" element={<LabelsManager />} />
                   <Route path="coupons" element={<CouponManagement />} />
+                  <Route path="salesandslides" element={<SlidesAndSalesManagement />} />
                   <Route
                     path="ads"
                     element={<div className="p-6">Ads Management Coming Soon...</div>}
