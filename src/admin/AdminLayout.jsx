@@ -21,8 +21,8 @@ export default function AdminLayout() {
     { label: "Users", path: "/admin/users", icon: <Users className="w-5 h-5" /> },
     { label: "Image Upload", path: "/admin/upload", icon: <ImageIcon className="w-5 h-5" /> },
     { label: "Labels Download", path: "/admin/labels", icon: <Download className="w-5 h-5" /> },
-    { label: "Coupons Management", path: "/admin/coupons", icon: <Tag className="w-5 h-5" /> },
-    { label: "Ad Management", path: "/admin/ads", icon: <Megaphone className="w-5 h-5" /> },
+    { label: "Coupons ", path: "/admin/coupons", icon: <Tag className="w-5 h-5" /> },
+    { label: "Sales & Slides", path: "/admin/salesandslides", icon: <Megaphone className="w-5 h-5" /> },
   ];
 
   const isActive = (path) => {
