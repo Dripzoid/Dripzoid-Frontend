@@ -1,21 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 
 /**
- * SlidesAndSalesAdmin.jsx — Updated UI + Backend integration
- *
- * Notes:
- * - Primary buttons are black (light) / white (dark).
- * - Expects admin JWT stored in localStorage key `admin_token`.
- * - Endpoints expected:
- *    POST /api/uploads/cloudinary        -> returns { url } or { secure_url }
- *    GET  /api/admin/slides              -> returns array or { slides: [...] }
- *    POST /api/admin/slides              -> returns { id, ... } or { slide: {...} }
- *    DELETE /api/admin/slides/:id
- *    POST /api/admin/slides/reorder
- *    GET  /api/admin/sales               -> returns array or { sales: [...] }
- *    POST /api/admin/sales               -> returns { id, ... } or { sale: {...} }
- *    PATCH /api/admin/sales/:id/toggle   -> returns { enabled: boolean }
- *    GET  /api/admin/products            -> returns array or { products: [...] }
+ * SlidesAndSalesAdmin.jsx — Full corrected component
+ * - Uses localStorage key "token" for Authorization
+ * - Defensive error parsing to avoid runtime crashes (blank page)
+ * - Modern Tailwind UI preserved
  */
 
 export default function SlidesAndSalesAdmin() {
@@ -59,6 +48,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
+  // Always read token from "token"
   function getAuthHeaders(addJson = true) {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     const headers = {};
@@ -67,28 +57,35 @@ export default function SlidesAndSalesAdmin() {
     return headers;
   }
 
-  // Parse error responses gracefully. If response body is XML (storage error), extract <Message>.
+  // Parse error responses gracefully (JSON or XML). Defensive to avoid runtime crashes.
   async function parseErrorResponse(res) {
-    const ct = res.headers.get("content-type") || "";
-    const text = await res.text();
-    if (ct.includes("application/json")) {
-      try {
-        const json = JSON.parse(text);
-        return json.message || json.error || JSON.stringify(json);
-      } catch (e) {
-        return text;
+    try {
+      const ct = (res && res.headers && res.headers.get && res.headers.get("content-type")) || "";
+      const text = await (res && res.text ? res.text() : Promise.resolve(""));
+      if (ct.includes("application/json")) {
+        try {
+          const json = JSON.parse(text);
+          return json.message || json.error || JSON.stringify(json);
+        } catch {
+          return text || `${res.status} ${res.statusText}`;
+        }
       }
+      if (text && text.includes("<")) {
+        // look for <Message> or <Code>
+        const msgMatch = text.match(/<Message>([\s\S]*?)<\/Message>/i) || text.match(/<Message>([\s\S]*?)<\//i);
+        if (msgMatch && msgMatch[1]) return msgMatch[1].trim();
+        const codeMatch = text.match(/<Code>([\s\S]*?)<\/Code>/i) || text.match(/<Code>([\s\S]*?)<\//i);
+        if (codeMatch && codeMatch[1]) return `Storage error: ${codeMatch[1].trim()}`;
+        return `Server returned XML error: ${text.slice(0, 240)}...`;
+      }
+      return text || `${res.status} ${res.statusText}`;
+    } catch (err) {
+      // fallback generic message
+      return `Network error or malformed error response`;
     }
-    if (text && text.includes("<")) {
-      const msgMatch = text.match(/<Message>([\s\S]*?)<\/Message>/i) || text.match(/<Message>([\s\S]*?)<\//i);
-      if (msgMatch && msgMatch[1]) return msgMatch[1].trim();
-      const codeMatch = text.match(/<Code>([\s\S]*?)<\/Code>/i) || text.match(/<Code>([\s\S]*?)<\//i);
-      if (codeMatch && codeMatch[1]) return `Storage error: ${codeMatch[1].trim()}`;
-      return `Server returned XML error: ${text.slice(0, 240)}...`;
-    }
-    return text || `${res.status} ${res.statusText}`;
   }
 
+  // safe fetch -> parse, throw friendly message
   async function safeFetchJson(url, opts = {}) {
     const res = await fetch(url, opts);
     if (!res.ok) {
@@ -100,7 +97,7 @@ export default function SlidesAndSalesAdmin() {
     const txt = await res.text();
     try {
       return JSON.parse(txt);
-    } catch (e) {
+    } catch {
       return { data: txt };
     }
   }
@@ -113,7 +110,7 @@ export default function SlidesAndSalesAdmin() {
     const opts = { method: "POST", credentials: "include", headers: {} };
     if (isFormData) {
       opts.body = body;
-      const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
       if (token) opts.headers["Authorization"] = `Bearer ${token}`;
     } else {
       opts.headers = getAuthHeaders(true);
@@ -171,7 +168,7 @@ export default function SlidesAndSalesAdmin() {
     const fd = new FormData();
     fd.append("image", file);
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
       const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
       const res = await fetch("/api/uploads/cloudinary", { method: "POST", body: fd, credentials: "include", headers });
       if (!res.ok) {
@@ -308,7 +305,6 @@ export default function SlidesAndSalesAdmin() {
     try {
       const sale = sales.find((s) => s.id === saleId);
       if (!sale) return;
-      // prefer PATCH toggles, but if your backend uses POST adjust accordingly
       const updated = await apiPatch(`/api/admin/sales/${saleId}/toggle`, { enabled: !sale.enabled });
       setSales((list) => list.map((s) => (s.id === saleId ? { ...s, enabled: updated.enabled } : s)));
       setNoteWithAutoClear({ type: "success", text: "Sale updated" }, 4000);
@@ -318,7 +314,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // Small UI components
+  // --- Small UI components ---
   function CenterToggle() {
     return (
       <div className="w-full flex justify-center my-6">
@@ -439,20 +435,20 @@ export default function SlidesAndSalesAdmin() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {slides.map((s, idx) => {
-              const image = s.image_url || s.image || s.imageUrl || s.imageUrl;
+              // defensive image field fallbacks
+              const image = s?.image_url || s?.image || s?.imageUrl || s?.imageurl || "";
               return (
-                <div key={s.id} className="p-3 rounded-2xl border flex gap-3 items-center bg-neutral-50 dark:bg-neutral-800 shadow-sm">
+                <div key={s?.id ?? idx} className="p-3 rounded-2xl border flex gap-3 items-center bg-neutral-50 dark:bg-neutral-800 shadow-sm">
                   <div className="w-28 h-20 rounded overflow-hidden bg-white/5 flex items-center justify-center">
                     {image ? (
                       <img
                         src={image}
-                        alt={s.name || "slide"}
+                        alt={s?.name || "slide"}
                         className="object-cover w-full h-full"
                         onError={(e) => {
                           try {
-                            e.target.src =
-                              "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250'><rect width='100%' height='100%' fill='%23f3f4f6'/><text x='50%' y='50%' font-size='18' fill='%23999' dominant-baseline='middle' text-anchor='middle'>Image not found</text></svg>";
-                          } catch (err) {
+                            e.target.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250'><rect width='100%' height='100%' fill='%23f3f4f6'/><text x='50%' y='50%' font-size='18' fill='%23999' dominant-baseline='middle' text-anchor='middle'>Image not found</text></svg>";
+                          } catch {
                             /* ignore */
                           }
                         }}
@@ -464,13 +460,13 @@ export default function SlidesAndSalesAdmin() {
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-semibold">{s.name || "Untitled"}</div>
-                        <div className="text-sm text-neutral-500">{s.link || "—"}</div>
+                        <div className="font-semibold">{s?.name || "Untitled"}</div>
+                        <div className="text-sm text-neutral-500">{s?.link || "—"}</div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <button onClick={() => moveSlide(s.id, "up")} className={secondaryBtnClass()} aria-label="move up">↑</button>
-                        <button onClick={() => moveSlide(s.id, "down")} className={secondaryBtnClass()} aria-label="move down">↓</button>
-                        <button onClick={() => handleDeleteSlide(s.id)} className={secondaryBtnClass()}>Delete</button>
+                        <button onClick={() => moveSlide(s?.id, "up")} className={secondaryBtnClass()} aria-label="move up">↑</button>
+                        <button onClick={() => moveSlide(s?.id, "down")} className={secondaryBtnClass()} aria-label="move down">↓</button>
+                        <button onClick={() => handleDeleteSlide(s?.id)} className={secondaryBtnClass()}>Delete</button>
                       </div>
                     </div>
                     <div className="text-xs text-neutral-400 mt-1">Position {idx + 1}</div>
@@ -501,22 +497,22 @@ export default function SlidesAndSalesAdmin() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {sales.map((sale) => (
-              <div key={sale.id} className="p-3 rounded-2xl border flex flex-col gap-2 bg-neutral-50 dark:bg-neutral-800 shadow-sm">
+              <div key={sale?.id} className="p-3 rounded-2xl border flex flex-col gap-2 bg-neutral-50 dark:bg-neutral-800 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="font-semibold">{sale.name || "Unnamed sale"}</div>
-                    <div className="text-xs text-neutral-500">{(sale.productIds || sale.products || []).length} products</div>
+                    <div className="font-semibold">{sale?.name || "Unnamed sale"}</div>
+                    <div className="text-xs text-neutral-500">{(sale?.productIds || sale?.products || []).length} products</div>
                   </div>
                   <div className="flex items-center gap-3">
                     <label className="inline-flex items-center gap-2">
-                      <input type="checkbox" className="accent-black dark:accent-white" checked={!!sale.enabled} onChange={() => toggleSaleEnabled(sale.id)} />
+                      <input type="checkbox" className="accent-black dark:accent-white" checked={!!sale?.enabled} onChange={() => toggleSaleEnabled(sale?.id)} />
                       <span className="text-sm">Enabled</span>
                     </label>
                     <button className={secondaryBtnClass()}>Edit</button>
                     <button className={secondaryBtnClass()}>Delete</button>
                   </div>
                 </div>
-                <div className="text-xs text-neutral-400">ID: {sale.id}</div>
+                <div className="text-xs text-neutral-400">ID: {sale?.id}</div>
               </div>
             ))}
           </div>
@@ -561,11 +557,11 @@ export default function SlidesAndSalesAdmin() {
                 <div className="p-3 rounded border">Loading products...</div>
               ) : (
                 products.map((p) => (
-                  <label key={p.id} className="p-3 rounded border flex items-center gap-3 bg-neutral-50 dark:bg-neutral-800 cursor-pointer">
-                    <input type="checkbox" checked={selectedProductIds.has(p.id)} onChange={() => toggleSelectProduct(p)} className="accent-black dark:accent-white" />
+                  <label key={p?.id} className="p-3 rounded border flex items-center gap-3 bg-neutral-50 dark:bg-neutral-800 cursor-pointer">
+                    <input type="checkbox" checked={selectedProductIds.has(p?.id)} onChange={() => toggleSelectProduct(p)} className="accent-black dark:accent-white" />
                     <div className="flex-1">
-                      <div className="font-semibold text-sm">{p.name}</div>
-                      <div className="text-xs text-neutral-500">ID: {p.id} • ₹{p.price}</div>
+                      <div className="font-semibold text-sm">{p?.name}</div>
+                      <div className="text-xs text-neutral-500">ID: {p?.id} • ₹{p?.price}</div>
                     </div>
                   </label>
                 ))
