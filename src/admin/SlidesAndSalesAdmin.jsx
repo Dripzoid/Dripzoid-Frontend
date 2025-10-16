@@ -1,26 +1,21 @@
 import React, { useEffect, useRef, useState } from "react";
 
 /**
- * SlidesAndSalesAdmin.jsx (fixed)
- * Improved error handling for storage/backend errors (eg. Azure BlobNotFound / XML error responses)
- * - Parses XML error responses and surfaces clear messages in the UI instead of raw XML stack traces
- * - Provides retry / clear actions for uploads and loads
- * - Safer file input clearing (use value = "")
- * - Defensive rendering for possibly-missing images
+ * SlidesAndSalesAdmin.jsx — Updated UI + Backend integration
  *
- * NOTE: This file still expects backend routes like:
- *  - GET /api/admin/slides
- *  - POST /api/admin/slides
- *  - DELETE /api/admin/slides/:id
- *  - POST /api/admin/slides/reorder
- *  - POST /api/uploads/cloudinary (form-data)
- *  - GET /api/admin/sales
- *  - POST /api/admin/sales
- *  - POST /api/admin/sales/:id/toggle
- *  - GET /api/admin/products
- *
- * The primary change here is robust error-parsing and user-friendly notifications when
- * the backend returns XML (Azure/other storage) errors like BlobNotFound.
+ * Notes:
+ * - Primary buttons are black (light) / white (dark).
+ * - Expects admin JWT stored in localStorage key `admin_token`.
+ * - Endpoints expected:
+ *    POST /api/uploads/cloudinary        -> returns { url } or { secure_url }
+ *    GET  /api/admin/slides              -> returns array or { slides: [...] }
+ *    POST /api/admin/slides              -> returns { id, ... } or { slide: {...} }
+ *    DELETE /api/admin/slides/:id
+ *    POST /api/admin/slides/reorder
+ *    GET  /api/admin/sales               -> returns array or { sales: [...] }
+ *    POST /api/admin/sales               -> returns { id, ... } or { sale: {...} }
+ *    PATCH /api/admin/sales/:id/toggle   -> returns { enabled: boolean }
+ *    GET  /api/admin/products            -> returns array or { products: [...] }
  */
 
 export default function SlidesAndSalesAdmin() {
@@ -48,12 +43,28 @@ export default function SlidesAndSalesAdmin() {
   // UI note
   const [note, setNote] = useState(null);
 
-  // --- Helpers ---
+  // Styling helpers
+  function primaryBtnClass(extra = "") {
+    // Black in light mode, white in dark mode
+    return `inline-flex items-center gap-2 px-4 py-2 rounded-full font-semibold shadow-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${"bg-black text-white dark:bg-white dark:text-black"} ${extra}`;
+  }
+  function secondaryBtnClass(extra = "") {
+    return `inline-flex items-center gap-2 px-3 py-1 rounded-md font-medium transition border ${"border-neutral-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-100 bg-transparent"} ${extra}`;
+  }
+
   function setNoteWithAutoClear(n, timeout = 6000) {
     setNote(n);
     if (timeout) {
       setTimeout(() => setNote((cur) => (cur === n ? null : cur)), timeout);
     }
+  }
+
+  function getAuthHeaders(addJson = true) {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const headers = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    if (addJson) headers["Content-Type"] = "application/json";
+    return headers;
   }
 
   // Parse error responses gracefully. If response body is XML (storage error), extract <Message>.
@@ -63,19 +74,16 @@ export default function SlidesAndSalesAdmin() {
     if (ct.includes("application/json")) {
       try {
         const json = JSON.parse(text);
-        // try common shapes
         return json.message || json.error || JSON.stringify(json);
       } catch (e) {
         return text;
       }
     }
-    // xml-like detection -> extract <Message>...</Message> or <Code>...
     if (text && text.includes("<")) {
-      const msgMatch = text.match(/<Message>([\s\S]*?)<\\/i) || text.match(/<Message>([\s\S]*?)<\/Message>/i);
+      const msgMatch = text.match(/<Message>([\s\S]*?)<\/Message>/i) || text.match(/<Message>([\s\S]*?)<\//i);
       if (msgMatch && msgMatch[1]) return msgMatch[1].trim();
-      const codeMatch = text.match(/<Code>([\s\S]*?)<\\/i) || text.match(/<Code>([\s\S]*?)<\/Code>/i);
+      const codeMatch = text.match(/<Code>([\s\S]*?)<\/Code>/i) || text.match(/<Code>([\s\S]*?)<\//i);
       if (codeMatch && codeMatch[1]) return `Storage error: ${codeMatch[1].trim()}`;
-      // fallback to short snippet of XML
       return `Server returned XML error: ${text.slice(0, 240)}...`;
     }
     return text || `${res.status} ${res.statusText}`;
@@ -89,7 +97,6 @@ export default function SlidesAndSalesAdmin() {
     }
     const ct = res.headers.get("content-type") || "";
     if (ct.includes("application/json")) return res.json();
-    // unexpected content-type but ok status -> try parse JSON, else return text
     const txt = await res.text();
     try {
       return JSON.parse(txt);
@@ -98,51 +105,58 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // --- API accessors ---
+  // API helpers (include Authorization header if present)
   async function apiGet(url) {
-    return safeFetchJson(url, { credentials: "include" });
+    return safeFetchJson(url, { credentials: "include", headers: getAuthHeaders(false) });
   }
   async function apiPost(url, body, isFormData = false) {
-    const opts = { method: "POST", credentials: "include" };
+    const opts = { method: "POST", credentials: "include", headers: {} };
     if (isFormData) {
-      opts.body = body; // already a FormData
+      opts.body = body;
+      const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+      if (token) opts.headers["Authorization"] = `Bearer ${token}`;
     } else {
-      opts.headers = { "Content-Type": "application/json" };
+      opts.headers = getAuthHeaders(true);
       opts.body = JSON.stringify(body);
     }
     return safeFetchJson(url, opts);
   }
+  async function apiPatch(url, body) {
+    return safeFetchJson(url, { method: "PATCH", credentials: "include", headers: getAuthHeaders(true), body: JSON.stringify(body) });
+  }
   async function apiDelete(url) {
-    return safeFetchJson(url, { method: "DELETE", credentials: "include" });
+    return safeFetchJson(url, { method: "DELETE", credentials: "include", headers: getAuthHeaders(false) });
   }
 
-  // --- Loaders ---
+  // Load on mount
   useEffect(() => {
     loadSlides();
     loadSales();
-    // intentionally no deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Load slides
   async function loadSlides() {
     setLoadingSlides(true);
     try {
       const data = await apiGet("/api/admin/slides");
-      setSlides(data.slides || []);
+      const arr = Array.isArray(data) ? data : data.slides || data.data || [];
+      setSlides(arr);
     } catch (err) {
       console.error("loadSlides error:", err);
-      // If the backend returned a storage error like BlobNotFound, provide a clear actionable message
       setNoteWithAutoClear({ type: "error", text: `Failed to load slides — ${err.message || err}` }, 10000);
     } finally {
       setLoadingSlides(false);
     }
   }
 
+  // Load sales
   async function loadSales() {
     setLoadingSales(true);
     try {
       const data = await apiGet("/api/admin/sales");
-      setSales(data.sales || []);
+      const arr = Array.isArray(data) ? data : data.sales || data.data || [];
+      setSales(arr);
     } catch (err) {
       console.error("loadSales error:", err);
       setNoteWithAutoClear({ type: "error", text: `Failed to load sales — ${err.message || err}` }, 8000);
@@ -151,40 +165,40 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // --- Upload image (Cloudinary) with better error messages ---
+  // Upload image (Cloudinary)
   async function uploadImageToCloudinary(file) {
     if (!file) throw new Error("No file provided");
     const fd = new FormData();
     fd.append("image", file);
     try {
-      const res = await fetch("/api/uploads/cloudinary", { method: "POST", body: fd, credentials: "include" });
+      const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+      const res = await fetch("/api/uploads/cloudinary", { method: "POST", body: fd, credentials: "include", headers });
       if (!res.ok) {
         const parsed = await parseErrorResponse(res);
-        // Provide additional guidance if it's a storage blob error
         if (/(BlobNotFound|NoSuchKey|NotFound|404)/i.test(parsed)) {
           throw new Error(`${parsed} — check your storage/container or backend upload logic.`);
         }
         throw new Error(parsed);
       }
       const json = await res.json();
-      if (!json || !json.url) throw new Error("Upload succeeded but server returned no 'url' field.");
-      return json.url;
+      if (!json || !(json.url || json.secure_url)) throw new Error("Upload succeeded but server returned no 'url' field.");
+      return json.url || json.secure_url;
     } catch (err) {
       console.error("uploadImageToCloudinary error:", err);
-      // rethrow for caller to handle UI
       throw err;
     }
   }
 
-  // --- Slides actions ---
+  // Slides actions
   async function handleAddSlide({ file, name, link }) {
     setAddingSlide(true);
     try {
       const url = await uploadImageToCloudinary(file);
-      const saved = await apiPost("/api/admin/slides", { name, link, image: url });
-      setSlides((s) => [...s, saved.slide || { id: Date.now(), name, link, image: url }]);
+      const saved = await apiPost("/api/admin/slides", { name, link, image_url: url });
+      const newSlide = saved.slide || (saved.id ? { id: saved.id, name, link, image_url: url } : { id: Date.now(), name, link, image_url: url });
+      setSlides((s) => [...s, newSlide]);
       setNoteWithAutoClear({ type: "success", text: "Slide added" }, 5000);
-      // clear file input safely
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
       console.error("handleAddSlide error:", err);
@@ -231,7 +245,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // --- Products loading for sale creator ---
+  // Products loading for sale creator
   async function loadProducts({ page = 1 } = {}) {
     setProductsLoading(true);
     try {
@@ -243,7 +257,8 @@ export default function SlidesAndSalesAdmin() {
       if (productSort) q.set("sort", productSort);
       q.set("page", String(page));
       const json = await apiGet(`/api/admin/products?${q.toString()}`);
-      setProducts(json.products || []);
+      const arr = Array.isArray(json) ? json : json.products || json.data || [];
+      setProducts(arr);
     } catch (err) {
       console.error("loadProducts error:", err);
       setNoteWithAutoClear({ type: "error", text: `Failed to load products — ${err.message || err}` }, 8000);
@@ -277,7 +292,8 @@ export default function SlidesAndSalesAdmin() {
     try {
       const payload = { name, productIds: Array.from(selectedProductIds) };
       const saved = await apiPost("/api/admin/sales", payload);
-      setSales((s) => [...s, saved.sale || { id: Date.now(), name, productIds: payload.productIds, enabled: true }]);
+      const newSale = saved.sale || (saved.id ? { id: saved.id, name, productIds: payload.productIds, enabled: true } : { id: Date.now(), name, productIds: payload.productIds, enabled: true });
+      setSales((s) => [...s, newSale]);
       setSelectedProductIds(new Set());
       setNoteWithAutoClear({ type: "success", text: "Sale created" }, 5000);
     } catch (err) {
@@ -292,7 +308,8 @@ export default function SlidesAndSalesAdmin() {
     try {
       const sale = sales.find((s) => s.id === saleId);
       if (!sale) return;
-      const updated = await apiPost(`/api/admin/sales/${saleId}/toggle`, { enabled: !sale.enabled });
+      // prefer PATCH toggles, but if your backend uses POST adjust accordingly
+      const updated = await apiPatch(`/api/admin/sales/${saleId}/toggle`, { enabled: !sale.enabled });
       setSales((list) => list.map((s) => (s.id === saleId ? { ...s, enabled: updated.enabled } : s)));
       setNoteWithAutoClear({ type: "success", text: "Sale updated" }, 4000);
     } catch (err) {
@@ -301,20 +318,20 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // --- Small UI components ---
+  // Small UI components
   function CenterToggle() {
     return (
       <div className="w-full flex justify-center my-6">
-        <div className="inline-flex items-center rounded-full p-1 bg-neutral-100 dark:bg-neutral-900 shadow-inner">
+        <div className="inline-flex items-center rounded-full p-1 bg-neutral-100 dark:bg-neutral-900 shadow-inner border border-neutral-200 dark:border-neutral-800">
           <button
             onClick={() => setMode("slides")}
-            className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all ${mode === "slides" ? "bg-black text-white dark:bg-white dark:text-black" : "bg-transparent text-black/80 dark:text-white/80"}`}
+            className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all ${mode === "slides" ? "bg-black text-white dark:bg-white dark:text-black shadow" : "bg-transparent text-black/80 dark:text-white/80"}`}
           >
             Slides Management
           </button>
           <button
             onClick={() => setMode("sales")}
-            className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all ${mode === "sales" ? "bg-black text-white dark:bg-white dark:text-black" : "bg-transparent text-black/80 dark:text-white/80"}`}
+            className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all ${mode === "sales" ? "bg-black text-white dark:bg-white dark:text-black shadow" : "bg-transparent text-black/80 dark:text-white/80"}`}
           >
             Sale Management
           </button>
@@ -361,34 +378,40 @@ export default function SlidesAndSalesAdmin() {
       setPreview(null);
       setName("");
       setLink("");
-      if (fileInputRef.current) fileInputRef.current.value = ""; // safe clear
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
 
     return (
-      <div className="p-4 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black">
+      <div className="p-4 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-md">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="flex flex-col items-center gap-3">
-            <div className="w-48 h-28 border border-dashed rounded overflow-hidden flex items-center justify-center">
-              {preview ? <img src={preview} alt="preview" className="object-cover w-full h-full" /> : <div className="text-center text-sm text-neutral-500">Preview</div>}
+            <div className="w-56 h-32 border-2 border-dashed rounded-lg overflow-hidden flex items-center justify-center bg-white/5">
+              {preview ? <img src={preview} alt="preview" className="object-cover w-full h-full" /> : <div className="text-center text-sm text-neutral-400">Preview</div>}
             </div>
             <input ref={fileInputRef} type="file" accept="image/*" onChange={onFile} className="hidden" />
             <div className="flex gap-2">
-              <button onClick={() => fileInputRef.current?.click()} className="px-3 py-1 rounded shadow-sm border text-sm bg-neutral-50 dark:bg-neutral-900">Choose Image</button>
-              <button onClick={clearAll} className="px-3 py-1 rounded shadow-sm border text-sm bg-transparent">Clear</button>
+              <button onClick={() => fileInputRef.current?.click()} className={primaryBtnClass()}>
+                Choose Image
+              </button>
+              <button onClick={clearAll} className={secondaryBtnClass()}>
+                Clear
+              </button>
             </div>
           </div>
 
           <div className="md:col-span-2 flex flex-col gap-3">
             <label className="text-xs font-semibold uppercase text-neutral-500">Slide name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Eg: Winter Collection" className="px-3 py-2 rounded border dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 focus:outline-none" />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Eg: Winter Collection" className="px-3 py-2 rounded-md border dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800 focus:outline-none" />
             <label className="text-xs font-semibold uppercase text-neutral-500">Link (optional)</label>
-            <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="/collection/winter" className="px-3 py-2 rounded border dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 focus:outline-none" />
+            <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="/collection/winter" className="px-3 py-2 rounded-md border dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800 focus:outline-none" />
 
             <div className="flex gap-2 mt-2">
-              <button onClick={() => handleAddSlide({ file, name, link })} disabled={!file || addingSlide} className="px-4 py-2 rounded-full font-semibold shadow-md border">
+              <button onClick={() => handleAddSlide({ file, name, link })} disabled={!file || addingSlide} className={primaryBtnClass(addingSlide ? "opacity-70 pointer-events-none" : "")}>
                 {addingSlide ? "Adding..." : "Add Slide"}
               </button>
-              <button onClick={clearAll} className="px-4 py-2 rounded-full border">Cancel</button>
+              <button onClick={clearAll} className={secondaryBtnClass()}>
+                Cancel
+              </button>
             </div>
           </div>
         </div>
@@ -402,43 +425,59 @@ export default function SlidesAndSalesAdmin() {
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold">Slides ({slides.length})</h3>
           <div className="flex items-center gap-2">
-            <button onClick={() => setSlides([])} title="Clear local view" className="text-sm px-3 py-1 rounded border">Clear View</button>
-            <button onClick={loadSlides} className="text-sm px-3 py-1 rounded border">Reload</button>
+            <button onClick={() => setSlides([])} title="Clear local view" className={secondaryBtnClass()}>
+              Clear View
+            </button>
+            <button onClick={loadSlides} className={secondaryBtnClass()}>
+              Reload
+            </button>
           </div>
         </div>
 
         {loadingSlides ? (
-          <div className="p-4 rounded border">Loading slides...</div>
+          <div className="p-4 rounded-md border">Loading slides...</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {slides.map((s, idx) => (
-              <div key={s.id} className="p-3 rounded border flex gap-3 items-center bg-neutral-50 dark:bg-neutral-900">
-                <div className="w-28 h-20 rounded overflow-hidden bg-white/5 flex items-center justify-center">
-                  {/* Defensive image rendering: if image missing, show placeholder */}
-                  {s.image ? (
-                    // add onError to gracefully degrade if image 404s
-                    // eslint-disable-next-line jsx-a11y/img-redundant-alt
-                    <img src={s.image} alt={s.name || "slide"} className="object-cover w-full h-full" onError={(e) => { (e.target).src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250'><rect width='100%' height='100%' fill='%23f3f4f6'/><text x='50%' y='50%' font-size='18' fill='%23999' dominant-baseline='middle' text-anchor='middle'>Image not found</text></svg>"; }} />
-                  ) : (
-                    <div className="text-sm text-neutral-500">No image</div>
-                  )}
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-semibold">{s.name || "Untitled"}</div>
-                      <div className="text-sm text-neutral-500">{s.link || "—"}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => moveSlide(s.id, "up")} className="px-2 py-1 rounded border" aria-label="move up">↑</button>
-                      <button onClick={() => moveSlide(s.id, "down")} className="px-2 py-1 rounded border" aria-label="move down">↓</button>
-                      <button onClick={() => handleDeleteSlide(s.id)} className="px-2 py-1 rounded border">Delete</button>
-                    </div>
+            {slides.map((s, idx) => {
+              const image = s.image_url || s.image || s.imageUrl || s.imageUrl;
+              return (
+                <div key={s.id} className="p-3 rounded-2xl border flex gap-3 items-center bg-neutral-50 dark:bg-neutral-800 shadow-sm">
+                  <div className="w-28 h-20 rounded overflow-hidden bg-white/5 flex items-center justify-center">
+                    {image ? (
+                      <img
+                        src={image}
+                        alt={s.name || "slide"}
+                        className="object-cover w-full h-full"
+                        onError={(e) => {
+                          try {
+                            e.target.src =
+                              "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250'><rect width='100%' height='100%' fill='%23f3f4f6'/><text x='50%' y='50%' font-size='18' fill='%23999' dominant-baseline='middle' text-anchor='middle'>Image not found</text></svg>";
+                          } catch (err) {
+                            /* ignore */
+                          }
+                        }}
+                      />
+                    ) : (
+                      <div className="text-sm text-neutral-500">No image</div>
+                    )}
                   </div>
-                  <div className="text-xs text-neutral-400 mt-1">Position {idx + 1}</div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold">{s.name || "Untitled"}</div>
+                        <div className="text-sm text-neutral-500">{s.link || "—"}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => moveSlide(s.id, "up")} className={secondaryBtnClass()} aria-label="move up">↑</button>
+                        <button onClick={() => moveSlide(s.id, "down")} className={secondaryBtnClass()} aria-label="move down">↓</button>
+                        <button onClick={() => handleDeleteSlide(s.id)} className={secondaryBtnClass()}>Delete</button>
+                      </div>
+                    </div>
+                    <div className="text-xs text-neutral-400 mt-1">Position {idx + 1}</div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -451,7 +490,9 @@ export default function SlidesAndSalesAdmin() {
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold">Sales ({sales.length})</h3>
           <div className="flex items-center gap-2">
-            <button onClick={loadSales} className="text-sm px-3 py-1 rounded border">Reload</button>
+            <button onClick={loadSales} className={secondaryBtnClass()}>
+              Reload
+            </button>
           </div>
         </div>
 
@@ -460,7 +501,7 @@ export default function SlidesAndSalesAdmin() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {sales.map((sale) => (
-              <div key={sale.id} className="p-3 rounded border flex flex-col gap-2 bg-neutral-50 dark:bg-neutral-900">
+              <div key={sale.id} className="p-3 rounded-2xl border flex flex-col gap-2 bg-neutral-50 dark:bg-neutral-800 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="font-semibold">{sale.name || "Unnamed sale"}</div>
@@ -471,8 +512,8 @@ export default function SlidesAndSalesAdmin() {
                       <input type="checkbox" className="accent-black dark:accent-white" checked={!!sale.enabled} onChange={() => toggleSaleEnabled(sale.id)} />
                       <span className="text-sm">Enabled</span>
                     </label>
-                    <button className="px-2 py-1 rounded border">Edit</button>
-                    <button className="px-2 py-1 rounded border">Delete</button>
+                    <button className={secondaryBtnClass()}>Edit</button>
+                    <button className={secondaryBtnClass()}>Delete</button>
                   </div>
                 </div>
                 <div className="text-xs text-neutral-400">ID: {sale.id}</div>
@@ -488,24 +529,26 @@ export default function SlidesAndSalesAdmin() {
     const [name, setName] = useState("");
 
     return (
-      <div className="p-4 rounded-lg border bg-white dark:bg-black">
+      <div className="p-4 rounded-2xl border bg-white dark:bg-neutral-900 shadow-md">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-1 flex flex-col gap-2">
             <label className="text-xs font-semibold uppercase text-neutral-500">Sale name (displayed on home)</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Eg: Summer Sale" className="px-3 py-2 rounded border dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900" />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Eg: Summer Sale" className="px-3 py-2 rounded-md border dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800" />
             <div className="text-xs text-neutral-500 mt-2">Selected products: {selectedProductIds.size}</div>
             <div className="flex gap-2 mt-3">
-              <button onClick={() => handleCreateSale({ name })} disabled={creatingSale} className="px-4 py-2 rounded-full border">
+              <button onClick={() => handleCreateSale({ name })} disabled={creatingSale} className={primaryBtnClass()}>
                 {creatingSale ? "Creating..." : "Create Sale"}
               </button>
-              <button onClick={() => { setName(""); setSelectedProductIds(new Set()); }} className="px-4 py-2 rounded-full border">Reset</button>
+              <button onClick={() => { setName(""); setSelectedProductIds(new Set()); }} className={secondaryBtnClass()}>
+                Reset
+              </button>
             </div>
           </div>
 
           <div className="md:col-span-2">
             <div className="flex gap-2 items-center mb-3">
-              <input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Search products" className="flex-1 px-3 py-2 rounded border dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900" />
-              <select value={productSort} onChange={(e) => setProductSort(e.target.value)} className="px-3 py-2 rounded border dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900">
+              <input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Search products" className="flex-1 px-3 py-2 rounded-md border dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800" />
+              <select value={productSort} onChange={(e) => setProductSort(e.target.value)} className="px-3 py-2 rounded-md border dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800">
                 <option value="relevance">Relevance</option>
                 <option value="priceAsc">Price — Low to High</option>
                 <option value="priceDesc">Price — High to Low</option>
@@ -518,7 +561,7 @@ export default function SlidesAndSalesAdmin() {
                 <div className="p-3 rounded border">Loading products...</div>
               ) : (
                 products.map((p) => (
-                  <label key={p.id} className="p-3 rounded border flex items-center gap-3 bg-neutral-50 dark:bg-neutral-900 cursor-pointer">
+                  <label key={p.id} className="p-3 rounded border flex items-center gap-3 bg-neutral-50 dark:bg-neutral-800 cursor-pointer">
                     <input type="checkbox" checked={selectedProductIds.has(p.id)} onChange={() => toggleSelectProduct(p)} className="accent-black dark:accent-white" />
                     <div className="flex-1">
                       <div className="font-semibold text-sm">{p.name}</div>
@@ -536,9 +579,9 @@ export default function SlidesAndSalesAdmin() {
 
   return (
     <div className="min-h-screen p-6 bg-white text-black dark:bg-black dark:text-white transition-colors">
-      <div className="max-w-5xl mx-auto">
-        <h1 className="text-2xl font-extrabold mb-2">Slides & Sales Management</h1>
-        <p className="text-sm text-neutral-500 mb-4">Manage homepage carousel slides and named sales. Designed in a modern B/W aesthetic with full dark-mode support.</p>
+      <div className="max-w-6xl mx-auto">
+        <h1 className="text-3xl font-extrabold mb-2">Slides & Sales Management</h1>
+        <p className="text-sm text-neutral-500 mb-6">Manage homepage carousel slides and named sales. Modern B/W aesthetic with dark-mode-first polish.</p>
 
         <CenterToggle />
         <Note />
@@ -555,7 +598,7 @@ export default function SlidesAndSalesAdmin() {
           </div>
         )}
 
-        <div className="mt-8 text-xs text-neutral-400">Pro tip: You can wire the endpoints in this component to your Express routes: POST /api/uploads/cloudinary, GET/POST/DELETE /api/admin/slides, /api/admin/slides/reorder, GET/POST /api/admin/sales, POST /api/admin/sales/:id/toggle, GET /api/admin/products</div>
+        <div className="mt-8 text-xs text-neutral-400">Pro tip: Wire these endpoints to your Express routes: POST /api/uploads/cloudinary, GET/POST/DELETE /api/admin/slides, /api/admin/slides/reorder, GET/POST /api/admin/sales, PATCH /api/admin/sales/:id/toggle, GET /api/admin/products</div>
       </div>
     </div>
   );
