@@ -16,11 +16,13 @@ import {
 } from "lucide-react";
 
 /**
- * SlidesAndSalesAdmin.jsx — Revised fixes:
- *  - Slides: vertical drag-reorder list (no absolute stacking/collisions)
- *  - Search: debounced filtering to preserve input focus
- *  - Images: robust parsing of `images` (csv) and fallback fields
- *  - Inputs: fully rounded, modern Tailwind
+ * SlidesAndSalesAdmin.jsx — Final fixes:
+ *  - Search input focus fixed (no immediate setCurrentPage on each keystroke)
+ *  - Debounce sends raw query; trimming happens in filter
+ *  - Page reset happens when debounced query actually changes
+ *  - Slides are vertical draggable list (no collisions)
+ *  - Robust image extraction (handles comma-separated `images`)
+ *  - Fully rounded inputs, modern Tailwind
  */
 
 export default function SlidesAndSalesAdmin() {
@@ -187,9 +189,14 @@ export default function SlidesAndSalesAdmin() {
 
   // Debounce search input to avoid focus/caret jump issues:
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(productQuery.trim()), 250);
+    const t = setTimeout(() => setDebouncedQuery(productQuery), 250); // send raw query; trimming in filter
     return () => clearTimeout(t);
   }, [productQuery]);
+
+  // when debouncedQuery changes, reset page to 1 (after user stops typing)
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedQuery]);
 
   // Slides
   async function loadSlides() {
@@ -222,7 +229,6 @@ export default function SlidesAndSalesAdmin() {
   // Drag & drop (vertical list) helpers for slides:
   function onDragStartSlide(e, index) {
     dragIndexRef.current = index;
-    // store index so drop event can read if needed
     try {
       e.dataTransfer.setData("text/plain", String(index));
       e.dataTransfer.effectAllowed = "move";
@@ -255,7 +261,6 @@ export default function SlidesAndSalesAdmin() {
       const copy = Array.isArray(prev) ? [...prev] : [];
       if (fromIndex < 0 || fromIndex >= copy.length) return copy;
       const [item] = copy.splice(fromIndex, 1);
-      // clamp to bounds
       const toClamped = Math.max(0, Math.min(toIndex, copy.length));
       copy.splice(toClamped, 0, item);
       // optimistic persist
@@ -390,18 +395,15 @@ export default function SlidesAndSalesAdmin() {
   // Helper: robust primary image extraction
   function getPrimaryImage(item) {
     if (!item) return "";
-    // check common fields
     if (item.image) return item.image;
     if (item.image_url) return item.image_url;
     if (item.thumbnail) return item.thumbnail;
-    // `images` could be a comma-separated string (per example), or an array
     const imagesField = item.images ?? item.images_url ?? item.imagesUrl ?? null;
     if (!imagesField) return "";
     if (Array.isArray(imagesField)) {
       return imagesField[0] || "";
     }
     if (typeof imagesField === "string") {
-      // split on comma, trim
       const parts = imagesField.split(",").map((p) => p.trim()).filter(Boolean);
       return parts[0] || "";
     }
@@ -428,7 +430,6 @@ export default function SlidesAndSalesAdmin() {
       else if (productSort === "priceDesc") list.sort((a, b) => (Number(b?.price || 0) - Number(a?.price || 0)));
       else if (productSort === "newest") list.sort((a, b) => (new Date(b?.createdAt || b?.created || 0) - new Date(a?.createdAt || a?.created || 0)));
 
-      // reset page if current page out of range (important)
       const total = Math.max(1, Math.ceil(list.length / pageSize));
       if (currentPage > total) setCurrentPage(1);
 
@@ -436,10 +437,9 @@ export default function SlidesAndSalesAdmin() {
     } catch (err) {
       console.error("filterProducts error:", err);
     }
-  }, [debouncedQuery, productSort, allProducts]); // uses debouncedQuery
+  }, [debouncedQuery, productSort, allProducts]);
 
   useEffect(() => {
-    // keep currentPage valid if products length changes
     const total = Math.max(1, Math.ceil(products.length / pageSize));
     if (currentPage > total) setCurrentPage(1);
   }, [products, currentPage]);
@@ -712,9 +712,10 @@ export default function SlidesAndSalesAdmin() {
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 opacity-60 w-4 h-4" />
                 <input
                   ref={searchInputRef}
+                  autoComplete="off"
                   aria-label="Search products"
                   value={productQuery}
-                  onChange={(e) => { setProductQuery(e.target.value); setCurrentPage(1); }}
+                  onChange={(e) => { setProductQuery(e.target.value); /* no setCurrentPage here to avoid focus loss */ }}
                   placeholder="Search products (name, id, sku, description, tags)"
                   className="w-full pl-12 pr-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none"
                 />
@@ -775,7 +776,6 @@ export default function SlidesAndSalesAdmin() {
                 <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1} className={secondaryBtnClass(currentPage === 1 ? "opacity-50 pointer-events-none" : "")}>Prev</button>
                 {Array.from({ length: Math.max(1, Math.ceil(products.length / pageSize)) }).map((_, idx) => {
                   const page = idx + 1;
-                  // show up to first 7 pages (same UI as before) — but safe if fewer
                   if (page > 7) return null;
                   return (
                     <button key={page} onClick={() => setCurrentPage(page)} className={`px-3 py-1 rounded-full ${page === currentPage ? "bg-black text-white" : "bg-transparent text-neutral-600 border border-neutral-200/10"}`}>
