@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Plus,
   UploadCloud,
@@ -16,13 +16,11 @@ import {
 } from "lucide-react";
 
 /**
- * SlidesAndSalesAdmin.jsx — Final fixes:
- *  - Search input focus fixed (no immediate setCurrentPage on each keystroke)
- *  - Debounce sends raw query; trimming happens in filter
- *  - Page reset happens when debounced query actually changes
- *  - Slides are vertical draggable list (no collisions)
- *  - Robust image extraction (handles comma-separated `images`)
- *  - Fully rounded inputs, modern Tailwind
+ * SlidesAndSalesAdmin.jsx — Final corrected
+ * - Preserves caret in the search input (useLayoutEffect + selection restore)
+ * - Debounced search, pagination, robust image parsing
+ * - Vertical draggable slide list (no collisions)
+ * - Fully rounded inputs / modern Tailwind
  */
 
 export default function SlidesAndSalesAdmin() {
@@ -46,8 +44,8 @@ export default function SlidesAndSalesAdmin() {
   const [loadingSlides, setLoadingSlides] = useState(false);
   const [addingSlide, setAddingSlide] = useState(false);
   const fileInputRef = useRef(null);
-  const dragIndexRef = useRef(null); // dragging item
-  const dragOverIndexRef = useRef(null); // current drop target
+  const dragIndexRef = useRef(null);
+  const dragOverIndexRef = useRef(null);
 
   // Sales
   const [sales, setSales] = useState([]);
@@ -70,8 +68,9 @@ export default function SlidesAndSalesAdmin() {
   // UI note
   const [note, setNote] = useState(null);
 
-  // refs
+  // refs for search caret preservation
   const searchInputRef = useRef(null);
+  const selectionRef = useRef({ start: null, end: null, direction: null });
 
   // Styles helpers
   function primaryBtnClass(extra = "") {
@@ -88,6 +87,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
+  // fetch helpers (kept same as earlier)
   function getAuthHeaders(addJson = true) {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     const headers = {};
@@ -187,18 +187,18 @@ export default function SlidesAndSalesAdmin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Debounce search input to avoid focus/caret jump issues:
+  // debounce query
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(productQuery), 250); // send raw query; trimming in filter
+    const t = setTimeout(() => setDebouncedQuery(productQuery), 250);
     return () => clearTimeout(t);
   }, [productQuery]);
 
-  // when debouncedQuery changes, reset page to 1 (after user stops typing)
+  // reset page after debounce settles
   useEffect(() => {
     setCurrentPage(1);
   }, [debouncedQuery]);
 
-  // Slides
+  // SLIDES
   async function loadSlides() {
     setLoadingSlides(true);
     try {
@@ -226,7 +226,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // Drag & drop (vertical list) helpers for slides:
+  // drag & drop vertical list for slides
   function onDragStartSlide(e, index) {
     dragIndexRef.current = index;
     try {
@@ -263,7 +263,6 @@ export default function SlidesAndSalesAdmin() {
       const [item] = copy.splice(fromIndex, 1);
       const toClamped = Math.max(0, Math.min(toIndex, copy.length));
       copy.splice(toClamped, 0, item);
-      // optimistic persist
       updateSlidesOrder(copy).catch((e) => console.error("reorder save failed", e));
       return copy;
     });
@@ -323,7 +322,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // Sales
+  // SALES
   async function loadSales() {
     setLoadingSales(true);
     try {
@@ -373,7 +372,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // Products: load all once
+  // PRODUCTS
   async function loadAllProducts() {
     setProductsLoading(true);
     try {
@@ -392,7 +391,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // Helper: robust primary image extraction
+  // image extraction utility (handles comma-separated 'images' string)
   function getPrimaryImage(item) {
     if (!item) return "";
     if (item.image) return item.image;
@@ -400,9 +399,7 @@ export default function SlidesAndSalesAdmin() {
     if (item.thumbnail) return item.thumbnail;
     const imagesField = item.images ?? item.images_url ?? item.imagesUrl ?? null;
     if (!imagesField) return "";
-    if (Array.isArray(imagesField)) {
-      return imagesField[0] || "";
-    }
+    if (Array.isArray(imagesField)) return imagesField[0] || "";
     if (typeof imagesField === "string") {
       const parts = imagesField.split(",").map((p) => p.trim()).filter(Boolean);
       return parts[0] || "";
@@ -410,7 +407,7 @@ export default function SlidesAndSalesAdmin() {
     return "";
   }
 
-  // client-side filtering + sorting (driven by debouncedQuery)
+  // filtering + sorting (driven by debouncedQuery)
   useEffect(() => {
     try {
       let list = Array.isArray(allProducts) ? [...allProducts] : [];
@@ -454,6 +451,43 @@ export default function SlidesAndSalesAdmin() {
       return copy;
     });
   }
+
+  //
+  // CARET PRESERVATION: capture selection on input changes and restore after render
+  //
+  function handleSearchChange(e) {
+    // record caret/selection BEFORE updating the state
+    try {
+      const el = e.target;
+      if (el && typeof el.selectionStart === "number") {
+        selectionRef.current = { start: el.selectionStart, end: el.selectionEnd, direction: el.selectionDirection || "none" };
+      } else {
+        selectionRef.current = { start: null, end: null, direction: null };
+      }
+    } catch {
+      selectionRef.current = { start: null, end: null, direction: null };
+    }
+    // update controlled state (do NOT setCurrentPage here to avoid synchronous churn)
+    setProductQuery(e.target.value);
+  }
+
+  // after render, restore the caret position if we previously captured one
+  useLayoutEffect(() => {
+    const sel = selectionRef.current;
+    const el = searchInputRef.current;
+    if (el && sel && sel.start != null && typeof el.setSelectionRange === "function") {
+      try {
+        // setSelectionRange may throw if indices out of bounds; clamp
+        const max = el.value.length;
+        const start = Math.max(0, Math.min(sel.start, max));
+        const end = Math.max(0, Math.min(sel.end ?? start, max));
+        el.setSelectionRange(start, end, sel.direction === "forward" ? "forward" : "none");
+      } catch {
+        // ignore
+      }
+    }
+    // leave selectionRef as-is (next typing will update it)
+  }, [productQuery]); // restore after the productQuery value changes
 
   // UI components
   function CenterToggle() {
@@ -560,7 +594,7 @@ export default function SlidesAndSalesAdmin() {
     );
   }
 
-  // Slides list: vertical flow (no absolute stacking)
+  // vertical list for slides (no absolute stacking)
   function SlidesList() {
     return (
       <div className="space-y-6">
@@ -630,7 +664,7 @@ export default function SlidesAndSalesAdmin() {
     );
   }
 
-  // Sales list — vertical product cards with image
+  // Sales list
   function SalesList() {
     return (
       <div className="space-y-4">
@@ -679,10 +713,10 @@ export default function SlidesAndSalesAdmin() {
     );
   }
 
+  // Sale creator with search/pagination
   function SaleCreator() {
     const [name, setName] = useState("");
 
-    // displayed products based on pagination
     const totalPages = Math.max(1, Math.ceil(products.length / pageSize));
     const start = (currentPage - 1) * pageSize;
     const displayed = products.slice(start, start + pageSize);
@@ -715,7 +749,7 @@ export default function SlidesAndSalesAdmin() {
                   autoComplete="off"
                   aria-label="Search products"
                   value={productQuery}
-                  onChange={(e) => { setProductQuery(e.target.value); /* no setCurrentPage here to avoid focus loss */ }}
+                  onChange={handleSearchChange}
                   placeholder="Search products (name, id, sku, description, tags)"
                   className="w-full pl-12 pr-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none"
                 />
@@ -792,6 +826,7 @@ export default function SlidesAndSalesAdmin() {
     );
   }
 
+  // main render
   return (
     <div className="min-h-screen p-6 bg-neutral-50 text-neutral-900 dark:bg-neutral-900 dark:text-white transition-colors">
       <div className="max-w-6xl mx-auto">
