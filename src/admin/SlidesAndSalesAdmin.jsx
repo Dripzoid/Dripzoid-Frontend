@@ -17,10 +17,10 @@ import {
 
 /**
  * SlidesAndSalesAdmin.jsx — Final corrected
- * - Preserves caret in the search input (useLayoutEffect + selection restore)
- * - Debounced search, pagination, robust image parsing
- * - Vertical draggable slide list (no collisions)
- * - Fully rounded inputs / modern Tailwind
+ * - ProductSearchBar manages its own visible value + caret preservation
+ * - Debounced updates to parent via onDebounced
+ * - FilteredProducts + displayedProducts separation for correct pagination
+ * - Vertical draggable slides list, robust image parsing, rounded inputs
  */
 
 export default function SlidesAndSalesAdmin() {
@@ -54,9 +54,9 @@ export default function SlidesAndSalesAdmin() {
 
   // Products
   const [allProducts, setAllProducts] = useState([]);
-  const [products, setProducts] = useState([]);
+  const [filteredProducts, setFilteredProducts] = useState([]); // full filtered+sorted set
+  const [displayedProducts, setDisplayedProducts] = useState([]); // current page slice
   const [productsLoading, setProductsLoading] = useState(false);
-  const [productQuery, setProductQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [productSort, setProductSort] = useState("relevance");
   const [selectedProductIds, setSelectedProductIds] = useState(new Set());
@@ -68,9 +68,8 @@ export default function SlidesAndSalesAdmin() {
   // UI note
   const [note, setNote] = useState(null);
 
-  // refs for search caret preservation
+  // ref to pass into ProductSearchBar if needed
   const searchInputRef = useRef(null);
-  const selectionRef = useRef({ start: null, end: null, direction: null });
 
   // Styles helpers
   function primaryBtnClass(extra = "") {
@@ -87,7 +86,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // fetch helpers (kept same as earlier)
+  // fetch helpers
   function getAuthHeaders(addJson = true) {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     const headers = {};
@@ -187,14 +186,9 @@ export default function SlidesAndSalesAdmin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // debounce query
+  // Debounced query is provided by ProductSearchBar (child) — we only react to it.
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(productQuery), 250);
-    return () => clearTimeout(t);
-  }, [productQuery]);
-
-  // reset page after debounce settles
-  useEffect(() => {
+    // reset page when search changes (debounced)
     setCurrentPage(1);
   }, [debouncedQuery]);
 
@@ -312,11 +306,11 @@ export default function SlidesAndSalesAdmin() {
       const saved = await apiPost("/api/admin/slides", { name, link, image_url: url });
       const newSlide = saved?.slide || (saved?.id ? { id: saved.id, name, link, image_url: url } : { id: Date.now(), name, link, image_url: url });
       setSlides((s) => [...(Array.isArray(s) ? s : []), newSlide]);
-      setNoteWithAutoClear({ type: "success", text: "Slide added" }, 5000);
+      setNoteWithAutoClear({ type: "success", text: "Slide added" }, 4000);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
       console.error("handleAddSlide error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to add slide — ${err.message || err}` }, 10000);
+      setNoteWithAutoClear({ type: "error", text: `Failed to add slide — ${err.message || err}` }, 8000);
     } finally {
       setAddingSlide(false);
     }
@@ -380,18 +374,16 @@ export default function SlidesAndSalesAdmin() {
       const arr = Array.isArray(data) ? data : data.products || data.data || [];
       const safeArr = Array.isArray(arr) ? arr : [];
       setAllProducts(safeArr);
-      setProducts(safeArr);
     } catch (err) {
       console.error("loadAllProducts error:", err);
       setNoteWithAutoClear({ type: "error", text: `Failed to load products — ${err.message || err}` }, 8000);
       setAllProducts([]);
-      setProducts([]);
     } finally {
       setProductsLoading(false);
     }
   }
 
-  // image extraction utility (handles comma-separated 'images' string)
+  // Helper: robust primary image extraction
   function getPrimaryImage(item) {
     if (!item) return "";
     if (item.image) return item.image;
@@ -399,7 +391,9 @@ export default function SlidesAndSalesAdmin() {
     if (item.thumbnail) return item.thumbnail;
     const imagesField = item.images ?? item.images_url ?? item.imagesUrl ?? null;
     if (!imagesField) return "";
-    if (Array.isArray(imagesField)) return imagesField[0] || "";
+    if (Array.isArray(imagesField)) {
+      return imagesField[0] || "";
+    }
     if (typeof imagesField === "string") {
       const parts = imagesField.split(",").map((p) => p.trim()).filter(Boolean);
       return parts[0] || "";
@@ -407,7 +401,7 @@ export default function SlidesAndSalesAdmin() {
     return "";
   }
 
-  // filtering + sorting (driven by debouncedQuery)
+  // Filtering & sorting -> produce filteredProducts (full), then displayedProducts (slice)
   useEffect(() => {
     try {
       let list = Array.isArray(allProducts) ? [...allProducts] : [];
@@ -427,67 +421,104 @@ export default function SlidesAndSalesAdmin() {
       else if (productSort === "priceDesc") list.sort((a, b) => (Number(b?.price || 0) - Number(a?.price || 0)));
       else if (productSort === "newest") list.sort((a, b) => (new Date(b?.createdAt || b?.created || 0) - new Date(a?.createdAt || a?.created || 0)));
 
+      setFilteredProducts(list);
+      // ensure page valid
       const total = Math.max(1, Math.ceil(list.length / pageSize));
       if (currentPage > total) setCurrentPage(1);
-
-      setProducts(list);
     } catch (err) {
       console.error("filterProducts error:", err);
     }
   }, [debouncedQuery, productSort, allProducts]);
 
+  // Compute displayedProducts slice when filteredProducts or page changes
   useEffect(() => {
-    const total = Math.max(1, Math.ceil(products.length / pageSize));
-    if (currentPage > total) setCurrentPage(1);
-  }, [products, currentPage]);
+    const total = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+    const page = Math.max(1, Math.min(currentPage, total));
+    const start = (page - 1) * pageSize;
+    setDisplayedProducts(filteredProducts.slice(start, start + pageSize));
+  }, [filteredProducts, currentPage]);
 
   function toggleSelectProduct(product) {
+    const id = product?.id ?? product;
     setSelectedProductIds((prev) => {
       const copy = new Set(prev);
-      const id = product?.id;
-      if (id == null) return copy;
       if (copy.has(id)) copy.delete(id);
       else copy.add(id);
       return copy;
     });
   }
 
-  //
-  // CARET PRESERVATION: capture selection on input changes and restore after render
-  //
-  function handleSearchChange(e) {
-    // record caret/selection BEFORE updating the state
-    try {
+  // -----------------------------
+  // ProductSearchBar: localValue + caret preservation + debounced onDebounced
+  // -----------------------------
+  function ProductSearchBar({ initial = "", onDebounced, inputRef, debounceMs = 250 }) {
+    const [localValue, setLocalValue] = useState(initial);
+    const selectionRef = useRef({ start: null, end: null, direction: null });
+    const debounceRef = useRef(null);
+
+    // if parent wants to externally clear or set the value, sync it
+    useEffect(() => {
+      setLocalValue(initial);
+    }, [initial]);
+
+    function handleChange(e) {
       const el = e.target;
       if (el && typeof el.selectionStart === "number") {
-        selectionRef.current = { start: el.selectionStart, end: el.selectionEnd, direction: el.selectionDirection || "none" };
-      } else {
-        selectionRef.current = { start: null, end: null, direction: null };
+        selectionRef.current = {
+          start: el.selectionStart,
+          end: el.selectionEnd,
+          direction: el.selectionDirection || "none",
+        };
       }
-    } catch {
-      selectionRef.current = { start: null, end: null, direction: null };
+      setLocalValue(el.value);
     }
-    // update controlled state (do NOT setCurrentPage here to avoid synchronous churn)
-    setProductQuery(e.target.value);
+
+    // restore caret after localValue changes (which causes renders)
+    useLayoutEffect(() => {
+      const sel = selectionRef.current;
+      const el = inputRef?.current;
+      if (el && sel && sel.start != null && typeof el.setSelectionRange === "function") {
+        try {
+          const max = el.value.length;
+          const start = Math.max(0, Math.min(sel.start, max));
+          const end = Math.max(0, Math.min(sel.end ?? start, max));
+          el.setSelectionRange(start, end, sel.direction === "forward" ? "forward" : "none");
+        } catch {
+          // ignore
+        }
+      }
+    }, [localValue, inputRef]);
+
+    // debounce localValue -> parent onDebounced
+    useEffect(() => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        onDebounced(localValue);
+      }, debounceMs);
+      return () => clearTimeout(debounceRef.current);
+    }, [localValue, debounceMs, onDebounced]);
+
+    return (
+      <div className="relative w-full">
+        <input
+          ref={inputRef}
+          type="text"
+          value={localValue}
+          onChange={handleChange}
+          placeholder="Search products (name, id, sku, description, tags)"
+          autoComplete="off"
+          className="w-full pl-12 pr-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none"
+        />
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 opacity-60 w-4 h-4" />
+      </div>
+    );
   }
 
-  // after render, restore the caret position if we previously captured one
-  useLayoutEffect(() => {
-    const sel = selectionRef.current;
-    const el = searchInputRef.current;
-    if (el && sel && sel.start != null && typeof el.setSelectionRange === "function") {
-      try {
-        // setSelectionRange may throw if indices out of bounds; clamp
-        const max = el.value.length;
-        const start = Math.max(0, Math.min(sel.start, max));
-        const end = Math.max(0, Math.min(sel.end ?? start, max));
-        el.setSelectionRange(start, end, sel.direction === "forward" ? "forward" : "none");
-      } catch {
-        // ignore
-      }
-    }
-    // leave selectionRef as-is (next typing will update it)
-  }, [productQuery]); // restore after the productQuery value changes
+  // callback parent receives from searchbar (debounced)
+  function onSearchDebounced(value) {
+    // store the raw (not-trimmed) debounced value; trimming happens in filter
+    setDebouncedQuery(value);
+  }
 
   // UI components
   function CenterToggle() {
@@ -594,7 +625,6 @@ export default function SlidesAndSalesAdmin() {
     );
   }
 
-  // vertical list for slides (no absolute stacking)
   function SlidesList() {
     return (
       <div className="space-y-6">
@@ -664,7 +694,6 @@ export default function SlidesAndSalesAdmin() {
     );
   }
 
-  // Sales list
   function SalesList() {
     return (
       <div className="space-y-4">
@@ -713,27 +742,24 @@ export default function SlidesAndSalesAdmin() {
     );
   }
 
-  // Sale creator with search/pagination
   function SaleCreator() {
-    const [name, setName] = useState("");
-
-    const totalPages = Math.max(1, Math.ceil(products.length / pageSize));
+    const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
     const start = (currentPage - 1) * pageSize;
-    const displayed = products.slice(start, start + pageSize);
 
     return (
       <div className="p-4 rounded-2xl border bg-gradient-to-b from-neutral-50/40 to-neutral-100/10 dark:from-neutral-900/40 dark:to-neutral-800/30 shadow-xl">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-1 flex flex-col gap-2">
             <label className="text-xs font-semibold uppercase text-neutral-500">Sale name (displayed on home)</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Eg: Summer Sale" className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
+            {/* Keep a small local state for sale name here if needed */}
+            <input placeholder="Eg: Summer Sale" className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
             <div className="text-xs text-neutral-500 mt-2">Selected products: {selectedProductIds.size}</div>
             <div className="flex gap-2 mt-3">
-              <button onClick={() => handleCreateSale({ name })} disabled={creatingSale} className={primaryBtnClass()}>
+              <button onClick={() => handleCreateSale({ name: "New Sale" })} disabled={creatingSale} className={primaryBtnClass()}>
                 <Plus className="w-4 h-4" />
                 {creatingSale ? "Creating..." : "Create Sale"}
               </button>
-              <button onClick={() => { setName(""); setSelectedProductIds(new Set()); }} className={secondaryBtnClass()}>
+              <button onClick={() => { setSelectedProductIds(new Set()); }} className={secondaryBtnClass()}>
                 <X className="w-4 h-4" />
                 Reset
               </button>
@@ -743,15 +769,11 @@ export default function SlidesAndSalesAdmin() {
           <div className="md:col-span-2">
             <div className="flex gap-2 items-center mb-3">
               <div className="relative flex-1">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 opacity-60 w-4 h-4" />
-                <input
-                  ref={searchInputRef}
-                  autoComplete="off"
-                  aria-label="Search products"
-                  value={productQuery}
-                  onChange={handleSearchChange}
-                  placeholder="Search products (name, id, sku, description, tags)"
-                  className="w-full pl-12 pr-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none"
+                <ProductSearchBar
+                  initial={debouncedQuery}
+                  onDebounced={onSearchDebounced}
+                  inputRef={searchInputRef}
+                  debounceMs={250}
                 />
               </div>
               <select value={productSort} onChange={(e) => setProductSort(e.target.value)} className="px-3 py-3 rounded-full border border-neutral-200 bg-white/5">
@@ -766,17 +788,17 @@ export default function SlidesAndSalesAdmin() {
               {productsLoading ? (
                 <div className="p-3 rounded border">Loading products...</div>
               ) : (
-                displayed.map((p, i) => {
+                displayedProducts.map((p, i) => {
                   const key = p?.id ?? `idx-${i}`;
                   const img = getPrimaryImage(p);
                   const selected = selectedProductIds.has(p?.id);
                   return (
                     <div
                       key={key}
-                      onClick={() => toggleSelectProduct(p)}
+                      onClick={() => toggleSelectProduct(p?.id)}
                       className={`p-3 rounded-2xl border bg-white/4 shadow-md flex gap-4 items-center cursor-pointer ${selected ? "ring-2 ring-offset-2 ring-black dark:ring-white" : ""}`}
                     >
-                      <input onClick={(e) => { e.stopPropagation(); toggleSelectProduct(p); }} type="checkbox" checked={selected} className="accent-black dark:accent-white" readOnly />
+                      <input onClick={(e) => { e.stopPropagation(); toggleSelectProduct(p?.id); }} type="checkbox" checked={selected} className="accent-black dark:accent-white" readOnly />
                       <div className="w-28 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-white/5 relative">
                         {img ? (
                           <img src={img} alt={p?.name || "product"} className="object-cover w-full h-full" />
@@ -790,7 +812,7 @@ export default function SlidesAndSalesAdmin() {
                       <div className="flex-1 flex flex-col">
                         <div className="flex items-center justify-between gap-3">
                           <div className="font-semibold text-sm">{p?.name}</div>
-                          <button onClick={(e) => { e.stopPropagation(); toggleSelectProduct(p); }} className={secondaryBtnClass()} title="Toggle select">
+                          <button onClick={(e) => { e.stopPropagation(); toggleSelectProduct(p?.id); }} className={secondaryBtnClass()} title="Toggle select">
                             {selected ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
                           </button>
                         </div>
@@ -805,10 +827,10 @@ export default function SlidesAndSalesAdmin() {
 
             {/* Pagination controls */}
             <div className="mt-4 flex items-center justify-between">
-              <div className="text-sm text-neutral-500">Page {currentPage} of {Math.max(1, Math.ceil(products.length / pageSize))}</div>
+              <div className="text-sm text-neutral-500">Page {currentPage} of {Math.max(1, Math.ceil(filteredProducts.length / pageSize))}</div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1} className={secondaryBtnClass(currentPage === 1 ? "opacity-50 pointer-events-none" : "")}>Prev</button>
-                {Array.from({ length: Math.max(1, Math.ceil(products.length / pageSize)) }).map((_, idx) => {
+                {Array.from({ length: Math.max(1, Math.ceil(filteredProducts.length / pageSize)) }).map((_, idx) => {
                   const page = idx + 1;
                   if (page > 7) return null;
                   return (
@@ -817,7 +839,7 @@ export default function SlidesAndSalesAdmin() {
                     </button>
                   );
                 })}
-                <button onClick={() => setCurrentPage((p) => Math.min(Math.max(1, Math.ceil(products.length / pageSize)), p + 1))} disabled={currentPage === Math.ceil(products.length / pageSize)} className={secondaryBtnClass(currentPage === Math.ceil(products.length / pageSize) ? "opacity-50 pointer-events-none" : "")}>Next</button>
+                <button onClick={() => setCurrentPage((p) => Math.min(Math.max(1, Math.ceil(filteredProducts.length / pageSize)), p + 1))} disabled={currentPage === Math.ceil(filteredProducts.length / pageSize)} className={secondaryBtnClass(currentPage === Math.ceil(filteredProducts.length / pageSize) ? "opacity-50 pointer-events-none" : "")}>Next</button>
               </div>
             </div>
           </div>
