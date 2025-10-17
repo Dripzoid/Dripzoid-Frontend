@@ -53,7 +53,7 @@ function handleChange(e) {
     } catch (err) {
       console.error(err);
     }
-  }, 250); // 250ms = 0.25 seconds
+  }, 2000); // 2000ms = 2 seconds
 }
 
 
