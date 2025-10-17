@@ -295,19 +295,16 @@ export default function SlidesAndSalesAdmin() {
       try {
         await loadSlides();
         await loadSales();
-        // initially fetch the first page of products (empty search)
-        fetchProducts({ search: debouncedQuery, sort: productSort, page: currentPage, limit: pageSize });
+        // initial fetch (no search)
+        const cleanup = fetchProducts({ search: debouncedQuery, sort: mapSortToBackend(productSort), page: currentPage, limit: pageSize });
+        // ensure cleanup on unmount
+        return () => cleanup && cleanup();
       } catch (err) {
         console.error("initial load error:", err);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // reset to page 1 when search changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [debouncedQuery, productSort]);
 
   // -- SLIDES (same as your working implementation)
   async function loadSlides() {
@@ -501,50 +498,59 @@ export default function SlidesAndSalesAdmin() {
     }
   };
 
-  // fetchProducts with abort support and server pagination
+  /**
+   * fetchProducts
+   * - returns a synchronous cleanup function (controller.abort)
+   * - runs async fetch internally and updates state when done
+   */
   const fetchProducts = useCallback(
-    async ({ search = "", sort = "", page = 1, limit = pageSize } = {}) => {
-      setProductsLoading(true);
+    ({ search = "", sort = "", page = 1, limit = pageSize } = {}) => {
       const controller = new AbortController();
       const signal = controller.signal;
 
-      // build query string (encode)
-      const params = new URLSearchParams();
-      if (search) params.append("search", String(search));
-      if (sort) params.append("sort", String(sort));
-      if (page) params.append("page", String(page));
-      if (limit) params.append("limit", String(limit));
+      // run the actual fetch (async) but return cleanup immediately
+      (async () => {
+        setProductsLoading(true);
+        try {
+          const params = new URLSearchParams();
+          if (search) params.append("search", String(search));
+          if (sort) params.append("sort", String(sort));
+          if (page) params.append("page", String(page));
+          if (limit) params.append("limit", String(limit));
+          const path = `/api/products?${params.toString()}`;
 
-      // Choose the correct path - your products router looked like it expects /api/products
-      const path = `/api/products?${params.toString()}`;
-
-      try {
-        const json = await apiGet(path, signal);
-        // backend returns { meta: {...}, data: [...] } according to products.js
-        if (json && typeof json === "object") {
-          const meta = json.meta || {};
-          const data = json.data || (Array.isArray(json) ? json : []);
-          setDisplayedProducts(Array.isArray(data) ? data : []);
-          setTotalProducts(Number(meta.total || (Array.isArray(data) ? data.length : 0)));
-        } else {
-          setDisplayedProducts([]);
-          setTotalProducts(0);
+          const json = await apiGet(path, signal);
+          if (json && typeof json === "object") {
+            const meta = json.meta || {};
+            const data = json.data || (Array.isArray(json) ? json : []);
+            setDisplayedProducts(Array.isArray(data) ? data : []);
+            setTotalProducts(Number(meta.total || (Array.isArray(data) ? data.length : 0)));
+          } else {
+            setDisplayedProducts([]);
+            setTotalProducts(0);
+          }
+        } catch (err) {
+          if (err.name === "AbortError") {
+            // request was aborted — ignore silently
+          } else {
+            console.error("fetchProducts error:", err);
+            setNoteWithAutoClear({ type: "error", text: `Failed to load products — ${err.message || err}` }, 8000);
+            setDisplayedProducts([]);
+            setTotalProducts(0);
+          }
+        } finally {
+          setProductsLoading(false);
         }
-      } catch (err) {
-        if (err.name === "AbortError") {
-          // ignore aborts
-        } else {
-          console.error("fetchProducts error:", err);
-          setNoteWithAutoClear({ type: "error", text: `Failed to load products — ${err.message || err}` }, 8000);
-          setDisplayedProducts([]);
-          setTotalProducts(0);
-        }
-      } finally {
-        setProductsLoading(false);
-      }
+      })();
 
-      return () => controller.abort();
+      // return cleanup which aborts the request
+      return () => {
+        try {
+          controller.abort();
+        } catch {}
+      };
     },
+    // empty deps because this function builds path from args and uses stable helpers
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
@@ -552,12 +558,8 @@ export default function SlidesAndSalesAdmin() {
   // trigger fetch when debouncedQuery, productSort, or currentPage changes
   useEffect(() => {
     const backendSort = mapSortToBackend(productSort);
-    const abortFn = fetchProducts({ search: debouncedQuery, sort: backendSort, page: currentPage, limit: pageSize });
-    // fetchProducts returns a function that aborts? (we return cleanup above)
-    // But to ensure abort, we also set up cleanup:
-    return () => {
-      if (typeof abortFn === "function") abortFn();
-    };
+    const cleanup = fetchProducts({ search: debouncedQuery, sort: backendSort, page: currentPage, limit: pageSize });
+    return () => cleanup && cleanup();
   }, [debouncedQuery, productSort, currentPage, fetchProducts]);
 
   // convert product object -> primary image
@@ -590,9 +592,10 @@ export default function SlidesAndSalesAdmin() {
   }
 
   // stable callback passed to ProductSearchBar
+  // IMPORTANT: set page to 1 here to avoid double-fetch effect in separate effect
   const onSearchDebounced = useCallback((value) => {
-    // parent receives debounced string
     setDebouncedQuery(value || "");
+    setCurrentPage(1); // ensure we jump to first page for new search — single state change triggers single fetch
   }, []);
 
   /* ----------------- UI components (kept similar) ----------------- */
@@ -819,7 +822,6 @@ export default function SlidesAndSalesAdmin() {
 
   function SaleCreator() {
     const totalPages = Math.max(1, Math.ceil((totalProducts || 0) / pageSize));
-    const start = (currentPage - 1) * pageSize;
 
     return (
       <div className="p-4 rounded-2xl border bg-gradient-to-b from-neutral-50/40 to-neutral-100/10 dark:from-neutral-900/40 dark:to-neutral-800/30 shadow-xl">
