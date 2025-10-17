@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Plus,
   UploadCloud,
@@ -16,12 +16,88 @@ import {
 } from "lucide-react";
 
 /**
- * SlidesAndSalesAdmin.jsx — Final corrected
- * - ProductSearchBar manages its own visible value + caret preservation
- * - Debounced updates to parent via onDebounced
- * - FilteredProducts + displayedProducts separation for correct pagination
- * - Vertical draggable slides list, robust image parsing, rounded inputs
+ * ProductSearchBar — top-level component so it isn't re-created on each parent render
+ * - localValue (visible) kept internally
+ * - preserves caret/selection on updates
+ * - only syncs `initial` -> localValue when the input is NOT focused (avoids overwriting while typing)
+ * - debounces notifications to parent via onDebounced
  */
+const ProductSearchBar = React.memo(function ProductSearchBar({
+  initial = "",
+  onDebounced,
+  inputRef,
+  debounceMs = 250,
+}) {
+  const [localValue, setLocalValue] = useState(initial);
+  const selectionRef = useRef({ start: null, end: null, direction: null });
+  const debounceRef = useRef(null);
+
+  // sync initial -> localValue only when input is not focused (so we don't clobber typing)
+  useEffect(() => {
+    const el = inputRef?.current;
+    const isFocused = typeof document !== "undefined" && el === document.activeElement;
+    if (!isFocused && initial !== localValue) {
+      setLocalValue(initial);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial]);
+
+  function handleChange(e) {
+    const el = e.target;
+    try {
+      if (el && typeof el.selectionStart === "number") {
+        selectionRef.current = {
+          start: el.selectionStart,
+          end: el.selectionEnd,
+          direction: el.selectionDirection || "none",
+        };
+      }
+    } catch {
+      selectionRef.current = { start: null, end: null, direction: null };
+    }
+    setLocalValue(el.value);
+  }
+
+  // restore caret/selection synchronously after render
+  useLayoutEffect(() => {
+    const sel = selectionRef.current;
+    const el = inputRef?.current;
+    if (el && sel && sel.start != null && typeof el.setSelectionRange === "function") {
+      try {
+        const max = el.value.length;
+        const start = Math.max(0, Math.min(sel.start, max));
+        const end = Math.max(0, Math.min(sel.end ?? start, max));
+        el.setSelectionRange(start, end, sel.direction === "forward" ? "forward" : "none");
+      } catch {
+        // ignore
+      }
+    }
+  }, [localValue, inputRef]);
+
+  // debounce sending value to parent
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      onDebounced(localValue);
+    }, debounceMs);
+    return () => clearTimeout(debounceRef.current);
+  }, [localValue, debounceMs, onDebounced]);
+
+  return (
+    <div className="relative w-full">
+      <input
+        ref={inputRef}
+        type="text"
+        value={localValue}
+        onChange={handleChange}
+        placeholder="Search products (name, id, sku, description, tags)"
+        autoComplete="off"
+        className="w-full pl-12 pr-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none"
+      />
+      <Search className="absolute left-4 top-1/2 -translate-y-1/2 opacity-60 w-4 h-4" />
+    </div>
+  );
+});
 
 export default function SlidesAndSalesAdmin() {
   const API_BASE =
@@ -54,8 +130,8 @@ export default function SlidesAndSalesAdmin() {
 
   // Products
   const [allProducts, setAllProducts] = useState([]);
-  const [filteredProducts, setFilteredProducts] = useState([]); // full filtered+sorted set
-  const [displayedProducts, setDisplayedProducts] = useState([]); // current page slice
+  const [filteredProducts, setFilteredProducts] = useState([]);
+  const [displayedProducts, setDisplayedProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [productSort, setProductSort] = useState("relevance");
@@ -68,7 +144,7 @@ export default function SlidesAndSalesAdmin() {
   // UI note
   const [note, setNote] = useState(null);
 
-  // ref to pass into ProductSearchBar if needed
+  // ref for search input (passed to ProductSearchBar)
   const searchInputRef = useRef(null);
 
   // Styles helpers
@@ -186,9 +262,8 @@ export default function SlidesAndSalesAdmin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Debounced query is provided by ProductSearchBar (child) — we only react to it.
+  // reset page when debounced search changes
   useEffect(() => {
-    // reset page when search changes (debounced)
     setCurrentPage(1);
   }, [debouncedQuery]);
 
@@ -448,77 +523,10 @@ export default function SlidesAndSalesAdmin() {
     });
   }
 
-  // -----------------------------
-  // ProductSearchBar: localValue + caret preservation + debounced onDebounced
-  // -----------------------------
-  function ProductSearchBar({ initial = "", onDebounced, inputRef, debounceMs = 250 }) {
-    const [localValue, setLocalValue] = useState(initial);
-    const selectionRef = useRef({ start: null, end: null, direction: null });
-    const debounceRef = useRef(null);
-
-    // if parent wants to externally clear or set the value, sync it
-    useEffect(() => {
-      setLocalValue(initial);
-    }, [initial]);
-
-    function handleChange(e) {
-      const el = e.target;
-      if (el && typeof el.selectionStart === "number") {
-        selectionRef.current = {
-          start: el.selectionStart,
-          end: el.selectionEnd,
-          direction: el.selectionDirection || "none",
-        };
-      }
-      setLocalValue(el.value);
-    }
-
-    // restore caret after localValue changes (which causes renders)
-    useLayoutEffect(() => {
-      const sel = selectionRef.current;
-      const el = inputRef?.current;
-      if (el && sel && sel.start != null && typeof el.setSelectionRange === "function") {
-        try {
-          const max = el.value.length;
-          const start = Math.max(0, Math.min(sel.start, max));
-          const end = Math.max(0, Math.min(sel.end ?? start, max));
-          el.setSelectionRange(start, end, sel.direction === "forward" ? "forward" : "none");
-        } catch {
-          // ignore
-        }
-      }
-    }, [localValue, inputRef]);
-
-    // debounce localValue -> parent onDebounced
-    useEffect(() => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
-        onDebounced(localValue);
-      }, debounceMs);
-      return () => clearTimeout(debounceRef.current);
-    }, [localValue, debounceMs, onDebounced]);
-
-    return (
-      <div className="relative w-full">
-        <input
-          ref={inputRef}
-          type="text"
-          value={localValue}
-          onChange={handleChange}
-          placeholder="Search products (name, id, sku, description, tags)"
-          autoComplete="off"
-          className="w-full pl-12 pr-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none"
-        />
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 opacity-60 w-4 h-4" />
-      </div>
-    );
-  }
-
-  // callback parent receives from searchbar (debounced)
-  function onSearchDebounced(value) {
-    // store the raw (not-trimmed) debounced value; trimming happens in filter
+  // memoized callback passed to ProductSearchBar (stable between renders)
+  const onSearchDebounced = useCallback((value) => {
     setDebouncedQuery(value);
-  }
+  }, []);
 
   // UI components
   function CenterToggle() {
@@ -751,7 +759,6 @@ export default function SlidesAndSalesAdmin() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-1 flex flex-col gap-2">
             <label className="text-xs font-semibold uppercase text-neutral-500">Sale name (displayed on home)</label>
-            {/* Keep a small local state for sale name here if needed */}
             <input placeholder="Eg: Summer Sale" className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
             <div className="text-xs text-neutral-500 mt-2">Selected products: {selectedProductIds.size}</div>
             <div className="flex gap-2 mt-3">
@@ -870,7 +877,6 @@ export default function SlidesAndSalesAdmin() {
           </div>
         )}
 
-        <div className="mt-8 text-xs text-neutral-500">Pro tip: Wire these endpoints to your Express routes: POST /api/upload, GET/POST/DELETE /api/admin/slides, /api/admin/slides/reorder, GET/POST /api/admin/sales, PATCH /api/admin/sales/:id/toggle, GET /api/admin/products</div>
       </div>
     </div>
   );
