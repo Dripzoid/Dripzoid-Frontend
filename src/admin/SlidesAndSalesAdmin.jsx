@@ -19,7 +19,7 @@ import {
  * ProductSearchBar
  * - Keeps its own visible state to avoid parent re-renders stomping keystrokes
  * - Preserves caret/selection using useLayoutEffect
- * - Handles IME composition (compositionstart/compositionend) to avoid interfering
+ * - Handles IME composition (compositionstart/compositionend)
  * - Debounces to parent; flushes on compositionend
  */
 const ProductSearchBar = React.memo(function ProductSearchBar({
@@ -33,18 +33,18 @@ const ProductSearchBar = React.memo(function ProductSearchBar({
   const debounceRef = useRef(null);
   const isComposingRef = useRef(false);
 
-  // maintain an internal ref if none passed
+  // internal ref fallback
   const internalRef = useRef(null);
   const elRef = inputRef || internalRef;
 
-  // sync initial -> localValue only when input is NOT focused and not composing
+  // Sync initial -> localValue only when input NOT focused and not composing
   useEffect(() => {
     const el = elRef.current;
     const isFocused = typeof document !== "undefined" && el === document.activeElement;
     if (!isFocused && !isComposingRef.current && initial !== localValue) {
       setLocalValue(initial);
     }
-    // intentionally omit localValue from deps (we only want to react to `initial` changes)
+    // intentionally don't include localValue as dep
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial, elRef]);
 
@@ -66,15 +66,15 @@ const ProductSearchBar = React.memo(function ProductSearchBar({
 
   function handleCompositionStart() {
     isComposingRef.current = true;
-    // while composing, don't run debounce or selection restore
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
   }
+
   function handleCompositionEnd(e) {
     isComposingRef.current = false;
-    // after composition ends, ensure selection is captured & flush to parent immediately
+    // capture selection & flush immediately
     try {
       const el = elRef.current;
       if (el && typeof el.selectionStart === "number") {
@@ -85,6 +85,7 @@ const ProductSearchBar = React.memo(function ProductSearchBar({
         };
       }
     } catch {}
+    // flush to parent
     onDebounced(e.target.value);
   }
 
@@ -105,7 +106,7 @@ const ProductSearchBar = React.memo(function ProductSearchBar({
     }
   }, [localValue, elRef]);
 
-  // debounce sending value to parent (but skip when composing)
+  // debounce sending value to parent (skip when composing)
   useEffect(() => {
     if (isComposingRef.current) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -151,6 +152,7 @@ export default function SlidesAndSalesAdmin() {
     return base ? `${base}${p}` : p;
   }
 
+  // -- UI modes
   const [mode, setMode] = useState("slides");
 
   // Slides
@@ -166,14 +168,13 @@ export default function SlidesAndSalesAdmin() {
   const [loadingSales, setLoadingSales] = useState(false);
   const [creatingSale, setCreatingSale] = useState(false);
 
-  // Products
-  const [allProducts, setAllProducts] = useState([]);
-  const [filteredProducts, setFilteredProducts] = useState([]);
-  const [displayedProducts, setDisplayedProducts] = useState([]);
+  // Products (server-driven)
+  const [displayedProducts, setDisplayedProducts] = useState([]); // page data
   const [productsLoading, setProductsLoading] = useState(false);
-  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState(""); // the debounced search value from ProductSearchBar
   const [productSort, setProductSort] = useState("relevance");
   const [selectedProductIds, setSelectedProductIds] = useState(new Set());
+  const [totalProducts, setTotalProducts] = useState(0);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -185,7 +186,7 @@ export default function SlidesAndSalesAdmin() {
   // ref for search input (passed to ProductSearchBar)
   const searchInputRef = useRef(null);
 
-  // Styles helpers
+  // Styles helper funcs
   function primaryBtnClass(extra = "") {
     return `inline-flex items-center gap-2 px-4 py-2 rounded-full font-semibold shadow transition transform-gpu hover:-translate-y-0.5 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-black text-white dark:bg-white dark:text-black ${extra}`;
   }
@@ -200,7 +201,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // fetch helpers
+  // fetch helpers (reuse pattern from your code)
   function getAuthHeaders(addJson = true) {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     const headers = {};
@@ -263,8 +264,10 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  async function apiGet(path) {
-    return safeFetchJson(buildUrl(path), { credentials: "include", headers: getAuthHeaders(false) });
+  async function apiGet(path, signal) {
+    const opts = { credentials: "include", headers: getAuthHeaders(false) };
+    if (signal) opts.signal = signal;
+    return safeFetchJson(buildUrl(path), opts);
   }
   async function apiPost(path, body, isFormData = false) {
     const url = buildUrl(path);
@@ -292,7 +295,8 @@ export default function SlidesAndSalesAdmin() {
       try {
         await loadSlides();
         await loadSales();
-        await loadAllProducts();
+        // initially fetch the first page of products (empty search)
+        fetchProducts({ search: debouncedQuery, sort: productSort, page: currentPage, limit: pageSize });
       } catch (err) {
         console.error("initial load error:", err);
       }
@@ -300,12 +304,12 @@ export default function SlidesAndSalesAdmin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // reset page when debounced search changes
+  // reset to page 1 when search changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedQuery]);
+  }, [debouncedQuery, productSort]);
 
-  // SLIDES
+  // -- SLIDES (same as your working implementation)
   async function loadSlides() {
     setLoadingSlides(true);
     try {
@@ -333,7 +337,6 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // drag & drop vertical list for slides
   function onDragStartSlide(e, index) {
     dragIndexRef.current = index;
     try {
@@ -429,7 +432,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // SALES
+  // -- SALES
   async function loadSales() {
     setLoadingSales(true);
     try {
@@ -479,24 +482,85 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // PRODUCTS
-  async function loadAllProducts() {
-    setProductsLoading(true);
-    try {
-      const data = await apiGet("/api/admin/products");
-      const arr = Array.isArray(data) ? data : data.products || data.data || [];
-      const safeArr = Array.isArray(arr) ? arr : [];
-      setAllProducts(safeArr);
-    } catch (err) {
-      console.error("loadAllProducts error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to load products — ${err.message || err}` }, 8000);
-      setAllProducts([]);
-    } finally {
-      setProductsLoading(false);
+  // PRODUCTS - server-driven fetch
+  // map front-end sort keys to backend sort param names
+  const mapSortToBackend = (sortKey) => {
+    switch (sortKey) {
+      case "priceAsc":
+        return "price_asc";
+      case "priceDesc":
+        return "price_desc";
+      case "newest":
+        return "newest";
+      case "nameAsc":
+        return "name_asc";
+      case "nameDesc":
+        return "name_desc";
+      default:
+        return ""; // backend default
     }
-  }
+  };
 
-  // Helper: robust primary image extraction
+  // fetchProducts with abort support and server pagination
+  const fetchProducts = useCallback(
+    async ({ search = "", sort = "", page = 1, limit = pageSize } = {}) => {
+      setProductsLoading(true);
+      const controller = new AbortController();
+      const signal = controller.signal;
+
+      // build query string (encode)
+      const params = new URLSearchParams();
+      if (search) params.append("search", String(search));
+      if (sort) params.append("sort", String(sort));
+      if (page) params.append("page", String(page));
+      if (limit) params.append("limit", String(limit));
+
+      // Choose the correct path - your products router looked like it expects /api/products
+      const path = `/api/products?${params.toString()}`;
+
+      try {
+        const json = await apiGet(path, signal);
+        // backend returns { meta: {...}, data: [...] } according to products.js
+        if (json && typeof json === "object") {
+          const meta = json.meta || {};
+          const data = json.data || (Array.isArray(json) ? json : []);
+          setDisplayedProducts(Array.isArray(data) ? data : []);
+          setTotalProducts(Number(meta.total || (Array.isArray(data) ? data.length : 0)));
+        } else {
+          setDisplayedProducts([]);
+          setTotalProducts(0);
+        }
+      } catch (err) {
+        if (err.name === "AbortError") {
+          // ignore aborts
+        } else {
+          console.error("fetchProducts error:", err);
+          setNoteWithAutoClear({ type: "error", text: `Failed to load products — ${err.message || err}` }, 8000);
+          setDisplayedProducts([]);
+          setTotalProducts(0);
+        }
+      } finally {
+        setProductsLoading(false);
+      }
+
+      return () => controller.abort();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  // trigger fetch when debouncedQuery, productSort, or currentPage changes
+  useEffect(() => {
+    const backendSort = mapSortToBackend(productSort);
+    const abortFn = fetchProducts({ search: debouncedQuery, sort: backendSort, page: currentPage, limit: pageSize });
+    // fetchProducts returns a function that aborts? (we return cleanup above)
+    // But to ensure abort, we also set up cleanup:
+    return () => {
+      if (typeof abortFn === "function") abortFn();
+    };
+  }, [debouncedQuery, productSort, currentPage, fetchProducts]);
+
+  // convert product object -> primary image
   function getPrimaryImage(item) {
     if (!item) return "";
     if (item.image) return item.image;
@@ -514,45 +578,9 @@ export default function SlidesAndSalesAdmin() {
     return "";
   }
 
-  // Filtering & sorting -> produce filteredProducts (full), then displayedProducts (slice)
-  useEffect(() => {
-    try {
-      let list = Array.isArray(allProducts) ? [...allProducts] : [];
-      const q = (debouncedQuery || "").trim().toLowerCase();
-      if (q) {
-        list = list.filter((p) => {
-          const name = (p?.name || "").toString().toLowerCase();
-          const id = p?.id?.toString?.() || "";
-          const desc = (p?.shortDescription || p?.description || "").toString().toLowerCase();
-          const sku = (p?.sku || "").toString().toLowerCase();
-          const tags = (p?.tags || []).join(" ").toLowerCase();
-          return name.includes(q) || id.includes(q) || desc.includes(q) || sku.includes(q) || tags.includes(q);
-        });
-      }
-
-      if (productSort === "priceAsc") list.sort((a, b) => (Number(a?.price || 0) - Number(b?.price || 0)));
-      else if (productSort === "priceDesc") list.sort((a, b) => (Number(b?.price || 0) - Number(a?.price || 0)));
-      else if (productSort === "newest") list.sort((a, b) => (new Date(b?.createdAt || b?.created || 0) - new Date(a?.createdAt || a?.created || 0)));
-
-      setFilteredProducts(list);
-      // ensure page valid
-      const total = Math.max(1, Math.ceil(list.length / pageSize));
-      if (currentPage > total) setCurrentPage(1);
-    } catch (err) {
-      console.error("filterProducts error:", err);
-    }
-  }, [debouncedQuery, productSort, allProducts]);
-
-  // Compute displayedProducts slice when filteredProducts or page changes
-  useEffect(() => {
-    const total = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
-    const page = Math.max(1, Math.min(currentPage, total));
-    const start = (page - 1) * pageSize;
-    setDisplayedProducts(filteredProducts.slice(start, start + pageSize));
-  }, [filteredProducts, currentPage]);
-
-  function toggleSelectProduct(product) {
-    const id = product?.id ?? product;
+  // toggle selection
+  function toggleSelectProduct(productOrId) {
+    const id = productOrId?.id ?? productOrId;
     setSelectedProductIds((prev) => {
       const copy = new Set(prev);
       if (copy.has(id)) copy.delete(id);
@@ -561,12 +589,13 @@ export default function SlidesAndSalesAdmin() {
     });
   }
 
-  // memoized callback passed to ProductSearchBar (stable between renders)
+  // stable callback passed to ProductSearchBar
   const onSearchDebounced = useCallback((value) => {
-    setDebouncedQuery(value);
+    // parent receives debounced string
+    setDebouncedQuery(value || "");
   }, []);
 
-  // UI components (CenterToggle, Note, SlideAddBox, SlidesList, SalesList, SaleCreator)
+  /* ----------------- UI components (kept similar) ----------------- */
   function CenterToggle() {
     return (
       <div className="w-full flex justify-center my-6">
@@ -789,6 +818,9 @@ export default function SlidesAndSalesAdmin() {
   }
 
   function SaleCreator() {
+    const totalPages = Math.max(1, Math.ceil((totalProducts || 0) / pageSize));
+    const start = (currentPage - 1) * pageSize;
+
     return (
       <div className="p-4 rounded-2xl border bg-gradient-to-b from-neutral-50/40 to-neutral-100/10 dark:from-neutral-900/40 dark:to-neutral-800/30 shadow-xl">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -823,12 +855,16 @@ export default function SlidesAndSalesAdmin() {
                 <option value="priceAsc">Price — Low to High</option>
                 <option value="priceDesc">Price — High to Low</option>
                 <option value="newest">Newest</option>
+                <option value="nameAsc">Name A→Z</option>
+                <option value="nameDesc">Name Z→A</option>
               </select>
             </div>
 
             <div className="space-y-3">
               {productsLoading ? (
                 <div className="p-3 rounded border">Loading products...</div>
+              ) : displayedProducts.length === 0 ? (
+                <div className="p-3 rounded border">No products found.</div>
               ) : (
                 displayedProducts.map((p, i) => {
                   const key = p?.id ?? `idx-${i}`;
@@ -869,10 +905,10 @@ export default function SlidesAndSalesAdmin() {
 
             {/* Pagination controls */}
             <div className="mt-4 flex items-center justify-between">
-              <div className="text-sm text-neutral-500">Page {currentPage} of {Math.max(1, Math.ceil(filteredProducts.length / pageSize))}</div>
+              <div className="text-sm text-neutral-500">Page {currentPage} of {Math.max(1, Math.ceil((totalProducts || 0) / pageSize))}</div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1} className={secondaryBtnClass(currentPage === 1 ? "opacity-50 pointer-events-none" : "")}>Prev</button>
-                {Array.from({ length: Math.max(1, Math.ceil(filteredProducts.length / pageSize)) }).map((_, idx) => {
+                {Array.from({ length: Math.max(1, Math.ceil((totalProducts || 0) / pageSize)) }).map((_, idx) => {
                   const page = idx + 1;
                   if (page > 7) return null;
                   return (
@@ -881,7 +917,7 @@ export default function SlidesAndSalesAdmin() {
                     </button>
                   );
                 })}
-                <button onClick={() => setCurrentPage((p) => Math.min(Math.max(1, Math.ceil(filteredProducts.length / pageSize)), p + 1))} disabled={currentPage === Math.ceil(filteredProducts.length / pageSize)} className={secondaryBtnClass(currentPage === Math.ceil(filteredProducts.length / pageSize) ? "opacity-50 pointer-events-none" : "")}>Next</button>
+                <button onClick={() => setCurrentPage((p) => Math.min(Math.max(1, Math.ceil((totalProducts || 0) / pageSize)), p + 1))} disabled={currentPage === Math.ceil((totalProducts || 0) / pageSize)} className={secondaryBtnClass(currentPage === Math.ceil((totalProducts || 0) / pageSize) ? "opacity-50 pointer-events-none" : "")}>Next</button>
               </div>
             </div>
           </div>
@@ -912,7 +948,7 @@ export default function SlidesAndSalesAdmin() {
           </div>
         )}
 
-        <div className="mt-8 text-xs text-neutral-500">Pro tip: Wire these endpoints to your Express routes: POST /api/upload, GET/POST/DELETE /api/admin/slides, /api/admin/slides/reorder, GET/POST /api/admin/sales, PATCH /api/admin/sales/:id/toggle, GET /api/admin/products</div>
+        <div className="mt-8 text-xs text-neutral-500">Pro tip: Wire these endpoints to your Express routes: POST /api/upload, GET/POST/DELETE /api/admin/slides, /api/admin/slides/reorder, GET/POST /api/admin/sales, PATCH /api/admin/sales/:id/toggle, GET /api/products</div>
       </div>
     </div>
   );
