@@ -40,16 +40,22 @@ const ProductSearchBar = React.memo(function ProductSearchBar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial, elRef]);
 
-  function handleChange(e) {
-    const v = e.target.value;
-    setLocalValue(v);
+ const debounceTimeout = useRef(null);
+
+function handleChange(e) {
+  const v = e.target.value;
+  setLocalValue(v);
+
+  if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
+  debounceTimeout.current = setTimeout(() => {
     try {
-      // call parent immediately (no debounce)
       onDebounced && onDebounced(v);
     } catch (err) {
-      // ignore
+      console.error(err);
     }
-  }
+  }, 250); // 250ms = 0.25 seconds
+}
+
 
   return (
     <div className="relative w-full">
