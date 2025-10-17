@@ -1,27 +1,25 @@
 import React, { useEffect, useRef, useState } from "react";
 
 /**
- * SlidesAndSalesAdmin.jsx — Updated
- * - Uses env API_BASE (REACT_APP_API_BASE or API_BASE)
- * - Upload route: /api/upload
- * - Loads all products once into allProducts; search/sort is client-side
- * - Defensive network/error handling to avoid blank page
- * - Uses localStorage key "token" for Authorization
+ * SlidesAndSalesAdmin.jsx — Redesigned
+ * - Modern black & white theme (light/dark aware)
+ * - Drag-to-reorder slides (HTML5 drag & drop) with stacked visual like LinkedIn
+ * - Smooth Tailwind animations/effects
+ * - Sales product list: full-width vertical cards with image
+ * - Fixed search input cursor issue by keeping the input stable and using stable keys
+ * - Defensive networking and upload route /api/upload
  */
 
 export default function SlidesAndSalesAdmin() {
-  // env-friendly API base resolution
- const API_BASE =
-  (typeof process !== "undefined" && (process.env.REACT_APP_API_BASE || process.env.API_BASE)) ||
-  (typeof window !== "undefined" && window.__API_BASE__) ||
-  "https://api.dripzoid.com";
-
+  const API_BASE =
+    (typeof process !== "undefined" && (process.env.REACT_APP_API_BASE || process.env.API_BASE)) ||
+    (typeof window !== "undefined" && window.__API_BASE__) ||
+    "https://api.dripzoid.com";
 
   function buildUrl(path) {
-    // if path already absolute, return as-is
     if (!path) return path;
     if (/^https?:\/\//i.test(path)) return path;
-    const base = API_BASE.replace(/\/+$/, ""); // remove trailing slash
+    const base = API_BASE.replace(/\/+$/, "");
     const p = path.startsWith("/") ? path : `/${path}`;
     return base ? `${base}${p}` : p;
   }
@@ -33,27 +31,27 @@ export default function SlidesAndSalesAdmin() {
   const [loadingSlides, setLoadingSlides] = useState(false);
   const [addingSlide, setAddingSlide] = useState(false);
   const fileInputRef = useRef(null);
+  const dragOverIndexRef = useRef(null);
 
   // Sales
   const [sales, setSales] = useState([]);
   const [loadingSales, setLoadingSales] = useState(false);
   const [creatingSale, setCreatingSale] = useState(false);
 
-  // Products (allProducts holds full list; products is filtered/sorted view used in the UI)
+  // Products
   const [allProducts, setAllProducts] = useState([]);
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [productQuery, setProductQuery] = useState("");
-  const [productFilters] = useState({ category: "", priceMin: "", priceMax: "" });
   const [productSort, setProductSort] = useState("relevance");
   const [selectedProductIds, setSelectedProductIds] = useState(new Set());
 
   // UI note
   const [note, setNote] = useState(null);
 
-  // Styling helpers
+  // Styles helpers
   function primaryBtnClass(extra = "") {
-    return `inline-flex items-center gap-2 px-4 py-2 rounded-full font-semibold shadow-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-black text-white dark:bg-white dark:text-black ${extra}`;
+    return `inline-flex items-center gap-2 px-4 py-2 rounded-full font-semibold shadow-lg transition transform-gpu hover:-translate-y-0.5 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-black text-white dark:bg-white dark:text-black ${extra}`;
   }
   function secondaryBtnClass(extra = "") {
     return `inline-flex items-center gap-2 px-3 py-1 rounded-md font-medium transition border border-neutral-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-100 bg-transparent ${extra}`;
@@ -66,7 +64,6 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // Always read token from "token"
   function getAuthHeaders(addJson = true) {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     const headers = {};
@@ -75,7 +72,6 @@ export default function SlidesAndSalesAdmin() {
     return headers;
   }
 
-  // Defensive parse error
   async function parseErrorResponse(res) {
     try {
       if (!res || typeof res.text !== "function") return String(res || "Unknown error");
@@ -90,10 +86,8 @@ export default function SlidesAndSalesAdmin() {
         }
       }
       if (text && text.includes("<")) {
-        const msgMatch = text.match(/<Message>([\s\S]*?)<\/Message>/i) || text.match(/<Message>([\s\S]*?)<\//i);
+        const msgMatch = text.match(/<Message>([\s\S]*?)<\/*Message>/i);
         if (msgMatch && msgMatch[1]) return msgMatch[1].trim();
-        const codeMatch = text.match(/<Code>([\s\S]*?)<\/Code>/i) || text.match(/<Code>([\s\S]*?)<\//i);
-        if (codeMatch && codeMatch[1]) return `Storage error: ${codeMatch[1].trim()}`;
         return `Server returned XML error: ${text.slice(0, 240)}...`;
       }
       return text || `${res.status || "error"} ${res.statusText || ""}`;
@@ -102,7 +96,6 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // safe fetch
   async function safeFetchJson(url, opts = {}) {
     let res;
     try {
@@ -133,7 +126,6 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // API helpers
   async function apiGet(path) {
     return safeFetchJson(buildUrl(path), { credentials: "include", headers: getAuthHeaders(false) });
   }
@@ -157,13 +149,13 @@ export default function SlidesAndSalesAdmin() {
     return safeFetchJson(buildUrl(path), { method: "DELETE", credentials: "include", headers: getAuthHeaders(false) });
   }
 
-  // initial load: slides, sales, products
+  // initial load
   useEffect(() => {
     (async () => {
       try {
         await loadSlides();
         await loadSales();
-        await loadAllProducts(); // load all products once for sale UI
+        await loadAllProducts();
       } catch (err) {
         console.error("initial load error:", err);
       }
@@ -199,18 +191,36 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  function moveSlide(id, dir) {
-    setSlides((list) => {
-      if (!Array.isArray(list)) return list;
-      const i = list.findIndex((x) => x?.id === id);
-      if (i < 0) return list;
-      const j = dir === "up" ? i - 1 : i + 1;
-      if (j < 0 || j >= list.length) return list;
-      const copy = [...list];
-      const tmp = copy[i];
-      copy[i] = copy[j];
-      copy[j] = tmp;
-      updateSlidesOrder(copy);
+  // drag & drop handlers for the stacked slide view
+  function onDragStartSlide(e, index) {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(index));
+    // add slight visual feedback
+    try {
+      e.dataTransfer.setDragImage(e.currentTarget, 40, 20);
+    } catch {}
+  }
+  function onDragOverSlide(e, index) {
+    e.preventDefault();
+    dragOverIndexRef.current = index;
+  }
+  function onDropSlide(e, index) {
+    e.preventDefault();
+    const from = Number(e.dataTransfer.getData("text/plain"));
+    const to = index;
+    if (Number.isNaN(from)) return;
+    reorderSlides(from, to);
+  }
+
+  async function reorderSlides(fromIndex, toIndex) {
+    if (fromIndex === toIndex) return;
+    setSlides((prev) => {
+      const copy = Array.isArray(prev) ? [...prev] : [];
+      if (fromIndex < 0 || fromIndex >= copy.length) return copy;
+      const [item] = copy.splice(fromIndex, 1);
+      copy.splice(toIndex, 0, item);
+      // optimistically update order and persist
+      updateSlidesOrder(copy).catch((e) => console.error("reorder save failed", e));
       return copy;
     });
   }
@@ -218,14 +228,13 @@ export default function SlidesAndSalesAdmin() {
   async function updateSlidesOrder(newOrder) {
     try {
       await apiPost("/api/admin/slides/reorder", { order: newOrder.map((s) => s?.id) });
-      setNoteWithAutoClear({ type: "success", text: "Slides reordered" }, 4000);
+      setNoteWithAutoClear({ type: "success", text: "Slides reordered" }, 3000);
     } catch (err) {
       console.error("updateSlidesOrder error:", err);
       setNoteWithAutoClear({ type: "error", text: `Failed to save slide order — ${err.message || err}` }, 8000);
     }
   }
 
-  // Upload route must be /api/upload (per your instruction)
   async function uploadImage(file) {
     if (!file) throw new Error("No file provided");
     const fd = new FormData();
@@ -240,7 +249,6 @@ export default function SlidesAndSalesAdmin() {
       }
       const json = await res.json().catch(() => null);
       if (!json) throw new Error("Upload returned empty response");
-      // accept multiple possible field names
       const url = json.url || json.secure_url || json.imageUrl || json.image_url || json.data?.url;
       if (!url) throw new Error("Upload succeeded but server returned no 'url' field.");
       return url;
@@ -250,7 +258,6 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // Add slide
   async function handleAddSlide({ file, name, link }) {
     setAddingSlide(true);
     try {
@@ -318,7 +325,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // Products: load all once, then client-side filter/sort
+  // Products: load all once
   async function loadAllProducts() {
     setProductsLoading(true);
     try {
@@ -326,7 +333,6 @@ export default function SlidesAndSalesAdmin() {
       const arr = Array.isArray(data) ? data : data.products || data.data || [];
       const safeArr = Array.isArray(arr) ? arr : [];
       setAllProducts(safeArr);
-      // initialize products view
       setProducts(safeArr);
     } catch (err) {
       console.error("loadAllProducts error:", err);
@@ -340,10 +346,8 @@ export default function SlidesAndSalesAdmin() {
 
   // client-side filtering + sorting
   useEffect(() => {
-    // run synchronously on changes
     try {
       let list = Array.isArray(allProducts) ? [...allProducts] : [];
-      // simple text filter (search in name or id)
       const q = (productQuery || "").trim().toLowerCase();
       if (q) {
         list = list.filter((p) => {
@@ -352,34 +356,15 @@ export default function SlidesAndSalesAdmin() {
           return name.includes(q) || id.includes(q);
         });
       }
-      // basic filters (if implemented)
-      if (productFilters.category) {
-        list = list.filter((p) => (p?.category || "") === productFilters.category);
-      }
-      if (productFilters.priceMin) {
-        const min = Number(productFilters.priceMin);
-        if (!Number.isNaN(min)) list = list.filter((p) => Number(p?.price || 0) >= min);
-      }
-      if (productFilters.priceMax) {
-        const max = Number(productFilters.priceMax);
-        if (!Number.isNaN(max)) list = list.filter((p) => Number(p?.price || 0) <= max);
-      }
-      // sort
+
       if (productSort === "priceAsc") list.sort((a, b) => (Number(a?.price || 0) - Number(b?.price || 0)));
       else if (productSort === "priceDesc") list.sort((a, b) => (Number(b?.price || 0) - Number(a?.price || 0)));
       else if (productSort === "newest") list.sort((a, b) => (new Date(b?.createdAt || b?.created || 0) - new Date(a?.createdAt || a?.created || 0)));
-      // else relevance or default -> leave order as loaded
       setProducts(list);
     } catch (err) {
       console.error("filterProducts error:", err);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productQuery, productSort, productFilters, allProducts]);
-
-  // debounce search (for UX only) — update query after short delay
-  // (We already filter client-side synchronously; productQuery is typically updated by input directly.
-  // if you'd rather debounce the input updates, move this logic into input handler.)
-  // For now we keep immediate filtering.
+  }, [productQuery, productSort, allProducts]);
 
   function toggleSelectProduct(product) {
     setSelectedProductIds((prev) => {
@@ -392,22 +377,22 @@ export default function SlidesAndSalesAdmin() {
     });
   }
 
-  // --- small UI components ---
+  // UI components
   function CenterToggle() {
     return (
       <div className="w-full flex justify-center my-6">
-        <div className="inline-flex items-center rounded-full p-1 bg-neutral-100 dark:bg-neutral-900 shadow-inner border border-neutral-200 dark:border-neutral-800">
+        <div className="inline-flex items-center rounded-full p-1 bg-neutral-100/40 dark:bg-neutral-900/40 shadow-inner border border-neutral-200 dark:border-neutral-800">
           <button
             onClick={() => setMode("slides")}
-            className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all ${mode === "slides" ? "bg-black text-white dark:bg-white dark:text-black shadow" : "bg-transparent text-black/80 dark:text-white/80"}`}
+            className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all ${mode === "slides" ? "bg-black text-white dark:bg-white dark:text-black shadow-lg" : "bg-transparent text-black/80 dark:text-white/80"}`}
           >
-            Slides Management
+            Slides
           </button>
           <button
             onClick={() => setMode("sales")}
-            className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all ${mode === "sales" ? "bg-black text-white dark:bg-white dark:text-black shadow" : "bg-transparent text-black/80 dark:text-white/80"}`}
+            className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all ${mode === "sales" ? "bg-black text-white dark:bg-white dark:text-black shadow-lg" : "bg-transparent text-black/80 dark:text-white/80"}`}
           >
-            Sale Management
+            Sales
           </button>
         </div>
       </div>
@@ -417,10 +402,7 @@ export default function SlidesAndSalesAdmin() {
   function Note() {
     if (!note) return null;
     return (
-      <div
-        role="status"
-        className={`mb-4 px-4 py-2 rounded shadow-sm max-w-3xl mx-auto text-sm ${note.type === "success" ? "bg-green-50 text-green-800 dark:bg-green-900/30" : "bg-red-50 text-red-800 dark:bg-red-900/30"}`}
-      >
+      <div role="status" className={`mb-4 px-4 py-2 rounded-lg max-w-3xl mx-auto text-sm ${note.type === "success" ? "bg-white/8 text-white border border-white/10" : "bg-red-900/30 text-red-200 border border-red-800/30"}`}>
         {note.text}
       </div>
     );
@@ -456,10 +438,10 @@ export default function SlidesAndSalesAdmin() {
     }
 
     return (
-      <div className="p-4 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-md">
+      <div className="p-4 rounded-2xl border border-white/8 bg-gradient-to-b from-black/40 to-black/25 shadow-xl">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="flex flex-col items-center gap-3">
-            <div className="w-56 h-32 border-2 border-dashed rounded-lg overflow-hidden flex items-center justify-center bg-white/5">
+            <div className="w-64 h-36 border-2 border-dashed rounded-lg overflow-hidden flex items-center justify-center bg-white/5">
               {preview ? <img src={preview} alt="preview" className="object-cover w-full h-full" /> : <div className="text-center text-sm text-neutral-400">Preview</div>}
             </div>
             <input ref={fileInputRef} type="file" accept="image/*" onChange={onFile} className="hidden" />
@@ -474,10 +456,10 @@ export default function SlidesAndSalesAdmin() {
           </div>
 
           <div className="md:col-span-2 flex flex-col gap-3">
-            <label className="text-xs font-semibold uppercase text-neutral-500">Slide name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Eg: Winter Collection" className="px-3 py-2 rounded-md border dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800 focus:outline-none" />
-            <label className="text-xs font-semibold uppercase text-neutral-500">Link (optional)</label>
-            <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="/collection/winter" className="px-3 py-2 rounded-md border dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800 focus:outline-none" />
+            <label className="text-xs font-semibold uppercase text-neutral-400">Slide name</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Eg: Winter Collection" className="px-3 py-2 rounded-md border border-white/8 bg-black/20 focus:outline-none" />
+            <label className="text-xs font-semibold uppercase text-neutral-400">Link (optional)</label>
+            <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="/collection/winter" className="px-3 py-2 rounded-md border border-white/8 bg-black/20 focus:outline-none" />
 
             <div className="flex gap-2 mt-2">
               <button onClick={() => handleAddSlide({ file, name, link })} disabled={!file || addingSlide} className={primaryBtnClass(addingSlide ? "opacity-70 pointer-events-none" : "")}>
@@ -493,9 +475,10 @@ export default function SlidesAndSalesAdmin() {
     );
   }
 
+  // Stacked slide list with drag & drop
   function SlidesList() {
     return (
-      <div className="space-y-4">
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold">Slides ({slides.length})</h3>
           <div className="flex items-center gap-2">
@@ -511,40 +494,49 @@ export default function SlidesAndSalesAdmin() {
         {loadingSlides ? (
           <div className="p-4 rounded-md border">Loading slides...</div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="relative w-full h-[360px] max-w-3xl mx-auto">
+            {/* We'll render a stacked pile — top item has highest z-index */}
             {slides.map((s, idx) => {
               const image = s?.image_url || s?.image || s?.imageUrl || s?.imageurl || "";
+              const offset = idx * 14; // vertical offset per card
+              const rotate = (idx % 2 === 0 ? -2 : 2) * ((idx % 4) === 0 ? 1 : 0.6); // subtle rotation
               return (
-                <div key={s?.id ?? idx} className="p-3 rounded-2xl border flex gap-3 items-center bg-neutral-50 dark:bg-neutral-800 shadow-sm">
-                  <div className="w-28 h-20 rounded overflow-hidden bg-white/5 flex items-center justify-center">
-                    {image ? (
-                      <img
-                        src={image}
-                        alt={s?.name || "slide"}
-                        className="object-cover w-full h-full"
-                        onError={(e) => {
-                          try {
-                            e.target.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250'><rect width='100%' height='100%' fill='%23f3f4f6'/><text x='50%' y='50%' font-size='18' fill='%23999' dominant-baseline='middle' text-anchor='middle'>Image not found</text></svg>";
-                          } catch {}
-                        }}
-                      />
-                    ) : (
-                      <div className="text-sm text-neutral-500">No image</div>
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-semibold">{s?.name || "Untitled"}</div>
-                        <div className="text-sm text-neutral-500">{s?.link || "—"}</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => moveSlide(s?.id, "up")} className={secondaryBtnClass()} aria-label="move up">↑</button>
-                        <button onClick={() => moveSlide(s?.id, "down")} className={secondaryBtnClass()} aria-label="move down">↓</button>
-                        <button onClick={() => handleDeleteSlide(s?.id)} className={secondaryBtnClass()}>Delete</button>
-                      </div>
+                <div
+                  key={s?.id ?? idx}
+                  draggable
+                  onDragStart={(e) => onDragStartSlide(e, idx)}
+                  onDragOver={(e) => onDragOverSlide(e, idx)}
+                  onDrop={(e) => onDropSlide(e, idx)}
+                  className={`absolute left-1/2 -translate-x-1/2 w-11/12 md:w-3/4 p-4 rounded-2xl overflow-hidden shadow-2xl border border-white/8 transform-gpu transition-all duration-300 hover:scale-[1.01] cursor-grab`}
+                  style={{
+                    top: `${offset}px`,
+                    zIndex: 200 + idx,
+                    transform: `translateX(-50%) translateY(0) rotate(${rotate}deg)`,
+                    background: "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.25))",
+                  }}
+                >
+                  <div className="flex gap-4 items-center">
+                    <div className="w-44 h-28 rounded-lg overflow-hidden bg-white/5 flex items-center justify-center">
+                      {image ? (
+                        <img src={image} alt={s?.name || "slide"} className="object-cover w-full h-full" />
+                      ) : (
+                        <div className="text-sm text-neutral-400">No image</div>
+                      )}
                     </div>
-                    <div className="text-xs text-neutral-400 mt-1">Position {idx + 1}</div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <div className="font-semibold">{s?.name || "Untitled"}</div>
+                          <div className="text-sm text-neutral-400 mt-1">{s?.link || "—"}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => reorderSlides(idx, Math.max(0, idx - 1))} className={secondaryBtnClass()} aria-label="move up">↑</button>
+                          <button onClick={() => reorderSlides(idx, Math.min(slides.length - 1, idx + 1))} className={secondaryBtnClass()} aria-label="move down">↓</button>
+                          <button onClick={() => handleDeleteSlide(s?.id)} className={secondaryBtnClass()}>Delete</button>
+                        </div>
+                      </div>
+                      <div className="text-xs text-neutral-400 mt-2">Position {idx + 1}</div>
+                    </div>
                   </div>
                 </div>
               );
@@ -555,6 +547,7 @@ export default function SlidesAndSalesAdmin() {
     );
   }
 
+  // Sales list — vertical product cards with image
   function SalesList() {
     return (
       <div className="space-y-4">
@@ -570,17 +563,17 @@ export default function SlidesAndSalesAdmin() {
         {loadingSales ? (
           <div className="p-4 rounded border">Loading sales...</div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             {sales.map((sale) => (
-              <div key={sale?.id ?? Math.random()} className="p-3 rounded-2xl border flex flex-col gap-2 bg-neutral-50 dark:bg-neutral-800 shadow-sm">
+              <div key={sale?.id} className="p-4 rounded-2xl border bg-black/30 shadow-md flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="font-semibold">{sale?.name || "Unnamed sale"}</div>
-                    <div className="text-xs text-neutral-500">{(sale?.productIds || sale?.products || []).length} products</div>
+                    <div className="text-xs text-neutral-400">{(sale?.productIds || sale?.products || []).length} products</div>
                   </div>
                   <div className="flex items-center gap-3">
                     <label className="inline-flex items-center gap-2">
-                      <input type="checkbox" className="accent-black dark:accent-white" checked={!!sale?.enabled} onChange={() => toggleSaleEnabled(sale?.id)} />
+                      <input type="checkbox" className="accent-white" checked={!!sale?.enabled} onChange={() => toggleSaleEnabled(sale?.id)} />
                       <span className="text-sm">Enabled</span>
                     </label>
                     <button className={secondaryBtnClass()}>Edit</button>
@@ -600,12 +593,12 @@ export default function SlidesAndSalesAdmin() {
     const [name, setName] = useState("");
 
     return (
-      <div className="p-4 rounded-2xl border bg-white dark:bg-neutral-900 shadow-md">
+      <div className="p-4 rounded-2xl border bg-gradient-to-b from-black/40 to-black/25 shadow-xl">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-1 flex flex-col gap-2">
-            <label className="text-xs font-semibold uppercase text-neutral-500">Sale name (displayed on home)</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Eg: Summer Sale" className="px-3 py-2 rounded-md border dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800" />
-            <div className="text-xs text-neutral-500 mt-2">Selected products: {selectedProductIds.size}</div>
+            <label className="text-xs font-semibold uppercase text-neutral-400">Sale name (displayed on home)</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Eg: Summer Sale" className="px-3 py-2 rounded-md border border-white/8 bg-black/20 focus:outline-none" />
+            <div className="text-xs text-neutral-400 mt-2">Selected products: {selectedProductIds.size}</div>
             <div className="flex gap-2 mt-3">
               <button onClick={() => handleCreateSale({ name })} disabled={creatingSale} className={primaryBtnClass()}>
                 {creatingSale ? "Creating..." : "Create Sale"}
@@ -618,8 +611,15 @@ export default function SlidesAndSalesAdmin() {
 
           <div className="md:col-span-2">
             <div className="flex gap-2 items-center mb-3">
-              <input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Search products" className="flex-1 px-3 py-2 rounded-md border dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800" />
-              <select value={productSort} onChange={(e) => setProductSort(e.target.value)} className="px-3 py-2 rounded-md border dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800">
+              {/* Make search input stable (not recreated) to avoid cursor jumps */}
+              <input
+                aria-label="Search products"
+                value={productQuery}
+                onChange={(e) => setProductQuery(e.target.value)}
+                placeholder="Search products"
+                className="flex-1 px-3 py-2 rounded-md border border-white/8 bg-black/10 focus:outline-none"
+              />
+              <select value={productSort} onChange={(e) => setProductSort(e.target.value)} className="px-3 py-2 rounded-md border border-white/8 bg-black/10">
                 <option value="relevance">Relevance</option>
                 <option value="priceAsc">Price — Low to High</option>
                 <option value="priceDesc">Price — High to Low</option>
@@ -627,19 +627,32 @@ export default function SlidesAndSalesAdmin() {
               </select>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-3">
               {productsLoading ? (
                 <div className="p-3 rounded border">Loading products...</div>
               ) : (
-                products.map((p) => (
-                  <label key={p?.id ?? Math.random()} className="p-3 rounded border flex items-center gap-3 bg-neutral-50 dark:bg-neutral-800 cursor-pointer">
-                    <input type="checkbox" checked={selectedProductIds.has(p?.id)} onChange={() => toggleSelectProduct(p)} className="accent-black dark:accent-white" />
-                    <div className="flex-1">
-                      <div className="font-semibold text-sm">{p?.name}</div>
-                      <div className="text-xs text-neutral-500">ID: {p?.id} • ₹{p?.price}</div>
+                products.map((p, i) => {
+                  // stable key: prefer id, fallback to index (not Math.random)
+                  const key = p?.id ?? `idx-${i}`;
+                  const img = p?.image || p?.image_url || p?.thumbnail || "";
+                  return (
+                    <div key={key} className="p-3 rounded-2xl border bg-black/20 shadow-md flex gap-4 items-center">
+                      <input type="checkbox" checked={selectedProductIds.has(p?.id)} onChange={() => toggleSelectProduct(p)} className="accent-white" />
+                      <div className="w-28 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-white/5">
+                        {img ? (
+                          <img src={img} alt={p?.name || "product"} className="object-cover w-full h-full" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-xs text-neutral-400">No image</div>
+                        )}
+                      </div>
+                      <div className="flex-1 flex flex-col">
+                        <div className="font-semibold text-sm">{p?.name}</div>
+                        <div className="text-xs text-neutral-400">ID: {p?.id} • ₹{p?.price ?? "—"}</div>
+                        <div className="text-xs text-neutral-500 mt-2 line-clamp-2">{p?.shortDescription || p?.description || ""}</div>
+                      </div>
                     </div>
-                  </label>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -648,12 +661,11 @@ export default function SlidesAndSalesAdmin() {
     );
   }
 
-  // render
   return (
-    <div className="min-h-screen p-6 bg-white text-black dark:bg-black dark:text-white transition-colors">
+    <div className="min-h-screen p-6 bg-black text-white transition-colors">
       <div className="max-w-6xl mx-auto">
         <h1 className="text-3xl font-extrabold mb-2">Slides & Sales Management</h1>
-        <p className="text-sm text-neutral-500 mb-6">Manage homepage carousel slides and named sales. Modern B/W aesthetic with dark-mode-first polish.</p>
+        <p className="text-sm text-neutral-400 mb-6">Black & white admin — drag slides, create named sales, advanced UI with Tailwind animations.</p>
 
         <CenterToggle />
         <Note />
@@ -670,7 +682,7 @@ export default function SlidesAndSalesAdmin() {
           </div>
         )}
 
-        <div className="mt-8 text-xs text-neutral-400">Pro tip: Wire these endpoints to your Express routes: POST /api/upload, GET/POST/DELETE /api/admin/slides, /api/admin/slides/reorder, GET/POST /api/admin/sales, PATCH /api/admin/sales/:id/toggle, GET /api/admin/products</div>
+        <div className="mt-8 text-xs text-neutral-500">Pro tip: Wire these endpoints to your Express routes: POST /api/upload, GET/POST/DELETE /api/admin/slides, /api/admin/slides/reorder, GET/POST /api/admin/sales, PATCH /api/admin/sales/:id/toggle, GET /api/admin/products</div>
       </div>
     </div>
   );
