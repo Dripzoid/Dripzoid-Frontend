@@ -1,13 +1,26 @@
 import React, { useEffect, useRef, useState } from "react";
+import {
+  Plus,
+  UploadCloud,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
+  RefreshCw,
+  Search,
+  Image as ImageIcon,
+  Gift,
+  Check,
+  X,
+  Edit2,
+  GripVertical,
+} from "lucide-react";
 
 /**
- * SlidesAndSalesAdmin.jsx — Redesigned
- * - Modern black & white theme (light/dark aware)
- * - Drag-to-reorder slides (HTML5 drag & drop) with stacked visual like LinkedIn
- * - Smooth Tailwind animations/effects
- * - Sales product list: full-width vertical cards with image
- * - Fixed search input cursor issue by keeping the input stable and using stable keys
- * - Defensive networking and upload route /api/upload
+ * SlidesAndSalesAdmin.jsx — Redesigned (icons added)
+ * - Icons on buttons/action elements for better visuals & affordance
+ * - Black & white theme (light/dark aware)
+ * - Drag-to-reorder stacked slides, vertical product rows, fixed search cursor issue
+ * - Uses /api/upload, /api/admin/ endpoints as before
  */
 
 export default function SlidesAndSalesAdmin() {
@@ -195,7 +208,6 @@ export default function SlidesAndSalesAdmin() {
   function onDragStartSlide(e, index) {
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", String(index));
-    // add slight visual feedback
     try {
       e.dataTransfer.setDragImage(e.currentTarget, 40, 20);
     } catch {}
@@ -384,14 +396,16 @@ export default function SlidesAndSalesAdmin() {
         <div className="inline-flex items-center rounded-full p-1 bg-neutral-100/40 dark:bg-neutral-900/40 shadow-inner border border-neutral-200 dark:border-neutral-800">
           <button
             onClick={() => setMode("slides")}
-            className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all ${mode === "slides" ? "bg-black text-white dark:bg-white dark:text-black shadow-lg" : "bg-transparent text-black/80 dark:text-white/80"}`}
+            className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all flex items-center gap-2 ${mode === "slides" ? "bg-black text-white dark:bg-white dark:text-black shadow-lg" : "bg-transparent text-black/80 dark:text-white/80"}`}
           >
+            <ImageIcon className="w-4 h-4" />
             Slides
           </button>
           <button
             onClick={() => setMode("sales")}
-            className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all ${mode === "sales" ? "bg-black text-white dark:bg-white dark:text-black shadow-lg" : "bg-transparent text-black/80 dark:text-white/80"}`}
+            className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all flex items-center gap-2 ${mode === "sales" ? "bg-black text-white dark:bg-white dark:text-black shadow-lg" : "bg-transparent text-black/80 dark:text-white/80"}`}
           >
+            <Gift className="w-4 h-4" />
             Sales
           </button>
         </div>
@@ -402,8 +416,9 @@ export default function SlidesAndSalesAdmin() {
   function Note() {
     if (!note) return null;
     return (
-      <div role="status" className={`mb-4 px-4 py-2 rounded-lg max-w-3xl mx-auto text-sm ${note.type === "success" ? "bg-white/8 text-white border border-white/10" : "bg-red-900/30 text-red-200 border border-red-800/30"}`}>
-        {note.text}
+      <div role="status" className={`mb-4 px-4 py-2 rounded-lg max-w-3xl mx-auto text-sm flex items-center gap-2 ${note.type === "success" ? "bg-white/8 text-white border border-white/10" : "bg-red-900/30 text-red-200 border border-red-800/30"}`}>
+        {note.type === "success" ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+        <div>{note.text}</div>
       </div>
     );
   }
@@ -447,9 +462,11 @@ export default function SlidesAndSalesAdmin() {
             <input ref={fileInputRef} type="file" accept="image/*" onChange={onFile} className="hidden" />
             <div className="flex gap-2">
               <button onClick={() => fileInputRef.current?.click()} className={primaryBtnClass()}>
+                <UploadCloud className="w-4 h-4" />
                 Choose Image
               </button>
               <button onClick={clearAll} className={secondaryBtnClass()}>
+                <X className="w-4 h-4" />
                 Clear
               </button>
             </div>
@@ -463,9 +480,11 @@ export default function SlidesAndSalesAdmin() {
 
             <div className="flex gap-2 mt-2">
               <button onClick={() => handleAddSlide({ file, name, link })} disabled={!file || addingSlide} className={primaryBtnClass(addingSlide ? "opacity-70 pointer-events-none" : "")}>
+                <Plus className="w-4 h-4" />
                 {addingSlide ? "Adding..." : "Add Slide"}
               </button>
               <button onClick={clearAll} className={secondaryBtnClass()}>
+                <X className="w-4 h-4" />
                 Cancel
               </button>
             </div>
@@ -483,9 +502,11 @@ export default function SlidesAndSalesAdmin() {
           <h3 className="text-lg font-bold">Slides ({slides.length})</h3>
           <div className="flex items-center gap-2">
             <button onClick={() => setSlides([])} title="Clear local view" className={secondaryBtnClass()}>
+              <X className="w-4 h-4" />
               Clear View
             </button>
             <button onClick={() => loadSlides().catch((e) => console.error("manual reload slides error:", e))} className={secondaryBtnClass()}>
+              <RefreshCw className="w-4 h-4" />
               Reload
             </button>
           </div>
@@ -495,7 +516,7 @@ export default function SlidesAndSalesAdmin() {
           <div className="p-4 rounded-md border">Loading slides...</div>
         ) : (
           <div className="relative w-full h-[360px] max-w-3xl mx-auto">
-            {/* We'll render a stacked pile — top item has highest z-index */}
+            {/* stacked pile — top item has highest z-index */}
             {slides.map((s, idx) => {
               const image = s?.image_url || s?.image || s?.imageUrl || s?.imageurl || "";
               const offset = idx * 14; // vertical offset per card
@@ -516,12 +537,15 @@ export default function SlidesAndSalesAdmin() {
                   }}
                 >
                   <div className="flex gap-4 items-center">
-                    <div className="w-44 h-28 rounded-lg overflow-hidden bg-white/5 flex items-center justify-center">
+                    <div className="w-44 h-28 rounded-lg overflow-hidden bg-white/5 flex items-center justify-center relative">
                       {image ? (
                         <img src={image} alt={s?.name || "slide"} className="object-cover w-full h-full" />
                       ) : (
                         <div className="text-sm text-neutral-400">No image</div>
                       )}
+                      <div className="absolute top-2 left-2 p-1 rounded-md bg-black/40">
+                        <GripVertical className="w-4 h-4" />
+                      </div>
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center justify-between gap-4">
@@ -530,9 +554,15 @@ export default function SlidesAndSalesAdmin() {
                           <div className="text-sm text-neutral-400 mt-1">{s?.link || "—"}</div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <button onClick={() => reorderSlides(idx, Math.max(0, idx - 1))} className={secondaryBtnClass()} aria-label="move up">↑</button>
-                          <button onClick={() => reorderSlides(idx, Math.min(slides.length - 1, idx + 1))} className={secondaryBtnClass()} aria-label="move down">↓</button>
-                          <button onClick={() => handleDeleteSlide(s?.id)} className={secondaryBtnClass()}>Delete</button>
+                          <button onClick={() => reorderSlides(idx, Math.max(0, idx - 1))} className={secondaryBtnClass()} aria-label="move up">
+                            <ArrowUp className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => reorderSlides(idx, Math.min(slides.length - 1, idx + 1))} className={secondaryBtnClass()} aria-label="move down">
+                            <ArrowDown className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => handleDeleteSlide(s?.id)} className={secondaryBtnClass()}>
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </div>
                       <div className="text-xs text-neutral-400 mt-2">Position {idx + 1}</div>
@@ -555,6 +585,7 @@ export default function SlidesAndSalesAdmin() {
           <h3 className="text-lg font-bold">Sales ({sales.length})</h3>
           <div className="flex items-center gap-2">
             <button onClick={() => loadSales().catch((e) => console.error("manual reload sales error:", e))} className={secondaryBtnClass()}>
+              <RefreshCw className="w-4 h-4" />
               Reload
             </button>
           </div>
@@ -576,8 +607,14 @@ export default function SlidesAndSalesAdmin() {
                       <input type="checkbox" className="accent-white" checked={!!sale?.enabled} onChange={() => toggleSaleEnabled(sale?.id)} />
                       <span className="text-sm">Enabled</span>
                     </label>
-                    <button className={secondaryBtnClass()}>Edit</button>
-                    <button className={secondaryBtnClass()}>Delete</button>
+                    <button className={secondaryBtnClass()}>
+                      <Edit2 className="w-4 h-4" />
+                      Edit
+                    </button>
+                    <button className={secondaryBtnClass()}>
+                      <Trash2 className="w-4 h-4" />
+                      Delete
+                    </button>
                   </div>
                 </div>
                 <div className="text-xs text-neutral-400">ID: {sale?.id}</div>
@@ -601,9 +638,11 @@ export default function SlidesAndSalesAdmin() {
             <div className="text-xs text-neutral-400 mt-2">Selected products: {selectedProductIds.size}</div>
             <div className="flex gap-2 mt-3">
               <button onClick={() => handleCreateSale({ name })} disabled={creatingSale} className={primaryBtnClass()}>
+                <Plus className="w-4 h-4" />
                 {creatingSale ? "Creating..." : "Create Sale"}
               </button>
               <button onClick={() => { setName(""); setSelectedProductIds(new Set()); }} className={secondaryBtnClass()}>
+                <X className="w-4 h-4" />
                 Reset
               </button>
             </div>
@@ -611,14 +650,16 @@ export default function SlidesAndSalesAdmin() {
 
           <div className="md:col-span-2">
             <div className="flex gap-2 items-center mb-3">
-              {/* Make search input stable (not recreated) to avoid cursor jumps */}
-              <input
-                aria-label="Search products"
-                value={productQuery}
-                onChange={(e) => setProductQuery(e.target.value)}
-                placeholder="Search products"
-                className="flex-1 px-3 py-2 rounded-md border border-white/8 bg-black/10 focus:outline-none"
-              />
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 opacity-60 w-4 h-4" />
+                <input
+                  aria-label="Search products"
+                  value={productQuery}
+                  onChange={(e) => setProductQuery(e.target.value)}
+                  placeholder="Search products"
+                  className="w-full pl-10 px-3 py-2 rounded-md border border-white/8 bg-black/10 focus:outline-none"
+                />
+              </div>
               <select value={productSort} onChange={(e) => setProductSort(e.target.value)} className="px-3 py-2 rounded-md border border-white/8 bg-black/10">
                 <option value="relevance">Relevance</option>
                 <option value="priceAsc">Price — Low to High</option>
@@ -632,22 +673,30 @@ export default function SlidesAndSalesAdmin() {
                 <div className="p-3 rounded border">Loading products...</div>
               ) : (
                 products.map((p, i) => {
-                  // stable key: prefer id, fallback to index (not Math.random)
+                  // stable key: prefer id, fallback to index
                   const key = p?.id ?? `idx-${i}`;
                   const img = p?.image || p?.image_url || p?.thumbnail || "";
                   return (
                     <div key={key} className="p-3 rounded-2xl border bg-black/20 shadow-md flex gap-4 items-center">
                       <input type="checkbox" checked={selectedProductIds.has(p?.id)} onChange={() => toggleSelectProduct(p)} className="accent-white" />
-                      <div className="w-28 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-white/5">
+                      <div className="w-28 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-white/5 relative">
                         {img ? (
                           <img src={img} alt={p?.name || "product"} className="object-cover w-full h-full" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-xs text-neutral-400">No image</div>
                         )}
+                        <div className="absolute top-1 right-1 bg-black/40 rounded px-1 py-0.5 text-xs">
+                          ₹{p?.price ?? "—"}
+                        </div>
                       </div>
                       <div className="flex-1 flex flex-col">
-                        <div className="font-semibold text-sm">{p?.name}</div>
-                        <div className="text-xs text-neutral-400">ID: {p?.id} • ₹{p?.price ?? "—"}</div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-semibold text-sm">{p?.name}</div>
+                          <button onClick={() => toggleSelectProduct(p)} className={secondaryBtnClass()} title="Toggle select">
+                            {selectedProductIds.has(p?.id) ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        <div className="text-xs text-neutral-400">ID: {p?.id}</div>
                         <div className="text-xs text-neutral-500 mt-2 line-clamp-2">{p?.shortDescription || p?.description || ""}</div>
                       </div>
                     </div>
@@ -665,7 +714,7 @@ export default function SlidesAndSalesAdmin() {
     <div className="min-h-screen p-6 bg-black text-white transition-colors">
       <div className="max-w-6xl mx-auto">
         <h1 className="text-3xl font-extrabold mb-2">Slides & Sales Management</h1>
-        <p className="text-sm text-neutral-400 mb-6">Black & white admin — drag slides, create named sales, advanced UI with Tailwind animations.</p>
+        <p className="text-sm text-neutral-400 mb-6">Black & white admin — drag slides, create named sales, advanced UI with icons & Tailwind animations.</p>
 
         <CenterToggle />
         <Note />
