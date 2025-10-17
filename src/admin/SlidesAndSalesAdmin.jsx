@@ -16,14 +16,11 @@ import {
 } from "lucide-react";
 
 /**
- * SlidesAndSalesAdmin.jsx — Corrected
- * - Theme fixed (light / dark aware)
- * - Fully rounded inputs
- * - Slides stacking fixed (no collision) and drag & drop improved
- * - Product cards select on card click (stopPropagation on inner controls)
- * - Pagination for products
- * - Improved search across multiple product fields
- * - Clean, modern Tailwind usage
+ * SlidesAndSalesAdmin.jsx — Revised fixes:
+ *  - Slides: vertical drag-reorder list (no absolute stacking/collisions)
+ *  - Search: debounced filtering to preserve input focus
+ *  - Images: robust parsing of `images` (csv) and fallback fields
+ *  - Inputs: fully rounded, modern Tailwind
  */
 
 export default function SlidesAndSalesAdmin() {
@@ -47,7 +44,8 @@ export default function SlidesAndSalesAdmin() {
   const [loadingSlides, setLoadingSlides] = useState(false);
   const [addingSlide, setAddingSlide] = useState(false);
   const fileInputRef = useRef(null);
-  const dragOverIndexRef = useRef(null);
+  const dragIndexRef = useRef(null); // dragging item
+  const dragOverIndexRef = useRef(null); // current drop target
 
   // Sales
   const [sales, setSales] = useState([]);
@@ -59,6 +57,7 @@ export default function SlidesAndSalesAdmin() {
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [productQuery, setProductQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [productSort, setProductSort] = useState("relevance");
   const [selectedProductIds, setSelectedProductIds] = useState(new Set());
 
@@ -68,6 +67,9 @@ export default function SlidesAndSalesAdmin() {
 
   // UI note
   const [note, setNote] = useState(null);
+
+  // refs
+  const searchInputRef = useRef(null);
 
   // Styles helpers
   function primaryBtnClass(extra = "") {
@@ -183,6 +185,12 @@ export default function SlidesAndSalesAdmin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Debounce search input to avoid focus/caret jump issues:
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(productQuery.trim()), 250);
+    return () => clearTimeout(t);
+  }, [productQuery]);
+
   // Slides
   async function loadSlides() {
     setLoadingSlides(true);
@@ -211,24 +219,33 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // drag & drop handlers for the stacked slide view
+  // Drag & drop (vertical list) helpers for slides:
   function onDragStartSlide(e, index) {
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", String(index));
+    dragIndexRef.current = index;
+    // store index so drop event can read if needed
     try {
-      e.dataTransfer.setDragImage(e.currentTarget, 40, 20);
+      e.dataTransfer.setData("text/plain", String(index));
+      e.dataTransfer.effectAllowed = "move";
     } catch {}
   }
-  function onDragOverSlide(e, index) {
+  function onDragEnterSlide(e, index) {
     e.preventDefault();
     dragOverIndexRef.current = index;
   }
-  function onDropSlide(e, index) {
+  function onDragOverSlide(e) {
     e.preventDefault();
-    const from = Number(e.dataTransfer.getData("text/plain"));
-    const to = index;
-    if (Number.isNaN(from)) return;
+  }
+  function onDropSlide(e) {
+    e.preventDefault();
+    const from = dragIndexRef.current;
+    const to = dragOverIndexRef.current != null ? dragOverIndexRef.current : Number(e.dataTransfer.getData("text/plain"));
+    if (from == null || to == null || Number.isNaN(from) || Number.isNaN(to)) {
+      dragIndexRef.current = null;
+      dragOverIndexRef.current = null;
+      return;
+    }
     reorderSlides(from, to);
+    dragIndexRef.current = null;
     dragOverIndexRef.current = null;
   }
 
@@ -238,8 +255,10 @@ export default function SlidesAndSalesAdmin() {
       const copy = Array.isArray(prev) ? [...prev] : [];
       if (fromIndex < 0 || fromIndex >= copy.length) return copy;
       const [item] = copy.splice(fromIndex, 1);
-      copy.splice(toIndex, 0, item);
-      // optimistically update order and persist
+      // clamp to bounds
+      const toClamped = Math.max(0, Math.min(toIndex, copy.length));
+      copy.splice(toClamped, 0, item);
+      // optimistic persist
       updateSlidesOrder(copy).catch((e) => console.error("reorder save failed", e));
       return copy;
     });
@@ -368,11 +387,32 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // client-side filtering + sorting + pagination
+  // Helper: robust primary image extraction
+  function getPrimaryImage(item) {
+    if (!item) return "";
+    // check common fields
+    if (item.image) return item.image;
+    if (item.image_url) return item.image_url;
+    if (item.thumbnail) return item.thumbnail;
+    // `images` could be a comma-separated string (per example), or an array
+    const imagesField = item.images ?? item.images_url ?? item.imagesUrl ?? null;
+    if (!imagesField) return "";
+    if (Array.isArray(imagesField)) {
+      return imagesField[0] || "";
+    }
+    if (typeof imagesField === "string") {
+      // split on comma, trim
+      const parts = imagesField.split(",").map((p) => p.trim()).filter(Boolean);
+      return parts[0] || "";
+    }
+    return "";
+  }
+
+  // client-side filtering + sorting (driven by debouncedQuery)
   useEffect(() => {
     try {
       let list = Array.isArray(allProducts) ? [...allProducts] : [];
-      const q = (productQuery || "").trim().toLowerCase();
+      const q = (debouncedQuery || "").trim().toLowerCase();
       if (q) {
         list = list.filter((p) => {
           const name = (p?.name || "").toString().toLowerCase();
@@ -388,7 +428,7 @@ export default function SlidesAndSalesAdmin() {
       else if (productSort === "priceDesc") list.sort((a, b) => (Number(b?.price || 0) - Number(a?.price || 0)));
       else if (productSort === "newest") list.sort((a, b) => (new Date(b?.createdAt || b?.created || 0) - new Date(a?.createdAt || a?.created || 0)));
 
-      // reset page if current page out of range
+      // reset page if current page out of range (important)
       const total = Math.max(1, Math.ceil(list.length / pageSize));
       if (currentPage > total) setCurrentPage(1);
 
@@ -396,10 +436,10 @@ export default function SlidesAndSalesAdmin() {
     } catch (err) {
       console.error("filterProducts error:", err);
     }
-  }, [productQuery, productSort, allProducts]);
+  }, [debouncedQuery, productSort, allProducts]); // uses debouncedQuery
 
   useEffect(() => {
-    // whenever product list or page changes, ensure page within bounds
+    // keep currentPage valid if products length changes
     const total = Math.max(1, Math.ceil(products.length / pageSize));
     if (currentPage > total) setCurrentPage(1);
   }, [products, currentPage]);
@@ -520,12 +560,8 @@ export default function SlidesAndSalesAdmin() {
     );
   }
 
-  // Improved stacked slide list (non-colliding)
+  // Slides list: vertical flow (no absolute stacking)
   function SlidesList() {
-    const cardHeight = 108; // px
-    const gap = 14; // vertical gap between stacked cards
-    const containerHeight = Math.max(220, slides.length * (cardHeight + gap));
-
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -545,59 +581,45 @@ export default function SlidesAndSalesAdmin() {
         {loadingSlides ? (
           <div className="p-4 rounded-md border">Loading slides...</div>
         ) : (
-          <div className="relative w-full max-w-3xl mx-auto" style={{ height: `${containerHeight}px` }}>
+          <div className="w-full max-w-3xl mx-auto space-y-3">
             {slides.map((s, idx) => {
               const image = s?.image_url || s?.image || s?.imageUrl || s?.imageurl || "";
-              const offset = idx * (cardHeight + gap) * 0.6; // overlap but not colliding
-              const rotate = (idx % 2 === 0 ? -1 : 1) * (idx % 5 === 0 ? 0.6 : 0.4);
-              const z = 1000 - idx; // top slide larger z-index
+              const isDragOver = dragOverIndexRef.current === idx;
               return (
                 <div
                   key={s?.id ?? idx}
                   draggable
                   onDragStart={(e) => onDragStartSlide(e, idx)}
-                  onDragOver={(e) => onDragOverSlide(e, idx)}
-                  onDrop={(e) => onDropSlide(e, idx)}
-                  className={`absolute left-1/2 -translate-x-1/2 w-11/12 md:w-3/4 p-4 rounded-2xl overflow-hidden shadow-2xl border border-neutral-200/10 transform-gpu transition-all duration-300 cursor-grab hover:scale-[1.01]`}
-                  style={{
-                    top: `${offset}px`,
-                    zIndex: z,
-                    transform: `translateX(-50%) translateY(0) rotate(${rotate}deg)`,
-                    background: "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.06))",
-                    minHeight: `${cardHeight}px`,
-                  }}
+                  onDragEnter={(e) => onDragEnterSlide(e, idx)}
+                  onDragOver={(e) => onDragOverSlide(e)}
+                  onDrop={onDropSlide}
+                  className={`flex gap-4 items-center p-4 rounded-2xl border bg-white/5 shadow-md transition-all ${isDragOver ? "ring-2 ring-offset-2 ring-black/30 dark:ring-white/30" : ""}`}
                 >
-                  <div className="flex gap-4 items-center">
-                    <div className="w-44 h-28 rounded-lg overflow-hidden bg-white/5 flex items-center justify-center relative">
-                      {image ? (
-                        <img src={image} alt={s?.name || "slide"} className="object-cover w-full h-full" />
-                      ) : (
-                        <div className="text-sm text-neutral-400">No image</div>
-                      )}
-                      <div className="absolute top-2 left-2 p-1 rounded-md bg-black/40">
-                        <GripVertical className="w-4 h-4" />
+                  <div className="w-44 h-28 rounded-lg overflow-hidden bg-white/5 flex items-center justify-center relative flex-shrink-0">
+                    {image ? <img src={image} alt={s?.name || "slide"} className="object-cover w-full h-full" /> : <div className="text-sm text-neutral-400">No image</div>}
+                    <div className="absolute top-2 left-2 p-1 rounded-md bg-black/40">
+                      <GripVertical className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-semibold">{s?.name || "Untitled"}</div>
+                        <div className="text-sm text-neutral-500 mt-1">{s?.link || "—"}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={(e) => { e.stopPropagation(); reorderSlides(idx, Math.max(0, idx - 1)); }} className={secondaryBtnClass()} aria-label="move up">
+                          <ArrowUp className="w-4 h-4" />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); reorderSlides(idx, Math.min(slides.length - 1, idx + 1)); }} className={secondaryBtnClass()} aria-label="move down">
+                          <ArrowDown className="w-4 h-4" />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); handleDeleteSlide(s?.id); }} className={secondaryBtnClass()}>
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <div className="font-semibold">{s?.name || "Untitled"}</div>
-                          <div className="text-sm text-neutral-500 mt-1">{s?.link || "—"}</div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button onClick={(e) => { e.stopPropagation(); reorderSlides(idx, Math.max(0, idx - 1)); }} className={secondaryBtnClass()} aria-label="move up">
-                            <ArrowUp className="w-4 h-4" />
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); reorderSlides(idx, Math.min(slides.length - 1, idx + 1)); }} className={secondaryBtnClass()} aria-label="move down">
-                            <ArrowDown className="w-4 h-4" />
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); handleDeleteSlide(s?.id); }} className={secondaryBtnClass()}>
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="text-xs text-neutral-500 mt-2">Position {idx + 1}</div>
-                    </div>
+                    <div className="text-xs text-neutral-500 mt-2">Position {idx + 1}</div>
                   </div>
                 </div>
               );
@@ -689,6 +711,7 @@ export default function SlidesAndSalesAdmin() {
               <div className="relative flex-1">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 opacity-60 w-4 h-4" />
                 <input
+                  ref={searchInputRef}
                   aria-label="Search products"
                   value={productQuery}
                   onChange={(e) => { setProductQuery(e.target.value); setCurrentPage(1); }}
@@ -710,7 +733,7 @@ export default function SlidesAndSalesAdmin() {
               ) : (
                 displayed.map((p, i) => {
                   const key = p?.id ?? `idx-${i}`;
-                  const img = p?.image || p?.image_url || p?.thumbnail || "";
+                  const img = getPrimaryImage(p);
                   const selected = selectedProductIds.has(p?.id);
                   return (
                     <div
@@ -750,8 +773,10 @@ export default function SlidesAndSalesAdmin() {
               <div className="text-sm text-neutral-500">Page {currentPage} of {Math.max(1, Math.ceil(products.length / pageSize))}</div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1} className={secondaryBtnClass(currentPage === 1 ? "opacity-50 pointer-events-none" : "")}>Prev</button>
-                {[...Array(Math.max(1, Math.ceil(products.length / pageSize))).keys()].slice(0, 7).map((n) => {
-                  const page = n + 1;
+                {Array.from({ length: Math.max(1, Math.ceil(products.length / pageSize)) }).map((_, idx) => {
+                  const page = idx + 1;
+                  // show up to first 7 pages (same UI as before) — but safe if fewer
+                  if (page > 7) return null;
                   return (
                     <button key={page} onClick={() => setCurrentPage(page)} className={`px-3 py-1 rounded-full ${page === currentPage ? "bg-black text-white" : "bg-transparent text-neutral-600 border border-neutral-200/10"}`}>
                       {page}
