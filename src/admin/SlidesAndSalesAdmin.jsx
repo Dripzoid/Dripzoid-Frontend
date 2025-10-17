@@ -16,11 +16,11 @@ import {
 } from "lucide-react";
 
 /**
- * ProductSearchBar — top-level component so it isn't re-created on each parent render
- * - localValue (visible) kept internally
- * - preserves caret/selection on updates
- * - only syncs `initial` -> localValue when the input is NOT focused (avoids overwriting while typing)
- * - debounces notifications to parent via onDebounced
+ * ProductSearchBar
+ * - Keeps its own visible state to avoid parent re-renders stomping keystrokes
+ * - Preserves caret/selection using useLayoutEffect
+ * - Handles IME composition (compositionstart/compositionend) to avoid interfering
+ * - Debounces to parent; flushes on compositionend
  */
 const ProductSearchBar = React.memo(function ProductSearchBar({
   initial = "",
@@ -31,16 +31,22 @@ const ProductSearchBar = React.memo(function ProductSearchBar({
   const [localValue, setLocalValue] = useState(initial);
   const selectionRef = useRef({ start: null, end: null, direction: null });
   const debounceRef = useRef(null);
+  const isComposingRef = useRef(false);
 
-  // sync initial -> localValue only when input is not focused (so we don't clobber typing)
+  // maintain an internal ref if none passed
+  const internalRef = useRef(null);
+  const elRef = inputRef || internalRef;
+
+  // sync initial -> localValue only when input is NOT focused and not composing
   useEffect(() => {
-    const el = inputRef?.current;
+    const el = elRef.current;
     const isFocused = typeof document !== "undefined" && el === document.activeElement;
-    if (!isFocused && initial !== localValue) {
+    if (!isFocused && !isComposingRef.current && initial !== localValue) {
       setLocalValue(initial);
     }
+    // intentionally omit localValue from deps (we only want to react to `initial` changes)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initial]);
+  }, [initial, elRef]);
 
   function handleChange(e) {
     const el = e.target;
@@ -58,10 +64,35 @@ const ProductSearchBar = React.memo(function ProductSearchBar({
     setLocalValue(el.value);
   }
 
-  // restore caret/selection synchronously after render
+  function handleCompositionStart() {
+    isComposingRef.current = true;
+    // while composing, don't run debounce or selection restore
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+  }
+  function handleCompositionEnd(e) {
+    isComposingRef.current = false;
+    // after composition ends, ensure selection is captured & flush to parent immediately
+    try {
+      const el = elRef.current;
+      if (el && typeof el.selectionStart === "number") {
+        selectionRef.current = {
+          start: el.selectionStart,
+          end: el.selectionEnd,
+          direction: el.selectionDirection || "none",
+        };
+      }
+    } catch {}
+    onDebounced(e.target.value);
+  }
+
+  // restore caret/selection synchronously after render, but skip while composing
   useLayoutEffect(() => {
+    if (isComposingRef.current) return;
     const sel = selectionRef.current;
-    const el = inputRef?.current;
+    const el = elRef.current;
     if (el && sel && sel.start != null && typeof el.setSelectionRange === "function") {
       try {
         const max = el.value.length;
@@ -72,10 +103,11 @@ const ProductSearchBar = React.memo(function ProductSearchBar({
         // ignore
       }
     }
-  }, [localValue, inputRef]);
+  }, [localValue, elRef]);
 
-  // debounce sending value to parent
+  // debounce sending value to parent (but skip when composing)
   useEffect(() => {
+    if (isComposingRef.current) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       onDebounced(localValue);
@@ -86,10 +118,12 @@ const ProductSearchBar = React.memo(function ProductSearchBar({
   return (
     <div className="relative w-full">
       <input
-        ref={inputRef}
+        ref={elRef}
         type="text"
         value={localValue}
         onChange={handleChange}
+        onCompositionStart={handleCompositionStart}
+        onCompositionEnd={handleCompositionEnd}
         placeholder="Search products (name, id, sku, description, tags)"
         autoComplete="off"
         className="w-full pl-12 pr-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none"
@@ -98,6 +132,10 @@ const ProductSearchBar = React.memo(function ProductSearchBar({
     </div>
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/*                              MAIN COMPONENT                                 */
+/* -------------------------------------------------------------------------- */
 
 export default function SlidesAndSalesAdmin() {
   const API_BASE =
@@ -528,7 +566,7 @@ export default function SlidesAndSalesAdmin() {
     setDebouncedQuery(value);
   }, []);
 
-  // UI components
+  // UI components (CenterToggle, Note, SlideAddBox, SlidesList, SalesList, SaleCreator)
   function CenterToggle() {
     return (
       <div className="w-full flex justify-center my-6">
@@ -751,9 +789,6 @@ export default function SlidesAndSalesAdmin() {
   }
 
   function SaleCreator() {
-    const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
-    const start = (currentPage - 1) * pageSize;
-
     return (
       <div className="p-4 rounded-2xl border bg-gradient-to-b from-neutral-50/40 to-neutral-100/10 dark:from-neutral-900/40 dark:to-neutral-800/30 shadow-xl">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -877,6 +912,7 @@ export default function SlidesAndSalesAdmin() {
           </div>
         )}
 
+        <div className="mt-8 text-xs text-neutral-500">Pro tip: Wire these endpoints to your Express routes: POST /api/upload, GET/POST/DELETE /api/admin/slides, /api/admin/slides/reorder, GET/POST /api/admin/sales, PATCH /api/admin/sales/:id/toggle, GET /api/admin/products</div>
       </div>
     </div>
   );
