@@ -17,150 +17,153 @@ import {
 
 /**
  * ProductSearchBar
- * - Keeps its own visible state to avoid parent re-renders stomping keystrokes
- * - Debounces calls to parent (so backend fetches are debounced)
- * - Preserves caret/selection on updates and handles IME composition
- * - Does NOT blur or force focus changes
+ * - Self-contained input state (localValue) so parent renders don't stomp keystrokes
+ * - Debounces only the call to onDebounced (which triggers backend fetch)
+ * - Preserves caret/selection and handles IME composition (no accidental blur)
+ * - Does not change focus or force selection
+ *
+ * Usage:
+ * <ProductSearchBar initial={debouncedQuery} onDebounced={onSearchDebounced} debounceMs={250} />
  */
-const ProductSearchBar = React.memo(function ProductSearchBar({
-  initial = "",
-  onDebounced,
-  inputRef,
-  debounceMs = 250,
-}) {
-  const [localValue, setLocalValue] = useState(initial);
-  const selectionRef = useRef({ start: null, end: null, direction: null });
-  const debounceRef = useRef(null);
-  const isComposingRef = useRef(false);
+const ProductSearchBar = React.memo(
+  React.forwardRef(function ProductSearchBar(
+    { initial = "", onDebounced, debounceMs = 250, ...props },
+    ref
+  ) {
+    const [localValue, setLocalValue] = useState(initial);
+    const internalRef = useRef(null);
+    const elRef = (ref && typeof ref === "object" && ref.current) || internalRef;
+    const selectionRef = useRef({ start: null, end: null, direction: null });
+    const debounceRef = useRef(null);
+    const isComposingRef = useRef(false);
 
-  // internal ref fallback
-  const internalRef = useRef(null);
-  const elRef = inputRef || internalRef;
-
-  // Sync initial -> localValue only when input NOT focused and not composing
-  useEffect(() => {
-    const el = elRef.current;
-    const isFocused = typeof document !== "undefined" && el === document.activeElement;
-    if (!isFocused && !isComposingRef.current && initial !== localValue) {
-      setLocalValue(initial);
-    }
-    // intentionally don't include localValue as dep
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initial, elRef]);
-
-  function handleChange(e) {
-    const el = e.target;
-    const v = el.value;
-
-    // capture selection for caret restoration
-    try {
-      if (el && typeof el.selectionStart === "number") {
-        selectionRef.current = {
-          start: el.selectionStart,
-          end: el.selectionEnd,
-          direction: el.selectionDirection || "none",
-        };
-      }
-    } catch {
-      selectionRef.current = { start: null, end: null, direction: null };
-    }
-
-    setLocalValue(v);
-
-    // debounce calling parent (skip while composing)
-    if (isComposingRef.current) {
-      // If composing, just clear any pending debounce to avoid sending partial IME text.
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-        debounceRef.current = null;
-      }
-      return;
-    }
-
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      try {
-        onDebounced && onDebounced(v);
-      } catch (err) {
-        // ignore
-      } finally {
-        debounceRef.current = null;
-      }
-    }, debounceMs);
-  }
-
-  function handleCompositionStart() {
-    isComposingRef.current = true;
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-    }
-  }
-
-  function handleCompositionEnd(e) {
-    isComposingRef.current = false;
-    // capture selection after composition end
-    try {
+    // Sync initial -> localValue only when input is NOT focused and not composing.
+    useEffect(() => {
       const el = elRef.current;
-      if (el && typeof el.selectionStart === "number") {
-        selectionRef.current = {
-          start: el.selectionStart,
-          end: el.selectionEnd,
-          direction: el.selectionDirection || "none",
-        };
+      const isFocused = typeof document !== "undefined" && el === document.activeElement;
+      if (!isFocused && !isComposingRef.current && initial !== localValue) {
+        setLocalValue(initial);
       }
-    } catch {}
-    // flush immediately to parent
-    try {
-      onDebounced && onDebounced(e.target.value);
-    } catch {}
-  }
+      // intentionally not depending on localValue
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initial]);
 
-  // restore caret/selection synchronously after render, but skip while composing
-  useLayoutEffect(() => {
-    if (isComposingRef.current) return;
-    const sel = selectionRef.current;
-    const el = elRef.current;
-    if (el && sel && sel.start != null && typeof el.setSelectionRange === "function") {
+    // change handler
+    function handleChange(e) {
+      const el = e.target;
+      const v = el.value;
+
+      // capture selection (caret) to restore after parent updates
       try {
-        const max = el.value.length;
-        const start = Math.max(0, Math.min(sel.start, max));
-        const end = Math.max(0, Math.min(sel.end ?? start, max));
-        el.setSelectionRange(start, end, sel.direction === "forward" ? "forward" : "none");
+        if (el && typeof el.selectionStart === "number") {
+          selectionRef.current = {
+            start: el.selectionStart,
+            end: el.selectionEnd,
+            direction: el.selectionDirection || "none",
+          };
+        }
       } catch {
-        // ignore
+        selectionRef.current = { start: null, end: null, direction: null };
       }
-    }
-  }, [localValue, elRef]);
 
-  // cleanup on unmount
-  useEffect(() => {
-    return () => {
+      setLocalValue(v);
+
+      // if composing (IME), skip debounced send — flush after composition end
+      if (isComposingRef.current) {
+        if (debounceRef.current) {
+          clearTimeout(debounceRef.current);
+          debounceRef.current = null;
+        }
+        return;
+      }
+
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+      debounceRef.current = setTimeout(() => {
+        try {
+          onDebounced && onDebounced(v);
+        } catch (err) {
+          // ignore parent errors
+        } finally {
+          debounceRef.current = null;
+        }
+      }, debounceMs);
+    }
+
+    function handleCompositionStart() {
+      isComposingRef.current = true;
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
         debounceRef.current = null;
       }
-    };
-  }, []);
+    }
+    function handleCompositionEnd(e) {
+      isComposingRef.current = false;
+      // capture selection after composition end
+      try {
+        const el = elRef.current;
+        if (el && typeof el.selectionStart === "number") {
+          selectionRef.current = {
+            start: el.selectionStart,
+            end: el.selectionEnd,
+            direction: el.selectionDirection || "none",
+          };
+        }
+      } catch {}
+      // flush immediately (composition just finished)
+      try {
+        onDebounced && onDebounced(e.target.value);
+      } catch {}
+    }
 
-  return (
-    <div className="relative w-full">
-      <input
-        ref={elRef}
-        type="text"
-        value={localValue}
-        onChange={handleChange}
-        onCompositionStart={handleCompositionStart}
-        onCompositionEnd={handleCompositionEnd}
-        placeholder="Search products (name, id, sku, description, tags)"
-        autoComplete="off"
-        className="w-full pl-12 pr-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none"
-        aria-label="Search products"
-      />
-      <Search className="absolute left-4 top-1/2 -translate-y-1/2 opacity-60 w-4 h-4" />
-    </div>
-  );
-});
+    // restore selection synchronously after localValue changes
+    useLayoutEffect(() => {
+      if (isComposingRef.current) return;
+      const sel = selectionRef.current;
+      const el = elRef.current;
+      if (el && sel && sel.start != null && typeof el.setSelectionRange === "function") {
+        try {
+          const max = el.value.length;
+          const start = Math.max(0, Math.min(sel.start, max));
+          const end = Math.max(0, Math.min(sel.end ?? start, max));
+          el.setSelectionRange(start, end, sel.direction === "forward" ? "forward" : "none");
+        } catch {
+          // ignore selection restore failures
+        }
+      }
+    }, [localValue]);
+
+    // cleanup debounce on unmount
+    useEffect(() => {
+      return () => {
+        if (debounceRef.current) {
+          clearTimeout(debounceRef.current);
+          debounceRef.current = null;
+        }
+      };
+    }, []);
+
+    return (
+      <div className="relative w-full">
+        <input
+          {...props}
+          ref={elRef}
+          type="text"
+          value={localValue}
+          onChange={handleChange}
+          onCompositionStart={handleCompositionStart}
+          onCompositionEnd={handleCompositionEnd}
+          placeholder="Search products (name, id, sku, description, tags)"
+          autoComplete="off"
+          className="w-full pl-12 pr-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none"
+          aria-label="Search products"
+        />
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 opacity-60 w-4 h-4" />
+      </div>
+    );
+  })
+);
 
 /* -------------------------------------------------------------------------- */
 /*                              MAIN COMPONENT                                 */
@@ -199,7 +202,7 @@ export default function SlidesAndSalesAdmin() {
   // Products (server-driven)
   const [displayedProducts, setDisplayedProducts] = useState([]); // page data
   const [productsLoading, setProductsLoading] = useState(false);
-  const [debouncedQuery, setDebouncedQuery] = useState(""); // NOTE: updated by ProductSearchBar (debounced)
+  const [debouncedQuery, setDebouncedQuery] = useState(""); // updated by ProductSearchBar's debounced callback
   const [productSort, setProductSort] = useState("relevance");
   const [selectedProductIds, setSelectedProductIds] = useState(new Set());
   const [totalProducts, setTotalProducts] = useState(0);
@@ -211,7 +214,7 @@ export default function SlidesAndSalesAdmin() {
   // UI note
   const [note, setNote] = useState(null);
 
-  // ref for search input (passed to ProductSearchBar)
+  // ref for search input (passed to ProductSearchBar if needed)
   const searchInputRef = useRef(null);
 
   // Styles helper funcs
@@ -229,7 +232,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // fetch helpers (reuse pattern from your code)
+  // fetch helpers
   function getAuthHeaders(addJson = true) {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     const headers = {};
@@ -325,7 +328,6 @@ export default function SlidesAndSalesAdmin() {
         await loadSales();
         // initial fetch (no search)
         const cleanup = fetchProducts({ search: debouncedQuery, sort: mapSortToBackend(productSort), page: currentPage, limit: pageSize });
-        // ensure cleanup on unmount
         return () => cleanup && cleanup();
       } catch (err) {
         console.error("initial load error:", err);
@@ -508,7 +510,6 @@ export default function SlidesAndSalesAdmin() {
   }
 
   // PRODUCTS - server-driven fetch
-  // map front-end sort keys to backend sort param names
   const mapSortToBackend = (sortKey) => {
     switch (sortKey) {
       case "priceAsc":
@@ -536,7 +537,6 @@ export default function SlidesAndSalesAdmin() {
       const controller = new AbortController();
       const signal = controller.signal;
 
-      // run the actual fetch (async) but return cleanup immediately
       (async () => {
         setProductsLoading(true);
         try {
@@ -559,7 +559,7 @@ export default function SlidesAndSalesAdmin() {
           }
         } catch (err) {
           if (err && (err.name === "AbortError" || (err.name === "DOMException" && err.code === 20))) {
-            // request was aborted — ignore silently
+            // aborted
           } else {
             console.error("fetchProducts error:", err);
             setNoteWithAutoClear({ type: "error", text: `Failed to load products — ${err.message || err}` }, 8000);
@@ -571,14 +571,12 @@ export default function SlidesAndSalesAdmin() {
         }
       })();
 
-      // return cleanup which aborts the request
       return () => {
         try {
           controller.abort();
         } catch {}
       };
     },
-    // empty deps because this function builds path from args and uses stable helpers
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
@@ -620,10 +618,9 @@ export default function SlidesAndSalesAdmin() {
   }
 
   // stable callback passed to ProductSearchBar
-  // IMPORTANT: set page to 1 here to avoid double-fetch effect in separate effect
   const onSearchDebounced = useCallback((value) => {
     setDebouncedQuery(value || "");
-    setCurrentPage(1); // ensure we jump to first page for new search — single state change triggers single fetch
+    setCurrentPage(1);
   }, []);
 
   /* ----------------- UI components (kept similar) ----------------- */
