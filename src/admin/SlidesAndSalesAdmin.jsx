@@ -19,22 +19,6 @@ import ProductSearchBar from "../components/ProductSearchBar";
 /*                              MAIN COMPONENT                                 */
 /* -------------------------------------------------------------------------- */
 
-const SalesList = ({ sales = [] }) => (
-  <div>
-    <h4>Sales</h4>
-    {sales.length ? (
-      <ul>
-        {sales.map((s) => (
-          <li key={s.id}>{s.title}</li>
-        ))}
-      </ul>
-    ) : (
-      <p>No sales yet.</p>
-    )}
-  </div>
-);
-
-
 export default function SlidesAndSalesAdmin() {
   const API_BASE =
     (typeof process !== "undefined" && (process.env.REACT_APP_API_BASE || process.env.API_BASE)) ||
@@ -49,8 +33,10 @@ export default function SlidesAndSalesAdmin() {
     return base ? `${base}${p}` : p;
   }
 
-  // UI states (kept same as before)
+  // -- UI modes
   const [mode, setMode] = useState("slides");
+
+  // Slides
   const [slides, setSlides] = useState([]);
   const [loadingSlides, setLoadingSlides] = useState(false);
   const [addingSlide, setAddingSlide] = useState(false);
@@ -58,29 +44,37 @@ export default function SlidesAndSalesAdmin() {
   const dragIndexRef = useRef(null);
   const dragOverIndexRef = useRef(null);
 
+  // Sales
   const [sales, setSales] = useState([]);
   const [loadingSales, setLoadingSales] = useState(false);
   const [creatingSale, setCreatingSale] = useState(false);
 
   // Products (server-driven)
-  const [displayedProducts, setDisplayedProducts] = useState([]);
+  const [displayedProducts, setDisplayedProducts] = useState([]); // page data
   const [productsLoading, setProductsLoading] = useState(false);
-  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState(""); // updated by ProductSearchBar's debounced callback
   const [productSort, setProductSort] = useState("relevance");
   const [selectedProductIds, setSelectedProductIds] = useState(new Set());
   const [totalProducts, setTotalProducts] = useState(0);
 
+  // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 8;
 
+  // UI note
   const [note, setNote] = useState(null);
 
-  // ref for input if parent wants to focus
+  // ref for search input (passed to ProductSearchBar if needed)
   const searchInputRef = useRef(null);
 
-  // helper functions (primaryBtnClass, secondaryBtnClass, setNoteWithAutoClear) ...
-  function primaryBtnClass(extra = "") { return `inline-flex items-center gap-2 px-4 py-2 rounded-full font-semibold shadow transition transform-gpu hover:-translate-y-0.5 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-black text-white dark:bg-white dark:text-black ${extra}`; }
-  function secondaryBtnClass(extra = "") { return `inline-flex items-center gap-2 px-3 py-1.5 rounded-full font-medium transition border border-neutral-200/30 dark:border-neutral-700 text-neutral-800 dark:text-neutral-100 bg-transparent ${extra}`; }
+  // Styles helper funcs
+  function primaryBtnClass(extra = "") {
+    return `inline-flex items-center gap-2 px-4 py-2 rounded-full font-semibold shadow transition transform-gpu hover:-translate-y-0.5 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-black text-white dark:bg-white dark:text-black ${extra}`;
+  }
+  function secondaryBtnClass(extra = "") {
+    return `inline-flex items-center gap-2 px-3 py-1.5 rounded-full font-medium transition border border-neutral-200/30 dark:border-neutral-700 text-neutral-800 dark:text-neutral-100 bg-transparent ${extra}`;
+  }
+
   function setNoteWithAutoClear(n, timeout = 6000) {
     setNote(n);
     if (timeout) {
@@ -88,7 +82,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // ... fetch helpers and API functions are same as your code (apiGet, apiPost, etc.)
+  // fetch helpers
   function getAuthHeaders(addJson = true) {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     const headers = {};
@@ -192,7 +186,7 @@ export default function SlidesAndSalesAdmin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // slides / sales related functions (keep as in your code)...
+  // -- SLIDES
   async function loadSlides() {
     setLoadingSlides(true);
     try {
@@ -219,14 +213,30 @@ export default function SlidesAndSalesAdmin() {
       setNoteWithAutoClear({ type: "error", text: `Failed to remove slide — ${err.message || err}` }, 8000);
     }
   }
-  function onDragStartSlide(e, index) { dragIndexRef.current = index; try { e.dataTransfer.setData("text/plain", String(index)); e.dataTransfer.effectAllowed = "move"; } catch {} }
-  function onDragEnterSlide(e, index) { e.preventDefault(); dragOverIndexRef.current = index; }
-  function onDragOverSlide(e) { e.preventDefault(); }
+
+  function onDragStartSlide(e, index) {
+    dragIndexRef.current = index;
+    try {
+      e.dataTransfer.setData("text/plain", String(index));
+      e.dataTransfer.effectAllowed = "move";
+    } catch {}
+  }
+  function onDragEnterSlide(e, index) {
+    e.preventDefault();
+    dragOverIndexRef.current = index;
+  }
+  function onDragOverSlide(e) {
+    e.preventDefault();
+  }
   function onDropSlide(e) {
     e.preventDefault();
     const from = dragIndexRef.current;
     const to = dragOverIndexRef.current != null ? dragOverIndexRef.current : Number(e.dataTransfer.getData("text/plain"));
-    if (from == null || to == null || Number.isNaN(from) || Number.isNaN(to)) { dragIndexRef.current = null; dragOverIndexRef.current = null; return; }
+    if (from == null || to == null || Number.isNaN(from) || Number.isNaN(to)) {
+      dragIndexRef.current = null;
+      dragOverIndexRef.current = null;
+      return;
+    }
     reorderSlides(from, to);
     dragIndexRef.current = null;
     dragOverIndexRef.current = null;
@@ -279,7 +289,10 @@ export default function SlidesAndSalesAdmin() {
   }
 
   async function handleAddSlide({ file, name, link }) {
-    if (!file) { setNoteWithAutoClear({ type: "error", text: "Please choose an image." }, 4000); return; }
+    if (!file) {
+      setNoteWithAutoClear({ type: "error", text: "Please choose an image." }, 4000);
+      return;
+    }
     setAddingSlide(true);
     try {
       const url = await uploadImage(file);
@@ -296,7 +309,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // SALES load/create/toggle
+  // -- SALES
   async function loadSales() {
     setLoadingSales(true);
     try {
@@ -346,67 +359,86 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // PRODUCTS
+  // PRODUCTS - server-driven fetch
   const mapSortToBackend = (sortKey) => {
     switch (sortKey) {
-      case "priceAsc": return "price_asc";
-      case "priceDesc": return "price_desc";
-      case "newest": return "newest";
-      case "nameAsc": return "name_asc";
-      case "nameDesc": return "name_desc";
-      default: return "";
+      case "priceAsc":
+        return "price_asc";
+      case "priceDesc":
+        return "price_desc";
+      case "newest":
+        return "newest";
+      case "nameAsc":
+        return "name_asc";
+      case "nameDesc":
+        return "name_desc";
+      default:
+        return ""; // backend default
     }
   };
 
-  const fetchProducts = useCallback(({ search = "", sort = "", page = 1, limit = pageSize } = {}) => {
-    const controller = new AbortController();
-    const signal = controller.signal;
+  /**
+   * fetchProducts
+   * - returns a synchronous cleanup function (controller.abort)
+   * - runs async fetch internally and updates state when done
+   */
+  const fetchProducts = useCallback(
+    ({ search = "", sort = "", page = 1, limit = pageSize } = {}) => {
+      const controller = new AbortController();
+      const signal = controller.signal;
 
-    (async () => {
-      setProductsLoading(true);
-      try {
-        const params = new URLSearchParams();
-        if (search) params.append("search", String(search));
-        if (sort) params.append("sort", String(sort));
-        if (page) params.append("page", String(page));
-        if (limit) params.append("limit", String(limit));
-        const path = `/api/products?${params.toString()}`;
+      (async () => {
+        setProductsLoading(true);
+        try {
+          const params = new URLSearchParams();
+          if (search) params.append("search", String(search));
+          if (sort) params.append("sort", String(sort));
+          if (page) params.append("page", String(page));
+          if (limit) params.append("limit", String(limit));
+          const path = `/api/products?${params.toString()}`;
 
-        const json = await apiGet(path, signal);
-        if (json && typeof json === "object") {
-          const meta = json.meta || {};
-          const data = json.data || (Array.isArray(json) ? json : []);
-          setDisplayedProducts(Array.isArray(data) ? data : []);
-          setTotalProducts(Number(meta.total ?? (Array.isArray(data) ? data.length : 0)));
-        } else {
-          setDisplayedProducts([]);
-          setTotalProducts(0);
+          const json = await apiGet(path, signal);
+          if (json && typeof json === "object") {
+            const meta = json.meta || {};
+            const data = json.data || (Array.isArray(json) ? json : []);
+            setDisplayedProducts(Array.isArray(data) ? data : []);
+            setTotalProducts(Number(meta.total ?? (Array.isArray(data) ? data.length : 0)));
+          } else {
+            setDisplayedProducts([]);
+            setTotalProducts(0);
+          }
+        } catch (err) {
+          if (err && (err.name === "AbortError" || (err.name === "DOMException" && err.code === 20))) {
+            // aborted
+          } else {
+            console.error("fetchProducts error:", err);
+            setNoteWithAutoClear({ type: "error", text: `Failed to load products — ${err.message || err}` }, 8000);
+            setDisplayedProducts([]);
+            setTotalProducts(0);
+          }
+        } finally {
+          setProductsLoading(false);
         }
-      } catch (err) {
-        if (err && (err.name === "AbortError" || (err.name === "DOMException" && err.code === 20))) {
-          // aborted
-        } else {
-          console.error("fetchProducts error:", err);
-          setNoteWithAutoClear({ type: "error", text: `Failed to load products — ${err.message || err}` }, 8000);
-          setDisplayedProducts([]);
-          setTotalProducts(0);
-        }
-      } finally {
-        setProductsLoading(false);
-      }
-    })();
+      })();
 
-    return () => {
-      try { controller.abort(); } catch {}
-    };
-  }, []);
+      return () => {
+        try {
+          controller.abort();
+        } catch {}
+      };
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
 
+  // trigger fetch when debouncedQuery, productSort, or currentPage changes
   useEffect(() => {
     const backendSort = mapSortToBackend(productSort);
     const cleanup = fetchProducts({ search: debouncedQuery, sort: backendSort, page: currentPage, limit: pageSize });
     return () => cleanup && cleanup();
   }, [debouncedQuery, productSort, currentPage, fetchProducts]);
 
+  // convert product object -> primary image
   function getPrimaryImage(item) {
     if (!item) return "";
     if (item.image) return item.image;
@@ -414,7 +446,9 @@ export default function SlidesAndSalesAdmin() {
     if (item.thumbnail) return item.thumbnail;
     const imagesField = item.images ?? item.images_url ?? item.imagesUrl ?? null;
     if (!imagesField) return "";
-    if (Array.isArray(imagesField)) return imagesField[0] || "";
+    if (Array.isArray(imagesField)) {
+      return imagesField[0] || "";
+    }
     if (typeof imagesField === "string") {
       const parts = imagesField.split(",").map((p) => p.trim()).filter(Boolean);
       return parts[0] || "";
@@ -422,11 +456,13 @@ export default function SlidesAndSalesAdmin() {
     return "";
   }
 
+  // toggle selection
   function toggleSelectProduct(productOrId) {
     const id = productOrId?.id ?? productOrId;
     setSelectedProductIds((prev) => {
       const copy = new Set(prev);
-      if (copy.has(id)) copy.delete(id); else copy.add(id);
+      if (copy.has(id)) copy.delete(id);
+      else copy.add(id);
       return copy;
     });
   }
@@ -437,17 +473,24 @@ export default function SlidesAndSalesAdmin() {
     setCurrentPage(1);
   }, []);
 
-  /* UI subcomponents (CenterToggle, Note, SlideAddBox, SlidesList, SalesList, SaleCreator)
-     Keep same structure — the key part below is how ProductSearchBar is used */
+  /* ----------------- UI components (kept similar) ----------------- */
   function CenterToggle() {
     return (
       <div className="w-full flex justify-center my-6">
         <div className="inline-flex items-center rounded-full p-1 bg-neutral-100/40 dark:bg-neutral-800/40 shadow-inner border border-neutral-200/20 dark:border-neutral-700/20">
-          <button onClick={() => setMode("slides")} className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all flex items-center gap-2 ${mode === "slides" ? "bg-black text-white dark:bg-white dark:text-black shadow-lg" : "bg-transparent text-neutral-800 dark:text-neutral-200"}`}>
-            <ImageIcon className="w-4 h-4" /> Slides
+          <button
+            onClick={() => setMode("slides")}
+            className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all flex items-center gap-2 ${mode === "slides" ? "bg-black text-white dark:bg-white dark:text-black shadow-lg" : "bg-transparent text-neutral-800 dark:text-neutral-200"}`}
+          >
+            <ImageIcon className="w-4 h-4" />
+            Slides
           </button>
-          <button onClick={() => setMode("sales")} className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all flex items-center gap-2 ${mode === "sales" ? "bg-black text-white dark:bg-white dark:text-black shadow-lg" : "bg-transparent text-neutral-800 dark:text-neutral-200"}`}>
-            <Gift className="w-4 h-4" /> Sales
+          <button
+            onClick={() => setMode("sales")}
+            className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all flex items-center gap-2 ${mode === "sales" ? "bg-black text-white dark:bg-white dark:text-black shadow-lg" : "bg-transparent text-neutral-800 dark:text-neutral-200"}`}
+          >
+            <Gift className="w-4 h-4" />
+            Sales
           </button>
         </div>
       </div>
@@ -464,8 +507,193 @@ export default function SlidesAndSalesAdmin() {
     );
   }
 
-  // SlideAddBox, SlidesList, SalesList are unchanged — omitted here for brevity in this snippet,
-  // but in your file keep them exactly as you had previously.
+  function SlideAddBox() {
+    const [name, setName] = useState("");
+    const [link, setLink] = useState("");
+    const [file, setFile] = useState(null);
+    const [preview, setPreview] = useState(null);
+
+    useEffect(() => {
+      if (!file) {
+        setPreview(null);
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      setPreview(url);
+      return () => URL.revokeObjectURL(url);
+    }, [file]);
+
+    function onFile(e) {
+      const f = e?.target?.files?.[0];
+      if (f) setFile(f);
+    }
+
+    function clearAll() {
+      setFile(null);
+      setPreview(null);
+      setName("");
+      setLink("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+
+    return (
+      <div className="p-4 rounded-2xl border bg-gradient-to-b from-neutral-50/40 to-neutral-100/10 dark:from-neutral-900/40 dark:to-neutral-800/30 shadow-xl">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-64 h-36 border-2 border-dashed rounded-xl overflow-hidden flex items-center justify-center bg-white/5">
+              {preview ? <img src={preview} alt="preview" className="object-cover w-full h-full" /> : <div className="text-center text-sm text-neutral-400">Preview</div>}
+            </div>
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={onFile} className="hidden" />
+            <div className="flex gap-2">
+              <button onClick={() => fileInputRef.current?.click()} className={primaryBtnClass()}>
+                <UploadCloud className="w-4 h-4" />
+                Choose Image
+              </button>
+              <button onClick={clearAll} className={secondaryBtnClass()}>
+                <X className="w-4 h-4" />
+                Clear
+              </button>
+            </div>
+          </div>
+
+          <div className="md:col-span-2 flex flex-col gap-3">
+            <label className="text-xs font-semibold uppercase text-neutral-500">Slide name</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Eg: Winter Collection" className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
+            <label className="text-xs font-semibold uppercase text-neutral-500">Link (optional)</label>
+            <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="/collection/winter" className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
+
+            <div className="flex gap-2 mt-2">
+              <button onClick={() => handleAddSlide({ file, name, link })} disabled={!file || addingSlide} className={primaryBtnClass(addingSlide ? "opacity-70 pointer-events-none" : "")}>
+                <Plus className="w-4 h-4" />
+                {addingSlide ? "Adding..." : "Add Slide"}
+              </button>
+              <button onClick={clearAll} className={secondaryBtnClass()}>
+                <X className="w-4 h-4" />
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function SlidesList() {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold">Slides ({slides.length})</h3>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setSlides([])} title="Clear local view" className={secondaryBtnClass()}>
+              <X className="w-4 h-4" />
+              Clear View
+            </button>
+            <button onClick={() => loadSlides().catch((e) => console.error("manual reload slides error:", e))} className={secondaryBtnClass()}>
+              <RefreshCw className="w-4 h-4" />
+              Reload
+            </button>
+          </div>
+        </div>
+
+        {loadingSlides ? (
+          <div className="p-4 rounded-md border">Loading slides...</div>
+        ) : (
+          <div className="w-full max-w-3xl mx-auto space-y-3">
+            {slides.map((s, idx) => {
+              const image = s?.image_url || s?.image || s?.imageUrl || s?.imageurl || "";
+              const isDragOver = dragOverIndexRef.current === idx;
+              return (
+                <div
+                  key={s?.id ?? idx}
+                  draggable
+                  onDragStart={(e) => onDragStartSlide(e, idx)}
+                  onDragEnter={(e) => onDragEnterSlide(e, idx)}
+                  onDragOver={(e) => onDragOverSlide(e)}
+                  onDrop={onDropSlide}
+                  className={`flex gap-4 items-center p-4 rounded-2xl border bg-white/5 shadow-md transition-all ${isDragOver ? "ring-2 ring-offset-2 ring-black/30 dark:ring-white/30" : ""}`}
+                >
+                  <div className="w-44 h-28 rounded-lg overflow-hidden bg-white/5 flex items-center justify-center relative flex-shrink-0">
+                    {image ? <img src={image} alt={s?.name || "slide"} className="object-cover w-full h-full" /> : <div className="text-sm text-neutral-400">No image</div>}
+                    <div className="absolute top-2 left-2 p-1 rounded-md bg-black/40">
+                      <GripVertical className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-semibold">{s?.name || "Untitled"}</div>
+                        <div className="text-sm text-neutral-500 mt-1">{s?.link || "—"}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={(e) => { e.stopPropagation(); reorderSlides(idx, Math.max(0, idx - 1)); }} className={secondaryBtnClass()} aria-label="move up">
+                          <ArrowUp className="w-4 h-4" />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); reorderSlides(idx, Math.min(slides.length - 1, idx + 1)); }} className={secondaryBtnClass()} aria-label="move down">
+                          <ArrowDown className="w-4 h-4" />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); handleDeleteSlide(s?.id); }} className={secondaryBtnClass()}>
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-xs text-neutral-500 mt-2">Position {idx + 1}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function SalesList() {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold">Sales ({sales.length})</h3>
+          <div className="flex items-center gap-2">
+            <button onClick={() => loadSales().catch((e) => console.error("manual reload sales error:", e))} className={secondaryBtnClass()}>
+              <RefreshCw className="w-4 h-4" />
+              Reload
+            </button>
+          </div>
+        </div>
+
+        {loadingSales ? (
+          <div className="p-4 rounded border">Loading sales...</div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4">
+            {sales.map((sale) => (
+              <div key={sale?.id} className="p-4 rounded-2xl border bg-white/3 shadow-md flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold">{sale?.name || "Unnamed sale"}</div>
+                    <div className="text-xs text-neutral-500">{(sale?.productIds || sale?.products || []).length} products</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="inline-flex items-center gap-2">
+                      <input type="checkbox" className="accent-black dark:accent-white" checked={!!sale?.enabled} onChange={() => toggleSaleEnabled(sale?.id)} />
+                      <span className="text-sm">Enabled</span>
+                    </label>
+                    <button className={secondaryBtnClass()}>
+                      <Edit2 className="w-4 h-4" />
+                      Edit
+                    </button>
+                    <button className={secondaryBtnClass()}>
+                      <Trash2 className="w-4 h-4" />
+                      Delete
+                    </button>
+                  </div>
+                </div>
+                <div className="text-xs text-neutral-500">ID: {sale?.id}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   function SaleCreator() {
     const totalPages = Math.max(1, Math.ceil((totalProducts || 0) / pageSize));
@@ -483,7 +711,8 @@ export default function SlidesAndSalesAdmin() {
                 {creatingSale ? "Creating..." : "Create Sale"}
               </button>
               <button onClick={() => { setSelectedProductIds(new Set()); }} className={secondaryBtnClass()}>
-                <X className="w-4 h-4" /> Reset
+                <X className="w-4 h-4" />
+                Reset
               </button>
             </div>
           </div>
@@ -491,15 +720,13 @@ export default function SlidesAndSalesAdmin() {
           <div className="md:col-span-2">
             <div className="flex gap-2 items-center mb-3">
               <div className="relative flex-1">
-                {/* IMPORTANT: Do NOT pass `initial={debouncedQuery}` here.
-                    Let ProductSearchBar manage live typing. We only pass the debounced callback. */}
                 <ProductSearchBar
+                  initial={debouncedQuery}
                   onDebounced={onSearchDebounced}
                   debounceMs={250}
                   ref={searchInputRef}
                 />
               </div>
-
               <select value={productSort} onChange={(e) => setProductSort(e.target.value)} className="px-3 py-3 rounded-full border border-neutral-200 bg-white/5">
                 <option value="relevance">Relevance</option>
                 <option value="priceAsc">Price — Low to High</option>
@@ -510,15 +737,73 @@ export default function SlidesAndSalesAdmin() {
               </select>
             </div>
 
-            {/* the product list, pagination etc. remain exactly as you had them */}
-            {/* ... (rest of sale creator product UI) ... */}
+            <div className="space-y-3">
+              {productsLoading ? (
+                <div className="p-3 rounded border">Loading products...</div>
+              ) : displayedProducts.length === 0 ? (
+                <div className="p-3 rounded border">No products found.</div>
+              ) : (
+                displayedProducts.map((p, i) => {
+                  const key = p?.id ?? `idx-${i}`;
+                  const img = getPrimaryImage(p);
+                  const selected = selectedProductIds.has(p?.id);
+                  return (
+                    <div
+                      key={key}
+                      onClick={() => toggleSelectProduct(p?.id)}
+                      className={`p-3 rounded-2xl border bg-white/4 shadow-md flex gap-4 items-center cursor-pointer ${selected ? "ring-2 ring-offset-2 ring-black dark:ring-white" : ""}`}
+                    >
+                      <input onClick={(e) => { e.stopPropagation(); toggleSelectProduct(p?.id); }} type="checkbox" checked={selected} className="accent-black dark:accent-white" readOnly />
+                      <div className="w-28 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-white/5 relative">
+                        {img ? (
+                          <img src={img} alt={p?.name || "product"} className="object-cover w-full h-full" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-xs text-neutral-400">No image</div>
+                        )}
+                        <div className="absolute top-1 right-1 bg-black/60 rounded px-2 py-0.5 text-xs text-white">
+                          ₹{p?.price ?? "—"}
+                        </div>
+                      </div>
+                      <div className="flex-1 flex flex-col">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-semibold text-sm">{p?.name}</div>
+                          <button onClick={(e) => { e.stopPropagation(); toggleSelectProduct(p?.id); }} className={secondaryBtnClass()} title="Toggle select">
+                            {selected ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        <div className="text-xs text-neutral-500">ID: {p?.id}</div>
+                        <div className="text-xs text-neutral-500 mt-2 line-clamp-2">{p?.shortDescription || p?.description || ""}</div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Pagination controls */}
+            <div className="mt-4 flex items-center justify-between">
+              <div className="text-sm text-neutral-500">Page {currentPage} of {Math.max(1, Math.ceil((totalProducts || 0) / pageSize))}</div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1} className={secondaryBtnClass(currentPage === 1 ? "opacity-50 pointer-events-none" : "")}>Prev</button>
+                {Array.from({ length: Math.max(1, Math.ceil((totalProducts || 0) / pageSize)) }).map((_, idx) => {
+                  const page = idx + 1;
+                  if (page > 7) return null;
+                  return (
+                    <button key={page} onClick={() => setCurrentPage(page)} className={`px-3 py-1 rounded-full ${page === currentPage ? "bg-black text-white" : "bg-transparent text-neutral-600 border border-neutral-200/10"}`}>
+                      {page}
+                    </button>
+                  );
+                })}
+                <button onClick={() => setCurrentPage((p) => Math.min(Math.max(1, Math.ceil((totalProducts || 0) / pageSize)), p + 1))} disabled={currentPage === Math.ceil((totalProducts || 0) / pageSize)} className={secondaryBtnClass(currentPage === Math.ceil((totalProducts || 0) / pageSize) ? "opacity-50 pointer-events-none" : "")}>Next</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  // MAIN render (keep the rest of your layout the same)
+  // main render
   return (
     <div className="min-h-screen p-6 bg-neutral-50 text-neutral-900 dark:bg-neutral-900 dark:text-white transition-colors">
       <div className="max-w-6xl mx-auto">
@@ -530,8 +815,8 @@ export default function SlidesAndSalesAdmin() {
 
         {mode === "slides" ? (
           <div className="space-y-6">
-            {/* keep your SlideAddBox and SlidesList components here */}
-            {/* ... */}
+            <SlideAddBox />
+            <SlidesList />
           </div>
         ) : (
           <div className="space-y-6">
