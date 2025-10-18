@@ -19,6 +19,22 @@ import ProductSearchBar from "../components/ProductSearchBar";
 /*                              MAIN COMPONENT                                 */
 /* -------------------------------------------------------------------------- */
 
+const SalesList = ({ sales = [] }) => (
+  <div>
+    <h4>Sales</h4>
+    {sales.length ? (
+      <ul>
+        {sales.map((s) => (
+          <li key={s.id}>{s.title}</li>
+        ))}
+      </ul>
+    ) : (
+      <p>No sales yet.</p>
+    )}
+  </div>
+);
+
+
 export default function SlidesAndSalesAdmin() {
   const API_BASE =
     (typeof process !== "undefined" && (process.env.REACT_APP_API_BASE || process.env.API_BASE)) ||
