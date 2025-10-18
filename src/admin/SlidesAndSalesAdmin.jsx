@@ -49,13 +49,12 @@ export default function SlidesAndSalesAdmin() {
   const [loadingSales, setLoadingSales] = useState(false);
   const [creatingSale, setCreatingSale] = useState(false);
 
-  // Products (server-driven)
-  const [displayedProducts, setDisplayedProducts] = useState([]); // page data
-  const [productsLoading, setProductsLoading] = useState(false);
+  // Products (client-side search)
+  const [allProducts, setAllProducts] = useState([]); // all products fetched once
+  const [productsLoading, setProductsLoading] = useState(false); // only for initial load
   const [debouncedQuery, setDebouncedQuery] = useState(""); // updated by ProductSearchBar's debounced callback
   const [productSort, setProductSort] = useState("relevance");
   const [selectedProductIds, setSelectedProductIds] = useState(new Set());
-  const [totalProducts, setTotalProducts] = useState(0);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -170,15 +169,13 @@ export default function SlidesAndSalesAdmin() {
     return safeFetchJson(buildUrl(path), { method: "DELETE", credentials: "include", headers: getAuthHeaders(false) });
   }
 
-  // initial load
+  // initial load (slides, sales, all products)
   useEffect(() => {
     (async () => {
       try {
         await loadSlides();
         await loadSales();
-        // initial fetch (no search)
-        const cleanup = fetchProducts({ search: debouncedQuery, sort: mapSortToBackend(productSort), page: currentPage, limit: pageSize });
-        return () => cleanup && cleanup();
+        await loadAllProducts();
       } catch (err) {
         console.error("initial load error:", err);
       }
@@ -359,86 +356,30 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // PRODUCTS - server-driven fetch
-  const mapSortToBackend = (sortKey) => {
+  // PRODUCTS - client-side search & sort
+
+  const mapSortToComparator = useCallback((sortKey) => {
     switch (sortKey) {
       case "priceAsc":
-        return "price_asc";
+        return (a, b) => Number((a?.price ?? 0)) - Number((b?.price ?? 0));
       case "priceDesc":
-        return "price_desc";
+        return (a, b) => Number((b?.price ?? 0)) - Number((a?.price ?? 0));
       case "newest":
-        return "newest";
+        return (a, b) => {
+          const da = new Date(a?.createdAt || a?.created_at || 0).getTime();
+          const db = new Date(b?.createdAt || b?.created_at || 0).getTime();
+          return db - da;
+        };
       case "nameAsc":
-        return "name_asc";
+        return (a, b) => String(a?.name || "").localeCompare(String(b?.name || ""));
       case "nameDesc":
-        return "name_desc";
+        return (a, b) => String(b?.name || "").localeCompare(String(a?.name || ""));
       default:
-        return ""; // backend default
+        return null; // no sort (relevance/default)
     }
-  };
+  }, []);
 
-  /**
-   * fetchProducts
-   * - returns a synchronous cleanup function (controller.abort)
-   * - runs async fetch internally and updates state when done
-   */
-  const fetchProducts = useCallback(
-    ({ search = "", sort = "", page = 1, limit = pageSize } = {}) => {
-      const controller = new AbortController();
-      const signal = controller.signal;
-
-      (async () => {
-        setProductsLoading(true);
-        try {
-          const params = new URLSearchParams();
-          if (search) params.append("search", String(search));
-          if (sort) params.append("sort", String(sort));
-          if (page) params.append("page", String(page));
-          if (limit) params.append("limit", String(limit));
-          const path = `/api/products?${params.toString()}`;
-
-          const json = await apiGet(path, signal);
-          if (json && typeof json === "object") {
-            const meta = json.meta || {};
-            const data = json.data || (Array.isArray(json) ? json : []);
-            setDisplayedProducts(Array.isArray(data) ? data : []);
-            setTotalProducts(Number(meta.total ?? (Array.isArray(data) ? data.length : 0)));
-          } else {
-            setDisplayedProducts([]);
-            setTotalProducts(0);
-          }
-        } catch (err) {
-          if (err && (err.name === "AbortError" || (err.name === "DOMException" && err.code === 20))) {
-            // aborted
-          } else {
-            console.error("fetchProducts error:", err);
-            setNoteWithAutoClear({ type: "error", text: `Failed to load products — ${err.message || err}` }, 8000);
-            setDisplayedProducts([]);
-            setTotalProducts(0);
-          }
-        } finally {
-          setProductsLoading(false);
-        }
-      })();
-
-      return () => {
-        try {
-          controller.abort();
-        } catch {}
-      };
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
-
-  // trigger fetch when debouncedQuery, productSort, or currentPage changes
-  useEffect(() => {
-    const backendSort = mapSortToBackend(productSort);
-    const cleanup = fetchProducts({ search: debouncedQuery, sort: backendSort, page: currentPage, limit: pageSize });
-    return () => cleanup && cleanup();
-  }, [debouncedQuery, productSort, currentPage, fetchProducts]);
-
-  // convert product object -> primary image
+  // helper: get primary image
   function getPrimaryImage(item) {
     if (!item) return "";
     if (item.image) return item.image;
@@ -456,6 +397,98 @@ export default function SlidesAndSalesAdmin() {
     return "";
   }
 
+  // Load all products once (initial load)
+  async function loadAllProducts() {
+    setProductsLoading(true);
+    try {
+      // try to fetch a large limit — adjust as your backend supports
+      const url = "/api/products?limit=10000";
+      const json = await apiGet(url);
+      // json may be { data: [...], meta: {...} } or array
+      const data = Array.isArray(json) ? json : json.data ?? json.products ?? json.items ?? [];
+      setAllProducts(Array.isArray(data) ? data : []);
+      // reset pagination
+      setCurrentPage(1);
+    } catch (err) {
+      console.error("loadAllProducts error:", err);
+      setNoteWithAutoClear({ type: "error", text: `Failed to load products — ${err.message || err}` }, 12000);
+      setAllProducts([]);
+    } finally {
+      setProductsLoading(false);
+    }
+  }
+
+  // stable callback passed to ProductSearchBar
+  const onSearchDebounced = useCallback((value) => {
+    setDebouncedQuery(value || "");
+    setCurrentPage(1);
+  }, []);
+
+  /* ----------------- Memoized Search Wrapper (kept) ----------------- */
+
+  const SearchWrapper = useMemo(() => {
+    const Wrap = React.memo(
+      React.forwardRef(function Wrap({ initial, onDebounced, debounceMs }, ref) {
+        return <ProductSearchBar initial={initial} onDebounced={onDebounced} debounceMs={debounceMs} ref={ref} />;
+      })
+    );
+    return Wrap;
+  }, []);
+
+  const memoizedSearchElement = useMemo(
+    () => <SearchWrapper initial={debouncedQuery} onDebounced={onSearchDebounced} debounceMs={250} ref={searchInputRef} />,
+    [debouncedQuery, onSearchDebounced, SearchWrapper]
+  );
+
+  /* ----------------- Client-side filter + sort + pagination ----------------- */
+
+  const filteredProducts = useMemo(() => {
+    const q = String(debouncedQuery || "").trim().toLowerCase();
+    if (!q) {
+      // return a shallow copy (so sorting does not mutate allProducts)
+      const copy = Array.isArray(allProducts) ? [...allProducts] : [];
+      const comparator = mapSortToComparator(productSort);
+      if (comparator) copy.sort(comparator);
+      return copy;
+    }
+
+    const results = (allProducts || []).filter((p) => {
+      if (!p) return false;
+      // match id
+      if (String(p.id || "").toLowerCase().includes(q)) return true;
+      // name
+      if (String(p.name || "").toLowerCase().includes(q)) return true;
+      // sku
+      if (String(p.sku || p.SKU || "").toLowerCase().includes(q)) return true;
+      // description / short description
+      if (String(p.description || p.shortDescription || p.short_description || "").toLowerCase().includes(q)) return true;
+      // tags (array or comma-separated)
+      const tags = p.tags ?? p.tagList ?? p.tags_list ?? null;
+      if (Array.isArray(tags) && tags.some((t) => String(t || "").toLowerCase().includes(q))) return true;
+      if (typeof tags === "string" && String(tags).toLowerCase().includes(q)) return true;
+      // fallback: any string field contains q
+      for (const k of ["title", "name", "sku"]) {
+        if (String(p[k] || "").toLowerCase().includes(q)) return true;
+      }
+      return false;
+    });
+
+    const comparator = mapSortToComparator(productSort);
+    if (comparator) results.sort(comparator);
+    return results;
+  }, [allProducts, debouncedQuery, productSort, mapSortToComparator]);
+
+  // total count for pagination
+  const totalProducts = filteredProducts.length;
+
+  // displayed page slice
+  const displayedProducts = useMemo(() => {
+    const start = Math.max(0, (currentPage - 1) * pageSize);
+    return filteredProducts.slice(start, start + pageSize);
+  }, [filteredProducts, currentPage, pageSize]);
+
+  // convert product object -> primary image helper is above
+
   // toggle selection
   function toggleSelectProduct(productOrId) {
     const id = productOrId?.id ?? productOrId;
@@ -466,33 +499,6 @@ export default function SlidesAndSalesAdmin() {
       return copy;
     });
   }
-
-  // stable callback passed to ProductSearchBar
-  const onSearchDebounced = useCallback((value) => {
-    setDebouncedQuery(value || "");
-    setCurrentPage(1);
-  }, []);
-
-  /* ----------------- Memoized Search Wrapper (Option 2) ----------------- */
-
-  // A small memoized wrapper to keep the search input isolated from unrelated parent re-renders.
-  // It forwards the ref to the actual ProductSearchBar and will only re-render when `initial` or `onDebounced` change.
-  const SearchWrapper = useMemo(() => {
-    // define wrapper once (component instance) - this is stable across renders
-    const Wrap = React.memo(
-      React.forwardRef(function Wrap({ initial, onDebounced, debounceMs }, ref) {
-        return <ProductSearchBar initial={initial} onDebounced={onDebounced} debounceMs={debounceMs} ref={ref} />;
-      })
-    );
-    return Wrap;
-  }, []);
-
-  // Create the element with useMemo so it is re-created only when initial or callback change.
-  const memoizedSearchElement = useMemo(
-    () => <SearchWrapper initial={debouncedQuery} onDebounced={onSearchDebounced} debounceMs={250} ref={searchInputRef} />,
-    // only re-create when these change; unrelated state like productsLoading will NOT cause recreation
-    [debouncedQuery, onSearchDebounced, SearchWrapper]
-  );
 
   /* ----------------- UI components (kept similar) ----------------- */
   function CenterToggle() {
@@ -757,7 +763,7 @@ export default function SlidesAndSalesAdmin() {
             <div className="space-y-3">
               {productsLoading ? (
                 <div className="p-3 rounded border">Loading products...</div>
-              ) : displayedProducts.length === 0 ? (
+              ) : filteredProducts.length === 0 ? (
                 <div className="p-3 rounded border">No products found.</div>
               ) : (
                 displayedProducts.map((p, i) => {
