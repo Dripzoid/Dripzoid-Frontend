@@ -16,46 +16,132 @@ import {
 } from "lucide-react";
 
 /**
- * ProductSearchBar (simplified)
- * - Immediately forwards every keystroke to parent via `onDebounced`
- * - Keeps local value to avoid parent re-renders stomping keystrokes
- * - DOES NOT debounce, DOES NOT show dropdown, DOES NOT save recent searches
+ * ProductSearchBar
+ * - Keeps its own visible state to avoid parent re-renders stomping keystrokes
+ * - Debounces calls to parent (so backend fetches are debounced)
+ * - Preserves caret/selection on updates and handles IME composition
+ * - Does NOT blur or force focus changes
  */
 const ProductSearchBar = React.memo(function ProductSearchBar({
   initial = "",
   onDebounced,
   inputRef,
+  debounceMs = 250,
 }) {
   const [localValue, setLocalValue] = useState(initial);
+  const selectionRef = useRef({ start: null, end: null, direction: null });
+  const debounceRef = useRef(null);
+  const isComposingRef = useRef(false);
+
+  // internal ref fallback
   const internalRef = useRef(null);
   const elRef = inputRef || internalRef;
 
-  // sync initial -> localValue when input is not focused
+  // Sync initial -> localValue only when input NOT focused and not composing
   useEffect(() => {
     const el = elRef.current;
     const isFocused = typeof document !== "undefined" && el === document.activeElement;
-    if (!isFocused && initial !== localValue) {
+    if (!isFocused && !isComposingRef.current && initial !== localValue) {
       setLocalValue(initial);
     }
+    // intentionally don't include localValue as dep
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial, elRef]);
 
- const debounceTimeout = useRef(null);
+  function handleChange(e) {
+    const el = e.target;
+    const v = el.value;
 
-function handleChange(e) {
-  const v = e.target.value;
-  setLocalValue(v);
-
-  if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
-  debounceTimeout.current = setTimeout(() => {
+    // capture selection for caret restoration
     try {
-      onDebounced && onDebounced(v);
-    } catch (err) {
-      console.error(err);
+      if (el && typeof el.selectionStart === "number") {
+        selectionRef.current = {
+          start: el.selectionStart,
+          end: el.selectionEnd,
+          direction: el.selectionDirection || "none",
+        };
+      }
+    } catch {
+      selectionRef.current = { start: null, end: null, direction: null };
     }
-  }, 2000); // 2000ms = 2 seconds
-}
 
+    setLocalValue(v);
+
+    // debounce calling parent (skip while composing)
+    if (isComposingRef.current) {
+      // If composing, just clear any pending debounce to avoid sending partial IME text.
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      return;
+    }
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      try {
+        onDebounced && onDebounced(v);
+      } catch (err) {
+        // ignore
+      } finally {
+        debounceRef.current = null;
+      }
+    }, debounceMs);
+  }
+
+  function handleCompositionStart() {
+    isComposingRef.current = true;
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+  }
+
+  function handleCompositionEnd(e) {
+    isComposingRef.current = false;
+    // capture selection after composition end
+    try {
+      const el = elRef.current;
+      if (el && typeof el.selectionStart === "number") {
+        selectionRef.current = {
+          start: el.selectionStart,
+          end: el.selectionEnd,
+          direction: el.selectionDirection || "none",
+        };
+      }
+    } catch {}
+    // flush immediately to parent
+    try {
+      onDebounced && onDebounced(e.target.value);
+    } catch {}
+  }
+
+  // restore caret/selection synchronously after render, but skip while composing
+  useLayoutEffect(() => {
+    if (isComposingRef.current) return;
+    const sel = selectionRef.current;
+    const el = elRef.current;
+    if (el && sel && sel.start != null && typeof el.setSelectionRange === "function") {
+      try {
+        const max = el.value.length;
+        const start = Math.max(0, Math.min(sel.start, max));
+        const end = Math.max(0, Math.min(sel.end ?? start, max));
+        el.setSelectionRange(start, end, sel.direction === "forward" ? "forward" : "none");
+      } catch {
+        // ignore
+      }
+    }
+  }, [localValue, elRef]);
+
+  // cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <div className="relative w-full">
@@ -64,6 +150,8 @@ function handleChange(e) {
         type="text"
         value={localValue}
         onChange={handleChange}
+        onCompositionStart={handleCompositionStart}
+        onCompositionEnd={handleCompositionEnd}
         placeholder="Search products (name, id, sku, description, tags)"
         autoComplete="off"
         className="w-full pl-12 pr-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none"
@@ -111,7 +199,7 @@ export default function SlidesAndSalesAdmin() {
   // Products (server-driven)
   const [displayedProducts, setDisplayedProducts] = useState([]); // page data
   const [productsLoading, setProductsLoading] = useState(false);
-  const [debouncedQuery, setDebouncedQuery] = useState(""); // NOTE: updated immediately by ProductSearchBar
+  const [debouncedQuery, setDebouncedQuery] = useState(""); // NOTE: updated by ProductSearchBar (debounced)
   const [productSort, setProductSort] = useState("relevance");
   const [selectedProductIds, setSelectedProductIds] = useState(new Set());
   const [totalProducts, setTotalProducts] = useState(0);
@@ -470,7 +558,7 @@ export default function SlidesAndSalesAdmin() {
             setTotalProducts(0);
           }
         } catch (err) {
-          if (err && (err.name === "AbortError" || err.name === "DOMException" && err.code === 20)) {
+          if (err && (err.name === "AbortError" || (err.name === "DOMException" && err.code === 20))) {
             // request was aborted — ignore silently
           } else {
             console.error("fetchProducts error:", err);
@@ -789,6 +877,7 @@ export default function SlidesAndSalesAdmin() {
                   initial={debouncedQuery}
                   onDebounced={onSearchDebounced}
                   inputRef={searchInputRef}
+                  debounceMs={250}
                 />
               </div>
               <select value={productSort} onChange={(e) => setProductSort(e.target.value)} className="px-3 py-3 rounded-full border border-neutral-200 bg-white/5">
