@@ -2,26 +2,25 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { Search } from "lucide-react";
 
 /**
- * ProductSearchBar (uncontrolled input + debounced callback)
+ * ProductSearchBar (uncontrolled input — immediate callback, no debounce)
  *
- * - Uses an uncontrolled input (ref.current.value) to avoid parent re-renders
- *   affecting the DOM node and causing focus/caret loss.
- * - Debounces only the onDebounced callback (no focus/selection changes).
- * - Preserves caret/selection and handles IME composition.
+ * - Uncontrolled input (defaultValue) so parent re-renders won't re-create the DOM node.
+ * - Calls onDebounced (now immediate) on every user input (except during IME composition).
+ * - Handles IME composition: flushes on compositionend.
+ * - Captures & restores caret/selection to avoid accidental jumps.
  *
  * Usage:
  * import ProductSearchBar from "./ProductSearchBar";
- * <ProductSearchBar initial={debouncedQuery} onDebounced={onSearchDebounced} debounceMs={250} ref={searchRef} />
+ * <ProductSearchBar initial={query} onDebounced={handleQueryChange} ref={searchRef} />
  */
-function ProductSearchBarInner({ initial = "", onDebounced, debounceMs = 250, ...props }, forwardedRef) {
+function ProductSearchBarInner({ initial = "", onDebounced, ...props }, forwardedRef) {
   const internalRef = useRef(null);
-  const inputRef = internalRef; // input DOM node ref
-  const debounceRef = useRef(null);
+  const inputRef = internalRef; // DOM node ref
   const isComposingRef = useRef(false);
   const selectionRef = useRef({ start: null, end: null, direction: null });
   const lastInitialRef = useRef(initial);
 
-  // expose DOM ref to parent if they forwarded one
+  // expose DOM ref to parent if forwarded
   useEffect(() => {
     if (!forwardedRef) return;
     if (typeof forwardedRef === "function") {
@@ -35,7 +34,7 @@ function ProductSearchBarInner({ initial = "", onDebounced, debounceMs = 250, ..
     }
   }, [forwardedRef]);
 
-  // On mount: set input value to initial
+  // On mount: set DOM value to initial
   useEffect(() => {
     const el = inputRef.current;
     if (el && typeof el.value !== "undefined") {
@@ -50,7 +49,6 @@ function ProductSearchBarInner({ initial = "", onDebounced, debounceMs = 250, ..
     const el = inputRef.current;
     const isFocused = typeof document !== "undefined" && el === document.activeElement;
     if (!isFocused && !isComposingRef.current && initial !== lastInitialRef.current) {
-      // Update the DOM input value directly (uncontrolled)
       if (el) {
         el.value = String(initial ?? "");
       }
@@ -58,7 +56,7 @@ function ProductSearchBarInner({ initial = "", onDebounced, debounceMs = 250, ..
     }
   }, [initial]);
 
-  // Helper to capture selection/caret
+  // capture caret/selection
   const captureSelection = useCallback(() => {
     try {
       const el = inputRef.current;
@@ -76,42 +74,26 @@ function ProductSearchBarInner({ initial = "", onDebounced, debounceMs = 250, ..
     }
   }, []);
 
-  // onChange/onInput handler (uncontrolled)
+  // input handler: immediate callback (no debounce)
   const handleInput = useCallback(
     (e) => {
-      // capture caret
       captureSelection();
 
-      // if composing, don't schedule debounce
-      if (isComposingRef.current) {
-        if (debounceRef.current) {
-          clearTimeout(debounceRef.current);
-          debounceRef.current = null;
-        }
-        return;
-      }
+      // If composing (IME), don't call parent yet.
+      if (isComposingRef.current) return;
 
-      // schedule debounce
       const value = e.target.value;
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
-        debounceRef.current = null;
-        try {
-          onDebounced && onDebounced(value);
-        } catch {
-          // ignore parent callback errors
-        }
-      }, debounceMs);
+      try {
+        onDebounced && onDebounced(value);
+      } catch {
+        // ignore parent errors
+      }
     },
-    [captureSelection, debounceMs, onDebounced]
+    [captureSelection, onDebounced]
   );
 
   const handleCompositionStart = useCallback(() => {
     isComposingRef.current = true;
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-    }
   }, []);
 
   const handleCompositionEnd = useCallback(
@@ -127,7 +109,7 @@ function ProductSearchBarInner({ initial = "", onDebounced, debounceMs = 250, ..
     [captureSelection, onDebounced]
   );
 
-  // restore caret (in case code modifies input.value while focused)
+  // restore caret/selection after render
   useLayoutEffect(() => {
     if (isComposingRef.current) return;
     const sel = selectionRef.current;
@@ -139,20 +121,10 @@ function ProductSearchBarInner({ initial = "", onDebounced, debounceMs = 250, ..
         const end = Math.max(0, Math.min(sel.end ?? start, max));
         el.setSelectionRange(start, end, sel.direction === "forward" ? "forward" : "none");
       } catch {
-        // ignore
+        // ignore selection restore failures
       }
     }
-  }); // run after every paint (keeps selection consistent)
-
-  // cleanup debounce on unmount
-  useEffect(() => {
-    return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-        debounceRef.current = null;
-      }
-    };
-  }, []);
+  }); // run after every paint to keep caret stable
 
   return (
     <div className="relative w-full">
@@ -160,7 +132,7 @@ function ProductSearchBarInner({ initial = "", onDebounced, debounceMs = 250, ..
         {...props}
         ref={inputRef}
         type="text"
-        // uncontrolled: do NOT set value prop
+        // uncontrolled input — defaultValue only
         defaultValue={initial}
         onInput={handleInput}
         onCompositionStart={handleCompositionStart}
