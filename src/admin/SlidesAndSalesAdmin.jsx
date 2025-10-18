@@ -13,7 +13,7 @@ import {
   Edit2,
   GripVertical,
 } from "lucide-react";
-import ProductSearchBar from "./components/ProductSearchBar";
+import ProductSearchBar from "../components/ProductSearchBar";
 
 /* -------------------------------------------------------------------------- */
 /*                              MAIN COMPONENT                                 */
