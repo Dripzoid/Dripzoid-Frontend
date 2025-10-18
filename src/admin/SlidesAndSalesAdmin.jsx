@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo } from "react";
 import {
   Plus,
   UploadCloud,
@@ -473,6 +473,27 @@ export default function SlidesAndSalesAdmin() {
     setCurrentPage(1);
   }, []);
 
+  /* ----------------- Memoized Search Wrapper (Option 2) ----------------- */
+
+  // A small memoized wrapper to keep the search input isolated from unrelated parent re-renders.
+  // It forwards the ref to the actual ProductSearchBar and will only re-render when `initial` or `onDebounced` change.
+  const SearchWrapper = useMemo(() => {
+    // define wrapper once (component instance) - this is stable across renders
+    const Wrap = React.memo(
+      React.forwardRef(function Wrap({ initial, onDebounced, debounceMs }, ref) {
+        return <ProductSearchBar initial={initial} onDebounced={onDebounced} debounceMs={debounceMs} ref={ref} />;
+      })
+    );
+    return Wrap;
+  }, []);
+
+  // Create the element with useMemo so it is re-created only when initial or callback change.
+  const memoizedSearchElement = useMemo(
+    () => <SearchWrapper initial={debouncedQuery} onDebounced={onSearchDebounced} debounceMs={250} ref={searchInputRef} />,
+    // only re-create when these change; unrelated state like productsLoading will NOT cause recreation
+    [debouncedQuery, onSearchDebounced, SearchWrapper]
+  );
+
   /* ----------------- UI components (kept similar) ----------------- */
   function CenterToggle() {
     return (
@@ -720,12 +741,8 @@ export default function SlidesAndSalesAdmin() {
           <div className="md:col-span-2">
             <div className="flex gap-2 items-center mb-3">
               <div className="relative flex-1">
-                <ProductSearchBar
-                  initial={debouncedQuery}
-                  onDebounced={onSearchDebounced}
-                  debounceMs={250}
-                  ref={searchInputRef}
-                />
+                {/* Render the memoized search element (isolated from unrelated re-renders) */}
+                {memoizedSearchElement}
               </div>
               <select value={productSort} onChange={(e) => setProductSort(e.target.value)} className="px-3 py-3 rounded-full border border-neutral-200 bg-white/5">
                 <option value="relevance">Relevance</option>
