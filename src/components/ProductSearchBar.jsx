@@ -1,3 +1,4 @@
+// src/components/ProductSearchBar.jsx
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 
@@ -12,21 +13,45 @@ import { Search } from "lucide-react";
  * import ProductSearchBar from './components/ProductSearchBar';
  * <ProductSearchBar initial={debouncedQuery} onDebounced={onSearchDebounced} debounceMs={250} ref={searchRef} />
  */
+
 const ProductSearchBar = React.memo(
   React.forwardRef(function ProductSearchBar(
     { initial = "", onDebounced, debounceMs = 250, ...props },
     forwardedRef
   ) {
+    // local value state so parent re-renders won't stomp keystrokes
     const [localValue, setLocalValue] = useState(initial);
-    const internalRef = useRef(null);
-    const elRef = forwardedRef || internalRef;
+
+    // always use an internal ref for DOM access
+    const innerRef = useRef(null);
+
+    // mirror innerRef.current into forwardedRef (supports function refs and object refs)
+    useEffect(() => {
+      if (!forwardedRef) return;
+      if (typeof forwardedRef === "function") {
+        forwardedRef(innerRef.current);
+        return () => forwardedRef(null);
+      } else {
+        // object ref
+        forwardedRef.current = innerRef.current;
+        return () => {
+          try {
+            forwardedRef.current = null;
+          } catch {}
+        };
+      }
+    }, [forwardedRef]);
+
+    // selection save/restore for caret preservation
     const selectionRef = useRef({ start: null, end: null, direction: null });
+
+    // debounce timer & composition flag
     const debounceRef = useRef(null);
     const isComposingRef = useRef(false);
 
     // Sync initial -> localValue only when input is NOT focused and not composing.
     useEffect(() => {
-      const el = elRef.current;
+      const el = innerRef.current;
       const isFocused = typeof document !== "undefined" && el === document.activeElement;
       if (!isFocused && !isComposingRef.current && initial !== localValue) {
         setLocalValue(initial);
@@ -35,48 +60,51 @@ const ProductSearchBar = React.memo(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initial]);
 
-    // change handler
-    function handleChange(e) {
-      const el = e.target;
-      const v = el.value;
+    // handle change events
+    const handleChange = useCallback(
+      (e) => {
+        const el = e.target;
+        const v = el.value;
 
-      // capture selection (caret) to restore after parent updates
-      try {
-        if (el && typeof el.selectionStart === "number") {
-          selectionRef.current = {
-            start: el.selectionStart,
-            end: el.selectionEnd,
-            direction: el.selectionDirection || "none",
-          };
+        // capture selection (caret) to restore after parent updates
+        try {
+          if (el && typeof el.selectionStart === "number") {
+            selectionRef.current = {
+              start: el.selectionStart,
+              end: el.selectionEnd,
+              direction: el.selectionDirection || "none",
+            };
+          }
+        } catch {
+          selectionRef.current = { start: null, end: null, direction: null };
         }
-      } catch {
-        selectionRef.current = { start: null, end: null, direction: null };
-      }
 
-      setLocalValue(v);
+        setLocalValue(v);
 
-      // if composing (IME), skip debounced send — flush after composition end
-      if (isComposingRef.current) {
+        // if composing (IME), skip debounced send — flush after composition end
+        if (isComposingRef.current) {
+          if (debounceRef.current) {
+            clearTimeout(debounceRef.current);
+            debounceRef.current = null;
+          }
+          return;
+        }
+
         if (debounceRef.current) {
           clearTimeout(debounceRef.current);
-          debounceRef.current = null;
         }
-        return;
-      }
-
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
-      debounceRef.current = setTimeout(() => {
-        try {
-          onDebounced && onDebounced(v);
-        } catch (err) {
-          // ignore parent errors
-        } finally {
-          debounceRef.current = null;
-        }
-      }, debounceMs);
-    }
+        debounceRef.current = setTimeout(() => {
+          try {
+            onDebounced && onDebounced(v);
+          } catch (err) {
+            // ignore parent errors
+          } finally {
+            debounceRef.current = null;
+          }
+        }, debounceMs);
+      },
+      [debounceMs, onDebounced]
+    );
 
     const handleCompositionStart = useCallback(() => {
       isComposingRef.current = true;
@@ -86,30 +114,37 @@ const ProductSearchBar = React.memo(
       }
     }, []);
 
-    const handleCompositionEnd = useCallback((e) => {
-      isComposingRef.current = false;
-      // capture selection after composition end
-      try {
-        const el = elRef.current;
-        if (el && typeof el.selectionStart === "number") {
-          selectionRef.current = {
-            start: el.selectionStart,
-            end: el.selectionEnd,
-            direction: el.selectionDirection || "none",
-          };
-        }
-      } catch {}
-      // flush immediately (composition just finished)
-      try {
-        onDebounced && onDebounced(e.target.value);
-      } catch {}
-    }, [onDebounced]);
+    const handleCompositionEnd = useCallback(
+      (e) => {
+        isComposingRef.current = false;
+
+        // capture selection after composition end
+        try {
+          const el = innerRef.current;
+          if (el && typeof el.selectionStart === "number") {
+            selectionRef.current = {
+              start: el.selectionStart,
+              end: el.selectionEnd,
+              direction: el.selectionDirection || "none",
+            };
+          }
+        } catch {}
+
+        // flush immediately (composition just finished)
+        try {
+          // prefer the element value (safer than e.target in some scenarios)
+          const val = innerRef.current ? innerRef.current.value : e.target.value;
+          onDebounced && onDebounced(val);
+        } catch {}
+      },
+      [onDebounced]
+    );
 
     // restore selection synchronously after localValue changes
     useLayoutEffect(() => {
       if (isComposingRef.current) return;
       const sel = selectionRef.current;
-      const el = elRef.current;
+      const el = innerRef.current;
       if (el && sel && sel.start != null && typeof el.setSelectionRange === "function") {
         try {
           const max = el.value.length;
@@ -136,7 +171,7 @@ const ProductSearchBar = React.memo(
       <div className="relative w-full">
         <input
           {...props}
-          ref={elRef}
+          ref={innerRef}
           type="text"
           value={localValue}
           onChange={handleChange}
