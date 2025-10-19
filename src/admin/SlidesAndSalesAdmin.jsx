@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo } from "react";
+import React, { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import {
   Plus,
   UploadCloud,
@@ -49,10 +49,10 @@ export default function SlidesAndSalesAdmin() {
   const [loadingSales, setLoadingSales] = useState(false);
   const [creatingSale, setCreatingSale] = useState(false);
 
-  // Products (client-side search)
+  // Products (client-side list)
   const [allProducts, setAllProducts] = useState([]); // all products fetched once
   const [productsLoading, setProductsLoading] = useState(false); // only for initial load
-  const [debouncedQuery, setDebouncedQuery] = useState(""); // updated by ProductSearchBar's debounced callback
+  // removed debouncedQuery / old search wrapper — using ProductSearchBar for selection
   const [productSort, setProductSort] = useState("relevance");
   const [selectedProductIds, setSelectedProductIds] = useState(new Set());
 
@@ -356,8 +356,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // PRODUCTS - client-side search & sort
-
+  // PRODUCTS - client-side search & sort (no longer using debouncedQuery from search component)
   const mapSortToComparator = useCallback((sortKey) => {
     switch (sortKey) {
       case "priceAsc":
@@ -418,84 +417,43 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // stable callback passed to ProductSearchBar
-  const onSearchDebounced = useCallback((value) => {
-    setDebouncedQuery(value || "");
-    setCurrentPage(1);
-  }, []);
-
-  /* ----------------- Memoized Search Wrapper (kept) ----------------- */
-
-  const SearchWrapper = useMemo(() => {
-    const Wrap = React.memo(
-      React.forwardRef(function Wrap({ initial, onDebounced, debounceMs }, ref) {
-        return <ProductSearchBar initial={initial} onDebounced={onDebounced} debounceMs={debounceMs} ref={ref} />;
-      })
-    );
-    return Wrap;
-  }, []);
-
-  const memoizedSearchElement = useMemo(
-    () => <SearchWrapper initial={debouncedQuery} onDebounced={onSearchDebounced} debounceMs={250} ref={searchInputRef} />,
-    [debouncedQuery, onSearchDebounced, SearchWrapper]
-  );
-
-  /* ----------------- Client-side filter + sort + pagination ----------------- */
-
-  const filteredProducts = useMemo(() => {
-    const q = String(debouncedQuery || "").trim().toLowerCase();
-    if (!q) {
-      // return a shallow copy (so sorting does not mutate allProducts)
-      const copy = Array.isArray(allProducts) ? [...allProducts] : [];
-      const comparator = mapSortToComparator(productSort);
-      if (comparator) copy.sort(comparator);
-      return copy;
-    }
-
-    const results = (allProducts || []).filter((p) => {
-      if (!p) return false;
-      // match id
-      if (String(p.id || "").toLowerCase().includes(q)) return true;
-      // name
-      if (String(p.name || "").toLowerCase().includes(q)) return true;
-      // sku
-      if (String(p.sku || p.SKU || "").toLowerCase().includes(q)) return true;
-      // description / short description
-      if (String(p.description || p.shortDescription || p.short_description || "").toLowerCase().includes(q)) return true;
-      // tags (array or comma-separated)
-      const tags = p.tags ?? p.tagList ?? p.tags_list ?? null;
-      if (Array.isArray(tags) && tags.some((t) => String(t || "").toLowerCase().includes(q))) return true;
-      if (typeof tags === "string" && String(tags).toLowerCase().includes(q)) return true;
-      // fallback: any string field contains q
-      for (const k of ["title", "name", "sku"]) {
-        if (String(p[k] || "").toLowerCase().includes(q)) return true;
+  // If a product id was selected via search but is not in allProducts, fetch it and add to list
+  async function ensureProductPresent(productId) {
+    try {
+      const exists = allProducts.some((p) => String(p?.id) === String(productId));
+      if (exists) return;
+      // try to fetch product by id
+      const json = await apiGet(`/api/products/${productId}`);
+      const product = json?.data || json?.product || (Array.isArray(json) ? json[0] : json) || null;
+      if (product && product.id) {
+        setAllProducts((prev) => {
+          const copy = Array.isArray(prev) ? [...prev] : [];
+          // avoid duplicates
+          if (copy.some((p) => String(p?.id) === String(product.id))) return copy;
+          return [product, ...copy];
+        });
       }
-      return false;
-    });
+    } catch (err) {
+      console.warn("ensureProductPresent failed for", productId, err);
+      setNoteWithAutoClear({ type: "error", text: `Couldn't fetch product ${productId}: ${err.message || err}` }, 6000);
+    }
+  }
 
-    const comparator = mapSortToComparator(productSort);
-    if (comparator) results.sort(comparator);
-    return results;
-  }, [allProducts, debouncedQuery, productSort, mapSortToComparator]);
-
-  // total count for pagination
-  const totalProducts = filteredProducts.length;
-
-  // displayed page slice
-  const displayedProducts = useMemo(() => {
-    const start = Math.max(0, (currentPage - 1) * pageSize);
-    return filteredProducts.slice(start, start + pageSize);
-  }, [filteredProducts, currentPage, pageSize]);
-
-  // convert product object -> primary image helper is above
-
-  // toggle selection
+  // toggle selection (called by UI list and by ProductSearchBar)
   function toggleSelectProduct(productOrId) {
     const id = productOrId?.id ?? productOrId;
+    if (id == null) return;
     setSelectedProductIds((prev) => {
       const copy = new Set(prev);
-      if (copy.has(id)) copy.delete(id);
-      else copy.add(id);
+      const willAdd = !copy.has(id);
+      if (willAdd) copy.add(id);
+      else copy.delete(id);
+
+      // If we added a product that isn't present in the local list, fetch and add it so main list shows it
+      if (willAdd) {
+        // ensure but don't block UI: fetch product and add in background
+        ensureProductPresent(id).catch((e) => console.error("ensureProductPresent error:", e));
+      }
       return copy;
     });
   }
@@ -723,7 +681,21 @@ export default function SlidesAndSalesAdmin() {
   }
 
   function SaleCreator() {
-    const totalPages = Math.max(1, Math.ceil((totalProducts || 0) / pageSize));
+    const totalPages = Math.max(1, Math.ceil((allProducts || []).length / pageSize));
+
+    // filteredProducts now just uses allProducts + sort (no query from search component)
+    const filteredProducts = useMemo(() => {
+      const copy = Array.isArray(allProducts) ? [...allProducts] : [];
+      const comparator = mapSortToComparator(productSort);
+      if (comparator) copy.sort(comparator);
+      return copy;
+    }, [allProducts, productSort, mapSortToComparator]);
+
+    const totalProducts = filteredProducts.length;
+    const displayedProducts = useMemo(() => {
+      const start = Math.max(0, (currentPage - 1) * pageSize);
+      return filteredProducts.slice(start, start + pageSize);
+    }, [filteredProducts, currentPage, pageSize]);
 
     return (
       <div className="p-4 rounded-2xl border bg-gradient-to-b from-neutral-50/40 to-neutral-100/10 dark:from-neutral-900/40 dark:to-neutral-800/30 shadow-xl">
@@ -747,8 +719,13 @@ export default function SlidesAndSalesAdmin() {
           <div className="md:col-span-2">
             <div className="flex gap-2 items-center mb-3">
               <div className="relative flex-1">
-                {/* Render the memoized search element (isolated from unrelated re-renders) */}
-                {memoizedSearchElement}
+                {/* NEW: ProductSearchBar that toggles selection in the main list */}
+                <ProductSearchBar
+                  onToggle={toggleSelectProduct}
+                  selectedIds={selectedProductIds}
+                  debounceMs={250}
+                  ref={searchInputRef}
+                />
               </div>
               <select value={productSort} onChange={(e) => setProductSort(e.target.value)} className="px-3 py-3 rounded-full border border-neutral-200 bg-white/5">
                 <option value="relevance">Relevance</option>
