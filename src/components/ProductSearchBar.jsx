@@ -10,9 +10,9 @@ const API_BASE =
 export default function ProductSearchBar({
   onToggle,
   selectedIds = new Set(),
-  allProducts = [],
   placeholder = "Search products...",
   debounceMs = 250,
+  allProducts = [], // 👈 Added for local array lookup
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -22,56 +22,64 @@ export default function ProductSearchBar({
 
   const wrapperRef = useRef(null);
   const inputRef = useRef(null);
+  const failedQueries = useRef(new Set()); // 👈 cache failed queries to prevent spam
 
   /* -------------------- Debounced search -------------------- */
   useEffect(() => {
     let canceled = false;
-    if (!query.trim()) {
+    const trimmed = query.trim();
+
+    if (!trimmed) {
       setResults([]);
       setLoading(false);
       return;
     }
 
+    const isNumeric = /^\d+$/.test(trimmed); // 👈 check for numeric input
     setLoading(true);
-    const q = query.trim();
+
     const id = setTimeout(async () => {
       try {
-        const res = await axios.get(`${API_BASE}/api/products/search`, {
-          params: { query: q },
-        });
+        let backendResults = [];
+        let localMatches = [];
 
-        if (canceled) return;
-
-        const apiArr = Array.isArray(res.data) ? res.data : res.data?.data || [];
-
-        // If query is purely numeric (e.g. "11"), also find matches from the provided allProducts array.
-        const isNumericOnly = /^\d+$/.test(q);
-        if (isNumericOnly && Array.isArray(allProducts) && allProducts.length > 0) {
-          // Find local matches where the product id includes the typed digits
-          const localMatches = allProducts.filter((p) => {
-            const pid = p?.id ?? "";
-            if (pid === null || pid === undefined) return false;
-            return String(pid).includes(q);
-          });
-
-          // Deduplicate by ID (prefer api results order). Use string ids for robust comparison.
-          const seen = new Set(apiArr.map((a) => String(a?.id)));
-          const appended = [];
-          for (const lm of localMatches) {
-            if (!seen.has(String(lm?.id))) {
-              seen.add(String(lm?.id));
-              appended.push(lm);
-            }
-          }
-
-          setResults([...apiArr, ...appended]);
-        } else {
-          // Normal non-numeric query — just use API results
-          setResults(apiArr);
+        // 🧠 Always try local match if numeric
+        if (isNumeric && Array.isArray(allProducts)) {
+          localMatches = allProducts.filter((p) =>
+            String(p.id || "")
+              .toLowerCase()
+              .includes(trimmed.toLowerCase())
+          );
         }
-      } catch (err) {
-        console.error("Product search error:", err);
-        if (!canceled) setResults([]);
+
+        // 🛑 If backend previously failed for same numeric query, skip API
+        if (!isNumeric || !failedQueries.current.has(trimmed)) {
+          try {
+            const res = await axios.get(`${API_BASE}/api/products/search`, {
+              params: { query: trimmed },
+            });
+            const arr = Array.isArray(res.data)
+              ? res.data
+              : res.data?.data || [];
+            backendResults = arr;
+            if (arr.length === 0 && isNumeric) {
+              failedQueries.current.add(trimmed);
+            }
+          } catch (err) {
+            console.error("Product search error:", err);
+            if (isNumeric) failedQueries.current.add(trimmed);
+          }
+        }
+
+        // 🔄 Merge results (unique by ID)
+        const merged = [...backendResults, ...localMatches].reduce((acc, cur) => {
+          if (cur && !acc.find((p) => p.id === cur.id)) acc.push(cur);
+          return acc;
+        }, []);
+
+        if (!canceled) {
+          setResults(merged);
+        }
       } finally {
         if (!canceled) setLoading(false);
       }
@@ -182,7 +190,11 @@ export default function ProductSearchBar({
             {query.trim() ? (
               <>
                 <div className="flex items-center justify-between px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
-                  <span>{loading ? "Searching..." : `${results.length} results`}</span>
+                  <span>
+                    {loading
+                      ? "Searching..."
+                      : `${results.length} result${results.length !== 1 ? "s" : ""}`}
+                  </span>
                 </div>
 
                 {results.length === 0 && !loading ? (
@@ -194,14 +206,16 @@ export default function ProductSearchBar({
                     const selected = selectedIds.has(product.id);
                     return (
                       <div
-                        key={product.id ?? `idx-${idx}`}
+                        key={product.id}
                         onMouseEnter={() => setHighlight(idx)}
                         onMouseLeave={() => setHighlight(-1)}
                         onClick={() => onToggle?.(product.id)}
                         className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition 
-                          ${selected
-                            ? "ring-2 ring-black dark:ring-white bg-gray-100/50 dark:bg-gray-800/50"
-                            : "hover:bg-gray-100 dark:hover:bg-gray-800"}
+                          ${
+                            selected
+                              ? "ring-2 ring-black dark:ring-white bg-gray-100/50 dark:bg-gray-800/50"
+                              : "hover:bg-gray-100 dark:hover:bg-gray-800"
+                          }
                           ${highlight === idx ? "bg-gray-100 dark:bg-gray-800" : ""}`}
                       >
                         <input
@@ -211,7 +225,11 @@ export default function ProductSearchBar({
                           className="accent-black dark:accent-white"
                         />
                         <img
-                          src={product.image || "https://via.placeholder.com/80"}
+                          src={
+                            product.image ||
+                            product.image_url ||
+                            "https://via.placeholder.com/80"
+                          }
                           alt={product.name}
                           className="w-12 h-12 object-cover rounded-md border border-gray-200 dark:border-gray-800"
                         />
@@ -225,7 +243,9 @@ export default function ProductSearchBar({
                             </span>
                           </div>
                           <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                            {product.shortDescription || product.subcategory || ""}
+                            {product.shortDescription ||
+                              product.subcategory ||
+                              ""}
                           </p>
                         </div>
                         {selected && (
