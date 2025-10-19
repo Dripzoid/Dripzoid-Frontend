@@ -492,16 +492,16 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
   const defaultForm = {
     name: "",
     category: "Men",
-    price: 0,
-    actualPrice: 0,
+    price: "",
+    actualPrice: "",
     images: [],
-    rating: 0,
+    rating: "",
     sizes: "",
     colors: "",
-    originalPrice: 0,
+    originalPrice: "",
     description: "",
     subcategory: "",
-    stock: 0,
+    stock: "",
     featured: 0,
   };
 
@@ -853,12 +853,40 @@ export default function ProductsAdmin() {
 
   const DEBUG = false;
 
+  // Helper: if your backend expects different sort keys, map them here.
+  const mapSortForBackend = (uiSort) => {
+    // adjust map as needed for your backend
+    const map = {
+      newest: "newest",
+      price_asc: "price_asc",
+      price_desc: "price_desc",
+      best_selling: "best_selling",
+      out_of_stock: "out_of_stock",
+      low_stock: "low_stock",
+    };
+    return map[uiSort] ?? uiSort;
+  };
+
   const fetchProducts = useCallback(
     async () => {
       if (!showProducts) return;
       setLoading(true);
       try {
-        const res = await api.get("/api/admin/products", { search: q, page, limit, sort: sortBy }, true);
+        // Build query params explicitly and create query string to guarantee they are sent
+        const params = new URLSearchParams();
+        if (q && String(q).trim() !== "") params.append("search", String(q).trim());
+        if (page && Number(page) > 0) params.append("page", String(Number(page)));
+        if (limit && Number(limit) > 0) params.append("limit", String(Number(limit)));
+        const backendSort = mapSortForBackend(sortBy);
+        if (backendSort) params.append("sort", String(backendSort));
+
+        const queryString = params.toString();
+        const url = queryString ? `/api/admin/products?${queryString}` : `/api/admin/products`;
+
+        if (DEBUG) console.log("Fetching products URL:", url);
+
+        // Pass an empty object as second arg for compatibility with your api wrapper (auth passed as third)
+        const res = await api.get(url, {}, true);
         if (DEBUG) console.log("Products list raw:", res);
         const body = normalizeResponse(res);
 
