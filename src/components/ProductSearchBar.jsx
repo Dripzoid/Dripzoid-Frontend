@@ -1,151 +1,225 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { Search } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import axios from "axios";
+import { Search, X, Check } from "lucide-react";
 
-/**
- * ProductSearchBar (uncontrolled input — immediate callback, no debounce)
- *
- * - Uncontrolled input (defaultValue) so parent re-renders won't re-create the DOM node.
- * - Calls onDebounced (now immediate) on every user input (except during IME composition).
- * - Handles IME composition: flushes on compositionend.
- * - Captures & restores caret/selection to avoid accidental jumps.
- *
- * Usage:
- * import ProductSearchBar from "./ProductSearchBar";
- * <ProductSearchBar initial={query} onDebounced={handleQueryChange} ref={searchRef} />
- */
-function ProductSearchBarInner({ initial = "", onDebounced, ...props }, forwardedRef) {
-  const internalRef = useRef(null);
-  const inputRef = internalRef; // DOM node ref
-  const isComposingRef = useRef(false);
-  const selectionRef = useRef({ start: null, end: null, direction: null });
-  const lastInitialRef = useRef(initial);
+const API_BASE =
+  process.env.REACT_APP_API_BASE ||
+  process.env.API_BASE ||
+  "https://api.dripzoid.com";
 
-  // expose DOM ref to parent if forwarded
+export default function ProductSearchBar({
+  onToggle,
+  selectedIds = new Set(),
+  placeholder = "Search products...",
+  debounceMs = 250,
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [highlight, setHighlight] = useState(-1);
+
+  const wrapperRef = useRef(null);
+  const inputRef = useRef(null);
+
+  /* -------------------- Debounced search -------------------- */
   useEffect(() => {
-    if (!forwardedRef) return;
-    if (typeof forwardedRef === "function") {
-      forwardedRef(inputRef.current);
-      return () => forwardedRef(null);
-    } else {
-      forwardedRef.current = inputRef.current;
-      return () => {
-        forwardedRef.current = null;
-      };
+    let canceled = false;
+    if (!query.trim()) {
+      setResults([]);
+      setLoading(false);
+      return;
     }
-  }, [forwardedRef]);
 
-  // On mount: set DOM value to initial
-  useEffect(() => {
-    const el = inputRef.current;
-    if (el && typeof el.value !== "undefined") {
-      el.value = String(initial ?? "");
-      lastInitialRef.current = initial;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once
-
-  // Sync initial -> input.value only when not focused and not composing
-  useEffect(() => {
-    const el = inputRef.current;
-    const isFocused = typeof document !== "undefined" && el === document.activeElement;
-    if (!isFocused && !isComposingRef.current && initial !== lastInitialRef.current) {
-      if (el) {
-        el.value = String(initial ?? "");
+    setLoading(true);
+    const id = setTimeout(async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/api/products/search`, {
+          params: { query: query.trim() },
+        });
+        if (!canceled) {
+          const arr = Array.isArray(res.data)
+            ? res.data
+            : res.data?.data || [];
+          setResults(arr);
+        }
+      } catch (err) {
+        console.error("Product search error:", err);
+        if (!canceled) setResults([]);
+      } finally {
+        if (!canceled) setLoading(false);
       }
-      lastInitialRef.current = initial;
-    }
-  }, [initial]);
+    }, debounceMs);
 
-  // capture caret/selection
-  const captureSelection = useCallback(() => {
-    try {
-      const el = inputRef.current;
-      if (el && typeof el.selectionStart === "number") {
-        selectionRef.current = {
-          start: el.selectionStart,
-          end: el.selectionEnd,
-          direction: el.selectionDirection || "none",
-        };
-      } else {
-        selectionRef.current = { start: null, end: null, direction: null };
+    return () => {
+      canceled = true;
+      clearTimeout(id);
+    };
+  }, [query, debounceMs]);
+
+  /* -------------------- Click outside to close -------------------- */
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setShowDropdown(false);
+        setHighlight(-1);
       }
-    } catch {
-      selectionRef.current = { start: null, end: null, direction: null };
     }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // input handler: immediate callback (no debounce)
-  const handleInput = useCallback(
-    (e) => {
-      captureSelection();
-
-      // If composing (IME), don't call parent yet.
-      if (isComposingRef.current) return;
-
-      const value = e.target.value;
-      try {
-        onDebounced && onDebounced(value);
-      } catch {
-        // ignore parent errors
-      }
-    },
-    [captureSelection, onDebounced]
-  );
-
-  const handleCompositionStart = useCallback(() => {
-    isComposingRef.current = true;
-  }, []);
-
-  const handleCompositionEnd = useCallback(
-    (e) => {
-      isComposingRef.current = false;
-      // capture selection after composition end
-      captureSelection();
-      // flush immediately to parent
-      try {
-        onDebounced && onDebounced(e.target.value);
-      } catch {}
-    },
-    [captureSelection, onDebounced]
-  );
-
-  // restore caret/selection after render
-  useLayoutEffect(() => {
-    if (isComposingRef.current) return;
-    const sel = selectionRef.current;
-    const el = inputRef.current;
-    if (el && sel && sel.start != null && typeof el.setSelectionRange === "function") {
-      try {
-        const max = (el.value && el.value.length) || 0;
-        const start = Math.max(0, Math.min(sel.start, max));
-        const end = Math.max(0, Math.min(sel.end ?? start, max));
-        el.setSelectionRange(start, end, sel.direction === "forward" ? "forward" : "none");
-      } catch {
-        // ignore selection restore failures
+  /* -------------------- Keyboard navigation -------------------- */
+  useEffect(() => {
+    function onKey(e) {
+      if (!showDropdown) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setHighlight((h) => Math.min(h + 1, results.length - 1));
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setHighlight((h) => Math.max(h - 1, -1));
+      } else if (e.key === "Enter") {
+        if (highlight >= 0 && results[highlight]) {
+          onToggle?.(results[highlight].id);
+        }
+      } else if (e.key === "Escape") {
+        setShowDropdown(false);
+        setHighlight(-1);
       }
     }
-  }); // run after every paint to keep caret stable
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showDropdown, highlight, results, onToggle]);
 
+  /* -------------------- Render -------------------- */
   return (
-    <div className="relative w-full">
-      <input
-        {...props}
-        ref={inputRef}
-        type="text"
-        // uncontrolled input — defaultValue only
-        defaultValue={initial}
-        onInput={handleInput}
-        onCompositionStart={handleCompositionStart}
-        onCompositionEnd={handleCompositionEnd}
-        placeholder="Search products (name, id, sku, description, tags)"
-        autoComplete="off"
-        className="w-full pl-12 pr-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none"
-        aria-label="Search products"
-      />
-      <Search className="absolute left-4 top-1/2 -translate-y-1/2 opacity-60 w-4 h-4" />
+    <div className="relative w-full max-w-xl" ref={wrapperRef}>
+      {/* Search bar */}
+      <div className="relative">
+        <div
+          className="flex items-center rounded-full 
+          bg-gray-50 dark:bg-gray-900 
+          border border-gray-300 dark:border-gray-800 
+          shadow-sm transition 
+          focus-within:ring-2 focus-within:ring-offset-1 
+          focus-within:ring-black dark:focus-within:ring-gray-700"
+        >
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+            <Search size={18} className="text-gray-500 dark:text-gray-400" />
+          </div>
+
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder={placeholder}
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setShowDropdown(true);
+              setHighlight(-1);
+            }}
+            onFocus={() => setShowDropdown(true)}
+            className="w-full pl-11 pr-10 py-2 rounded-full 
+              bg-transparent outline-none 
+              text-gray-900 dark:text-white 
+              placeholder-gray-500"
+            aria-label="Product search"
+          />
+
+          {query && (
+            <button
+              onClick={() => {
+                setQuery("");
+                setResults([]);
+                inputRef.current?.focus();
+              }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full 
+                hover:bg-gray-200 dark:hover:bg-gray-800 transition"
+              aria-label="Clear search"
+            >
+              <X size={16} className="text-gray-600 dark:text-gray-400" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Dropdown */}
+      {showDropdown && (
+        <div
+          className="absolute top-full left-0 mt-3 w-full 
+          bg-white dark:bg-gray-900 
+          border border-gray-200 dark:border-gray-800 
+          rounded-2xl shadow-xl max-h-[420px] overflow-auto z-50 animate-fadeIn"
+        >
+          <div className="p-2">
+            {query.trim() ? (
+              <>
+                <div className="flex items-center justify-between px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+                  <span>{loading ? "Searching..." : `${results.length} results`}</span>
+                </div>
+
+                {results.length === 0 && !loading ? (
+                  <p className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                    No products found
+                  </p>
+                ) : (
+                  results.map((product, idx) => {
+                    const selected = selectedIds.has(product.id);
+                    return (
+                      <div
+                        key={product.id}
+                        onMouseEnter={() => setHighlight(idx)}
+                        onMouseLeave={() => setHighlight(-1)}
+                        onClick={() => onToggle?.(product.id)}
+                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition 
+                          ${selected
+                            ? "ring-2 ring-black dark:ring-white bg-gray-100/50 dark:bg-gray-800/50"
+                            : "hover:bg-gray-100 dark:hover:bg-gray-800"}
+                          ${highlight === idx ? "bg-gray-100 dark:bg-gray-800" : ""}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!!selected}
+                          readOnly
+                          className="accent-black dark:accent-white"
+                        />
+                        <img
+                          src={product.image || "https://via.placeholder.com/80"}
+                          alt={product.name}
+                          className="w-12 h-12 object-cover rounded-md border border-gray-200 dark:border-gray-800"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-sm font-medium truncate text-gray-900 dark:text-white">
+                              {product.name}
+                            </h3>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              ₹{product.price ?? "—"}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                            {product.shortDescription ||
+                              product.subcategory ||
+                              ""}
+                          </p>
+                        </div>
+                        {selected && (
+                          <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </>
+            ) : (
+              <p className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center">
+                Type to search products...
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
-const ProductSearchBar = React.memo(React.forwardRef(ProductSearchBarInner));
-export default ProductSearchBar;
