@@ -10,6 +10,7 @@ const API_BASE =
 export default function ProductSearchBar({
   onToggle,
   selectedIds = new Set(),
+  allProducts = [],
   placeholder = "Search products...",
   debounceMs = 250,
 }) {
@@ -32,16 +33,41 @@ export default function ProductSearchBar({
     }
 
     setLoading(true);
+    const q = query.trim();
     const id = setTimeout(async () => {
       try {
         const res = await axios.get(`${API_BASE}/api/products/search`, {
-          params: { query: query.trim() },
+          params: { query: q },
         });
-        if (!canceled) {
-          const arr = Array.isArray(res.data)
-            ? res.data
-            : res.data?.data || [];
-          setResults(arr);
+
+        if (canceled) return;
+
+        const apiArr = Array.isArray(res.data) ? res.data : res.data?.data || [];
+
+        // If query is purely numeric (e.g. "11"), also find matches from the provided allProducts array.
+        const isNumericOnly = /^\d+$/.test(q);
+        if (isNumericOnly && Array.isArray(allProducts) && allProducts.length > 0) {
+          // Find local matches where the product id includes the typed digits
+          const localMatches = allProducts.filter((p) => {
+            const pid = p?.id ?? "";
+            if (pid === null || pid === undefined) return false;
+            return String(pid).includes(q);
+          });
+
+          // Deduplicate by ID (prefer api results order). Use string ids for robust comparison.
+          const seen = new Set(apiArr.map((a) => String(a?.id)));
+          const appended = [];
+          for (const lm of localMatches) {
+            if (!seen.has(String(lm?.id))) {
+              seen.add(String(lm?.id));
+              appended.push(lm);
+            }
+          }
+
+          setResults([...apiArr, ...appended]);
+        } else {
+          // Normal non-numeric query — just use API results
+          setResults(apiArr);
         }
       } catch (err) {
         console.error("Product search error:", err);
@@ -55,7 +81,7 @@ export default function ProductSearchBar({
       canceled = true;
       clearTimeout(id);
     };
-  }, [query, debounceMs]);
+  }, [query, debounceMs, allProducts]);
 
   /* -------------------- Click outside to close -------------------- */
   useEffect(() => {
@@ -168,7 +194,7 @@ export default function ProductSearchBar({
                     const selected = selectedIds.has(product.id);
                     return (
                       <div
-                        key={product.id}
+                        key={product.id ?? `idx-${idx}`}
                         onMouseEnter={() => setHighlight(idx)}
                         onMouseLeave={() => setHighlight(-1)}
                         onClick={() => onToggle?.(product.id)}
@@ -199,9 +225,7 @@ export default function ProductSearchBar({
                             </span>
                           </div>
                           <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                            {product.shortDescription ||
-                              product.subcategory ||
-                              ""}
+                            {product.shortDescription || product.subcategory || ""}
                           </p>
                         </div>
                         {selected && (
