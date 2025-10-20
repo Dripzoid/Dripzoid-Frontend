@@ -1,998 +1,1177 @@
-import React, { useCallback, useEffect, useRef, useState, useMemo } from "react";
+// src/pages/ProductsAdmin.jsx
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import api from "../utils/api";
+import BulkUpload from "./BulkUpload";
 import {
   Plus,
-  UploadCloud,
+  Upload,
+  Eye,
+  Search,
+  Edit,
   Trash2,
-  ArrowUp,
-  ArrowDown,
-  RefreshCw,
-  Image as ImageIcon,
-  Gift,
-  Check,
-  X,
-  Edit2,
-  GripVertical,
+  Package,
+  ShoppingCart,
+  CheckCircle,
+  XCircle,
+  Layers,
+  Tag,
+  PlusCircle,
+  Save,
 } from "lucide-react";
-import ProductSearchBar from "../components/ProductSearchBar";
+import { motion } from "framer-motion";
 
-/* -------------------------------------------------------------------------- */
-/*                              MAIN COMPONENT                                 */
-/* -------------------------------------------------------------------------- */
+/* ======= STYLE CONSTANTS (Tailwind utility strings) ======= */
+const inputCls =
+  "w-full p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-black dark:focus:ring-white transition";
+const textareaCls = inputCls + " resize-none";
+const btnPrimaryCls =
+  "px-4 py-2 rounded-lg shadow-sm bg-black text-white dark:bg-white dark:text-black hover:scale-[1.02] transition-transform disabled:opacity-60";
+const btnSecondaryCls =
+  "px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 transition";
+const cardCls =
+  "p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-sm hover:shadow-lg transition";
 
-export default function SlidesAndSalesAdmin() {
-  const API_BASE =
-    (typeof process !== "undefined" && (process.env.REACT_APP_API_BASE || process.env.API_BASE)) ||
-    (typeof window !== "undefined" && window.__API_BASE__) ||
-    "https://api.dripzoid.com";
-
-  function buildUrl(path) {
-    if (!path) return path;
-    if (/^https?:\/\//i.test(path)) return path;
-    const base = API_BASE.replace(/\/+$/, "");
-    const p = path.startsWith("/") ? path : `/${path}`;
-    return base ? `${base}${p}` : p;
+/* ======= Helpers ======= */
+const normalizeResponse = (res) => {
+  if (!res) return {};
+  if (res.data && typeof res.data === "object") {
+    if (res.data.data || typeof res.data.total !== "undefined") return res.data;
+    return res.data;
   }
+  return res;
+};
 
-  // -- UI modes
-  const [mode, setMode] = useState("slides");
+const MAIN_CATEGORIES = ["Men", "Women", "Kids"];
 
-  // Slides
-  const [slides, setSlides] = useState([]);
-  const [loadingSlides, setLoadingSlides] = useState(false);
-  const [addingSlide, setAddingSlide] = useState(false);
-  const fileInputRef = useRef(null);
-  const dragIndexRef = useRef(null);
-  const dragOverIndexRef = useRef(null);
+/* ======= CategoryFormModal ======= */
+/*
+  Props:
+    - editing: object|null (if editing an existing subcategory)
+    - fixedCategory: string|null (if provided, category selector is locked to this value)
+    - categories: array (for parent selection)
+    - onClose: fn
+    - onSave: fn (called after successful save; passed normalized response)
+*/
+function CategoryFormModal({ editing, fixedCategory = null, categories = [], onClose, onSave }) {
+  const defaultForm = {
+    id: null,
+    category: "Men",
+    subcategory: "",
+    slug: "",
+    parent_id: null,
+    status: "active",
+    sort_order: 0,
+    metadata: "",
+  };
 
-  // Slide edit modal
-  const [slideEditOpen, setSlideEditOpen] = useState(false);
-  const [slideEditing, setSlideEditing] = useState(null); // { id, name, link, image_url, file }
+  const [form, setForm] = useState(defaultForm);
+  const [saving, setSaving] = useState(false);
 
-  // Sales
-  const [sales, setSales] = useState([]);
-  const [loadingSales, setLoadingSales] = useState(false);
-  const [creatingSale, setCreatingSale] = useState(false);
-
-  // Sale edit modal
-  const [saleEditOpen, setSaleEditOpen] = useState(false);
-  const [saleEditing, setSaleEditing] = useState(null); // { id, name, enabled }
-
-  // Products (client-side list)
-  const [allProducts, setAllProducts] = useState([]); // all products fetched once
-  const [productsLoading, setProductsLoading] = useState(false); // only for initial load
-  // removed debouncedQuery / old search wrapper — using ProductSearchBar for selection
-  const [productSort, setProductSort] = useState("relevance");
-  const [selectedProductIds, setSelectedProductIds] = useState(new Set());
-
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 8;
-
-  // UI note
-  const [note, setNote] = useState(null);
-
-  // ref for search input (passed to ProductSearchBar if needed)
-  const searchInputRef = useRef(null);
-
-  // Styles helper funcs
-  function primaryBtnClass(extra = "") {
-    return `inline-flex items-center gap-2 px-4 py-2 rounded-full font-semibold shadow transition transform-gpu hover:-translate-y-0.5 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-black text-white dark:bg-white dark:text-black ${extra}`;
-  }
-  function secondaryBtnClass(extra = "") {
-    return `inline-flex items-center gap-2 px-3 py-1.5 rounded-full font-medium transition border border-neutral-200/30 dark:border-neutral-700 text-neutral-800 dark:text-neutral-100 bg-transparent ${extra}`;
-  }
-
-  function setNoteWithAutoClear(n, timeout = 6000) {
-    setNote(n);
-    if (timeout) {
-      setTimeout(() => setNote((cur) => (cur === n ? null : cur)), timeout);
+  useEffect(() => {
+    if (editing && typeof editing === "object" && Object.keys(editing).length > 0) {
+      setForm({
+        id: editing.id ?? null,
+        category: editing.category ?? fixedCategory ?? "Men",
+        subcategory: editing.subcategory ?? "",
+        slug: editing.slug ?? "",
+        parent_id: editing.parent_id ?? null,
+        status: editing.status ?? "active",
+        sort_order: Number(editing.sort_order ?? 0),
+        metadata:
+          editing.metadata && typeof editing.metadata === "string"
+            ? editing.metadata
+            : editing.metadata
+            ? JSON.stringify(editing.metadata)
+            : "",
+      });
+    } else {
+      // New create flow. If caller provided a fixedCategory (via section add button), use it.
+      setForm((f) => ({ ...defaultForm, category: fixedCategory ?? defaultForm.category }));
     }
-  }
+  }, [editing, fixedCategory]);
 
-  // fetch helpers
-  function getAuthHeaders(addJson = true) {
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    const headers = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    if (addJson) headers["Content-Type"] = "application/json";
-    return headers;
-  }
+  const setField = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
-  async function parseErrorResponse(res) {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
     try {
-      if (!res || typeof res.text !== "function") return String(res || "Unknown error");
-      const ct = (res.headers && typeof res.headers.get === "function") ? (res.headers.get("content-type") || "") : "";
-      const text = await res.text();
-      if (ct.includes("application/json")) {
-        try {
-          const json = JSON.parse(text);
-          return json.message || json.error || JSON.stringify(json);
-        } catch {
-          return text || `${res.status || "error"} ${res.statusText || ""}`;
+      const payload = {
+        category: form.category,
+        subcategory: form.subcategory,
+        slug: form.slug || undefined,
+        parent_id: form.parent_id ?? null,
+        status: form.status,
+        sort_order: Number(form.sort_order) || 0,
+        metadata: form.metadata ? JSON.parse(form.metadata) : null,
+      };
+
+      let res;
+      if (form.id) {
+        res = await api.put(`/api/admin/products/categories/${form.id}`, payload, true);
+      } else {
+        res = await api.post("/api/admin/products/categories", payload, true);
+      }
+
+      if (typeof onSave === "function") {
+        await onSave(normalizeResponse(res));
+      }
+      onClose && onClose();
+    } catch (err) {
+      console.error("Save category error:", err);
+      alert("Failed to save category. See console for details.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // available parents: only categories in same main category (top-level)
+  const parentOptions = (categories || [])
+    .filter((c) => (c.category || c.category_name) === form.category && !c.parent_id)
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => onClose && onClose()} />
+      <form
+        onSubmit={handleSubmit}
+        className="relative z-10 w-full max-w-2xl bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-2xl overflow-auto max-h-[92vh] border border-gray-100 dark:border-gray-800"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{form.id ? "Edit Subcategory" : "Add Subcategory"}</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Create or update subcategories (Men / Women / Kids).</p>
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => onClose && onClose()} className="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700">
+              Close
+            </button>
+            <button type="submit" disabled={saving} className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-black text-white dark:bg-white dark:text-black">
+              <Save className="w-4 h-4" /> {saving ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <input
+            className={inputCls}
+            placeholder="Subcategory name"
+            value={form.subcategory}
+            onChange={(e) => setField("subcategory", e.target.value)}
+            required
+          />
+
+          {/* Category selector - lock when opened from a section add button */}
+          <select
+            className={inputCls}
+            value={form.category}
+            onChange={(e) => setField("category", e.target.value)}
+            disabled={!!fixedCategory && !form.id} // locked for create-from-section, but editable when editing existing
+          >
+            {MAIN_CATEGORIES.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+
+          <input className={inputCls} placeholder="Slug (optional)" value={form.slug} onChange={(e) => setField("slug", e.target.value)} />
+
+          <select
+            className={inputCls}
+            value={form.parent_id ?? ""}
+            onChange={(e) => setField("parent_id", e.target.value ? Number(e.target.value) : null)}
+          >
+            <option value="">No parent</option>
+            {parentOptions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.subcategory}
+              </option>
+            ))}
+          </select>
+
+          <select className={inputCls} value={form.status} onChange={(e) => setField("status", e.target.value)}>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+
+          <input className={inputCls} placeholder="Sort order" type="number" value={form.sort_order} onChange={(e) => setField("sort_order", e.target.value)} />
+
+          <textarea
+            className={textareaCls + " sm:col-span-2"}
+            placeholder='Metadata JSON (e.g. {"icon":"shirt.png"})'
+            value={form.metadata}
+            onChange={(e) => setField("metadata", e.target.value)}
+            rows={4}
+          />
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/* ======= CategoryManagement Panel ======= */
+function CategoryManagement({ categories = [], onRefresh }) {
+  const [editing, setEditing] = useState(null); // object or null
+  const [showForm, setShowForm] = useState(false);
+  const [fixedCategory, setFixedCategory] = useState(null); // when creating from a section
+  const [draggingItem, setDraggingItem] = useState(null);
+  const [localCategories, setLocalCategories] = useState([]);
+  const dragOverIdRef = useRef(null);
+
+  useEffect(() => {
+    // keep a local copy for smoother drag reorders (will persist on drop)
+    setLocalCategories((categories || []).slice());
+  }, [categories]);
+
+  const openForEdit = (c) => {
+    setEditing(c);
+    setFixedCategory(null);
+    setShowForm(true);
+  };
+
+  const handleCreateForMain = (main) => {
+    setEditing({ category: main }); // seed form with category
+    setFixedCategory(main);
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    await onRefresh();
+    setShowForm(false);
+    setEditing(null);
+    setFixedCategory(null);
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete subcategory? This cannot be undone.")) return;
+    try {
+      await api.delete(`/api/admin/products/categories/${id}`, true);
+      await onRefresh();
+    } catch (err) {
+      console.error("Delete category error:", err);
+      alert("Failed to delete. See console.");
+    }
+  };
+
+  const toggleStatus = async (c) => {
+    try {
+      await api.put(`/api/admin/products/categories/${c.id}/status`, { status: c.status === "active" ? "inactive" : "active" }, true);
+      await onRefresh();
+    } catch (err) {
+      console.error("Toggle status error:", err);
+      alert("Failed to toggle status. See console.");
+    }
+  };
+
+  /* ======= Drag & Drop handlers (HTML5) ======= */
+  const onDragStart = (e, itemId) => {
+    setDraggingItem(String(itemId));
+    e.dataTransfer.effectAllowed = "move";
+    try {
+      e.dataTransfer.setData("text/plain", String(itemId));
+    } catch (err) {
+      // some browsers may throw; ignore
+    }
+  };
+
+  const onDragOver = (e, overId) => {
+    e.preventDefault();
+    dragOverIdRef.current = String(overId);
+  };
+
+  const onDrop = async (e, targetMain) => {
+    e.preventDefault();
+    const draggedId = draggingItem ?? e.dataTransfer.getData("text/plain");
+    if (!draggedId) return;
+    const dragIdNum = Number(draggedId);
+    const overId = dragOverIdRef.current ? Number(dragOverIdRef.current) : null;
+
+    // build main column list (top-level only)
+    const mainList = (localCategories || [])
+      .filter((c) => (c.category || c.category_name) === targetMain && !c.parent_id)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+
+    // if dragged item not in this list => cross-column drop -> update category and append
+    const draggedIndex = mainList.findIndex((i) => Number(i.id) === dragIdNum);
+    if (draggedIndex === -1) {
+      try {
+        // append to end with next sort order
+        const lastSort = mainList.length > 0 ? (mainList[mainList.length - 1].sort_order ?? 0) : 0;
+        await api.put(`/api/admin/products/categories/${dragIdNum}`, { category: targetMain, parent_id: null, sort_order: lastSort + 1 }, true);
+        await onRefresh();
+      } catch (err) {
+        console.error("Failed cross-column drop:", err);
+        alert("Failed to reorder. See console.");
+      } finally {
+        setDraggingItem(null);
+        dragOverIdRef.current = null;
+      }
+      return;
+    }
+
+    // same-column reorder
+    const overIndex = overId != null ? mainList.findIndex((i) => Number(i.id) === overId) : null;
+    if (overIndex === -1 && overIndex !== null) {
+      setDraggingItem(null);
+      dragOverIdRef.current = null;
+      return;
+    }
+
+    // remove dragged item and reinsert
+    const newList = mainList.slice();
+    const [draggedItem] = newList.splice(draggedIndex, 1);
+    let insertIndex = newList.length;
+    if (overIndex !== null) insertIndex = overIndex;
+    newList.splice(insertIndex, 0, draggedItem);
+
+    // persist sort_order
+    try {
+      await Promise.all(
+        newList.map((itm, idx) =>
+          api.put(`/api/admin/products/categories/${itm.id}`, { sort_order: idx }, true).catch((err) => {
+            console.error("Failed to update order for", itm.id, err);
+            // continue
+          })
+        )
+      );
+      await onRefresh();
+    } catch (err) {
+      console.error("Persist order error:", err);
+      alert("Failed to save new order. See console.");
+    } finally {
+      setDraggingItem(null);
+      dragOverIdRef.current = null;
+    }
+  };
+
+  /* ======= Tree helpers for nested display (parent/children) ======= */
+  const treeRoots = useMemo(() => {
+    const map = {};
+    (categories || []).forEach((c) => (map[c.id] = { ...c, children: [] }));
+    const roots = [];
+    (categories || []).forEach((c) => {
+      if (c.parent_id && map[c.parent_id]) {
+        map[c.parent_id].children.push(map[c.id]);
+      } else {
+        roots.push(map[c.id]);
+      }
+    });
+    return roots;
+  }, [categories]);
+
+  const renderNode = (node) => {
+    return (
+      <div
+        key={node.id}
+        draggable
+        onDragStart={(e) => onDragStart(e, node.id)}
+        onDragOver={(e) => onDragOver(e, node.id)}
+        onDrop={(e) => onDrop(e, node.category)}
+        className="pl-2"
+      >
+        <div className="flex items-center justify-between gap-3 p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 grid place-items-center rounded bg-gray-100 dark:bg-gray-800">
+              <Tag className="w-4 h-4 text-gray-600 dark:text-gray-300" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{node.subcategory}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{node.category}</div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              title="Toggle status"
+              onClick={() => toggleStatus(node)}
+              className={`px-2 py-1 rounded text-sm ${node.status === "active" ? "bg-green-50 text-green-700" : "bg-gray-100 dark:bg-gray-800 text-gray-500"}`}
+            >
+              {node.status === "active" ? "Active" : "Inactive"}
+            </button>
+
+            <button onClick={() => openForEdit(node)} className="p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800">
+              <Edit className="w-4 h-4" />
+            </button>
+            <button onClick={() => handleDelete(node.id)} className="p-2 rounded hover:bg-red-50 dark:hover:bg-red-900 text-red-600">
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {node.children && node.children.length > 0 && (
+          <div className="ml-6 mt-2 space-y-2">
+            {node.children
+              .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+              .map((c) => renderNode(c))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Category Management</h4>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Manage subcategories, nesting, ordering and status across Men / Women / Kids.</p>
+        </div>
+        {/* header Add kept as general (optional) */}
+      </div>
+
+      <div className="space-y-3">
+        {/* ALWAYS show the 3-column layout (so each main category has its own Add button) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {MAIN_CATEGORIES.map((main) => (
+            <div
+              key={main}
+              className="p-3 rounded-md border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => onDrop(e, main)}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 grid place-items-center rounded bg-black text-white">{main[0]}</div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">{main}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Main category</p>
+                  </div>
+                </div>
+
+                <button onClick={() => handleCreateForMain(main)} className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-black text-white dark:bg-white dark:text-black">
+                  <PlusCircle className="w-4 h-4" /> Add
+                </button>
+              </div>
+
+              <div className="space-y-2 max-h-[60vh] overflow-auto">
+                {categories.filter((c) => (c.category || c.category_name) === main && !c.parent_id).length === 0 ? (
+                  <div className="text-xs text-gray-500 dark:text-gray-400">No subcategories</div>
+                ) : (
+                  categories
+                    .filter((c) => (c.category || c.category_name) === main && !c.parent_id)
+                    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                    .map((root) => (
+                      <div
+                        key={root.id}
+                        draggable
+                        onDragStart={(e) => onDragStart(e, root.id)}
+                        onDragOver={(e) => onDragOver(e, root.id)}
+                        onDrop={(e) => onDrop(e, main)}
+                        className="rounded-md p-1"
+                      >
+                        {renderNode(root)}
+                      </div>
+                    ))
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {showForm && (
+        <CategoryFormModal
+          editing={editing}
+          fixedCategory={fixedCategory}
+          categories={categories}
+          onClose={() => {
+            setShowForm(false);
+            setEditing(null);
+            setFixedCategory(null);
+          }}
+          onSave={handleSave}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ======= ProductFormModal (updated to use DB categories/subcategories) ======= */
+function ProductFormModal({ product, onClose, onSave, categories = [] }) {
+  const defaultForm = {
+    name: "",
+    category: "Men",
+    price: 0,
+    actualPrice: 0,
+    images: [],
+    rating: 0,
+    sizes: "",
+    colors: "",
+    originalPrice: 0,
+    description: "",
+    subcategory: "",
+    stock: 0,
+    featured: 0,
+  };
+
+  const [form, setForm] = useState(defaultForm);
+  const [saving, setSaving] = useState(false);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const [useCustomSub, setUseCustomSub] = useState(false);
+
+  useEffect(() => {
+    if (product && typeof product === "object" && Object.keys(product).length > 0) {
+      setForm({
+        name: product.name ?? "",
+        category: product.category ?? "Men",
+        price: Number(product.price ?? 0),
+        actualPrice: Number(product.actualPrice ?? product.price ?? 0),
+        images: product.images ? String(product.images).split(",").filter(Boolean) : [],
+        rating: Number(product.rating ?? 0),
+        sizes: product.sizes ?? "",
+        colors: product.colors ?? "",
+        originalPrice: Number(product.originalPrice ?? 0),
+        description: product.description ?? "",
+        subcategory: product.subcategory ?? "",
+        stock: Number(product.stock ?? 0),
+        featured: Number(product.featured ?? 0),
+      });
+      setUseCustomSub(false);
+    } else {
+      setForm(defaultForm);
+      setUseCustomSub(false);
+    }
+  }, [product]);
+
+  // Clear subcategory when main category changes (avoid stale selection)
+  useEffect(() => {
+    setField("subcategory", "");
+    setUseCustomSub(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.category]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose && onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const setField = (k, v) => setForm((s) => ({ ...s, [k]: v }));
+
+  const handleUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    setUploadingCount((c) => c + files.length);
+
+    try {
+      const uploads = await Promise.all(
+        files.map(async (file) => {
+          const fd = new FormData();
+          fd.append("image", file);
+          const res = await api.formPost("/api/upload", fd, true);
+          const url =
+            res?.url ||
+            res?.secure_url ||
+            res?.data?.url ||
+            res?.data?.secure_url ||
+            (res?.public_id && res?.secure_url);
+
+          if (!url) {
+            console.warn("Upload returned unexpected shape:", res);
+            throw new Error("No URL returned from upload");
+          }
+          return url;
+        })
+      );
+
+      setForm((s) => ({
+        ...s,
+        images: [...(s.images || []), ...uploads],
+      }));
+    } catch (err) {
+      console.error("Upload error:", err);
+      alert("Upload failed. Check console for details.");
+    } finally {
+      setUploadingCount((c) => Math.max(0, c - files.length));
+      if (e.target) e.target.value = "";
+    }
+  };
+
+  const removeImage = (url) => {
+    setForm((s) => ({ ...s, images: s.images.filter((i) => i !== url) }));
+  };
+
+  const handleSubmit = async (ev) => {
+    ev.preventDefault();
+    setSaving(true);
+
+    try {
+      // If user is in custom subcategory mode and typed something, ensure subcategory exists (create or reuse)
+      let chosenSub = form.subcategory ? String(form.subcategory).trim() : "";
+
+      if (useCustomSub && chosenSub) {
+        // try to find existing same-name subcategory in same main category (case-insensitive)
+        const exists = (categories || []).find((c) => {
+          const catName = (c.category || c.category_name || "").toString();
+          const subName = (c.subcategory || c.name || "").toString();
+          return (
+            catName === form.category &&
+            subName.toLowerCase() === chosenSub.toLowerCase()
+          );
+        });
+
+        if (exists) {
+          chosenSub = exists.subcategory || exists.name || chosenSub;
+        } else {
+          // create new category entry
+          try {
+            const createRes = await api.post(
+              "/api/admin/products/categories",
+              { category: form.category, subcategory: chosenSub, parent_id: null, status: "active", sort_order: 0 },
+              true
+            );
+            const created = normalizeResponse(createRes);
+            // created may be the created row or {data: row} etc.
+            const createdObj = created && typeof created === "object" && (created.subcategory || created.data) ? (created.subcategory ? created : created.data ?? created) : created;
+            if (createdObj && (createdObj.subcategory || createdObj.name)) {
+              chosenSub = createdObj.subcategory ?? createdObj.name ?? chosenSub;
+            }
+          } catch (err) {
+            console.warn("Failed to create subcategory; proceeding with typed name.", err);
+            // proceed with chosenSub as typed
+          }
         }
       }
-      if (text && text.includes("<")) {
-        const msgMatch = text.match(/<Message>([\s\S]*?)<\/*Message>/i);
-        if (msgMatch && msgMatch[1]) return msgMatch[1].trim();
-        return `Server returned XML error: ${text.slice(0, 240)}...`;
-      }
-      return text || `${res.status || "error"} ${res.statusText || ""}`;
-    } catch {
-      return `Network error or malformed error response`;
-    }
-  }
 
-  async function safeFetchJson(url, opts = {}) {
-    let res;
-    try {
-      res = await fetch(url, opts);
-    } catch (fetchErr) {
-      throw new Error(`Network error: ${fetchErr.message || fetchErr}`);
-    }
+      const payload = {
+        ...form,
+        price: Number(form.price) || 0,
+        actualPrice: Number(form.actualPrice) || Number(form.price) || 0,
+        originalPrice: Number(form.originalPrice) || 0,
+        rating: Number(form.rating) || 0,
+        stock: Number(form.stock) || 0,
+        featured: Number(form.featured) ? 1 : 0,
+        images: (form.images || []).join(","),
+        subcategory: chosenSub || form.subcategory || "",
+      };
 
-    if (!res.ok) {
-      const parsed = await parseErrorResponse(res);
-      throw new Error(parsed);
-    }
-
-    const ct = (res.headers && res.headers.get ? res.headers.get("content-type") : "") || "";
-    if (ct.includes("application/json")) {
-      try {
-        return await res.json();
-      } catch {
-        const txt = await res.text().catch(() => "");
-        return { data: txt };
-      }
-    }
-    const txt = await res.text().catch(() => "");
-    try {
-      return JSON.parse(txt);
-    } catch {
-      return { data: txt };
-    }
-  }
-
-  async function apiGet(path, signal) {
-    const opts = { credentials: "include", headers: getAuthHeaders(false) };
-    if (signal) opts.signal = signal;
-    return safeFetchJson(buildUrl(path), opts);
-  }
-  async function apiPost(path, body, isFormData = false) {
-    const url = buildUrl(path);
-    const opts = { method: "POST", credentials: "include" };
-    if (isFormData) {
-      opts.body = body;
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      if (token) opts.headers = { Authorization: `Bearer ${token}` };
-    } else {
-      opts.headers = getAuthHeaders(true);
-      opts.body = JSON.stringify(body);
-    }
-    return safeFetchJson(url, opts);
-  }
-  async function apiPatch(path, body) {
-    return safeFetchJson(buildUrl(path), { method: "PATCH", credentials: "include", headers: getAuthHeaders(true), body: JSON.stringify(body) });
-  }
-  async function apiPut(path, body, isFormData = false) {
-    const url = buildUrl(path);
-    const opts = { method: "PUT", credentials: "include" };
-    if (isFormData) {
-      opts.body = body;
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      if (token) opts.headers = { Authorization: `Bearer ${token}` };
-    } else {
-      opts.headers = getAuthHeaders(true);
-      opts.body = JSON.stringify(body);
-    }
-    return safeFetchJson(url, opts);
-  }
-  async function apiDelete(path) {
-    return safeFetchJson(buildUrl(path), { method: "DELETE", credentials: "include", headers: getAuthHeaders(false) });
-  }
-
-  // initial load (slides, sales, all products)
-  useEffect(() => {
-    (async () => {
-      try {
-        await loadSlides();
-        await loadSales();
-        await loadAllProducts();
-      } catch (err) {
-        console.error("initial load error:", err);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // -- SLIDES
-  async function loadSlides() {
-    setLoadingSlides(true);
-    try {
-      const data = await apiGet("/api/admin/slides");
-      const arr = Array.isArray(data) ? data : data.slides || data.data || [];
-      setSlides(Array.isArray(arr) ? arr : []);
-    } catch (err) {
-      console.error("loadSlides error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to load slides — ${err.message || err}` }, 10000);
-      setSlides([]);
-    } finally {
-      setLoadingSlides(false);
-    }
-  }
-
-  async function handleDeleteSlide(id) {
-    if (!window.confirm("Delete this slide?")) return;
-    try {
-      await apiDelete(`/api/admin/slides/${id}`);
-      setSlides((s) => s.filter((x) => x?.id !== id));
-      setNoteWithAutoClear({ type: "success", text: "Slide removed" }, 4000);
-    } catch (err) {
-      console.error("handleDeleteSlide error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to remove slide — ${err.message || err}` }, 8000);
-    }
-  }
-
-  function onDragStartSlide(e, index) {
-    dragIndexRef.current = index;
-    try {
-      e.dataTransfer.setData("text/plain", String(index));
-      e.dataTransfer.effectAllowed = "move";
-    } catch {}
-  }
-  function onDragEnterSlide(e, index) {
-    e.preventDefault();
-    dragOverIndexRef.current = index;
-  }
-  function onDragOverSlide(e) {
-    e.preventDefault();
-  }
-  function onDropSlide(e) {
-    e.preventDefault();
-    const from = dragIndexRef.current;
-    const to = dragOverIndexRef.current != null ? dragOverIndexRef.current : Number(e.dataTransfer.getData("text/plain"));
-    if (from == null || to == null || Number.isNaN(from) || Number.isNaN(to)) {
-      dragIndexRef.current = null;
-      dragOverIndexRef.current = null;
-      return;
-    }
-    reorderSlides(from, to);
-    dragIndexRef.current = null;
-    dragOverIndexRef.current = null;
-  }
-
-  async function reorderSlides(fromIndex, toIndex) {
-    if (fromIndex === toIndex) return;
-    setSlides((prev) => {
-      const copy = Array.isArray(prev) ? [...prev] : [];
-      if (fromIndex < 0 || fromIndex >= copy.length) return copy;
-      const [item] = copy.splice(fromIndex, 1);
-      const toClamped = Math.max(0, Math.min(toIndex, copy.length));
-      copy.splice(toClamped, 0, item);
-      updateSlidesOrder(copy).catch((e) => console.error("reorder save failed", e));
-      return copy;
-    });
-  }
-
-  async function updateSlidesOrder(newOrder) {
-    try {
-      await apiPost("/api/admin/slides/reorder", { order: newOrder.map((s) => s?.id) });
-      setNoteWithAutoClear({ type: "success", text: "Slides reordered" }, 3000);
-    } catch (err) {
-      console.error("updateSlidesOrder error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to save slide order — ${err.message || err}` }, 8000);
-    }
-  }
-
-  async function uploadImage(file) {
-    if (!file) throw new Error("No file provided");
-    const fd = new FormData();
-    fd.append("image", file);
-    try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-      const res = await fetch(buildUrl("/api/admin/upload") === "/api/admin/upload" ? buildUrl("/api/upload") : buildUrl("/api/upload"), { method: "POST", body: fd, credentials: "include", headers });
-      // The route in your example is router.post("/upload", authAdmin, ...), so final path is /api/upload
-      if (!res.ok) {
-        const parsed = await parseErrorResponse(res);
-        throw new Error(parsed);
-      }
-      const json = await res.json().catch(() => null);
-      if (!json) throw new Error("Upload returned empty response");
-      const url = json.url || json.secure_url || json.imageUrl || json.image_url || json.data?.url;
-      if (!url) throw new Error("Upload succeeded but server returned no 'url' field.");
-      return url;
-    } catch (err) {
-      console.error("uploadImage error:", err);
-      throw err;
-    }
-  }
-
-  async function handleAddSlide({ file, name, link }) {
-    if (!file) {
-      setNoteWithAutoClear({ type: "error", text: "Please choose an image." }, 4000);
-      return;
-    }
-    setAddingSlide(true);
-    try {
-      const url = await uploadImage(file);
-      const saved = await apiPost("/api/admin/slides", { name, link, image_url: url });
-      const newSlide = saved?.slide || (saved?.id ? { id: saved.id, name, link, image_url: url } : { id: Date.now(), name, link, image_url: url });
-      setSlides((s) => [...(Array.isArray(s) ? s : []), newSlide]);
-      setNoteWithAutoClear({ type: "success", text: "Slide added" }, 4000);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    } catch (err) {
-      console.error("handleAddSlide error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to add slide — ${err.message || err}` }, 8000);
-    } finally {
-      setAddingSlide(false);
-    }
-  }
-
-  // Slide edit flow
-  function openEditSlide(slide) {
-    setSlideEditing({ ...slide, file: null }); // keep original image_url; file null until user chooses new
-    setSlideEditOpen(true);
-  }
-
-  function onSlideFileChange(e) {
-    const file = e?.target?.files?.[0] ?? null;
-    setSlideEditing((s) => (s ? { ...s, file } : s));
-  }
-
-  async function handleUpdateSlide() {
-    if (!slideEditing || !slideEditing.id) return;
-    const { id, name, link, file } = slideEditing;
-    try {
-      setNoteWithAutoClear({ type: "success", text: "Updating slide..." }, 2000);
-      let image_url = slideEditing.image_url || null;
-      if (file) {
-        image_url = await uploadImage(file);
-      }
-      await apiPut(`/api/admin/slides/${id}`, { name, link, image_url });
-      setSlides((list) => (Array.isArray(list) ? list.map((s) => (s?.id === id ? { ...s, name, link, image_url } : s)) : list));
-      setNoteWithAutoClear({ type: "success", text: "Slide updated" }, 4000);
-      setSlideEditOpen(false);
-      setSlideEditing(null);
-    } catch (err) {
-      console.error("handleUpdateSlide error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to update slide — ${err.message || err}` }, 8000);
-    }
-  }
-
-  // -- SALES
-  async function loadSales() {
-    setLoadingSales(true);
-    try {
-      const data = await apiGet("/api/admin/sales");
-      const arr = Array.isArray(data) ? data : data.sales || data.data || [];
-      setSales(Array.isArray(arr) ? arr : []);
-    } catch (err) {
-      console.error("loadSales error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to load sales — ${err.message || err}` }, 8000);
-      setSales([]);
-    } finally {
-      setLoadingSales(false);
-    }
-  }
-
-  async function handleCreateSale({ name }) {
-    if (!name || selectedProductIds.size === 0) {
-      setNoteWithAutoClear({ type: "error", text: "Please provide a name and select at least one product" }, 6000);
-      return;
-    }
-    setCreatingSale(true);
-    try {
-      const payload = { name, productIds: Array.from(selectedProductIds) };
-      const saved = await apiPost("/api/admin/sales", payload);
-      const newSale = saved?.sale || (saved?.id ? { id: saved.id, name, productIds: payload.productIds, enabled: 1 } : { id: Date.now(), name, productIds: payload.productIds, enabled: 1 });
-      setSales((s) => [...(Array.isArray(s) ? s : []), newSale]);
-      setSelectedProductIds(new Set());
-      setNoteWithAutoClear({ type: "success", text: "Sale created" }, 5000);
-    } catch (err) {
-      console.error("handleCreateSale error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to create sale — ${err.message || err}` }, 10000);
-    } finally {
-      setCreatingSale(false);
-    }
-  }
-
-  async function toggleSaleEnabled(saleId) {
-    try {
-      const sale = sales.find((s) => s?.id === saleId);
-      if (!sale) return;
-      const newEnabled = sale?.enabled ? 0 : 1;
-      // call PUT /sales/:id per backend
-      await apiPut(`/api/admin/sales/${saleId}`, { enabled: newEnabled });
-      setSales((list) => (Array.isArray(list) ? list.map((s) => (s?.id === saleId ? { ...s, enabled: newEnabled } : s)) : list));
-      setNoteWithAutoClear({ type: "success", text: "Sale updated" }, 4000);
-    } catch (err) {
-      console.error("toggleSaleEnabled error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to update sale — ${err.message || err}` }, 8000);
-    }
-  }
-
-  // Sale edit flow
-  function openEditSale(sale) {
-    setSaleEditing({ id: sale.id, name: sale.name || "", enabled: Number(sale.enabled ?? 0) });
-    setSaleEditOpen(true);
-  }
-
-  async function handleUpdateSale() {
-    if (!saleEditing || !saleEditing.id) return;
-    const { id, name, enabled } = saleEditing;
-    try {
-      await apiPut(`/api/admin/sales/${id}`, { name, enabled });
-      setSales((list) => (Array.isArray(list) ? list.map((s) => (s?.id === id ? { ...s, name, enabled } : s)) : list));
-      setNoteWithAutoClear({ type: "success", text: "Sale updated" }, 4000);
-      setSaleEditOpen(false);
-      setSaleEditing(null);
-    } catch (err) {
-      console.error("handleUpdateSale error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to update sale — ${err.message || err}` }, 8000);
-    }
-  }
-
-  async function handleDeleteSale(id) {
-    if (!window.confirm("Delete this sale?")) return;
-    try {
-      await apiDelete(`/api/admin/sales/${id}`);
-      setSales((s) => s.filter((x) => x?.id !== id));
-      setNoteWithAutoClear({ type: "success", text: "Sale removed" }, 4000);
-    } catch (err) {
-      console.error("handleDeleteSale error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to remove sale — ${err.message || err}` }, 8000);
-    }
-  }
-
-  // PRODUCTS - client-side search & sort (no longer using debouncedQuery from search component)
-  const mapSortToComparator = useCallback((sortKey) => {
-    switch (sortKey) {
-      case "priceAsc":
-        return (a, b) => Number((a?.price ?? 0)) - Number((b?.price ?? 0));
-      case "priceDesc":
-        return (a, b) => Number((b?.price ?? 0)) - Number((a?.price ?? 0));
-      case "newest":
-        return (a, b) => {
-          const da = new Date(a?.createdAt || a?.created_at || 0).getTime();
-          const db = new Date(b?.createdAt || b?.created_at || 0).getTime();
-          return db - da;
-        };
-      case "nameAsc":
-        return (a, b) => String(a?.name || "").localeCompare(String(b?.name || ""));
-      case "nameDesc":
-        return (a, b) => String(b?.name || "").localeCompare(String(a?.name || ""));
-      default:
-        return null; // no sort (relevance/default)
-    }
-  }, []);
-
-  // helper: get primary image
-  function getPrimaryImage(item) {
-    if (!item) return "";
-    if (item.image) return item.image;
-    if (item.image_url) return item.image_url;
-    if (item.thumbnail) return item.thumbnail;
-    const imagesField = item.images ?? item.images_url ?? item.imagesUrl ?? null;
-    if (!imagesField) return "";
-    if (Array.isArray(imagesField)) {
-      return imagesField[0] || "";
-    }
-    if (typeof imagesField === "string") {
-      const parts = imagesField.split(",").map((p) => p.trim()).filter(Boolean);
-      return parts[0] || "";
-    }
-    return "";
-  }
-
-  // Load all products once (initial load)
-  async function loadAllProducts() {
-    setProductsLoading(true);
-    try {
-      // try to fetch a large limit — adjust as your backend supports
-      const url = "/api/products?limit=10000";
-      const json = await apiGet(url);
-      // json may be { data: [...], meta: {...} } or array
-      const data = Array.isArray(json) ? json : json.data ?? json.products ?? json.items ?? [];
-      setAllProducts(Array.isArray(data) ? data : []);
-      // reset pagination
-      setCurrentPage(1);
-    } catch (err) {
-      console.error("loadAllProducts error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to load products — ${err.message || err}` }, 12000);
-      setAllProducts([]);
-    } finally {
-      setProductsLoading(false);
-    }
-  }
-
-  // If a product id was selected via search but is not in allProducts, fetch it and add to list
-  async function ensureProductPresent(productId) {
-    try {
-      const exists = allProducts.some((p) => String(p?.id) === String(productId));
-      if (exists) return;
-      // try to fetch product by id
-      const json = await apiGet(`/api/products/${productId}`);
-      const product = json?.data || json?.product || (Array.isArray(json) ? json[0] : json) || null;
+      let resp;
       if (product && product.id) {
-        setAllProducts((prev) => {
-          const copy = Array.isArray(prev) ? [...prev] : [];
-          // avoid duplicates
-          if (copy.some((p) => String(p?.id) === String(product.id))) return copy;
-          return [product, ...copy];
-        });
+        resp = await api.put(`/api/admin/products/${product.id}`, payload, true);
+      } else {
+        resp = await api.post(`/api/admin/products`, payload, true);
+      }
+
+      if (typeof onSave === "function") {
+        await onSave(resp);
+      } else {
+        onClose && onClose();
       }
     } catch (err) {
-      console.warn("ensureProductPresent failed for", productId, err);
-      setNoteWithAutoClear({ type: "error", text: `Couldn't fetch product ${productId}: ${err.message || err}` }, 6000);
+      console.error("Save product error:", err);
+      alert("Failed to save product — check console");
+    } finally {
+      setSaving(false);
     }
-  }
+  };
 
-  // toggle selection (called by UI list and by ProductSearchBar)
-  function toggleSelectProduct(productOrId) {
-    const id = productOrId?.id ?? productOrId;
-    if (id == null) return;
-    setSelectedProductIds((prev) => {
-      const copy = new Set(prev);
-      const willAdd = !copy.has(id);
-      if (willAdd) copy.add(id);
-      else copy.delete(id);
+  // available subcategories for selected main category (top-level only)
+  const availableSubcats = useMemo(() => {
+    if (!categories || categories.length === 0) return [];
+    return categories
+      .filter((c) => (c.category || c.category_name) === (form.category || "Men") && !c.parent_id)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  }, [categories, form.category]);
 
-      // If we added a product that isn't present in the local list, fetch and add it so main list shows it
-      if (willAdd) {
-        // ensure but don't block UI: fetch product and add in background
-        ensureProductPresent(id).catch((e) => console.error("ensureProductPresent error:", e));
-      }
-      return copy;
-    });
-  }
-
-  /* ----------------- UI components (kept similar) ----------------- */
-  function CenterToggle() {
-    return (
-      <div className="w-full flex justify-center my-6">
-        <div className="inline-flex items-center rounded-full p-1 bg-neutral-100/40 dark:bg-neutral-800/40 shadow-inner border border-neutral-200/20 dark:border-neutral-700/20">
-          <button
-            onClick={() => setMode("slides")}
-            className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all flex items-center gap-2 ${mode === "slides" ? "bg-black text-white dark:bg-white dark:text-black shadow-lg" : "bg-transparent text-neutral-800 dark:text-neutral-200"}`}
-          >
-            <ImageIcon className="w-4 h-4" />
-            Slides
-          </button>
-          <button
-            onClick={() => setMode("sales")}
-            className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all flex items-center gap-2 ${mode === "sales" ? "bg-black text-white dark:bg-white dark:text-black shadow-lg" : "bg-transparent text-neutral-800 dark:text-neutral-200"}`}
-          >
-            <Gift className="w-4 h-4" />
-            Sales
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  function Note() {
-    if (!note) return null;
-    return (
-      <div role="status" className={`mb-4 px-4 py-2 rounded-lg max-w-3xl mx-auto text-sm flex items-center gap-2 ${note.type === "success" ? "bg-white/6 text-white border border-white/10" : "bg-red-900/30 text-red-200 border border-red-800/30"}`}>
-        {note.type === "success" ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
-        <div>{note.text}</div>
-      </div>
-    );
-  }
-
-  function SlideAddBox() {
-    const [name, setName] = useState("");
-    const [link, setLink] = useState("");
-    const [file, setFile] = useState(null);
-    const [preview, setPreview] = useState(null);
-
-    useEffect(() => {
-      if (!file) {
-        setPreview(null);
-        return;
-      }
-      const url = URL.createObjectURL(file);
-      setPreview(url);
-      return () => URL.revokeObjectURL(url);
-    }, [file]);
-
-    function onFile(e) {
-      const f = e?.target?.files?.[0];
-      if (f) setFile(f);
+  useEffect(() => {
+    // if selected existing option is "__custom__" switch to custom mode
+    if (form.subcategory === "__custom__") {
+      setUseCustomSub(true);
+      setField("subcategory", "");
     }
+  }, [form.subcategory]);
 
-    function clearAll() {
-      setFile(null);
-      setPreview(null);
-      setName("");
-      setLink("");
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-
-    return (
-      <div className="p-4 rounded-2xl border bg-gradient-to-b from-neutral-50/40 to-neutral-100/10 dark:from-neutral-900/40 dark:to-neutral-800/30 shadow-xl">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-64 h-36 border-2 border-dashed rounded-xl overflow-hidden flex items-center justify-center bg-white/5">
-              {preview ? <img src={preview} alt="preview" className="object-cover w-full h-full" /> : <div className="text-center text-sm text-neutral-400">Preview</div>}
-            </div>
-            <input ref={fileInputRef} type="file" accept="image/*" onChange={onFile} className="hidden" />
-            <div className="flex gap-2">
-              <button onClick={() => fileInputRef.current?.click()} className={primaryBtnClass()}>
-                <UploadCloud className="w-4 h-4" />
-                Choose Image
-              </button>
-              <button onClick={clearAll} className={secondaryBtnClass()}>
-                <X className="w-4 h-4" />
-                Clear
-              </button>
-            </div>
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => onClose && onClose()} />
+      <form
+        onSubmit={handleSubmit}
+        className="relative z-10 w-full max-w-4xl bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-2xl overflow-auto max-h-[92vh] border border-gray-100 dark:border-gray-800"
+      >
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white">{product ? "Edit Product" : "Add Product"}</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Fill product details. Images are uploaded to your configured upload route.</p>
           </div>
-
-          <div className="md:col-span-2 flex flex-col gap-3">
-            <label className="text-xs font-semibold uppercase text-neutral-500">Slide name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Eg: Winter Collection" className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
-            <label className="text-xs font-semibold uppercase text-neutral-500">Link (optional)</label>
-            <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="/collection/winter" className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
-
-            <div className="flex gap-2 mt-2">
-              <button onClick={() => handleAddSlide({ file, name, link })} disabled={!file || addingSlide} className={primaryBtnClass(addingSlide ? "opacity-70 pointer-events-none" : "")}>
-                <Plus className="w-4 h-4" />
-                {addingSlide ? "Adding..." : "Add Slide"}
-              </button>
-              <button onClick={clearAll} className={secondaryBtnClass()}>
-                <X className="w-4 h-4" />
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  function SlidesList() {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold">Slides ({slides.length})</h3>
           <div className="flex items-center gap-2">
-            <button onClick={() => setSlides([])} title="Clear local view" className={secondaryBtnClass()}>
-              <X className="w-4 h-4" />
-              Clear View
-            </button>
-            <button onClick={() => loadSlides().catch((e) => console.error("manual reload slides error:", e))} className={secondaryBtnClass()}>
-              <RefreshCw className="w-4 h-4" />
-              Reload
+            <button
+              type="button"
+              onClick={() => onClose && onClose()}
+              className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+              aria-label="Close"
+            >
+              ✕
             </button>
           </div>
         </div>
 
-        {loadingSlides ? (
-          <div className="p-4 rounded-md border">Loading slides...</div>
-        ) : (
-          <div className="w-full max-w-3xl mx-auto space-y-3">
-            {slides.map((s, idx) => {
-              const image = s?.image_url || s?.image || s?.imageUrl || s?.imageurl || "";
-              const isDragOver = dragOverIndexRef.current === idx;
-              return (
-                <div
-                  key={s?.id ?? idx}
-                  draggable
-                  onDragStart={(e) => onDragStartSlide(e, idx)}
-                  onDragEnter={(e) => onDragEnterSlide(e, idx)}
-                  onDragOver={(e) => onDragOverSlide(e)}
-                  onDrop={onDropSlide}
-                  className={`flex gap-4 items-center p-4 rounded-2xl border bg-white/5 shadow-md transition-all ${isDragOver ? "ring-2 ring-offset-2 ring-black/30 dark:ring-white/30" : ""}`}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <input className={inputCls} placeholder="Product name" value={form.name} onChange={(e) => setField("name", e.target.value)} required />
+
+          <select className={inputCls} value={form.category} onChange={(e) => setField("category", e.target.value)}>
+            {MAIN_CATEGORIES.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+
+          <input className={inputCls} placeholder="Price (₹)" type="number" value={form.price} onChange={(e) => setField("price", e.target.value)} />
+          <input className={inputCls} placeholder="Actual Price (₹)" type="number" value={form.actualPrice} onChange={(e) => setField("actualPrice", e.target.value)} />
+
+          <input className={inputCls} placeholder="Original Price (₹)" type="number" value={form.originalPrice} onChange={(e) => setField("originalPrice", e.target.value)} />
+          <input className={inputCls} placeholder="Rating" type="number" step="0.1" value={form.rating} onChange={(e) => setField("rating", e.target.value)} />
+
+          <input className={inputCls} placeholder="Sizes (comma separated)" value={form.sizes} onChange={(e) => setField("sizes", e.target.value)} />
+          <input className={inputCls} placeholder="Colors (comma separated)" value={form.colors} onChange={(e) => setField("colors", e.target.value)} />
+
+          {/* Subcategory: prefer select from DB but allow custom */}
+          {availableSubcats.length > 0 && !useCustomSub ? (
+            <div className="flex gap-2 items-center">
+              <select
+                className={inputCls + " flex-1"}
+                value={form.subcategory}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "__custom__") {
+                    setUseCustomSub(true);
+                    setField("subcategory", "");
+                  } else {
+                    setField("subcategory", val);
+                  }
+                }}
+              >
+                <option value="">-- Select Subcategory --</option>
+                {availableSubcats.map((s) => (
+                  <option key={s.id} value={s.subcategory}>
+                    {s.subcategory}
+                  </option>
+                ))}
+                <option value="__custom__">Other (Custom)</option>
+              </select>
+              <button type="button" onClick={() => setUseCustomSub(true)} className="px-3 py-2 rounded border border-gray-200 dark:border-gray-700">
+                Custom
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2 items-center">
+              <input className={inputCls + " flex-1"} placeholder="Subcategory (Custom)" value={form.subcategory} onChange={(e) => setField("subcategory", e.target.value)} />
+              <button
+                type="button"
+                onClick={() => {
+                  setUseCustomSub(false);
+                  setField("subcategory", "");
+                }}
+                className="px-3 py-2 rounded border border-gray-200 dark:border-gray-700"
+              >
+                Choose
+              </button>
+            </div>
+          )}
+
+          <input className={inputCls} placeholder="Stock" type="number" value={form.stock} onChange={(e) => setField("stock", e.target.value)} />
+
+          <div className="flex items-center gap-3">
+            <label htmlFor="featuredSwitch" className="flex items-center gap-2 cursor-pointer select-none">
+              <div className={`w-11 h-6 flex items-center rounded-full p-1 transition ${form.featured ? "bg-green-500" : "bg-gray-300 dark:bg-gray-700"}`}>
+                <div className={`bg-white w-4 h-4 rounded-full shadow transform transition ${form.featured ? "translate-x-5" : ""}`} />
+              </div>
+              <span className="text-sm text-gray-700 dark:text-gray-300">Featured</span>
+            </label>
+            <input id="featuredSwitch" type="checkbox" className="sr-only" checked={Number(form.featured) === 1} onChange={(e) => setField("featured", e.target.checked ? 1 : 0)} />
+          </div>
+
+          <textarea className={textareaCls + " sm:col-span-2"} rows={4} placeholder="Description" value={form.description} onChange={(e) => setField("description", e.target.value)} />
+        </div>
+
+        {/* Images uploader */}
+        <div className="mt-6">
+          <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">Product images</label>
+          <div className="flex flex-wrap items-center gap-3">
+            {(form.images || []).map((img) => (
+              <div key={img} className="relative w-28 h-28 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                <img src={img} alt="preview" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeImage(img)}
+                  className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-7 h-7 grid place-items-center shadow"
+                  aria-label="Remove image"
                 >
-                  <div className="w-44 h-28 rounded-lg overflow-hidden bg-white/5 flex items-center justify-center relative flex-shrink-0">
-                    {image ? <img src={image} alt={s?.name || "slide"} className="object-cover w-full h-full" /> : <div className="text-sm text-neutral-400">No image</div>}
-                    <div className="absolute top-2 left-2 p-1 rounded-md bg-black/40">
-                      <GripVertical className="w-4 h-4" />
+                  ✕
+                </button>
+              </div>
+            ))}
+
+            <label
+              className="flex items-center justify-center w-28 h-28 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-500"
+              title="Upload images"
+            >
+              <input type="file" multiple accept="image/*" className="hidden" onChange={handleUpload} />
+              <div className="text-center">
+                <div className="text-2xl">＋</div>
+                <div className="text-xs mt-1">{uploadingCount ? `${uploadingCount} uploading...` : "Upload"}</div>
+              </div>
+            </label>
+          </div>
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">You can upload multiple images. They will be saved as a comma-separated string to keep DB compatible with existing CSV/bulk upload.</p>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 mt-6">
+          <button type="button" onClick={() => onClose && onClose()} className={btnSecondaryCls}>
+            Cancel
+          </button>
+          <button type="submit" disabled={saving || uploadingCount > 0} className={btnPrimaryCls}>
+            {saving ? "Saving..." : "Save product"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/* ======= ProductsAdmin main component (extended) ======= */
+export default function ProductsAdmin() {
+  const [products, setProducts] = useState([]);
+  const [stats, setStats] = useState({ total: 0, sold: 0, inStock: 0, outOfStock: 0 });
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [sortBy, setSortBy] = useState("newest");
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
+  const [showProducts, setShowProducts] = useState(false);
+  const [showCategories, setShowCategories] = useState(false);
+
+  const [categories, setCategories] = useState([]);
+
+  const DEBUG = false;
+
+  // Helper: if your backend expects different sort keys, map them here.
+  const mapSortForBackend = (uiSort) => {
+    // adjust map as needed for your backend
+    const map = {
+      newest: "newest",
+      price_asc: "price_asc",
+      price_desc: "price_desc",
+      best_selling: "best_selling",
+      out_of_stock: "out_of_stock",
+      low_stock: "low_stock",
+    };
+    return map[uiSort] ?? uiSort;
+  };
+
+  const fetchProducts = useCallback(
+    async () => {
+      if (!showProducts) return;
+      setLoading(true);
+      try {
+        // Build query params explicitly and create query string to guarantee they are sent
+        const params = new URLSearchParams();
+        if (q && String(q).trim() !== "") params.append("search", String(q).trim());
+        if (page && Number(page) > 0) params.append("page", String(Number(page)));
+        if (limit && Number(limit) > 0) params.append("limit", String(Number(limit)));
+        const backendSort = mapSortForBackend(sortBy);
+        if (backendSort) params.append("sort", String(backendSort));
+
+        const queryString = params.toString();
+        const url = queryString ? `/api/admin/products?${queryString}` : `/api/admin/products`;
+
+        if (DEBUG) console.log("Fetching products URL:", url);
+
+        // Pass an empty object as second arg for compatibility with your api wrapper (auth passed as third)
+        const res = await api.get(url, {}, true);
+        if (DEBUG) console.log("Products list raw:", res);
+        const body = normalizeResponse(res);
+
+        let list = [];
+        let total = 0;
+        if (Array.isArray(body)) {
+          list = body;
+        } else if (Array.isArray(body.data)) {
+          list = body.data;
+          total = Number(body.total ?? body.totalCount ?? 0);
+        } else if (Array.isArray(body.products)) {
+          list = body.products;
+          total = Number(body.total ?? body.totalCount ?? 0);
+        } else {
+          const arr = Object.values(body).find((v) => Array.isArray(v));
+          if (arr) list = arr;
+        }
+
+        setProducts(list || []);
+        setTotalPages(limit === 999999 ? 1 : Math.max(1, Math.ceil((total || list.length || 0) / (limit || 20))));
+      } catch (err) {
+        console.error("Fetch products error:", err);
+        setProducts([]);
+        setTotalPages(1);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [q, page, limit, sortBy, showProducts, DEBUG]
+  );
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await api.get("/api/admin/stats", {}, true);
+      if (DEBUG) console.log("Stats raw:", res);
+      const body = normalizeResponse(res);
+
+      const total = Number((body.total ?? body.totalProducts) ?? 0);
+      const sold = Number((body.sold ?? body.soldProducts) ?? 0);
+      const inStock = Number((body.inStock ?? body.in_stock) ?? 0);
+      const outOfStock = Number((body.outOfStock ?? body.out_of_stock) ?? 0);
+
+      setStats({ total, sold, inStock, outOfStock });
+    } catch (err) {
+      console.error("Fetch stats error:", err);
+      setStats({ total: 0, sold: 0, inStock: 0, outOfStock: 0 });
+    }
+  }, [DEBUG]);
+
+  /* ======= Category API helpers ======= */
+  const fetchCategories = useCallback(async () => {
+    try {
+      const res = await api.get("/api/admin/products/categories", {}, true);
+      const body = normalizeResponse(res);
+      const list = Array.isArray(body) ? body : Array.isArray(body.data) ? body.data : body.categories ?? [];
+      const norm = (list || []).map((c) => ({
+        id: c.id ?? c._id ?? c.category_id ?? c.id,
+        category: c.category ?? c.category_name ?? c.main_category ?? c.category,
+        subcategory: c.subcategory ?? c.name ?? c.label ?? c.subcategory,
+        parent_id: c.parent_id ?? c.parentId ?? c.parent ?? null,
+        status: c.status ?? "active",
+        sort_order: c.sort_order ?? c.order ?? 0,
+        slug: c.slug ?? null,
+        metadata: c.metadata ?? null,
+        description: c.description ?? null,
+        raw: c,
+      }));
+
+      setCategories(norm);
+    } catch (err) {
+      console.error("Fetch categories error:", err);
+      setCategories([]);
+    }
+  }, []);
+
+  // initial load
+  useEffect(() => {
+    fetchStats();
+    fetchCategories(); // fetch categories up-front so product modal subcategory select works
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchCategories, fetchStats]);
+
+  useEffect(() => {
+    if (!showProducts) return;
+    setPage(1);
+  }, [q, limit, sortBy, showProducts]);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
+
+  useEffect(() => {
+    if (showProducts) fetchStats();
+  }, [showProducts, fetchStats]);
+
+  // refetch categories when management toggled on/off (keeps in sync)
+  useEffect(() => {
+    if (showCategories) fetchCategories();
+  }, [showCategories, fetchCategories]);
+
+  const openEditor = async (p) => {
+    if (!p?.id) return;
+    try {
+      const res = await api.get(`/api/admin/products/${p.id}`, {}, true);
+      const body = normalizeResponse(res);
+      const prod = body?.data && typeof body.data === "object" ? body.data : body;
+      setEditing(prod);
+      setShowForm(true);
+    } catch (err) {
+      console.error("Failed to fetch product for edit:", err);
+      alert("Failed to load product for editing. See console.");
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete product? This cannot be undone.")) return;
+    try {
+      await api.delete(`/api/admin/products/${id}`, true);
+      await Promise.all([fetchProducts(), fetchStats()]);
+    } catch (err) {
+      console.error("Delete error:", err);
+      alert("Failed to delete product. See console.");
+    }
+  };
+
+  const handleSave = async () => {
+    await Promise.all([fetchProducts(), fetchStats(), fetchCategories()]);
+    setEditing(null);
+    setShowForm(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {[
+          { label: "Total Products", value: stats.total, icon: Package, color: "bg-purple-500" },
+          { label: "Sold Products", value: stats.sold, icon: ShoppingCart, color: "bg-green-500" },
+          { label: "In Stock", value: stats.inStock, icon: CheckCircle, color: "bg-blue-500" },
+          { label: "Out of Stock", value: stats.outOfStock, icon: XCircle, color: "bg-red-500" },
+        ].map((stat, i) => (
+          <motion.div key={stat.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: i * 0.06 }} className="p-4 rounded-xl bg-white dark:bg-gray-900 shadow-sm hover:shadow-md transition">
+            <div className="flex items-center gap-4">
+              <div className={`p-3 rounded-full ${stat.color} text-white`}>
+                <stat.icon className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
+                <p className="text-2xl font-semibold text-gray-900 dark:text-white">{stat.value}</p>
+              </div>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Actions */}
+      <div className="flex flex-wrap gap-4">
+        <button onClick={() => { setEditing(null); setShowForm(true); }} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-black text-white dark:bg-white dark:text-black shadow-sm hover:scale-[1.02] transition">
+          <Plus className="w-4 h-4" /> Add Product
+        </button>
+
+        <button onClick={() => setShowBulk((s) => !s)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+          <Upload className="w-4 h-4" /> Bulk Upload
+        </button>
+
+        <div className="inline-flex items-center gap-2">
+          <button onClick={() => setShowProducts((s) => !s)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-black text-white dark:bg-white dark:text-black shadow-sm">
+            <Eye className="w-4 h-4" /> {showProducts ? "Hide Products" : "Browse Products"}
+          </button>
+
+          {/* Category management toggle beside Browse Products */}
+          <button onClick={() => setShowCategories((s) => !s)} className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border ${showCategories ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black" : "border-gray-200 bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100"}`}>
+            <Layers className="w-4 h-4" /> {showCategories ? "Hide Categories" : "Manage Categories"}
+          </button>
+        </div>
+      </div>
+
+      {/* Bulk Upload */}
+      {showBulk && (
+        <div className="p-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+          <BulkUpload onUploadComplete={handleSave} />
+        </div>
+      )}
+
+      {/* Category Management */}
+      {showCategories && (
+        <CategoryManagement categories={categories} onRefresh={fetchCategories} />
+      )}
+
+      {/* Products */}
+      {showProducts && (
+        <div className="space-y-6">
+          {/* Search & Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="relative w-full sm:w-64">
+              <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search products..." className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
+            </div>
+
+            <div className="flex items-center gap-3">
+              <select value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }} className="pl-3 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                {[10, 20, 50, 100].map((s) => <option key={s} value={s}>{s} per page</option>)}
+                <option value={999999}>Show All</option>
+              </select>
+
+              <select value={sortBy} onChange={(e) => { setSortBy(e.target.value); setPage(1); }} className="pl-3 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                <option value="newest">Newest</option>
+                <option value="price_asc">Price: Low → High</option>
+                <option value="price_desc">Price: High → Low</option>
+                <option value="best_selling">Best Selling</option>
+                <option value="out_of_stock">Out of Stock</option>
+                <option value="low_stock">Low Stock</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Product Grid */}
+          {loading ? (
+            <div className="text-center text-gray-500 dark:text-gray-400">Loading...</div>
+          ) : products.length === 0 ? (
+            <div className="text-center text-gray-500 dark:text-gray-400">No products found</div>
+          ) : (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {products.map((p) => {
+                const priceNum = Number(p.price ?? 0);
+                const actualNum = Number(p.actualPrice ?? 0);
+                // prefer price as the primary display (fixes "shows actualPrice instead of price" bug)
+                const displayPrice = priceNum > 0 ? priceNum : actualNum;
+                const showOriginal = Number(p.originalPrice ?? 0) > 0 && Number(p.originalPrice) > displayPrice;
+                const firstImage = p.images ? String(p.images).split(",")[0] : "/images/placeholder.jpg";
+
+                return (
+                  <div key={p.id} className={cardCls}>
+                    <div className="h-44 rounded-md overflow-hidden bg-gray-50 dark:bg-gray-800">
+                      <img src={firstImage || "/images/placeholder.jpg"} alt={p.name} className="w-full h-full object-cover" />
                     </div>
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <div className="font-semibold">{s?.name || "Untitled"}</div>
-                        <div className="text-sm text-neutral-500 mt-1">{s?.link || "—"}</div>
+
+                    <div className="mt-3 flex justify-between items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-gray-900 dark:text-white truncate">{p.name}</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{p.category} {p.subcategory ? `/ ${p.subcategory}` : ""}</p>
+
+                        <div className="mt-2 font-semibold text-gray-900 dark:text-white flex items-baseline gap-3">
+                          <span>₹{displayPrice.toLocaleString()}</span>
+                          {showOriginal && <span className="text-sm line-through text-gray-400">₹{Number(p.originalPrice).toLocaleString()}</span>}
+                          {typeof p.sold !== "undefined" && <span className="text-xs text-gray-500 dark:text-gray-400">• {p.sold} sold</span>}
+                          {Number(p.featured) === 1 && <span className="ml-2 text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800">Featured</span>}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={(e) => { e.stopPropagation(); reorderSlides(idx, Math.max(0, idx - 1)); }} className={secondaryBtnClass()} aria-label="move up">
-                          <ArrowUp className="w-4 h-4" />
+
+                      <div className="flex flex-col gap-2">
+                        <button onClick={() => openEditor(p)} className="p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800">
+                          <Edit className="w-4 h-4 text-gray-900 dark:text-white" />
                         </button>
-                        <button onClick={(e) => { e.stopPropagation(); reorderSlides(idx, Math.min(slides.length - 1, idx + 1)); }} className={secondaryBtnClass()} aria-label="move down">
-                          <ArrowDown className="w-4 h-4" />
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); openEditSlide(s); }} className={secondaryBtnClass()}>
-                          <Edit2 className="w-4 h-4" />
-                          Edit
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); handleDeleteSlide(s?.id); }} className={secondaryBtnClass()}>
+                        <button onClick={() => handleDelete(p.id)} className="p-2 rounded-md hover:bg-red-50 dark:hover:bg-red-900 text-red-600">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
-                    <div className="text-xs text-neutral-500 mt-2">Position {idx + 1}</div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  }
+                );
+              })}
+            </div>
+          )}
 
-  function SalesList() {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold">Sales ({sales.length})</h3>
-          <div className="flex items-center gap-2">
-            <button onClick={() => loadSales().catch((e) => console.error("manual reload sales error:", e))} className={secondaryBtnClass()}>
-              <RefreshCw className="w-4 h-4" />
-              Reload
-            </button>
-          </div>
+          {/* Pagination */}
+          {totalPages > 1 && limit !== 999999 && (
+            <div className="flex justify-center items-center gap-4 pt-4">
+              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-40">Prev</button>
+              <span className="text-gray-700 dark:text-gray-300">Page {page} of {totalPages}</span>
+              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-40">Next</button>
+            </div>
+          )}
         </div>
+      )}
 
-        {loadingSales ? (
-          <div className="p-4 rounded border">Loading sales...</div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {sales.map((sale) => (
-              <div key={sale?.id} className="p-4 rounded-2xl border bg-white/3 shadow-md flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-semibold">{sale?.name || "Unnamed sale"}</div>
-                    <div className="text-xs text-neutral-500">{(sale?.productIds || sale?.products || []).length} products</div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button onClick={() => toggleSaleEnabled(sale?.id)} className={`px-3 py-1 rounded-full text-sm ${sale?.enabled ? "bg-green-600 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"}`}>
-                      {sale?.enabled ? "Enabled" : "Disabled"}
-                    </button>
-                    <button onClick={() => openEditSale(sale)} className={secondaryBtnClass()}>
-                      <Edit2 className="w-4 h-4" />
-                      Edit
-                    </button>
-                    <button onClick={() => handleDeleteSale(sale?.id)} className={secondaryBtnClass()}>
-                      <Trash2 className="w-4 h-4" />
-                      Delete
-                    </button>
-                  </div>
-                </div>
-                <div className="text-xs text-neutral-500">ID: {sale?.id}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  function SaleCreator() {
-    const totalPages = Math.max(1, Math.ceil((allProducts || []).length / pageSize));
-
-    // filteredProducts now just uses allProducts + sort (no query from search component)
-    const filteredProducts = useMemo(() => {
-      const copy = Array.isArray(allProducts) ? [...allProducts] : [];
-      const comparator = mapSortToComparator(productSort);
-      if (comparator) copy.sort(comparator);
-      return copy;
-    }, [allProducts, productSort, mapSortToComparator]);
-
-    const totalProducts = filteredProducts.length;
-    const displayedProducts = useMemo(() => {
-      const start = Math.max(0, (currentPage - 1) * pageSize);
-      return filteredProducts.slice(start, start + pageSize);
-    }, [filteredProducts, currentPage, pageSize]);
-
-    return (
-      <div className="p-4 rounded-2xl border bg-gradient-to-b from-neutral-50/40 to-neutral-100/10 dark:from-neutral-900/40 dark:to-neutral-800/30 shadow-xl">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="md:col-span-1 flex flex-col gap-2">
-            <label className="text-xs font-semibold uppercase text-neutral-500">Sale name (displayed on home)</label>
-            <input placeholder="Eg: Summer Sale" className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
-            <div className="text-xs text-neutral-500 mt-2">Selected products: {selectedProductIds.size}</div>
-            <div className="flex gap-2 mt-3">
-              <button onClick={() => handleCreateSale({ name: "New Sale" })} disabled={creatingSale} className={primaryBtnClass()}>
-                <Plus className="w-4 h-4" />
-                {creatingSale ? "Creating..." : "Create Sale"}
-              </button>
-              <button onClick={() => { setSelectedProductIds(new Set()); }} className={secondaryBtnClass()}>
-                <X className="w-4 h-4" />
-                Reset
-              </button>
-            </div>
-          </div>
-
-          <div className="md:col-span-2">
-            <div className="flex gap-2 items-center mb-3">
-              <div className="relative flex-1">
-                {/* NEW: ProductSearchBar that toggles selection in the main list */}
-                <ProductSearchBar
-                  onToggle={toggleSelectProduct}
-                  selectedIds={selectedProductIds}
-                  debounceMs={250}
-                  ref={searchInputRef}
-                  allProducts={allProducts}
-                />
-              </div>
-              <select value={productSort} onChange={(e) => setProductSort(e.target.value)} className="px-3 py-3 rounded-full border border-neutral-200 bg-white/5">
-                <option value="relevance">Relevance</option>
-                <option value="priceAsc">Price — Low to High</option>
-                <option value="priceDesc">Price — High to Low</option>
-                <option value="newest">Newest</option>
-                <option value="nameAsc">Name A→Z</option>
-                <option value="nameDesc">Name Z→A</option>
-              </select>
-            </div>
-
-            <div className="space-y-3">
-              {productsLoading ? (
-                <div className="p-3 rounded border">Loading products...</div>
-              ) : filteredProducts.length === 0 ? (
-                <div className="p-3 rounded border">No products found.</div>
-              ) : (
-                displayedProducts.map((p, i) => {
-                  const key = p?.id ?? `idx-${i}`;
-                  const img = getPrimaryImage(p);
-                  const selected = selectedProductIds.has(p?.id);
-                  return (
-                    <div
-                      key={key}
-                      onClick={() => toggleSelectProduct(p?.id)}
-                      className={`p-3 rounded-2xl border bg-white/4 shadow-md flex gap-4 items-center cursor-pointer ${selected ? "ring-2 ring-offset-2 ring-black dark:ring-white" : ""}`}
-                    >
-                      <input onClick={(e) => { e.stopPropagation(); toggleSelectProduct(p?.id); }} type="checkbox" checked={selected} className="accent-black dark:accent-white" readOnly />
-                      <div className="w-28 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-white/5 relative">
-                        {img ? (
-                          <img src={img} alt={p?.name || "product"} className="object-cover w-full h-full" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-xs text-neutral-400">No image</div>
-                        )}
-                        <div className="absolute top-1 right-1 bg-black/60 rounded px-2 py-0.5 text-xs text-white">
-                          ₹{p?.price ?? "—"}
-                        </div>
-                      </div>
-                      <div className="flex-1 flex flex-col">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="font-semibold text-sm">{p?.name}</div>
-                          <button onClick={(e) => { e.stopPropagation(); toggleSelectProduct(p?.id); }} className={secondaryBtnClass()} title="Toggle select">
-                            {selected ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-                          </button>
-                        </div>
-                        <div className="text-xs text-neutral-500">ID: {p?.id}</div>
-                        <div className="text-xs text-neutral-500 mt-2 line-clamp-2">{p?.shortDescription || p?.description || ""}</div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Pagination controls */}
-            <div className="mt-4 flex items-center justify-between">
-              <div className="text-sm text-neutral-500">Page {currentPage} of {Math.max(1, Math.ceil((totalProducts || 0) / pageSize))}</div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1} className={secondaryBtnClass(currentPage === 1 ? "opacity-50 pointer-events-none" : "")}>Prev</button>
-                {Array.from({ length: Math.max(1, Math.ceil((totalProducts || 0) / pageSize)) }).map((_, idx) => {
-                  const page = idx + 1;
-                  if (page > 7) return null;
-                  return (
-                    <button key={page} onClick={() => setCurrentPage(page)} className={`px-3 py-1 rounded-full ${page === currentPage ? "bg-black text-white" : "bg-transparent text-neutral-600 border border-neutral-200/10"}`}>
-                      {page}
-                    </button>
-                  );
-                })}
-                <button onClick={() => setCurrentPage((p) => Math.min(Math.max(1, Math.ceil((totalProducts || 0) / pageSize)), p + 1))} disabled={currentPage === Math.ceil((totalProducts || 0) / pageSize)} className={secondaryBtnClass(currentPage === Math.ceil((totalProducts || 0) / pageSize) ? "opacity-50 pointer-events-none" : "")}>Next</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // main render
-  return (
-    <div className="min-h-screen p-6 bg-neutral-50 text-neutral-900 dark:bg-neutral-900 dark:text-white transition-colors">
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-3xl font-extrabold mb-2">Slides & Sales Management</h1>
-        <p className="text-sm text-neutral-500 mb-6">Black & white admin — drag slides, create named sales, advanced UI with icons & Tailwind animations.</p>
-
-        <CenterToggle />
-        <Note />
-
-        {mode === "slides" ? (
-          <div className="space-y-6">
-            <SlideAddBox />
-            <SlidesList />
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <SaleCreator />
-            <SalesList />
-          </div>
-        )}
-
-        {/* Slide Edit Modal */}
-        {slideEditOpen && slideEditing && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/40" onClick={() => { setSlideEditOpen(false); setSlideEditing(null); }} />
-            <div className="relative z-10 w-full max-w-2xl bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-xl border border-gray-100 dark:border-gray-800">
-              <h3 className="text-lg font-semibold mb-2">Edit Slide</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="flex flex-col items-center gap-3">
-                  <div className="w-64 h-36 border-2 border-dashed rounded-xl overflow-hidden flex items-center justify-center bg-white/5">
-                    {slideEditing.image_url ? <img src={slideEditing.image_url} alt="preview" className="object-cover w-full h-full" /> : <div className="text-sm text-neutral-400">No image</div>}
-                  </div>
-                  <input type="file" accept="image/*" onChange={onSlideFileChange} className="hidden" id="slide-edit-file" />
-                  <div className="flex gap-2">
-                    <label htmlFor="slide-edit-file" className={primaryBtnClass()}>
-                      <UploadCloud className="w-4 h-4" />
-                      Replace Image
-                    </label>
-                    <button onClick={() => { setSlideEditing((s) => ({ ...s, file: null, image_url: "" })); }} className={secondaryBtnClass()}>
-                      <X className="w-4 h-4" />
-                      Clear
-                    </button>
-                  </div>
-                </div>
-
-                <div className="md:col-span-2 flex flex-col gap-3">
-                  <label className="text-xs font-semibold uppercase text-neutral-500">Slide name</label>
-                  <input value={slideEditing.name || ""} onChange={(e) => setSlideEditing((s) => ({ ...s, name: e.target.value }))} placeholder="Eg: Winter Collection" className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
-                  <label className="text-xs font-semibold uppercase text-neutral-500">Link (optional)</label>
-                  <input value={slideEditing.link || ""} onChange={(e) => setSlideEditing((s) => ({ ...s, link: e.target.value }))} placeholder="/collection/winter" className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
-                  <div className="flex gap-2 mt-2">
-                    <button onClick={handleUpdateSlide} className={primaryBtnClass()}>
-                      <Check className="w-4 h-4" />
-                      Save
-                    </button>
-                    <button onClick={() => { setSlideEditOpen(false); setSlideEditing(null); }} className={secondaryBtnClass()}>
-                      <X className="w-4 h-4" />
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Sale Edit Modal */}
-        {saleEditOpen && saleEditing && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/40" onClick={() => { setSaleEditOpen(false); setSaleEditing(null); }} />
-            <div className="relative z-10 w-full max-w-lg bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-xl border border-gray-100 dark:border-gray-800">
-              <h3 className="text-lg font-semibold mb-2">Edit Sale</h3>
-              <div className="flex flex-col gap-3">
-                <label className="text-xs font-semibold uppercase text-neutral-500">Sale name</label>
-                <input value={saleEditing.name} onChange={(e) => setSaleEditing((s) => ({ ...s, name: e.target.value }))} className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
-                <label className="text-xs font-semibold uppercase text-neutral-500">Enabled</label>
-                <div className="flex gap-2 items-center">
-                  <button onClick={() => setSaleEditing((s) => ({ ...s, enabled: s.enabled ? 0 : 1 }))} className={`px-3 py-1 rounded-full ${saleEditing.enabled ? "bg-green-600 text-white" : "bg-gray-200 dark:bg-gray-700"}`}>
-                    {saleEditing.enabled ? "Enabled" : "Disabled"}
-                  </button>
-                </div>
-
-                <div className="flex gap-2 mt-2">
-                  <button onClick={handleUpdateSale} className={primaryBtnClass()}>
-                    <Check className="w-4 h-4" />
-                    Save
-                  </button>
-                  <button onClick={() => { setSaleEditOpen(false); setSaleEditing(null); }} className={secondaryBtnClass()}>
-                    <X className="w-4 h-4" />
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      {/* Product Modal */}
+      {showForm && (
+        <ProductFormModal
+          product={editing}
+          onClose={() => { setShowForm(false); setEditing(null); }}
+          onSave={handleSave}
+          categories={categories}
+        />
+      )}
     </div>
   );
 }
