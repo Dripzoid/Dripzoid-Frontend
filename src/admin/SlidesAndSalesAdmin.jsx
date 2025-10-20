@@ -44,10 +44,18 @@ export default function SlidesAndSalesAdmin() {
   const dragIndexRef = useRef(null);
   const dragOverIndexRef = useRef(null);
 
+  // Slide edit modal
+  const [slideEditOpen, setSlideEditOpen] = useState(false);
+  const [slideEditing, setSlideEditing] = useState(null); // { id, name, link, image_url, file }
+
   // Sales
   const [sales, setSales] = useState([]);
   const [loadingSales, setLoadingSales] = useState(false);
   const [creatingSale, setCreatingSale] = useState(false);
+
+  // Sale edit modal
+  const [saleEditOpen, setSaleEditOpen] = useState(false);
+  const [saleEditing, setSaleEditing] = useState(null); // { id, name, enabled }
 
   // Products (client-side list)
   const [allProducts, setAllProducts] = useState([]); // all products fetched once
@@ -165,6 +173,19 @@ export default function SlidesAndSalesAdmin() {
   async function apiPatch(path, body) {
     return safeFetchJson(buildUrl(path), { method: "PATCH", credentials: "include", headers: getAuthHeaders(true), body: JSON.stringify(body) });
   }
+  async function apiPut(path, body, isFormData = false) {
+    const url = buildUrl(path);
+    const opts = { method: "PUT", credentials: "include" };
+    if (isFormData) {
+      opts.body = body;
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      if (token) opts.headers = { Authorization: `Bearer ${token}` };
+    } else {
+      opts.headers = getAuthHeaders(true);
+      opts.body = JSON.stringify(body);
+    }
+    return safeFetchJson(url, opts);
+  }
   async function apiDelete(path) {
     return safeFetchJson(buildUrl(path), { method: "DELETE", credentials: "include", headers: getAuthHeaders(false) });
   }
@@ -269,7 +290,8 @@ export default function SlidesAndSalesAdmin() {
     try {
       const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
       const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-      const res = await fetch(buildUrl("/api/upload"), { method: "POST", body: fd, credentials: "include", headers });
+      const res = await fetch(buildUrl("/api/admin/upload") === "/api/admin/upload" ? buildUrl("/api/upload") : buildUrl("/api/upload"), { method: "POST", body: fd, credentials: "include", headers });
+      // The route in your example is router.post("/upload", authAdmin, ...), so final path is /api/upload
       if (!res.ok) {
         const parsed = await parseErrorResponse(res);
         throw new Error(parsed);
@@ -306,6 +328,37 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
+  // Slide edit flow
+  function openEditSlide(slide) {
+    setSlideEditing({ ...slide, file: null }); // keep original image_url; file null until user chooses new
+    setSlideEditOpen(true);
+  }
+
+  function onSlideFileChange(e) {
+    const file = e?.target?.files?.[0] ?? null;
+    setSlideEditing((s) => (s ? { ...s, file } : s));
+  }
+
+  async function handleUpdateSlide() {
+    if (!slideEditing || !slideEditing.id) return;
+    const { id, name, link, file } = slideEditing;
+    try {
+      setNoteWithAutoClear({ type: "success", text: "Updating slide..." }, 2000);
+      let image_url = slideEditing.image_url || null;
+      if (file) {
+        image_url = await uploadImage(file);
+      }
+      await apiPut(`/api/admin/slides/${id}`, { name, link, image_url });
+      setSlides((list) => (Array.isArray(list) ? list.map((s) => (s?.id === id ? { ...s, name, link, image_url } : s)) : list));
+      setNoteWithAutoClear({ type: "success", text: "Slide updated" }, 4000);
+      setSlideEditOpen(false);
+      setSlideEditing(null);
+    } catch (err) {
+      console.error("handleUpdateSlide error:", err);
+      setNoteWithAutoClear({ type: "error", text: `Failed to update slide — ${err.message || err}` }, 8000);
+    }
+  }
+
   // -- SALES
   async function loadSales() {
     setLoadingSales(true);
@@ -331,7 +384,7 @@ export default function SlidesAndSalesAdmin() {
     try {
       const payload = { name, productIds: Array.from(selectedProductIds) };
       const saved = await apiPost("/api/admin/sales", payload);
-      const newSale = saved?.sale || (saved?.id ? { id: saved.id, name, productIds: payload.productIds, enabled: true } : { id: Date.now(), name, productIds: payload.productIds, enabled: true });
+      const newSale = saved?.sale || (saved?.id ? { id: saved.id, name, productIds: payload.productIds, enabled: 1 } : { id: Date.now(), name, productIds: payload.productIds, enabled: 1 });
       setSales((s) => [...(Array.isArray(s) ? s : []), newSale]);
       setSelectedProductIds(new Set());
       setNoteWithAutoClear({ type: "success", text: "Sale created" }, 5000);
@@ -347,12 +400,47 @@ export default function SlidesAndSalesAdmin() {
     try {
       const sale = sales.find((s) => s?.id === saleId);
       if (!sale) return;
-      const updated = await apiPatch(`/api/admin/sales/${saleId}/toggle`, { enabled: !sale.enabled });
-      setSales((list) => (Array.isArray(list) ? list.map((s) => (s?.id === saleId ? { ...s, enabled: updated?.enabled ?? !s.enabled } : s)) : list));
+      const newEnabled = sale?.enabled ? 0 : 1;
+      // call PUT /sales/:id per backend
+      await apiPut(`/api/admin/sales/${saleId}`, { enabled: newEnabled });
+      setSales((list) => (Array.isArray(list) ? list.map((s) => (s?.id === saleId ? { ...s, enabled: newEnabled } : s)) : list));
       setNoteWithAutoClear({ type: "success", text: "Sale updated" }, 4000);
     } catch (err) {
       console.error("toggleSaleEnabled error:", err);
       setNoteWithAutoClear({ type: "error", text: `Failed to update sale — ${err.message || err}` }, 8000);
+    }
+  }
+
+  // Sale edit flow
+  function openEditSale(sale) {
+    setSaleEditing({ id: sale.id, name: sale.name || "", enabled: Number(sale.enabled ?? 0) });
+    setSaleEditOpen(true);
+  }
+
+  async function handleUpdateSale() {
+    if (!saleEditing || !saleEditing.id) return;
+    const { id, name, enabled } = saleEditing;
+    try {
+      await apiPut(`/api/admin/sales/${id}`, { name, enabled });
+      setSales((list) => (Array.isArray(list) ? list.map((s) => (s?.id === id ? { ...s, name, enabled } : s)) : list));
+      setNoteWithAutoClear({ type: "success", text: "Sale updated" }, 4000);
+      setSaleEditOpen(false);
+      setSaleEditing(null);
+    } catch (err) {
+      console.error("handleUpdateSale error:", err);
+      setNoteWithAutoClear({ type: "error", text: `Failed to update sale — ${err.message || err}` }, 8000);
+    }
+  }
+
+  async function handleDeleteSale(id) {
+    if (!window.confirm("Delete this sale?")) return;
+    try {
+      await apiDelete(`/api/admin/sales/${id}`);
+      setSales((s) => s.filter((x) => x?.id !== id));
+      setNoteWithAutoClear({ type: "success", text: "Sale removed" }, 4000);
+    } catch (err) {
+      console.error("handleDeleteSale error:", err);
+      setNoteWithAutoClear({ type: "error", text: `Failed to remove sale — ${err.message || err}` }, 8000);
     }
   }
 
@@ -616,6 +704,10 @@ export default function SlidesAndSalesAdmin() {
                         <button onClick={(e) => { e.stopPropagation(); reorderSlides(idx, Math.min(slides.length - 1, idx + 1)); }} className={secondaryBtnClass()} aria-label="move down">
                           <ArrowDown className="w-4 h-4" />
                         </button>
+                        <button onClick={(e) => { e.stopPropagation(); openEditSlide(s); }} className={secondaryBtnClass()}>
+                          <Edit2 className="w-4 h-4" />
+                          Edit
+                        </button>
                         <button onClick={(e) => { e.stopPropagation(); handleDeleteSlide(s?.id); }} className={secondaryBtnClass()}>
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -657,15 +749,14 @@ export default function SlidesAndSalesAdmin() {
                     <div className="text-xs text-neutral-500">{(sale?.productIds || sale?.products || []).length} products</div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <label className="inline-flex items-center gap-2">
-                      <input type="checkbox" className="accent-black dark:accent-white" checked={!!sale?.enabled} onChange={() => toggleSaleEnabled(sale?.id)} />
-                      <span className="text-sm">Enabled</span>
-                    </label>
-                    <button className={secondaryBtnClass()}>
+                    <button onClick={() => toggleSaleEnabled(sale?.id)} className={`px-3 py-1 rounded-full text-sm ${sale?.enabled ? "bg-green-600 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"}`}>
+                      {sale?.enabled ? "Enabled" : "Disabled"}
+                    </button>
+                    <button onClick={() => openEditSale(sale)} className={secondaryBtnClass()}>
                       <Edit2 className="w-4 h-4" />
                       Edit
                     </button>
-                    <button className={secondaryBtnClass()}>
+                    <button onClick={() => handleDeleteSale(sale?.id)} className={secondaryBtnClass()}>
                       <Trash2 className="w-4 h-4" />
                       Delete
                     </button>
@@ -725,6 +816,7 @@ export default function SlidesAndSalesAdmin() {
                   selectedIds={selectedProductIds}
                   debounceMs={250}
                   ref={searchInputRef}
+                  allProducts={allProducts}
                 />
               </div>
               <select value={productSort} onChange={(e) => setProductSort(e.target.value)} className="px-3 py-3 rounded-full border border-neutral-200 bg-white/5">
@@ -825,6 +917,81 @@ export default function SlidesAndSalesAdmin() {
           </div>
         )}
 
+        {/* Slide Edit Modal */}
+        {slideEditOpen && slideEditing && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/40" onClick={() => { setSlideEditOpen(false); setSlideEditing(null); }} />
+            <div className="relative z-10 w-full max-w-2xl bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-xl border border-gray-100 dark:border-gray-800">
+              <h3 className="text-lg font-semibold mb-2">Edit Slide</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-64 h-36 border-2 border-dashed rounded-xl overflow-hidden flex items-center justify-center bg-white/5">
+                    {slideEditing.image_url ? <img src={slideEditing.image_url} alt="preview" className="object-cover w-full h-full" /> : <div className="text-sm text-neutral-400">No image</div>}
+                  </div>
+                  <input type="file" accept="image/*" onChange={onSlideFileChange} className="hidden" id="slide-edit-file" />
+                  <div className="flex gap-2">
+                    <label htmlFor="slide-edit-file" className={primaryBtnClass()}>
+                      <UploadCloud className="w-4 h-4" />
+                      Replace Image
+                    </label>
+                    <button onClick={() => { setSlideEditing((s) => ({ ...s, file: null, image_url: "" })); }} className={secondaryBtnClass()}>
+                      <X className="w-4 h-4" />
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                <div className="md:col-span-2 flex flex-col gap-3">
+                  <label className="text-xs font-semibold uppercase text-neutral-500">Slide name</label>
+                  <input value={slideEditing.name || ""} onChange={(e) => setSlideEditing((s) => ({ ...s, name: e.target.value }))} placeholder="Eg: Winter Collection" className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
+                  <label className="text-xs font-semibold uppercase text-neutral-500">Link (optional)</label>
+                  <input value={slideEditing.link || ""} onChange={(e) => setSlideEditing((s) => ({ ...s, link: e.target.value }))} placeholder="/collection/winter" className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
+                  <div className="flex gap-2 mt-2">
+                    <button onClick={handleUpdateSlide} className={primaryBtnClass()}>
+                      <Check className="w-4 h-4" />
+                      Save
+                    </button>
+                    <button onClick={() => { setSlideEditOpen(false); setSlideEditing(null); }} className={secondaryBtnClass()}>
+                      <X className="w-4 h-4" />
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Sale Edit Modal */}
+        {saleEditOpen && saleEditing && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/40" onClick={() => { setSaleEditOpen(false); setSaleEditing(null); }} />
+            <div className="relative z-10 w-full max-w-lg bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-xl border border-gray-100 dark:border-gray-800">
+              <h3 className="text-lg font-semibold mb-2">Edit Sale</h3>
+              <div className="flex flex-col gap-3">
+                <label className="text-xs font-semibold uppercase text-neutral-500">Sale name</label>
+                <input value={saleEditing.name} onChange={(e) => setSaleEditing((s) => ({ ...s, name: e.target.value }))} className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
+                <label className="text-xs font-semibold uppercase text-neutral-500">Enabled</label>
+                <div className="flex gap-2 items-center">
+                  <button onClick={() => setSaleEditing((s) => ({ ...s, enabled: s.enabled ? 0 : 1 }))} className={`px-3 py-1 rounded-full ${saleEditing.enabled ? "bg-green-600 text-white" : "bg-gray-200 dark:bg-gray-700"}`}>
+                    {saleEditing.enabled ? "Enabled" : "Disabled"}
+                  </button>
+                </div>
+
+                <div className="flex gap-2 mt-2">
+                  <button onClick={handleUpdateSale} className={primaryBtnClass()}>
+                    <Check className="w-4 h-4" />
+                    Save
+                  </button>
+                  <button onClick={() => { setSaleEditOpen(false); setSaleEditing(null); }} className={secondaryBtnClass()}>
+                    <X className="w-4 h-4" />
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
