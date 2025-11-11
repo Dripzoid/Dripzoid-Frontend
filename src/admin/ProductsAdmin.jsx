@@ -44,110 +44,198 @@ const normalizeResponse = (res) => {
 const MAIN_CATEGORIES = ["Men", "Women", "Kids"];
 
 /**
- * parseSizeStockFromProduct
- * Accepts many shapes a product might arrive in:
- * - product.size_stock (object or JSON string)
- * - product.sizeStock, stock_map, sizes_map
- * - product.sizes_data or product.sizes (array of {size,stock})
- * - "S:10,M:5" style strings
- * - fallback: distribute product.stock across product.sizes (string)
+ * Robustly parse per-size stock from many possible backend shapes:
+ * - product.size_stock may be a JSON string like '{"S":10,"M":5}'
+ * - or an object { S: 10, M: 5 }
+ * - or an array of objects [{ size: "S", stock: 10 }, ...]
+ * - or product.product_sizes may be an array of DB rows: [{ size: "S", stock: 10 }, ...]
+ * - or a CSV-ish string like "S:10,M:5" or "S:10|M:5"
  *
- * Returns a plain object: { S: 10, M: 5 }
+ * Returns a plain mapping object: { S: 10, M: 5 }
  */
 const parseSizeStockFromProduct = (p) => {
   if (!p) return {};
 
-  // 1) Common explicit fields (object or JSON string)
-  const candidates = ["size_stock", "sizeStock", "stock_map", "stockMap", "sizes_map", "sizesMap", "size_stock_map"];
-  for (const k of candidates) {
-    if (typeof p[k] !== "undefined" && p[k] !== null && p[k] !== "") {
-      const val = p[k];
-      if (typeof val === "object" && !Array.isArray(val)) {
-        return Object.fromEntries(Object.entries(val).map(([k2, v]) => [k2, Number(v || 0)]));
-      }
-      try {
-        const parsed = JSON.parse(String(val));
-        if (typeof parsed === "object" && !Array.isArray(parsed)) {
-          return Object.fromEntries(Object.entries(parsed).map(([k2, v]) => [k2, Number(v || 0)]));
-        }
-      } catch (err) {
-        // fallthrough to string parsing below
-      }
-      // also accept "S:10,M:5" style
-      const obj = {};
-      String(val)
-        .split(/[,|;]+/)
-        .map((x) => x.trim())
-        .forEach((part) => {
-          if (!part) return;
-          const [size, qty] = part.split(/[:=]/).map((s) => (s ? s.trim() : s));
-          if (size) obj[size] = Number(qty) || 0;
-        });
-      if (Object.keys(obj).length) return obj;
-    }
-  }
+  const candidates = [
+    "size_stock",
+    "sizeStock",
+    "stock_map",
+    "stockMap",
+    "sizes_map",
+    "sizesMap",
+    "size_stock_map",
+    "product_sizes",
+    "productSizes",
+    "product_size_list",
+  ];
 
-  // 2) If backend provided sizes as an array of objects (common after our update)
-  // Possible keys: sizes_data, sizes (array of {size,stock}) or product.sizes (array)
-  const arrCandidates = ["sizes_data", "sizes", "size_list", "sizeList"];
-  for (const k of arrCandidates) {
-    const v = p[k];
-    if (Array.isArray(v) && v.length > 0) {
-      const obj = {};
-      v.forEach((it) => {
-        // support both { size, stock } and { size: 'S', stock: 10 } or {size:'S', qty:10}
-        if (typeof it === "object" && it !== null) {
-          const size = it.size ?? it.name ?? it.label;
-          const stock = Number(it.stock ?? it.qty ?? it.quantity ?? 0);
-          if (size) obj[String(size).trim()] = stock;
-        } else if (typeof it === "string") {
-          // string like "S:10"
-          const [sz, q] = it.split(/[:=]/).map((x) => x && x.trim());
-          if (sz) obj[sz] = Number(q) || 0;
+  for (const k of candidates) {
+    const val = p[k];
+    if (!val && val !== 0) continue;
+
+    // If it's already an object mapping size->qty
+    if (typeof val === "object" && !Array.isArray(val)) {
+      const result = {};
+      for (const [kk, vv] of Object.entries(val)) {
+        // skip if nested object like { size:..., stock: ... } accidentally
+        if (typeof vv === "object" && vv !== null && ("stock" in vv || "qty" in vv || "quantity" in vv)) {
+          // try to adapt
+          result[kk] = Number(vv.stock ?? vv.qty ?? vv.quantity ?? 0) || 0;
+        } else {
+          result[String(kk)] = Number(vv) || 0;
         }
+      }
+      if (Object.keys(result).length) return result;
+    }
+
+    // If it's an array (rows or objects)
+    if (Array.isArray(val)) {
+      const result = {};
+      for (const item of val) {
+        if (!item) continue;
+        if (typeof item === "string") {
+          // e.g. "S:10" or "S" or "S|10"
+          const part = item.trim();
+          if (part.includes(":") || part.includes("=")) {
+            const [size, qty] = part.split(/[:=]/).map((s) => s && s.trim());
+            if (size) result[size] = Number(qty) || 0;
+          } else {
+            // just a size name, assume zero unless we find elsewhere
+            result[part] = result[part] || 0;
+          }
+        } else if (typeof item === "object") {
+          const size =
+            item.size ?? item.size_label ?? item.sizeName ?? item.size_name ?? item.name ?? item.label;
+          const qty = Number(item.stock ?? item.qty ?? item.quantity ?? item.count ?? 0) || 0;
+          if (size) result[String(size)] = qty;
+        }
+      }
+      if (Object.keys(result).length) return result;
+    }
+
+    // If it's a string: try JSON, then CSV / key:val parsing
+    if (typeof val === "string") {
+      const s = val.trim();
+      // try parse JSON
+      if (s.startsWith("{") || s.startsWith("[")) {
+        try {
+          const parsed = JSON.parse(s);
+          // re-run parser on parsed value
+          const nested = parseSizeStockFromProduct({ tmp: parsed });
+          if (Object.keys(nested).length) return nested;
+        } catch (e) {
+          // fallthrough
+        }
+      }
+
+      // parse "S:10,M:5" or "S=10|M=5"
+      const obj = {};
+      s.split(/[,|;]+/).forEach((part) => {
+        const trimmed = part.trim();
+        if (!trimmed) return;
+        const [size, qty] = trimmed.split(/[:=]/).map((x) => x && x.trim());
+        if (size) obj[size] = Number(qty) || 0;
       });
       if (Object.keys(obj).length) return obj;
     }
   }
 
-  // 3) fallback: if product.sizes is a comma string and product.stock present -> distribute evenly
-  if (p.sizes && (typeof p.sizes === "string" || Array.isArray(p.sizes))) {
-    const sizesArr = Array.isArray(p.sizes)
-      ? p.sizes.map((s) => (typeof s === "object" ? s.size ?? String(s) : String(s))).map((s) => s.trim()).filter(Boolean)
-      : String(p.sizes).split(",").map((s) => s.trim()).filter(Boolean);
-
-    if (sizesArr.length > 0) {
-      // if there's a separate size->stock mapping in product (rare), prefer that
-      // otherwise distribute from total stock
-      const explicit = {};
-      // check for same-length array in p.sizes_data or p.size_stock
-      if (Array.isArray(p.sizes_data) && p.sizes_data.length > 0) {
-        p.sizes_data.forEach((s) => {
-          if (typeof s === "object") explicit[s.size] = Number(s.stock || 0);
-        });
-      }
-      if (Object.keys(explicit).length === sizesArr.length) {
-        return sizesArr.reduce((acc, s) => ({ ...acc, [s]: Number(explicit[s] || 0) }), {});
-      }
-
-      const total = Number(p.stock || 0);
-      if (!Number.isNaN(total) && total > 0) {
-        const base = Math.floor(total / sizesArr.length);
-        const map = {};
-        sizesArr.forEach((s, i) => {
-          map[s] = base + (i === sizesArr.length - 1 ? total - base * sizesArr.length : 0);
-        });
-        return map;
-      }
+  // Fallback: if p.sizes is an object mapping size->qty (rare)
+  if (p.sizes && typeof p.sizes === "object" && !Array.isArray(p.sizes)) {
+    const result = {};
+    for (const [k, v] of Object.entries(p.sizes)) {
+      result[k] = Number(v) || 0;
     }
+    if (Object.keys(result).length) return result;
+  }
+
+  // final fallback: product.product_sizes rows (if provided under different key)
+  if (Array.isArray(p.product_sizes)) {
+    const result = {};
+    p.product_sizes.forEach((r) => {
+      const size = r.size ?? r.size_name ?? r.name;
+      const qty = Number(r.stock ?? r.qty ?? r.quantity ?? 0) || 0;
+      if (size) result[size] = qty;
+    });
+    if (Object.keys(result).length) return result;
   }
 
   return {};
 };
 
+/**
+ * Parse sizes list into a comma-separated string usable in the "Sizes" input.
+ * Handles:
+ * - p.sizes as "S,M,L" string
+ * - p.sizes as JSON string '["S","M"]'
+ * - p.sizes as array of strings
+ * - p.sizes as array of objects [{size:"S"}, ...]
+ * - p.product_sizes array -> map to sizes
+ * - or derive sizes from size_stock keys
+ */
+const parseSizesFromProduct = (p) => {
+  if (!p) return "";
+
+  const candidates = ["sizes", "size_list", "sizes_array", "available_sizes", "product_sizes", "sizesMap", "size_stock"];
+  for (const k of candidates) {
+    const val = p[k];
+    if (!val && val !== 0) continue;
+
+    if (Array.isArray(val)) {
+      // array of strings?
+      if (val.every((x) => typeof x === "string")) {
+        return val.map((s) => s.trim()).filter(Boolean).join(",");
+      }
+      // array of objects with known keys
+      const mapped = val
+        .map((it) => {
+          if (!it) return null;
+          if (typeof it === "string") return it.trim();
+          return it.size ?? it.size_name ?? it.name ?? it.label ?? null;
+        })
+        .filter(Boolean);
+      if (mapped.length) return mapped.join(",");
+    }
+
+    if (typeof val === "object" && !Array.isArray(val)) {
+      // object mapping like { S: 10, M: 5 } -> keys are sizes
+      const keys = Object.keys(val).filter(Boolean);
+      if (keys.length) return keys.join(",");
+    }
+
+    if (typeof val === "string") {
+      const s = val.trim();
+      // JSON array string?
+      if (s.startsWith("[") || s.startsWith("{")) {
+        try {
+          const parsed = JSON.parse(s);
+          const nested = parseSizesFromProduct({ tmp: parsed });
+          if (nested) return nested;
+        } catch (e) {
+          // fallthrough to CSV parse
+        }
+      }
+      // CSV-like
+      if (s.includes(",")) {
+        return s.split(",").map((x) => x.trim()).filter(Boolean).join(",");
+      }
+      // single size string
+      if (s.length > 0) return s;
+    }
+  }
+
+  // derive from size_stock keys
+  const stockMap = parseSizeStockFromProduct(p);
+  const keys = Object.keys(stockMap || {});
+  if (keys.length) return keys.join(",");
+
+  return "";
+};
+
 const sumSizeStock = (map) => Object.values(map || {}).reduce((s, v) => s + Number(v || 0), 0);
 
-/* ======= CategoryFormModal (unchanged) ======= */
+/* ======= CategoryFormModal ======= */
+// (unchanged from your version)
 function CategoryFormModal({ editing, fixedCategory = null, categories = [], onClose, onSave }) {
   const defaultForm = {
     id: null,
@@ -304,12 +392,11 @@ function CategoryFormModal({ editing, fixedCategory = null, categories = [], onC
   );
 }
 
-/* ======= CategoryManagement Panel (unchanged) ======= */
-// ... (keep CategoryManagement exactly as in your file above)
-// For brevity in this message I will not duplicate CategoryManagement here — keep your existing implementation.
-// The important changes are in ProductFormModal and parsing helpers.
+/* ======= CategoryManagement Panel ======= */
+// (unchanged from your version; omitted for brevity here as it's identical to your file above)
+// We'll re-use the same CategoryManagement in this file (kept earlier). For brevity, please keep the CategoryManagement implementation from your file — it's compatible.
 
-/* ======= ProductFormModal (updated to use per-size stock mapping) ======= */
+/* ======= ProductFormModal (updated to use robust size parsing) ======= */
 function ProductFormModal({ product, onClose, onSave, categories = [] }) {
   const defaultForm = {
     name: "",
@@ -333,29 +420,14 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
   const [useCustomSub, setUseCustomSub] = useState(false);
   const [sizeStocks, setSizeStocks] = useState({}); // { S: 10, M: 5 }
 
+  // on product change, parse sizes & size_stock robustly
   useEffect(() => {
     if (product && typeof product === "object" && Object.keys(product).length > 0) {
-      // product.sizes might be:
-      // - a comma string "S,M,L"
-      // - an array [{size,stock}, ...] (backend)
-      // - or undefined
-      let parsedSizesStr = "";
-      if (Array.isArray(product.sizes)) {
-        parsedSizesStr = product.sizes.map((s) => (typeof s === "object" ? s.size : String(s))).join(",");
-      } else if (typeof product.sizes === "string") {
-        parsedSizesStr = product.sizes;
-      } else if (Array.isArray(product.sizes_data)) {
-        parsedSizesStr = product.sizes_data.map((s) => (s && s.size ? s.size : "")).filter(Boolean).join(",");
-      } else if (Array.isArray(product.sizes_data || product.sizes)) {
-        // extra safety
-        parsedSizesStr = (product.sizes_data || product.sizes).map((s) => (typeof s === "object" ? s.size : String(s))).join(",");
-      } else {
-        parsedSizesStr = String(product.sizes ?? "");
-      }
+      const parsedSizes = parseSizesFromProduct(product); // returns "S,M,L" already
+      const parsedSizeStocks = parseSizeStockFromProduct(product); // returns {S:...,M:...}
+      const computedStock = sumSizeStock(parsedSizeStocks) || Number(product.stock || 0);
 
       const parsedImages = product.images ? String(product.images).split(",").filter(Boolean) : [];
-      const parsedSizeStocks = parseSizeStockFromProduct(product);
-      const computedStock = sumSizeStock(parsedSizeStocks) || Number(product.stock || 0);
 
       setForm({
         name: product.name ?? "",
@@ -364,7 +436,7 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
         actualPrice: Number(product.actualPrice ?? product.price ?? 0),
         images: parsedImages,
         rating: Number(product.rating ?? 0),
-        sizes: parsedSizesStr,
+        sizes: parsedSizes,
         colors: product.colors ?? "",
         originalPrice: Number(product.originalPrice ?? 0),
         description: product.description ?? "",
@@ -444,7 +516,10 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
 
   // When the sizes string changes, adjust the sizeStocks map
   useEffect(() => {
-    const sizesArr = String(form.sizes || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const sizesArr = String(form.sizes || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
     if (sizesArr.length === 0) {
       setSizeStocks({});
       return;
@@ -491,10 +566,7 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
         const exists = (categories || []).find((c) => {
           const catName = (c.category || c.category_name || "").toString();
           const subName = (c.subcategory || c.name || "").toString();
-          return (
-            catName === form.category &&
-            subName.toLowerCase() === chosenSub.toLowerCase()
-          );
+          return catName === form.category && subName.toLowerCase() === chosenSub.toLowerCase();
         });
 
         if (exists) {
@@ -518,7 +590,11 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
       }
 
       // Ensure sizes string is normalized
-      const sizesNormalized = String(form.sizes || "").split(",").map((s) => s.trim()).filter(Boolean).join(",");
+      const sizesNormalized = String(form.sizes || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .join(",");
 
       // finalize sizeStocks and total stock
       const finalSizeStocks = { ...sizeStocks };
@@ -536,6 +612,7 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
         images: (form.images || []).join(","),
         subcategory: chosenSub || form.subcategory || "",
         sizes: sizesNormalized,
+        // front-end will send size_stock as JSON string. Backend can insert into product_sizes table during server-side migration/creation.
         size_stock: JSON.stringify(finalSizeStocks),
       };
 
@@ -633,7 +710,7 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
           <input className={inputCls} placeholder="Sizes (comma separated)" value={form.sizes} onChange={(e) => setField("sizes", e.target.value)} />
           <input className={inputCls} placeholder="Colors (comma separated)" value={form.colors} onChange={(e) => setField("colors", e.target.value)} />
 
-          {/* Subcategory: prefer select from DB but allow custom */}
+          {/* Subcategory UI (unchanged) */}
           {availableSubcats.length > 0 && !useCustomSub ? (
             <div className="flex gap-2 items-center">
               <select
@@ -927,6 +1004,8 @@ export default function ProductsAdmin() {
       // ensure we include parsed sizeStock for the edit form
       const sizeStock = parseSizeStockFromProduct(prod);
       const totalStock = sumSizeStock(sizeStock) || Number(prod.stock || 0);
+
+      // pass through everything; ProductFormModal will parse sizes as needed
       const parsedProd = { ...prod, sizeStock, stock: totalStock };
       setEditing(parsedProd);
       setShowForm(true);
@@ -1002,14 +1081,16 @@ export default function ProductsAdmin() {
       {/* Bulk Upload */}
       {showBulk && (
         <div className="p-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-          {/* Pass a flag so BulkUpload can handle size_stock column or a size:qty format in CSV. You'll need to update BulkUpload to respect this key. */}
           <BulkUpload onUploadComplete={handleSave} expectSizeStock={true} />
         </div>
       )}
 
       {/* Category Management */}
       {showCategories && (
-        <CategoryManagement categories={categories} onRefresh={fetchCategories} />
+        <div className="p-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+          {/* Render CategoryManagement component (reuse your implementation above) */}
+          <CategoryManagement categories={categories} onRefresh={fetchCategories} />
+        </div>
       )}
 
       {/* Products */}
