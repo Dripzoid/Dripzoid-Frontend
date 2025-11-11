@@ -470,8 +470,274 @@ function CategoryFormModal({ editing, fixedCategory = null, categories = [], onC
   );
 }
 
-/* ======= CategoryManagement Panel (kept same) ======= */
-// ... same as before, omitted here in explanation for brevity (already in file above) ...
+/* ======= CategoryManagement Panel (full implementation) ======= */
+function CategoryManagement({ categories = [], onRefresh }) {
+  const [editing, setEditing] = useState(null); // object or null
+  const [showForm, setShowForm] = useState(false);
+  const [fixedCategory, setFixedCategory] = useState(null); // when creating from a section
+  const [draggingItem, setDraggingItem] = useState(null);
+  const [localCategories, setLocalCategories] = useState([]);
+  const dragOverIdRef = useRef(null);
+
+  useEffect(() => {
+    setLocalCategories((categories || []).slice());
+  }, [categories]);
+
+  const openForEdit = (c) => {
+    setEditing(c);
+    setFixedCategory(null);
+    setShowForm(true);
+  };
+
+  const handleCreateForMain = (main) => {
+    setEditing({ category: main }); // seed form with category
+    setFixedCategory(main);
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    await onRefresh();
+    setShowForm(false);
+    setEditing(null);
+    setFixedCategory(null);
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete subcategory? This cannot be undone.")) return;
+    try {
+      await api.delete(`/api/admin/products/categories/${id}`, true);
+      await onRefresh();
+    } catch (err) {
+      console.error("Delete category error:", err);
+      alert("Failed to delete. See console.");
+    }
+  };
+
+  const toggleStatus = async (c) => {
+    try {
+      await api.put(`/api/admin/products/categories/${c.id}/status`, { status: c.status === "active" ? "inactive" : "active" }, true);
+      await onRefresh();
+    } catch (err) {
+      console.error("Toggle status error:", err);
+      alert("Failed to toggle status. See console.");
+    }
+  };
+
+  /* ======= Drag & Drop handlers (HTML5) ======= */
+  const onDragStart = (e, itemId) => {
+    setDraggingItem(String(itemId));
+    e.dataTransfer.effectAllowed = "move";
+    try {
+      e.dataTransfer.setData("text/plain", String(itemId));
+    } catch (err) {
+      // some browsers may throw; ignore
+    }
+  };
+
+  const onDragOver = (e, overId) => {
+    e.preventDefault();
+    dragOverIdRef.current = String(overId);
+  };
+
+  const onDrop = async (e, targetMain) => {
+    e.preventDefault();
+    const draggedId = draggingItem ?? e.dataTransfer.getData("text/plain");
+    if (!draggedId) return;
+    const dragIdNum = Number(draggedId);
+    const overId = dragOverIdRef.current ? Number(dragOverIdRef.current) : null;
+
+    // build main column list (top-level only)
+    const mainList = (localCategories || [])
+      .filter((c) => (c.category || c.category_name) === targetMain && !c.parent_id)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+
+    // if dragged item not in this list => cross-column drop -> update category and append
+    const draggedIndex = mainList.findIndex((i) => Number(i.id) === dragIdNum);
+    if (draggedIndex === -1) {
+      try {
+        const lastSort = mainList.length > 0 ? (mainList[mainList.length - 1].sort_order ?? 0) : 0;
+        await api.put(`/api/admin/products/categories/${dragIdNum}`, { category: targetMain, parent_id: null, sort_order: lastSort + 1 }, true);
+        await onRefresh();
+      } catch (err) {
+        console.error("Failed cross-column drop:", err);
+        alert("Failed to reorder. See console.");
+      } finally {
+        setDraggingItem(null);
+        dragOverIdRef.current = null;
+      }
+      return;
+    }
+
+    const overIndex = overId != null ? mainList.findIndex((i) => Number(i.id) === overId) : null;
+    if (overIndex === -1 && overIndex !== null) {
+      setDraggingItem(null);
+      dragOverIdRef.current = null;
+      return;
+    }
+
+    const newList = mainList.slice();
+    const [draggedItem] = newList.splice(draggedIndex, 1);
+    let insertIndex = newList.length;
+    if (overIndex !== null) insertIndex = overIndex;
+    newList.splice(insertIndex, 0, draggedItem);
+
+    try {
+      await Promise.all(
+        newList.map((itm, idx) =>
+          api.put(`/api/admin/products/categories/${itm.id}`, { sort_order: idx }, true).catch((err) => {
+            console.error("Failed to update order for", itm.id, err);
+          })
+        )
+      );
+      await onRefresh();
+    } catch (err) {
+      console.error("Persist order error:", err);
+      alert("Failed to save new order. See console.");
+    } finally {
+      setDraggingItem(null);
+      dragOverIdRef.current = null;
+    }
+  };
+
+  /* ======= Tree helpers for nested display (parent/children) ======= */
+  const treeRoots = useMemo(() => {
+    const map = {};
+    (categories || []).forEach((c) => (map[c.id] = { ...c, children: [] }));
+    const roots = [];
+    (categories || []).forEach((c) => {
+      if (c.parent_id && map[c.parent_id]) {
+        map[c.parent_id].children.push(map[c.id]);
+      } else {
+        roots.push(map[c.id]);
+      }
+    });
+    return roots;
+  }, [categories]);
+
+  const renderNode = (node) => {
+    return (
+      <div
+        key={node.id}
+        draggable
+        onDragStart={(e) => onDragStart(e, node.id)}
+        onDragOver={(e) => onDragOver(e, node.id)}
+        onDrop={(e) => onDrop(e, node.category)}
+        className="pl-2"
+      >
+        <div className="flex items-center justify-between gap-3 p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 grid place-items-center rounded bg-gray-100 dark:bg-gray-800">
+              <Tag className="w-4 h-4 text-gray-600 dark:text-gray-300" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{node.subcategory}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{node.category}</div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              title="Toggle status"
+              onClick={() => toggleStatus(node)}
+              className={`px-2 py-1 rounded text-sm ${node.status === "active" ? "bg-green-50 text-green-700" : "bg-gray-100 dark:bg-gray-800 text-gray-500"}`}
+            >
+              {node.status === "active" ? "Active" : "Inactive"}
+            </button>
+
+            <button onClick={() => openForEdit(node)} className="p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800">
+              <Edit className="w-4 h-4" />
+            </button>
+            <button onClick={() => handleDelete(node.id)} className="p-2 rounded hover:bg-red-50 dark:hover:bg-red-900 text-red-600">
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {node.children && node.children.length > 0 && (
+          <div className="ml-6 mt-2 space-y-2">
+            {node.children
+              .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+              .map((c) => renderNode(c))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h4 className="Text-lg font-semibold text-gray-900 dark:text-white">Category Management</h4>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Manage subcategories, nesting, ordering and status across Men / Women / Kids.</p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {MAIN_CATEGORIES.map((main) => (
+            <div
+              key={main}
+              className="p-3 rounded-md border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => onDrop(e, main)}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 grid place-items-center rounded bg-black text-white">{main[0]}</div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">{main}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Main category</p>
+                  </div>
+                </div>
+
+                <button onClick={() => handleCreateForMain(main)} className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-black text-white dark:bg-white dark:text-black">
+                  <PlusCircle className="w-4 h-4" /> Add
+                </button>
+              </div>
+
+              <div className="space-y-2 max-h-[60vh] overflow-auto">
+                {categories.filter((c) => (c.category || c.category_name) === main && !c.parent_id).length === 0 ? (
+                  <div className="text-xs text-gray-500 dark:text-gray-400">No subcategories</div>
+                ) : (
+                  categories
+                    .filter((c) => (c.category || c.category_name) === main && !c.parent_id)
+                    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                    .map((root) => (
+                      <div
+                        key={root.id}
+                        draggable
+                        onDragStart={(e) => onDragStart(e, root.id)}
+                        onDragOver={(e) => onDragOver(e, root.id)}
+                        onDrop={(e) => onDrop(e, main)}
+                        className="rounded-md p-1"
+                      >
+                        {renderNode(root)}
+                      </div>
+                    ))
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {showForm && (
+        <CategoryFormModal
+          editing={editing}
+          fixedCategory={fixedCategory}
+          categories={categories}
+          onClose={() => {
+            setShowForm(false);
+            setEditing(null);
+            setFixedCategory(null);
+          }}
+          onSave={handleSave}
+        />
+      )}
+    </div>
+  );
+}
 
 /* ======= ProductFormModal (updated to use robust size parsing and strict coercion) ======= */
 function ProductFormModal({ product, onClose, onSave, categories = [] }) {
