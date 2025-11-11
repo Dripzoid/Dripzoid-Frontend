@@ -43,15 +43,45 @@ const normalizeResponse = (res) => {
 
 const MAIN_CATEGORIES = ["Men", "Women", "Kids"];
 
+// Parse different possible server fields for per-size stock and return an object {S:10, M:5}
+const parseSizeStockFromProduct = (p) => {
+  if (!p) return {};
+  const candidates = ["size_stock", "sizeStock", "stock_map", "stockMap", "sizes_map", "sizesMap", "size_stock_map"];
+  for (const k of candidates) {
+    if (p[k]) {
+      try {
+        if (typeof p[k] === "object") return p[k];
+        return JSON.parse(String(p[k]));
+      } catch (err) {
+        // fallback: try to parse simple key:value pairs like "S:10|M:5"
+        const raw = String(p[k]);
+        const obj = {};
+        raw.split(/[,|;]+/).forEach((part) => {
+          const [k2, v] = part.split(/[:=]/).map((s) => s && s.trim());
+          if (k2) obj[k2] = Number(v) || 0;
+        });
+        if (Object.keys(obj).length) return obj;
+      }
+    }
+  }
+  // older fallback: if product.sizes exists and product.stock exists, distribute evenly
+  if (p.sizes && p.stock != null) {
+    const sizes = String(p.sizes).split(",").map((s) => s.trim()).filter(Boolean);
+    if (sizes.length === 0) return {};
+    const total = Number(p.stock) || 0;
+    const base = Math.floor(total / sizes.length);
+    const obj = {};
+    sizes.forEach((s, i) => {
+      obj[s] = base + (i === sizes.length - 1 ? total - base * sizes.length : 0);
+    });
+    return obj;
+  }
+  return {};
+};
+
+const sumSizeStock = (map) => Object.values(map || {}).reduce((s, v) => s + Number(v || 0), 0);
+
 /* ======= CategoryFormModal ======= */
-/*
-  Props:
-    - editing: object|null (if editing an existing subcategory)
-    - fixedCategory: string|null (if provided, category selector is locked to this value)
-    - categories: array (for parent selection)
-    - onClose: fn
-    - onSave: fn (called after successful save; passed normalized response)
-*/
 function CategoryFormModal({ editing, fixedCategory = null, categories = [], onClose, onSave }) {
   const defaultForm = {
     id: null,
@@ -85,7 +115,6 @@ function CategoryFormModal({ editing, fixedCategory = null, categories = [], onC
             : "",
       });
     } else {
-      // New create flow. If caller provided a fixedCategory (via section add button), use it.
       setForm((f) => ({ ...defaultForm, category: fixedCategory ?? defaultForm.category }));
     }
   }, [editing, fixedCategory]);
@@ -125,7 +154,6 @@ function CategoryFormModal({ editing, fixedCategory = null, categories = [], onC
     }
   };
 
-  // available parents: only categories in same main category (top-level)
   const parentOptions = (categories || [])
     .filter((c) => (c.category || c.category_name) === form.category && !c.parent_id)
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
@@ -166,7 +194,7 @@ function CategoryFormModal({ editing, fixedCategory = null, categories = [], onC
             className={inputCls}
             value={form.category}
             onChange={(e) => setField("category", e.target.value)}
-            disabled={!!fixedCategory && !form.id} // locked for create-from-section, but editable when editing existing
+            disabled={!!fixedCategory && !form.id}
           >
             {MAIN_CATEGORIES.map((m) => (
               <option key={m} value={m}>
@@ -220,7 +248,6 @@ function CategoryManagement({ categories = [], onRefresh }) {
   const dragOverIdRef = useRef(null);
 
   useEffect(() => {
-    // keep a local copy for smoother drag reorders (will persist on drop)
     setLocalCategories((categories || []).slice());
   }, [categories]);
 
@@ -296,7 +323,6 @@ function CategoryManagement({ categories = [], onRefresh }) {
     const draggedIndex = mainList.findIndex((i) => Number(i.id) === dragIdNum);
     if (draggedIndex === -1) {
       try {
-        // append to end with next sort order
         const lastSort = mainList.length > 0 ? (mainList[mainList.length - 1].sort_order ?? 0) : 0;
         await api.put(`/api/admin/products/categories/${dragIdNum}`, { category: targetMain, parent_id: null, sort_order: lastSort + 1 }, true);
         await onRefresh();
@@ -310,7 +336,6 @@ function CategoryManagement({ categories = [], onRefresh }) {
       return;
     }
 
-    // same-column reorder
     const overIndex = overId != null ? mainList.findIndex((i) => Number(i.id) === overId) : null;
     if (overIndex === -1 && overIndex !== null) {
       setDraggingItem(null);
@@ -318,20 +343,17 @@ function CategoryManagement({ categories = [], onRefresh }) {
       return;
     }
 
-    // remove dragged item and reinsert
     const newList = mainList.slice();
     const [draggedItem] = newList.splice(draggedIndex, 1);
     let insertIndex = newList.length;
     if (overIndex !== null) insertIndex = overIndex;
     newList.splice(insertIndex, 0, draggedItem);
 
-    // persist sort_order
     try {
       await Promise.all(
         newList.map((itm, idx) =>
           api.put(`/api/admin/products/categories/${itm.id}`, { sort_order: idx }, true).catch((err) => {
             console.error("Failed to update order for", itm.id, err);
-            // continue
           })
         )
       );
@@ -414,14 +436,12 @@ function CategoryManagement({ categories = [], onRefresh }) {
     <div className="p-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Category Management</h4>
+          <h4 className="Text-lg font-semibold text-gray-900 dark:text-white">Category Management</h4>
           <p className="text-sm text-gray-500 dark:text-gray-400">Manage subcategories, nesting, ordering and status across Men / Women / Kids.</p>
         </div>
-        {/* header Add kept as general (optional) */}
       </div>
 
       <div className="space-y-3">
-        {/* ALWAYS show the 3-column layout (so each main category has its own Add button) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {MAIN_CATEGORIES.map((main) => (
             <div
@@ -487,7 +507,7 @@ function CategoryManagement({ categories = [], onRefresh }) {
   );
 }
 
-/* ======= ProductFormModal (updated to use DB categories/subcategories) ======= */
+/* ======= ProductFormModal (updated to use per-size stock mapping) ======= */
 function ProductFormModal({ product, onClose, onSave, categories = [] }) {
   const defaultForm = {
     name: "",
@@ -509,27 +529,35 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
   const [saving, setSaving] = useState(false);
   const [uploadingCount, setUploadingCount] = useState(0);
   const [useCustomSub, setUseCustomSub] = useState(false);
+  const [sizeStocks, setSizeStocks] = useState({}); // { S: 10, M: 5 }
 
   useEffect(() => {
     if (product && typeof product === "object" && Object.keys(product).length > 0) {
+      const parsedSizes = product.sizes ? String(product.sizes) : "";
+      const parsedImages = product.images ? String(product.images).split(",").filter(Boolean) : [];
+      const parsedSizeStocks = parseSizeStockFromProduct(product);
+      const computedStock = sumSizeStock(parsedSizeStocks) || Number(product.stock || 0);
+
       setForm({
         name: product.name ?? "",
         category: product.category ?? "Men",
         price: Number(product.price ?? 0),
         actualPrice: Number(product.actualPrice ?? product.price ?? 0),
-        images: product.images ? String(product.images).split(",").filter(Boolean) : [],
+        images: parsedImages,
         rating: Number(product.rating ?? 0),
-        sizes: product.sizes ?? "",
+        sizes: parsedSizes,
         colors: product.colors ?? "",
         originalPrice: Number(product.originalPrice ?? 0),
         description: product.description ?? "",
         subcategory: product.subcategory ?? "",
-        stock: Number(product.stock ?? 0),
+        stock: Number(computedStock || 0),
         featured: Number(product.featured ?? 0),
       });
+      setSizeStocks(parsedSizeStocks || {});
       setUseCustomSub(false);
     } else {
       setForm(defaultForm);
+      setSizeStocks({});
       setUseCustomSub(false);
     }
   }, [product]);
@@ -595,6 +623,43 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
     setForm((s) => ({ ...s, images: s.images.filter((i) => i !== url) }));
   };
 
+  // When the sizes string changes, adjust the sizeStocks map
+  useEffect(() => {
+    const sizesArr = String(form.sizes || "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (sizesArr.length === 0) {
+      setSizeStocks({});
+      return;
+    }
+
+    setSizeStocks((prev) => {
+      const next = {};
+      const prevKeys = Object.keys(prev || {});
+      const totalPrev = sumSizeStock(prev);
+
+      // If prev already has values and the same sizes, keep values
+      sizesArr.forEach((sz, idx) => {
+        if (prev && typeof prev[sz] !== "undefined") next[sz] = Number(prev[sz]);
+        else if (prevKeys.length === sizesArr.length && prevKeys[idx]) next[sz] = Number(prev[prevKeys[idx]] || 0);
+        else {
+          // distribute evenly from existing total if possible
+          const base = prevKeys.length ? Math.floor(totalPrev / sizesArr.length) : Math.floor(Number(form.stock || 0) / sizesArr.length);
+          next[sz] = base;
+        }
+      });
+
+      // ensure sum equals form.stock if possible by adjusting last size
+      const desiredTotal = Number(form.stock || 0);
+      const currentTotal = sumSizeStock(next);
+      if (desiredTotal > 0 && currentTotal !== desiredTotal) {
+        const last = sizesArr[sizesArr.length - 1];
+        next[last] = (next[last] || 0) + (desiredTotal - currentTotal);
+      }
+
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.sizes]);
+
   const handleSubmit = async (ev) => {
     ev.preventDefault();
     setSaving(true);
@@ -604,7 +669,6 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
       let chosenSub = form.subcategory ? String(form.subcategory).trim() : "";
 
       if (useCustomSub && chosenSub) {
-        // try to find existing same-name subcategory in same main category (case-insensitive)
         const exists = (categories || []).find((c) => {
           const catName = (c.category || c.category_name || "").toString();
           const subName = (c.subcategory || c.name || "").toString();
@@ -617,7 +681,6 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
         if (exists) {
           chosenSub = exists.subcategory || exists.name || chosenSub;
         } else {
-          // create new category entry
           try {
             const createRes = await api.post(
               "/api/admin/products/categories",
@@ -625,28 +688,37 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
               true
             );
             const created = normalizeResponse(createRes);
-            // created may be the created row or {data: row} etc.
             const createdObj = created && typeof created === "object" && (created.subcategory || created.data) ? (created.subcategory ? created : created.data ?? created) : created;
             if (createdObj && (createdObj.subcategory || createdObj.name)) {
               chosenSub = createdObj.subcategory ?? createdObj.name ?? chosenSub;
             }
           } catch (err) {
             console.warn("Failed to create subcategory; proceeding with typed name.", err);
-            // proceed with chosenSub as typed
           }
         }
       }
 
+      // Ensure sizes string is normalized
+      const sizesNormalized = String(form.sizes || "").split(",").map((s) => s.trim()).filter(Boolean).join(",");
+
+      // finalize sizeStocks and total stock
+      const finalSizeStocks = { ...sizeStocks };
+      const totalStock = sumSizeStock(finalSizeStocks) || Number(form.stock || 0);
+
+      // payload: keep backward-compatible 'stock' (total) and also include size_stock JSON mapping
       const payload = {
         ...form,
         price: Number(form.price) || 0,
         actualPrice: Number(form.actualPrice) || Number(form.price) || 0,
         originalPrice: Number(form.originalPrice) || 0,
         rating: Number(form.rating) || 0,
-        stock: Number(form.stock) || 0,
+        stock: Number(totalStock) || 0,
         featured: Number(form.featured) ? 1 : 0,
         images: (form.images || []).join(","),
         subcategory: chosenSub || form.subcategory || "",
+        sizes: sizesNormalized,
+        // front-end will send size_stock as JSON string. Backend can insert into product_sizes table during server-side migration/creation.
+        size_stock: JSON.stringify(finalSizeStocks),
       };
 
       let resp;
@@ -657,7 +729,7 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
       }
 
       if (typeof onSave === "function") {
-        await onSave(resp);
+        await onSave(normalizeResponse(resp));
       } else {
         onClose && onClose();
       }
@@ -678,12 +750,26 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
   }, [categories, form.category]);
 
   useEffect(() => {
-    // if selected existing option is "__custom__" switch to custom mode
     if (form.subcategory === "__custom__") {
       setUseCustomSub(true);
       setField("subcategory", "");
     }
   }, [form.subcategory]);
+
+  // helpers for UI
+  const sizesArray = useMemo(() => String(form.sizes || "").split(",").map((s) => s.trim()).filter(Boolean), [form.sizes]);
+
+  const autoDistribute = () => {
+    const total = Number(form.stock || 0) || sumSizeStock(sizeStocks);
+    const sizes = sizesArray;
+    if (sizes.length === 0) return;
+    const base = Math.floor(total / sizes.length);
+    const next = {};
+    sizes.forEach((s, i) => {
+      next[s] = base + (i === sizes.length - 1 ? total - base * sizes.length : 0);
+    });
+    setSizeStocks(next);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -773,7 +859,33 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
             </div>
           )}
 
-          <input className={inputCls} placeholder="Stock" type="number" value={form.stock} onChange={(e) => setField("stock", e.target.value)} />
+          {/* Stock controls: total and per-size mapping */}
+          <div className="flex items-center gap-2">
+            <input className={inputCls} placeholder="Total stock (will sum per-size)" type="number" value={form.stock} onChange={(e) => setField("stock", Number(e.target.value))} />
+            <button type="button" onClick={autoDistribute} className="px-3 py-2 rounded border border-gray-200 dark:border-gray-700">Auto distribute</button>
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="text-sm text-gray-600 dark:text-gray-300">Per-size stock</label>
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {sizesArray.length === 0 ? (
+                <div className="text-xs text-gray-500 dark:text-gray-400">Define sizes above (e.g. S,M,L) to set per-size stock</div>
+              ) : (
+                sizesArray.map((sz) => (
+                  <div key={sz} className="flex items-center gap-2">
+                    <div className="w-16 text-sm text-gray-700 dark:text-gray-300">{sz}</div>
+                    <input
+                      type="number"
+                      className={inputCls + " flex-1"}
+                      value={Number(sizeStocks[sz] ?? 0)}
+                      onChange={(e) => setSizeStocks((s) => ({ ...s, [sz]: Number(e.target.value) || 0 }))}
+                    />
+                  </div>
+                ))
+              )}
+            </div>
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">The UI will submit a <code>size_stock</code> JSON object (e.g. {"{"}"S":10,"M":15{"}"}) along with a backward-compatible <code>stock</code> total.</p>
+          </div>
 
           <div className="flex items-center gap-3">
             <label htmlFor="featuredSwitch" className="flex items-center gap-2 cursor-pointer select-none">
@@ -853,9 +965,7 @@ export default function ProductsAdmin() {
 
   const DEBUG = false;
 
-  // Helper: if your backend expects different sort keys, map them here.
   const mapSortForBackend = (uiSort) => {
-    // adjust map as needed for your backend
     const map = {
       newest: "newest",
       price_asc: "price_asc",
@@ -872,7 +982,6 @@ export default function ProductsAdmin() {
       if (!showProducts) return;
       setLoading(true);
       try {
-        // Build query params explicitly and create query string to guarantee they are sent
         const params = new URLSearchParams();
         if (q && String(q).trim() !== "") params.append("search", String(q).trim());
         if (page && Number(page) > 0) params.append("page", String(Number(page)));
@@ -885,7 +994,6 @@ export default function ProductsAdmin() {
 
         if (DEBUG) console.log("Fetching products URL:", url);
 
-        // Pass an empty object as second arg for compatibility with your api wrapper (auth passed as third)
         const res = await api.get(url, {}, true);
         if (DEBUG) console.log("Products list raw:", res);
         const body = normalizeResponse(res);
@@ -905,8 +1013,15 @@ export default function ProductsAdmin() {
           if (arr) list = arr;
         }
 
-        setProducts(list || []);
-        setTotalPages(limit === 999999 ? 1 : Math.max(1, Math.ceil((total || list.length || 0) / (limit || 20))));
+        // normalize each product: parse size_stock mappings if present and compute totalStock
+        const normList = (list || []).map((p) => {
+          const sizeStock = parseSizeStockFromProduct(p);
+          const totalStock = sumSizeStock(sizeStock) || Number(p.stock || 0);
+          return { ...p, sizeStock, totalStock };
+        });
+
+        setProducts(normList || []);
+        setTotalPages(limit === 999999 ? 1 : Math.max(1, Math.ceil((total || normList.length || 0) / (limit || 20))));
       } catch (err) {
         console.error("Fetch products error:", err);
         setProducts([]);
@@ -962,10 +1077,9 @@ export default function ProductsAdmin() {
     }
   }, []);
 
-  // initial load
   useEffect(() => {
     fetchStats();
-    fetchCategories(); // fetch categories up-front so product modal subcategory select works
+    fetchCategories();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchCategories, fetchStats]);
 
@@ -982,7 +1096,6 @@ export default function ProductsAdmin() {
     if (showProducts) fetchStats();
   }, [showProducts, fetchStats]);
 
-  // refetch categories when management toggled on/off (keeps in sync)
   useEffect(() => {
     if (showCategories) fetchCategories();
   }, [showCategories, fetchCategories]);
@@ -993,7 +1106,11 @@ export default function ProductsAdmin() {
       const res = await api.get(`/api/admin/products/${p.id}`, {}, true);
       const body = normalizeResponse(res);
       const prod = body?.data && typeof body.data === "object" ? body.data : body;
-      setEditing(prod);
+      // ensure we include parsed sizeStock for the edit form
+      const sizeStock = parseSizeStockFromProduct(prod);
+      const totalStock = sumSizeStock(sizeStock) || Number(prod.stock || 0);
+      const parsedProd = { ...prod, sizeStock, stock: totalStock };
+      setEditing(parsedProd);
       setShowForm(true);
     } catch (err) {
       console.error("Failed to fetch product for edit:", err);
@@ -1067,7 +1184,8 @@ export default function ProductsAdmin() {
       {/* Bulk Upload */}
       {showBulk && (
         <div className="p-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-          <BulkUpload onUploadComplete={handleSave} />
+          {/* Pass a flag so BulkUpload can handle size_stock column or a size:qty format in CSV. You'll need to update BulkUpload to respect this key. */}
+          <BulkUpload onUploadComplete={handleSave} expectSizeStock={true} />
         </div>
       )}
 
@@ -1113,10 +1231,11 @@ export default function ProductsAdmin() {
               {products.map((p) => {
                 const priceNum = Number(p.price ?? 0);
                 const actualNum = Number(p.actualPrice ?? 0);
-                // prefer price as the primary display (fixes "shows actualPrice instead of price" bug)
                 const displayPrice = priceNum > 0 ? priceNum : actualNum;
                 const showOriginal = Number(p.originalPrice ?? 0) > 0 && Number(p.originalPrice) > displayPrice;
                 const firstImage = p.images ? String(p.images).split(",")[0] : "/images/placeholder.jpg";
+
+                const totalStock = Number(p.totalStock ?? p.stock ?? 0);
 
                 return (
                   <div key={p.id} className={cardCls}>
@@ -1135,6 +1254,8 @@ export default function ProductsAdmin() {
                           {typeof p.sold !== "undefined" && <span className="text-xs text-gray-500 dark:text-gray-400">• {p.sold} sold</span>}
                           {Number(p.featured) === 1 && <span className="ml-2 text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800">Featured</span>}
                         </div>
+
+                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">Stock: {totalStock}</div>
                       </div>
 
                       <div className="flex flex-col gap-2">
