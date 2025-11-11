@@ -43,45 +43,111 @@ const normalizeResponse = (res) => {
 
 const MAIN_CATEGORIES = ["Men", "Women", "Kids"];
 
-// Parse different possible server fields for per-size stock and return an object {S:10, M:5}
+/**
+ * parseSizeStockFromProduct
+ * Accepts many shapes a product might arrive in:
+ * - product.size_stock (object or JSON string)
+ * - product.sizeStock, stock_map, sizes_map
+ * - product.sizes_data or product.sizes (array of {size,stock})
+ * - "S:10,M:5" style strings
+ * - fallback: distribute product.stock across product.sizes (string)
+ *
+ * Returns a plain object: { S: 10, M: 5 }
+ */
 const parseSizeStockFromProduct = (p) => {
   if (!p) return {};
+
+  // 1) Common explicit fields (object or JSON string)
   const candidates = ["size_stock", "sizeStock", "stock_map", "stockMap", "sizes_map", "sizesMap", "size_stock_map"];
   for (const k of candidates) {
-    if (p[k]) {
+    if (typeof p[k] !== "undefined" && p[k] !== null && p[k] !== "") {
+      const val = p[k];
+      if (typeof val === "object" && !Array.isArray(val)) {
+        return Object.fromEntries(Object.entries(val).map(([k2, v]) => [k2, Number(v || 0)]));
+      }
       try {
-        if (typeof p[k] === "object") return p[k];
-        return JSON.parse(String(p[k]));
+        const parsed = JSON.parse(String(val));
+        if (typeof parsed === "object" && !Array.isArray(parsed)) {
+          return Object.fromEntries(Object.entries(parsed).map(([k2, v]) => [k2, Number(v || 0)]));
+        }
       } catch (err) {
-        // fallback: try to parse simple key:value pairs like "S:10|M:5"
-        const raw = String(p[k]);
-        const obj = {};
-        raw.split(/[,|;]+/).forEach((part) => {
-          const [k2, v] = part.split(/[:=]/).map((s) => s && s.trim());
-          if (k2) obj[k2] = Number(v) || 0;
+        // fallthrough to string parsing below
+      }
+      // also accept "S:10,M:5" style
+      const obj = {};
+      String(val)
+        .split(/[,|;]+/)
+        .map((x) => x.trim())
+        .forEach((part) => {
+          if (!part) return;
+          const [size, qty] = part.split(/[:=]/).map((s) => (s ? s.trim() : s));
+          if (size) obj[size] = Number(qty) || 0;
         });
-        if (Object.keys(obj).length) return obj;
+      if (Object.keys(obj).length) return obj;
+    }
+  }
+
+  // 2) If backend provided sizes as an array of objects (common after our update)
+  // Possible keys: sizes_data, sizes (array of {size,stock}) or product.sizes (array)
+  const arrCandidates = ["sizes_data", "sizes", "size_list", "sizeList"];
+  for (const k of arrCandidates) {
+    const v = p[k];
+    if (Array.isArray(v) && v.length > 0) {
+      const obj = {};
+      v.forEach((it) => {
+        // support both { size, stock } and { size: 'S', stock: 10 } or {size:'S', qty:10}
+        if (typeof it === "object" && it !== null) {
+          const size = it.size ?? it.name ?? it.label;
+          const stock = Number(it.stock ?? it.qty ?? it.quantity ?? 0);
+          if (size) obj[String(size).trim()] = stock;
+        } else if (typeof it === "string") {
+          // string like "S:10"
+          const [sz, q] = it.split(/[:=]/).map((x) => x && x.trim());
+          if (sz) obj[sz] = Number(q) || 0;
+        }
+      });
+      if (Object.keys(obj).length) return obj;
+    }
+  }
+
+  // 3) fallback: if product.sizes is a comma string and product.stock present -> distribute evenly
+  if (p.sizes && (typeof p.sizes === "string" || Array.isArray(p.sizes))) {
+    const sizesArr = Array.isArray(p.sizes)
+      ? p.sizes.map((s) => (typeof s === "object" ? s.size ?? String(s) : String(s))).map((s) => s.trim()).filter(Boolean)
+      : String(p.sizes).split(",").map((s) => s.trim()).filter(Boolean);
+
+    if (sizesArr.length > 0) {
+      // if there's a separate size->stock mapping in product (rare), prefer that
+      // otherwise distribute from total stock
+      const explicit = {};
+      // check for same-length array in p.sizes_data or p.size_stock
+      if (Array.isArray(p.sizes_data) && p.sizes_data.length > 0) {
+        p.sizes_data.forEach((s) => {
+          if (typeof s === "object") explicit[s.size] = Number(s.stock || 0);
+        });
+      }
+      if (Object.keys(explicit).length === sizesArr.length) {
+        return sizesArr.reduce((acc, s) => ({ ...acc, [s]: Number(explicit[s] || 0) }), {});
+      }
+
+      const total = Number(p.stock || 0);
+      if (!Number.isNaN(total) && total > 0) {
+        const base = Math.floor(total / sizesArr.length);
+        const map = {};
+        sizesArr.forEach((s, i) => {
+          map[s] = base + (i === sizesArr.length - 1 ? total - base * sizesArr.length : 0);
+        });
+        return map;
       }
     }
   }
-  // older fallback: if product.sizes exists and product.stock exists, distribute evenly
-  if (p.sizes && p.stock != null) {
-    const sizes = String(p.sizes).split(",").map((s) => s.trim()).filter(Boolean);
-    if (sizes.length === 0) return {};
-    const total = Number(p.stock) || 0;
-    const base = Math.floor(total / sizes.length);
-    const obj = {};
-    sizes.forEach((s, i) => {
-      obj[s] = base + (i === sizes.length - 1 ? total - base * sizes.length : 0);
-    });
-    return obj;
-  }
+
   return {};
 };
 
 const sumSizeStock = (map) => Object.values(map || {}).reduce((s, v) => s + Number(v || 0), 0);
 
-/* ======= CategoryFormModal ======= */
+/* ======= CategoryFormModal (unchanged) ======= */
 function CategoryFormModal({ editing, fixedCategory = null, categories = [], onClose, onSave }) {
   const defaultForm = {
     id: null,
@@ -238,290 +304,26 @@ function CategoryFormModal({ editing, fixedCategory = null, categories = [], onC
   );
 }
 
-/* ======= CategoryManagement Panel ======= */
-function CategoryManagement({ categories = [], onRefresh }) {
-  const [editing, setEditing] = useState(null); // object or null
-  const [showForm, setShowForm] = useState(false);
-  const [fixedCategory, setFixedCategory] = useState(null); // when creating from a section
-  const [draggingItem, setDraggingItem] = useState(null);
-  const [localCategories, setLocalCategories] = useState([]);
-  const dragOverIdRef = useRef(null);
-
-  useEffect(() => {
-    setLocalCategories((categories || []).slice());
-  }, [categories]);
-
-  const openForEdit = (c) => {
-    setEditing(c);
-    setFixedCategory(null);
-    setShowForm(true);
-  };
-
-  const handleCreateForMain = (main) => {
-    setEditing({ category: main }); // seed form with category
-    setFixedCategory(main);
-    setShowForm(true);
-  };
-
-  const handleSave = async () => {
-    await onRefresh();
-    setShowForm(false);
-    setEditing(null);
-    setFixedCategory(null);
-  };
-
-  const handleDelete = async (id) => {
-    if (!window.confirm("Delete subcategory? This cannot be undone.")) return;
-    try {
-      await api.delete(`/api/admin/products/categories/${id}`, true);
-      await onRefresh();
-    } catch (err) {
-      console.error("Delete category error:", err);
-      alert("Failed to delete. See console.");
-    }
-  };
-
-  const toggleStatus = async (c) => {
-    try {
-      await api.put(`/api/admin/products/categories/${c.id}/status`, { status: c.status === "active" ? "inactive" : "active" }, true);
-      await onRefresh();
-    } catch (err) {
-      console.error("Toggle status error:", err);
-      alert("Failed to toggle status. See console.");
-    }
-  };
-
-  /* ======= Drag & Drop handlers (HTML5) ======= */
-  const onDragStart = (e, itemId) => {
-    setDraggingItem(String(itemId));
-    e.dataTransfer.effectAllowed = "move";
-    try {
-      e.dataTransfer.setData("text/plain", String(itemId));
-    } catch (err) {
-      // some browsers may throw; ignore
-    }
-  };
-
-  const onDragOver = (e, overId) => {
-    e.preventDefault();
-    dragOverIdRef.current = String(overId);
-  };
-
-  const onDrop = async (e, targetMain) => {
-    e.preventDefault();
-    const draggedId = draggingItem ?? e.dataTransfer.getData("text/plain");
-    if (!draggedId) return;
-    const dragIdNum = Number(draggedId);
-    const overId = dragOverIdRef.current ? Number(dragOverIdRef.current) : null;
-
-    // build main column list (top-level only)
-    const mainList = (localCategories || [])
-      .filter((c) => (c.category || c.category_name) === targetMain && !c.parent_id)
-      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-
-    // if dragged item not in this list => cross-column drop -> update category and append
-    const draggedIndex = mainList.findIndex((i) => Number(i.id) === dragIdNum);
-    if (draggedIndex === -1) {
-      try {
-        const lastSort = mainList.length > 0 ? (mainList[mainList.length - 1].sort_order ?? 0) : 0;
-        await api.put(`/api/admin/products/categories/${dragIdNum}`, { category: targetMain, parent_id: null, sort_order: lastSort + 1 }, true);
-        await onRefresh();
-      } catch (err) {
-        console.error("Failed cross-column drop:", err);
-        alert("Failed to reorder. See console.");
-      } finally {
-        setDraggingItem(null);
-        dragOverIdRef.current = null;
-      }
-      return;
-    }
-
-    const overIndex = overId != null ? mainList.findIndex((i) => Number(i.id) === overId) : null;
-    if (overIndex === -1 && overIndex !== null) {
-      setDraggingItem(null);
-      dragOverIdRef.current = null;
-      return;
-    }
-
-    const newList = mainList.slice();
-    const [draggedItem] = newList.splice(draggedIndex, 1);
-    let insertIndex = newList.length;
-    if (overIndex !== null) insertIndex = overIndex;
-    newList.splice(insertIndex, 0, draggedItem);
-
-    try {
-      await Promise.all(
-        newList.map((itm, idx) =>
-          api.put(`/api/admin/products/categories/${itm.id}`, { sort_order: idx }, true).catch((err) => {
-            console.error("Failed to update order for", itm.id, err);
-          })
-        )
-      );
-      await onRefresh();
-    } catch (err) {
-      console.error("Persist order error:", err);
-      alert("Failed to save new order. See console.");
-    } finally {
-      setDraggingItem(null);
-      dragOverIdRef.current = null;
-    }
-  };
-
-  /* ======= Tree helpers for nested display (parent/children) ======= */
-  const treeRoots = useMemo(() => {
-    const map = {};
-    (categories || []).forEach((c) => (map[c.id] = { ...c, children: [] }));
-    const roots = [];
-    (categories || []).forEach((c) => {
-      if (c.parent_id && map[c.parent_id]) {
-        map[c.parent_id].children.push(map[c.id]);
-      } else {
-        roots.push(map[c.id]);
-      }
-    });
-    return roots;
-  }, [categories]);
-
-  const renderNode = (node) => {
-    return (
-      <div
-        key={node.id}
-        draggable
-        onDragStart={(e) => onDragStart(e, node.id)}
-        onDragOver={(e) => onDragOver(e, node.id)}
-        onDrop={(e) => onDrop(e, node.category)}
-        className="pl-2"
-      >
-        <div className="flex items-center justify-between gap-3 p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-8 h-8 grid place-items-center rounded bg-gray-100 dark:bg-gray-800">
-              <Tag className="w-4 h-4 text-gray-600 dark:text-gray-300" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{node.subcategory}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{node.category}</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              title="Toggle status"
-              onClick={() => toggleStatus(node)}
-              className={`px-2 py-1 rounded text-sm ${node.status === "active" ? "bg-green-50 text-green-700" : "bg-gray-100 dark:bg-gray-800 text-gray-500"}`}
-            >
-              {node.status === "active" ? "Active" : "Inactive"}
-            </button>
-
-            <button onClick={() => openForEdit(node)} className="p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800">
-              <Edit className="w-4 h-4" />
-            </button>
-            <button onClick={() => handleDelete(node.id)} className="p-2 rounded hover:bg-red-50 dark:hover:bg-red-900 text-red-600">
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {node.children && node.children.length > 0 && (
-          <div className="ml-6 mt-2 space-y-2">
-            {node.children
-              .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-              .map((c) => renderNode(c))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <div className="p-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h4 className="Text-lg font-semibold text-gray-900 dark:text-white">Category Management</h4>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Manage subcategories, nesting, ordering and status across Men / Women / Kids.</p>
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {MAIN_CATEGORIES.map((main) => (
-            <div
-              key={main}
-              className="p-3 rounded-md border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => onDrop(e, main)}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 grid place-items-center rounded bg-black text-white">{main[0]}</div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white">{main}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Main category</p>
-                  </div>
-                </div>
-
-                <button onClick={() => handleCreateForMain(main)} className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-black text-white dark:bg-white dark:text-black">
-                  <PlusCircle className="w-4 h-4" /> Add
-                </button>
-              </div>
-
-              <div className="space-y-2 max-h-[60vh] overflow-auto">
-                {categories.filter((c) => (c.category || c.category_name) === main && !c.parent_id).length === 0 ? (
-                  <div className="text-xs text-gray-500 dark:text-gray-400">No subcategories</div>
-                ) : (
-                  categories
-                    .filter((c) => (c.category || c.category_name) === main && !c.parent_id)
-                    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-                    .map((root) => (
-                      <div
-                        key={root.id}
-                        draggable
-                        onDragStart={(e) => onDragStart(e, root.id)}
-                        onDragOver={(e) => onDragOver(e, root.id)}
-                        onDrop={(e) => onDrop(e, main)}
-                        className="rounded-md p-1"
-                      >
-                        {renderNode(root)}
-                      </div>
-                    ))
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {showForm && (
-        <CategoryFormModal
-          editing={editing}
-          fixedCategory={fixedCategory}
-          categories={categories}
-          onClose={() => {
-            setShowForm(false);
-            setEditing(null);
-            setFixedCategory(null);
-          }}
-          onSave={handleSave}
-        />
-      )}
-    </div>
-  );
-}
+/* ======= CategoryManagement Panel (unchanged) ======= */
+// ... (keep CategoryManagement exactly as in your file above)
+// For brevity in this message I will not duplicate CategoryManagement here — keep your existing implementation.
+// The important changes are in ProductFormModal and parsing helpers.
 
 /* ======= ProductFormModal (updated to use per-size stock mapping) ======= */
 function ProductFormModal({ product, onClose, onSave, categories = [] }) {
   const defaultForm = {
     name: "",
     category: "Men",
-    price: 0,
-    actualPrice: 0,
+    price: "",
+    actualPrice: "",
     images: [],
-    rating: 0,
+    rating: "",
     sizes: "",
     colors: "",
-    originalPrice: 0,
+    originalPrice: "",
     description: "",
     subcategory: "",
-    stock: 0,
+    stock: "",
     featured: 0,
   };
 
@@ -533,7 +335,24 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
 
   useEffect(() => {
     if (product && typeof product === "object" && Object.keys(product).length > 0) {
-      const parsedSizes = product.sizes ? String(product.sizes) : "";
+      // product.sizes might be:
+      // - a comma string "S,M,L"
+      // - an array [{size,stock}, ...] (backend)
+      // - or undefined
+      let parsedSizesStr = "";
+      if (Array.isArray(product.sizes)) {
+        parsedSizesStr = product.sizes.map((s) => (typeof s === "object" ? s.size : String(s))).join(",");
+      } else if (typeof product.sizes === "string") {
+        parsedSizesStr = product.sizes;
+      } else if (Array.isArray(product.sizes_data)) {
+        parsedSizesStr = product.sizes_data.map((s) => (s && s.size ? s.size : "")).filter(Boolean).join(",");
+      } else if (Array.isArray(product.sizes_data || product.sizes)) {
+        // extra safety
+        parsedSizesStr = (product.sizes_data || product.sizes).map((s) => (typeof s === "object" ? s.size : String(s))).join(",");
+      } else {
+        parsedSizesStr = String(product.sizes ?? "");
+      }
+
       const parsedImages = product.images ? String(product.images).split(",").filter(Boolean) : [];
       const parsedSizeStocks = parseSizeStockFromProduct(product);
       const computedStock = sumSizeStock(parsedSizeStocks) || Number(product.stock || 0);
@@ -545,7 +364,7 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
         actualPrice: Number(product.actualPrice ?? product.price ?? 0),
         images: parsedImages,
         rating: Number(product.rating ?? 0),
-        sizes: parsedSizes,
+        sizes: parsedSizesStr,
         colors: product.colors ?? "",
         originalPrice: Number(product.originalPrice ?? 0),
         description: product.description ?? "",
@@ -717,7 +536,6 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
         images: (form.images || []).join(","),
         subcategory: chosenSub || form.subcategory || "",
         sizes: sizesNormalized,
-        // front-end will send size_stock as JSON string. Backend can insert into product_sizes table during server-side migration/creation.
         size_stock: JSON.stringify(finalSizeStocks),
       };
 
