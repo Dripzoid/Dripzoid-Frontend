@@ -44,10 +44,83 @@ const normalizeResponse = (res) => {
 const MAIN_CATEGORIES = ["Men", "Women", "Kids"];
 
 /**
- * Robustly parse per-size stock from many possible backend shapes and always return a mapping {S:10, M:5}
+ * Helper: Decide if keys in an object *look like size labels* (S, M, L, XL, 30, 32 etc).
+ * Avoid false positives for normal product fields.
+ */
+const isLikelySizeKey = (k) => {
+  if (!k || typeof k !== "string") return false;
+  const lower = k.toLowerCase();
+  const forbidden = new Set([
+    "id",
+    "_id",
+    "name",
+    "price",
+    "images",
+    "rating",
+    "colors",
+    "originalprice",
+    "original_price",
+    "description",
+    "subcategory",
+    "stock",
+    "updated_at",
+    "updatedat",
+    "sold",
+    "featured",
+    "actualprice",
+    "actual_price",
+    "category",
+    "sizes",
+  ]);
+  if (forbidden.has(lower)) return false;
+  // size keys are usually short (1-6 chars), alphanumeric, not purely numeric indexers like "0","1"
+  if (k.length < 1 || k.length > 6) return false;
+  if (!/^[A-Za-z0-9_\-\s]+$/.test(k)) return false;
+  if (!isNaN(Number(k))) return false; // pure numbers are likely indexes, not labels
+  return true;
+};
+
+/**
+ * Robustly parse per-size stock from many possible backend shapes and ALWAYS return a mapping {S:10, M:5}
+ *
+ * Handles:
+ * - product.size_stock (JSON string or object)
+ * - product.sizes as array of objects [{size, stock}] (your backend sample)
+ * - product.sizes as array of strings ["S","M"]
+ * - product.product_sizes style arrays
+ * - CSV-like strings "S:10,M:5"
+ * - object mapping { S: 10, M: 5 } (but only if keys look like sizes)
  */
 const parseSizeStockFromProduct = (p) => {
   if (!p) return {};
+
+  // If the product contains `sizes` as an array of rows like your backend sample, parse that first
+  try {
+    if (p.sizes && Array.isArray(p.sizes) && p.sizes.length > 0) {
+      // handle either [{size:"S",stock:10}, "S:10", "S"] etc.
+      const result = {};
+      for (const item of p.sizes) {
+        if (!item) continue;
+        if (typeof item === "string") {
+          const part = item.trim();
+          if (part.includes(":") || part.includes("=")) {
+            const [size, qty] = part.split(/[:=]/).map((s) => s && s.trim());
+            if (size) result[size] = Number(qty) || 0;
+          } else {
+            // just a size label -> leave qty 0 (or will be auto-distributed later)
+            result[part] = result[part] || 0;
+          }
+        } else if (typeof item === "object") {
+          const size = item.size ?? item.size_label ?? item.sizeName ?? item.size_name ?? item.name ?? item.label;
+          const qty = Number(item.stock ?? item.qty ?? item.quantity ?? item.count ?? 0) || 0;
+          if (size) result[String(size)] = qty;
+        }
+      }
+      if (Object.keys(result).length) return result;
+    }
+  } catch (e) {
+    // fallthrough to regular parsing below
+  }
 
   const candidates = [
     "size_stock",
@@ -60,26 +133,33 @@ const parseSizeStockFromProduct = (p) => {
     "product_sizes",
     "productSizes",
     "product_size_list",
+    "sizes", // include sizes here as well (array or mapping)
+    "size_list",
+    "available_sizes",
   ];
 
   for (const k of candidates) {
     const val = p[k];
     if (val === undefined || val === null) continue;
 
-    // object mapping {S: 10}
+    // If it's already an object mapping size->qty like { S: 10, M: 5 }
     if (typeof val === "object" && !Array.isArray(val)) {
-      const result = {};
-      for (const [kk, vv] of Object.entries(val)) {
-        if (typeof vv === "object" && vv !== null && ("stock" in vv || "qty" in vv || "quantity" in vv)) {
-          result[String(kk)] = Number(vv.stock ?? vv.qty ?? vv.quantity ?? 0) || 0;
-        } else {
-          result[String(kk)] = Number(vv) || 0;
+      // Only treat as size->qty mapping if keys *look like sizes*
+      const keys = Object.keys(val || {});
+      if (keys.length > 0 && keys.every((kk) => isLikelySizeKey(kk))) {
+        const result = {};
+        for (const [kk, vv] of Object.entries(val)) {
+          if (typeof vv === "object" && vv !== null && ("stock" in vv || "qty" in vv || "quantity" in vv)) {
+            result[String(kk)] = Number(vv.stock ?? vv.qty ?? vv.quantity ?? 0) || 0;
+          } else {
+            result[String(kk)] = Number(vv) || 0;
+          }
         }
+        if (Object.keys(result).length) return result;
       }
-      if (Object.keys(result).length) return result;
     }
 
-    // array of items
+    // If it's an array (rows or objects) - handle arrays of rows (string or object)
     if (Array.isArray(val)) {
       const result = {};
       for (const item of val) {
@@ -102,9 +182,10 @@ const parseSizeStockFromProduct = (p) => {
       if (Object.keys(result).length) return result;
     }
 
-    // string form: try JSON -> CSV style "S:10,M:5"
+    // If it's a string: try JSON, then CSV / key:val parsing
     if (typeof val === "string") {
       const s = val.trim();
+      // try parse JSON
       if (s.startsWith("{") || s.startsWith("[")) {
         try {
           const parsed = JSON.parse(s);
@@ -114,6 +195,8 @@ const parseSizeStockFromProduct = (p) => {
           // fallthrough
         }
       }
+
+      // parse "S:10,M:5" or "S=10|M=5"
       const obj = {};
       s.split(/[,|;]+/).forEach((part) => {
         const trimmed = part.trim();
@@ -125,10 +208,10 @@ const parseSizeStockFromProduct = (p) => {
     }
   }
 
-  // fallback if p itself looks like a mapping
+  // final cautious fallback: if an object looks *entirely* like a sizes mapping (keys are likely size keys)
   if (typeof p === "object" && !Array.isArray(p)) {
-    const keys = Object.keys(p).filter((k) => typeof p[k] === "number" || typeof p[k] === "string");
-    if (keys.length && keys.every((k) => isNaN(Number(k)))) {
+    const keys = Object.keys(p || {});
+    if (keys.length > 0 && keys.length <= 12 && keys.every((k) => isLikelySizeKey(k))) {
       const result = {};
       keys.forEach((k) => (result[k] = Number(p[k]) || 0));
       if (Object.keys(result).length) return result;
@@ -151,7 +234,11 @@ const parseSizeStockFromProduct = (p) => {
 };
 
 /**
- * Parse sizes into a normalized string (comma separated)
+ * Parse sizes list into a comma-separated string usable in the "Sizes" input.
+ * Handles returned shapes like:
+ * - sizes: ["S","M","L"]
+ * - sizes: [{size:"S",stock:10}, ...] -> returns "S,M,L"
+ * - sizes string "S,M,L" or JSON '["S","M"]'
  */
 const parseSizesFromProduct = (p) => {
   if (!p) return "";
@@ -162,9 +249,11 @@ const parseSizesFromProduct = (p) => {
     if (val === undefined || val === null) continue;
 
     if (Array.isArray(val)) {
+      // array of strings?
       if (val.every((x) => typeof x === "string")) {
         return val.map((s) => s.trim()).filter(Boolean).join(",");
       }
+      // array of objects with known keys
       const mapped = val
         .map((it) => {
           if (!it) return null;
@@ -176,24 +265,28 @@ const parseSizesFromProduct = (p) => {
     }
 
     if (typeof val === "object" && !Array.isArray(val)) {
-      const keys = Object.keys(val).filter(Boolean);
+      // object mapping like { S: 10, M: 5 } -> keys are sizes (only if keys look like sizes)
+      const keys = Object.keys(val).filter(Boolean).filter((k) => isLikelySizeKey(k));
       if (keys.length) return keys.join(",");
     }
 
     if (typeof val === "string") {
       const s = val.trim();
+      // JSON array/string?
       if (s.startsWith("[") || s.startsWith("{")) {
         try {
           const parsed = JSON.parse(s);
           const nested = parseSizesFromProduct(parsed);
           if (nested) return nested;
         } catch (e) {
-          // fallthrough
+          // fallthrough to CSV parse
         }
       }
+      // CSV-like
       if (s.includes(",")) {
         return s.split(",").map((x) => x.trim()).filter(Boolean).join(",");
       }
+      // single size string
       if (s.length > 0) return s;
     }
   }
@@ -203,7 +296,7 @@ const parseSizesFromProduct = (p) => {
   const keys = Object.keys(stockMap || {});
   if (keys.length) return keys.join(",");
 
-  // if p is array-like of objects or strings
+  // If p itself is an array of strings or objects, try that
   if (Array.isArray(p)) {
     const mapped = p
       .map((it) => {
