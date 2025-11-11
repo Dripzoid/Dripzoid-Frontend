@@ -44,14 +44,7 @@ const normalizeResponse = (res) => {
 const MAIN_CATEGORIES = ["Men", "Women", "Kids"];
 
 /**
- * Robustly parse per-size stock from many possible backend shapes:
- * - product.size_stock may be a JSON string like '{"S":10,"M":5}'
- * - or an object { S: 10, M: 5 }
- * - or an array of objects [{ size: "S", stock: 10 }, ...]
- * - or product.product_sizes may be an array of DB rows: [{ size: "S", stock: 10 }, ...]
- * - or a CSV-ish string like "S:10,M:5" or "S:10|M:5"
- *
- * Returns a plain mapping object: { S: 10, M: 5 }
+ * Robustly parse per-size stock from many possible backend shapes and always return a mapping {S:10, M:5}
  */
 const parseSizeStockFromProduct = (p) => {
   if (!p) return {};
@@ -73,13 +66,12 @@ const parseSizeStockFromProduct = (p) => {
     const val = p[k];
     if (val === undefined || val === null) continue;
 
-    // If it's already an object mapping size->qty
+    // object mapping {S: 10}
     if (typeof val === "object" && !Array.isArray(val)) {
       const result = {};
       for (const [kk, vv] of Object.entries(val)) {
-        // if vv is nested object like { stock: 10 }
         if (typeof vv === "object" && vv !== null && ("stock" in vv || "qty" in vv || "quantity" in vv)) {
-          result[kk] = Number(vv.stock ?? vv.qty ?? vv.quantity ?? 0) || 0;
+          result[String(kk)] = Number(vv.stock ?? vv.qty ?? vv.quantity ?? 0) || 0;
         } else {
           result[String(kk)] = Number(vv) || 0;
         }
@@ -87,7 +79,7 @@ const parseSizeStockFromProduct = (p) => {
       if (Object.keys(result).length) return result;
     }
 
-    // If it's an array (rows or objects)
+    // array of items
     if (Array.isArray(val)) {
       const result = {};
       for (const item of val) {
@@ -110,22 +102,18 @@ const parseSizeStockFromProduct = (p) => {
       if (Object.keys(result).length) return result;
     }
 
-    // If it's a string: try JSON, then CSV / key:val parsing
+    // string form: try JSON -> CSV style "S:10,M:5"
     if (typeof val === "string") {
       const s = val.trim();
-      // try parse JSON and then parse that structure directly
       if (s.startsWith("{") || s.startsWith("[")) {
         try {
           const parsed = JSON.parse(s);
-          // re-run parser on the parsed value (do not wrap into { tmp: parsed })
           const nested = parseSizeStockFromProduct(parsed);
           if (Object.keys(nested).length) return nested;
         } catch (e) {
-          // fall through to CSV parser
+          // fallthrough
         }
       }
-
-      // parse "S:10,M:5" or "S=10|M=5"
       const obj = {};
       s.split(/[,|;]+/).forEach((part) => {
         const trimmed = part.trim();
@@ -137,49 +125,33 @@ const parseSizeStockFromProduct = (p) => {
     }
   }
 
-  // Fallback: if p.sizes is an object mapping size->qty (rare)
-  if (p.sizes && typeof p.sizes === "object" && !Array.isArray(p.sizes)) {
-    const result = {};
-    for (const [k, v] of Object.entries(p.sizes)) {
-      result[k] = Number(v) || 0;
+  // fallback if p itself looks like a mapping
+  if (typeof p === "object" && !Array.isArray(p)) {
+    const keys = Object.keys(p).filter((k) => typeof p[k] === "number" || typeof p[k] === "string");
+    if (keys.length && keys.every((k) => isNaN(Number(k)))) {
+      const result = {};
+      keys.forEach((k) => (result[k] = Number(p[k]) || 0));
+      if (Object.keys(result).length) return result;
     }
-    if (Object.keys(result).length) return result;
   }
 
-  // final fallback: if top-level param is an object/array representing sizes directly
+  // fallback array-of-rows shape e.g. [{size:'S',stock:10}]
   if (Array.isArray(p)) {
-    // e.g. p = [{ size: "S", stock: 10 }, ...]
     const result = {};
     p.forEach((item) => {
       if (!item) return;
       const size = item.size ?? item.size_name ?? item.name ?? item.label;
       const qty = Number(item.stock ?? item.qty ?? item.quantity ?? 0) || 0;
-      if (size) result[size] = qty;
+      if (size) result[String(size)] = qty;
     });
     if (Object.keys(result).length) return result;
-  }
-  if (typeof p === "object" && !Array.isArray(p)) {
-    // maybe p itself is a mapping
-    const keys = Object.keys(p).filter((k) => typeof p[k] === "number" || typeof p[k] === "string");
-    if (keys.length && keys.every((k) => isNaN(Number(k)))) {
-      const result = {};
-      keys.forEach((k) => (result[k] = Number(p[k]) || 0));
-      return result;
-    }
   }
 
   return {};
 };
 
 /**
- * Parse sizes list into a comma-separated string usable in the "Sizes" input.
- * Handles:
- * - p.sizes as "S,M,L" string
- * - p.sizes as JSON string '["S","M"]'
- * - p.sizes as array of strings
- * - p.sizes as array of objects [{size:"S"}, ...]
- * - p.product_sizes array -> map to sizes
- * - or derive sizes from size_stock keys
+ * Parse sizes into a normalized string (comma separated)
  */
 const parseSizesFromProduct = (p) => {
   if (!p) return "";
@@ -190,11 +162,9 @@ const parseSizesFromProduct = (p) => {
     if (val === undefined || val === null) continue;
 
     if (Array.isArray(val)) {
-      // array of strings?
       if (val.every((x) => typeof x === "string")) {
         return val.map((s) => s.trim()).filter(Boolean).join(",");
       }
-      // array of objects with known keys
       const mapped = val
         .map((it) => {
           if (!it) return null;
@@ -206,29 +176,24 @@ const parseSizesFromProduct = (p) => {
     }
 
     if (typeof val === "object" && !Array.isArray(val)) {
-      // object mapping like { S: 10, M: 5 } -> keys are sizes
       const keys = Object.keys(val).filter(Boolean);
       if (keys.length) return keys.join(",");
     }
 
     if (typeof val === "string") {
       const s = val.trim();
-      // JSON array/string?
       if (s.startsWith("[") || s.startsWith("{")) {
         try {
           const parsed = JSON.parse(s);
-          // re-run parser on parsed value (do not wrap)
           const nested = parseSizesFromProduct(parsed);
           if (nested) return nested;
         } catch (e) {
-          // fallthrough to CSV parse
+          // fallthrough
         }
       }
-      // CSV-like
       if (s.includes(",")) {
         return s.split(",").map((x) => x.trim()).filter(Boolean).join(",");
       }
-      // single size string
       if (s.length > 0) return s;
     }
   }
@@ -238,7 +203,7 @@ const parseSizesFromProduct = (p) => {
   const keys = Object.keys(stockMap || {});
   if (keys.length) return keys.join(",");
 
-  // If p itself is an array of strings or objects, try that
+  // if p is array-like of objects or strings
   if (Array.isArray(p)) {
     const mapped = p
       .map((it) => {
@@ -255,7 +220,7 @@ const parseSizesFromProduct = (p) => {
 
 const sumSizeStock = (map) => Object.values(map || {}).reduce((s, v) => s + Number(v || 0), 0);
 
-/* ======= CategoryFormModal ======= */
+/* ======= CategoryFormModal ======= (unchanged behavior, kept for completeness) */
 function CategoryFormModal({ editing, fixedCategory = null, categories = [], onClose, onSave }) {
   const defaultForm = {
     id: null,
@@ -412,8 +377,7 @@ function CategoryFormModal({ editing, fixedCategory = null, categories = [], onC
   );
 }
 
-/* ======= CategoryManagement Panel ======= */
-/* Reuse your CategoryManagement implementation from earlier; keeping it intact here. */
+/* ======= CategoryManagement Panel (kept same) ======= */
 function CategoryManagement({ categories = [], onRefresh }) {
   const [editing, setEditing] = useState(null); // object or null
   const [showForm, setShowForm] = useState(false);
@@ -682,7 +646,7 @@ function CategoryManagement({ categories = [], onRefresh }) {
   );
 }
 
-/* ======= ProductFormModal (updated to use robust size parsing) ======= */
+/* ======= ProductFormModal (updated to use robust size parsing and strict coercion) ======= */
 function ProductFormModal({ product, onClose, onSave, categories = [] }) {
   const defaultForm = {
     name: "",
@@ -709,9 +673,13 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
   // on product change, parse sizes & size_stock robustly
   useEffect(() => {
     if (product && typeof product === "object" && Object.keys(product).length > 0) {
-      const parsedSizes = parseSizesFromProduct(product); // returns "S,M,L" already
-      const parsedSizeStocks = parseSizeStockFromProduct(product); // returns {S:...,M:...}
-      const computedStock = sumSizeStock(parsedSizeStocks) || Number(product.stock || 0);
+      // parsedSizes always normalized to a string
+      let parsedSizes = parseSizesFromProduct(product) || "";
+      if (Array.isArray(parsedSizes)) parsedSizes = parsedSizes.join(",");
+      parsedSizes = String(parsedSizes || "");
+
+      const parsedSizeStocks = parseSizeStockFromProduct(product) || {};
+      const computedStock = Number(sumSizeStock(parsedSizeStocks) || Number(product.stock || 0) || 0);
 
       const parsedImages = product.images ? String(product.images).split(",").filter(Boolean) : [];
 
@@ -730,7 +698,13 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
         stock: Number(computedStock || 0),
         featured: Number(product.featured ?? 0),
       });
-      setSizeStocks(parsedSizeStocks || {});
+
+      // ensure sizeStocks is a plain mapping of numbers
+      const normalizedSizeStocks = {};
+      Object.entries(parsedSizeStocks || {}).forEach(([k, v]) => {
+        normalizedSizeStocks[k] = Number(v || 0);
+      });
+      setSizeStocks(normalizedSizeStocks);
       setUseCustomSub(false);
     } else {
       setForm(defaultForm);
@@ -813,18 +787,15 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
       const prevKeys = Object.keys(prev || {});
       const totalPrev = sumSizeStock(prev);
 
-      // If prev already has values and the same sizes, keep values
       sizesArr.forEach((sz, idx) => {
         if (prev && typeof prev[sz] !== "undefined") next[sz] = Number(prev[sz]);
         else if (prevKeys.length === sizesArr.length && prevKeys[idx]) next[sz] = Number(prev[prevKeys[idx]] || 0);
         else {
-          // distribute evenly from existing total if possible
           const base = prevKeys.length ? Math.floor(totalPrev / sizesArr.length) : Math.floor(Number(form.stock || 0) / sizesArr.length);
-          next[sz] = base;
+          next[sz] = Number(base || 0);
         }
       });
 
-      // ensure sum equals form.stock if possible by adjusting last size
       const desiredTotal = Number(form.stock || 0);
       const currentTotal = sumSizeStock(next);
       if (desiredTotal > 0 && currentTotal !== desiredTotal) {
@@ -872,7 +843,7 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
         }
       }
 
-      // Ensure sizes string is normalized
+      // Ensure sizes string is normalized (always a string)
       const sizesNormalized = String(form.sizes || "")
         .split(",")
         .map((s) => s.trim())
@@ -880,8 +851,9 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
         .join(",");
 
       // finalize sizeStocks and total stock
-      const finalSizeStocks = { ...sizeStocks };
-      const totalStock = sumSizeStock(finalSizeStocks) || Number(form.stock || 0);
+      const finalSizeStocks = {};
+      Object.entries(sizeStocks || {}).forEach(([k, v]) => (finalSizeStocks[k] = Number(v || 0)));
+      const totalStock = Number(sumSizeStock(finalSizeStocks) || Number(form.stock || 0) || 0);
 
       // payload: keep backward-compatible 'stock' (total) and also include size_stock JSON mapping
       const payload = {
@@ -974,9 +946,9 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <input className={inputCls} placeholder="Product name" value={form.name} onChange={(e) => setField("name", e.target.value)} required />
+          <input className={inputCls} placeholder="Product name" value={form.name || ""} onChange={(e) => setField("name", e.target.value)} required />
 
-          <select className={inputCls} value={form.category} onChange={(e) => setField("category", e.target.value)}>
+          <select className={inputCls} value={form.category || "Men"} onChange={(e) => setField("category", e.target.value)}>
             {MAIN_CATEGORIES.map((m) => (
               <option key={m} value={m}>
                 {m}
@@ -984,14 +956,15 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
             ))}
           </select>
 
-          <input className={inputCls} placeholder="Price (₹)" type="number" value={form.price} onChange={(e) => setField("price", e.target.value)} />
-          <input className={inputCls} placeholder="Actual Price (₹)" type="number" value={form.actualPrice} onChange={(e) => setField("actualPrice", e.target.value)} />
+          <input className={inputCls} placeholder="Price (₹)" type="number" value={form.price ?? ""} onChange={(e) => setField("price", e.target.value)} />
+          <input className={inputCls} placeholder="Actual Price (₹)" type="number" value={form.actualPrice ?? ""} onChange={(e) => setField("actualPrice", e.target.value)} />
 
-          <input className={inputCls} placeholder="Original Price (₹)" type="number" value={form.originalPrice} onChange={(e) => setField("originalPrice", e.target.value)} />
-          <input className={inputCls} placeholder="Rating" type="number" step="0.1" value={form.rating} onChange={(e) => setField("rating", e.target.value)} />
+          <input className={inputCls} placeholder="Original Price (₹)" type="number" value={form.originalPrice ?? ""} onChange={(e) => setField("originalPrice", e.target.value)} />
+          <input className={inputCls} placeholder="Rating" type="number" step="0.1" value={form.rating ?? ""} onChange={(e) => setField("rating", e.target.value)} />
 
-          <input className={inputCls} placeholder="Sizes (comma separated)" value={form.sizes} onChange={(e) => setField("sizes", e.target.value)} />
-          <input className={inputCls} placeholder="Colors (comma separated)" value={form.colors} onChange={(e) => setField("colors", e.target.value)} />
+          {/* Ensure sizes is always a string */}
+          <input className={inputCls} placeholder="Sizes (comma separated)" value={form.sizes ?? ""} onChange={(e) => setField("sizes", e.target.value)} />
+          <input className={inputCls} placeholder="Colors (comma separated)" value={form.colors ?? ""} onChange={(e) => setField("colors", e.target.value)} />
 
           {/* Subcategory UI (unchanged) */}
           {availableSubcats.length > 0 && !useCustomSub ? (
@@ -1023,7 +996,7 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
             </div>
           ) : (
             <div className="flex gap-2 items-center">
-              <input className={inputCls + " flex-1"} placeholder="Subcategory (Custom)" value={form.subcategory} onChange={(e) => setField("subcategory", e.target.value)} />
+              <input className={inputCls + " flex-1"} placeholder="Subcategory (Custom)" value={form.subcategory ?? ""} onChange={(e) => setField("subcategory", e.target.value)} />
               <button
                 type="button"
                 onClick={() => {
@@ -1039,7 +1012,7 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
 
           {/* Stock controls: total and per-size mapping */}
           <div className="flex items-center gap-2">
-            <input className={inputCls} placeholder="Total stock (will sum per-size)" type="number" value={form.stock} onChange={(e) => setField("stock", Number(e.target.value))} />
+            <input className={inputCls} placeholder="Total stock (will sum per-size)" type="number" value={form.stock ?? ""} onChange={(e) => setField("stock", Number(e.target.value))} />
             <button type="button" onClick={autoDistribute} className="px-3 py-2 rounded border border-gray-200 dark:border-gray-700">Auto distribute</button>
           </div>
 
@@ -1075,7 +1048,7 @@ function ProductFormModal({ product, onClose, onSave, categories = [] }) {
             <input id="featuredSwitch" type="checkbox" className="sr-only" checked={Number(form.featured) === 1} onChange={(e) => setField("featured", e.target.checked ? 1 : 0)} />
           </div>
 
-          <textarea className={textareaCls + " sm:col-span-2"} rows={4} placeholder="Description" value={form.description} onChange={(e) => setField("description", e.target.value)} />
+          <textarea className={textareaCls + " sm:col-span-2"} rows={4} placeholder="Description" value={form.description ?? ""} onChange={(e) => setField("description", e.target.value)} />
         </div>
 
         {/* Images uploader */}
@@ -1191,11 +1164,18 @@ export default function ProductsAdmin() {
           if (arr) list = arr;
         }
 
-        // normalize each product: parse size_stock mappings if present and compute totalStock
+        // normalize each product: parse size_stock mappings if present and compute totalStock and normalized sizes
         const normList = (list || []).map((p) => {
           const sizeStock = parseSizeStockFromProduct(p);
-          const totalStock = sumSizeStock(sizeStock) || Number(p.stock || 0);
-          return { ...p, sizeStock, totalStock };
+          const sizesNormalized = parseSizesFromProduct(p) || "";
+          const totalStock = Number(sumSizeStock(sizeStock) || Number(p.stock || 0) || 0);
+          return {
+            ...p,
+            sizeStock,
+            totalStock,
+            sizes: String(sizesNormalized || ""),
+            stock: Number(p.stock || 0),
+          };
         });
 
         setProducts(normList || []);
@@ -1286,7 +1266,7 @@ export default function ProductsAdmin() {
       const prod = body?.data && typeof body.data === "object" ? body.data : body;
       // ensure we include parsed sizeStock for the edit form
       const sizeStock = parseSizeStockFromProduct(prod);
-      const totalStock = sumSizeStock(sizeStock) || Number(prod.stock || 0);
+      const totalStock = Number(sumSizeStock(sizeStock) || Number(prod.stock || 0) || 0);
 
       // pass through everything; ProductFormModal will parse sizes as needed
       const parsedProd = { ...prod, sizeStock, stock: totalStock };
