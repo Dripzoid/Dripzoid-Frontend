@@ -172,7 +172,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
    * Problem addressed:
    * When the page has two placements of <Reviews /> (one for desktop and one for mobile),
    * both instances could sometimes be visible or the desktop one could be hidden depending
-   * on initial page sizing and load order — leading to either duplicate visible sections (mobile)
+   * on initial page sizing and load order — leading to duplicate visible sections (mobile)
    * or not-visible-on-desktop behavior. To mitigate we keep a small render-tracker per breakpoint.
    *
    * Implementation: synchronous check at mount-time (safe for hooks order) using window.innerWidth.
@@ -180,15 +180,15 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
    * Only the first mounted instance for the current breakpoint will render; subsequent instances
    * will render nothing. On unmount we clear that flag so SPA navigation won't permanently block rendering.
    *
-   * Note: this is minimal, robust, and avoids touching the calling components (ProductDetailsPage).
+   * Note: we also derive an `isDesktop` hook which we use to decide where to render the histogram
+   * (top histogram for mobile; sticky sidebar histogram for desktop) to avoid duplication.
    */
 
-  // determine initial breakpoint and whether to render this instance
+  // synchronous detection for initial decision (no hooks)
   const isClient = typeof window !== "undefined" && typeof window.innerWidth === "number";
-  const isMobileInitial = isClient ? window.innerWidth < 1024 : false; // Tailwind's lg breakpoint ~ 1024px
+  const isMobileInitial = isClient ? window.innerWidth < 1024 : false; // Tailwind lg ~1024px
   const initialShouldRender = (() => {
     if (!isClient) return true; // server-side: render (no duplication server-side)
-    // init tracker if absent
     if (!window.__REVIEWS_RENDER_TRACKER) window.__REVIEWS_RENDER_TRACKER = { mobileRendered: false, desktopRendered: false };
     const tracker = window.__REVIEWS_RENDER_TRACKER;
     if (isMobileInitial) {
@@ -202,6 +202,19 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
     }
   })();
 
+  // ---------- unconditional hook: isDesktop ----------
+  const [isDesktop, setIsDesktop] = useState(() => (typeof window !== "undefined" ? window.innerWidth >= 1024 : true));
+  useEffect(() => {
+    const onResize = () => {
+      try {
+        setIsDesktop(window.innerWidth >= 1024);
+      } catch {}
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // Keep instance rendering decision (first mounted instance for current breakpoint)
   const [shouldRender, setShouldRender] = useState(initialShouldRender);
 
   // Clean up tracker flag on unmount for this breakpoint (so navigating back will allow re-render)
@@ -216,9 +229,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // run once
-
-  // You can optionally handle resizes by toggling visibility, but that can be noisy.
-  // For now we keep initial decision stable (prevents flicker/duplication at mount).
 
   /* ---------- regular state/hooks ---------- */
   const [reviews, setReviews] = useState([]);
@@ -836,20 +846,23 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
               </div>
 
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 w-full">
-                <div className="flex-1 min-w-[220px] sm:min-w-[280px] md:min-w-[360px] w-full">
-                  {[5, 4, 3, 2, 1].map((s, i) => (
-                    <div
-                      key={`hist-${s}`}
-                      className="flex items-center gap-3 text-sm mb-2 w-full"
-                    >
-                      <div className="w-8 text-right text-gray-700 dark:text-gray-300">{s}★</div>
-                      <HistogramBar pct={pctArray[i]} />
-                      <div className="w-12 text-right text-gray-700 dark:text-gray-300">
-                        {pctArray[i] || 0}%
+                {/* show top histogram ONLY on mobile / small screens to avoid duplication with side sticky on desktop */}
+                {!isDesktop && (
+                  <div className="flex-1 min-w-[220px] sm:min-w-[280px] md:min-w-[360px] w-full">
+                    {[5, 4, 3, 2, 1].map((s, i) => (
+                      <div
+                        key={`hist-${s}`}
+                        className="flex items-center gap-3 text-sm mb-2 w-full"
+                      >
+                        <div className="w-8 text-right text-gray-700 dark:text-gray-300">{s}★</div>
+                        <HistogramBar pct={pctArray[i]} />
+                        <div className="w-12 text-right text-gray-700 dark:text-gray-300">
+                          {pctArray[i] || 0}%
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* If the user already reviewed (from verify) or review was just submitted => show thanks message */}
                 {showThanksMessage ? (
@@ -1005,34 +1018,36 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         <div className="lg:col-span-3 flex flex-col items-stretch gap-4">
           <div className="text-sm text-gray-500">Reviews that follow guidelines help everyone.</div>
 
-          {/* sticky summary on large screens */}
-          <div className="hidden lg:block lg:sticky lg:top-20 p-4 rounded-md bg-gray-50 dark:bg-gray-800/30 border">
-            <div className="flex items-center gap-3">
-              <div className="text-2xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
-              <div>
-                <StarDisplay value={overall.avg} size={18} />
-                <div className="text-sm text-gray-500">{overall.ratingsCount} review{overall.ratingsCount !== 1 ? "s" : ""}</div>
+          {/* sticky summary on large screens: render only on desktop to avoid duplication */}
+          {isDesktop && (
+            <div className="hidden lg:block lg:sticky lg:top-20 p-4 rounded-md bg-gray-50 dark:bg-gray-800/30 border">
+              <div className="flex items-center gap-3">
+                <div className="text-2xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
+                <div>
+                  <StarDisplay value={overall.avg} size={18} />
+                  <div className="text-sm text-gray-500">{overall.ratingsCount} review{overall.ratingsCount !== 1 ? "s" : ""}</div>
+                </div>
+              </div>
+
+              <div className="mt-3 space-y-2">
+                {[5, 4, 3, 2, 1].map((s, i) => (
+                  <div key={`hist-side-${s}`} className="flex items-center gap-3 text-sm mb-2">
+                    <div className="w-8 text-gray-700 dark:text-gray-300">{s}★</div>
+                    <HistogramBar pct={pctArray[i]} />
+                    <div className="w-10 text-right text-gray-700 dark:text-gray-300">{pctArray[i] || 0}%</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3">
+                {showThanksMessage ? (
+                  <div className="text-sm text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 rounded px-3 py-2 text-center">You Reviewed This Product</div>
+                ) : (
+                  <button onClick={() => { setShowReviewForm(true); setTimeout(() => window.scrollTo({ top: window.scrollY + 300, behavior: "smooth" }), 200); }} className={`${BUTTON_CLASS} w-full justify-center`} type="button">Write review</button>
+                )}
               </div>
             </div>
-
-            <div className="mt-3 space-y-2">
-              {[5, 4, 3, 2, 1].map((s, i) => (
-                <div key={`hist-side-${s}`} className="flex items-center gap-3 text-sm mb-2">
-                  <div className="w-8 text-gray-700 dark:text-gray-300">{s}★</div>
-                  <HistogramBar pct={pctArray[i]} />
-                  <div className="w-10 text-right text-gray-700 dark:text-gray-300">{pctArray[i] || 0}%</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-3">
-              {showThanksMessage ? (
-                <div className="text-sm text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 rounded px-3 py-2 text-center">You Reviewed This Product</div>
-              ) : (
-                <button onClick={() => { setShowReviewForm(true); setTimeout(() => window.scrollTo({ top: window.scrollY + 300, behavior: "smooth" }), 200); }} className={`${BUTTON_CLASS} w-full justify-center`} type="button">Write review</button>
-              )}
-            </div>
-          </div>
+          )}
 
           <div className="w-full">
             {showReviewForm && !reviewSubmitted && !userHasReviewed && (
@@ -1046,26 +1061,28 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
             )}
           </div>
 
-          {/* compact mobile summary */}
-          <div className="block lg:hidden p-4 rounded-md bg-gray-50 dark:bg-gray-800/30 border">
-            <div className="flex items-center gap-3">
-              <div className="text-2xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
-              <div>
-                <StarDisplay value={overall.avg} size={18} />
-                <div className="text-sm text-gray-500">{overall.ratingsCount} review{overall.ratingsCount !== 1 ? "s" : ""}</div>
+          {/* compact mobile summary: render only on non-desktop (mobile) */}
+          {!isDesktop && (
+            <div className="block lg:hidden p-4 rounded-md bg-gray-50 dark:bg-gray-800/30 border">
+              <div className="flex items-center gap-3">
+                <div className="text-2xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
+                <div>
+                  <StarDisplay value={overall.avg} size={18} />
+                  <div className="text-sm text-gray-500">{overall.ratingsCount} review{overall.ratingsCount !== 1 ? "s" : ""}</div>
+                </div>
+              </div>
+
+              <div className="mt-3 space-y-2">
+                {[5, 4, 3, 2, 1].map((s, i) => (
+                  <div key={`hist-side-sm-${s}`} className="flex items-center gap-3 text-sm mb-2">
+                    <div className="w-8">{s}★</div>
+                    <HistogramBar pct={pctArray[i]} />
+                    <div className="w-10 text-right">{pctArray[i] || 0}%</div>
+                  </div>
+                ))}
               </div>
             </div>
-
-            <div className="mt-3 space-y-2">
-              {[5, 4, 3, 2, 1].map((s, i) => (
-                <div key={`hist-side-sm-${s}`} className="flex items-center gap-3 text-sm mb-2">
-                  <div className="w-8">{s}★</div>
-                  <HistogramBar pct={pctArray[i]} />
-                  <div className="w-10 text-right">{pctArray[i] || 0}%</div>
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
