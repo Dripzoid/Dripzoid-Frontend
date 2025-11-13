@@ -175,6 +175,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
    * - Keep an unconditional `isDesktop` hook for runtime breakpoint tracking and to decide
    *   which histogram DOM to render (desktop vs mobile). This ensures only one histogram tree
    *   exists at a time, preventing duplication during hydration/resizes.
+   * - Use `hasMounted` to ensure client-only decisions happen after mount to avoid SSR/hydration duplication.
    */
 
   const isClient = typeof window !== "undefined" && typeof window.innerWidth === "number";
@@ -204,6 +205,12 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // mount guard to avoid hydration duplication
+  const [hasMounted, setHasMounted] = useState(false);
+  useEffect(() => {
+    setHasMounted(true);
   }, []);
 
   // Keep instance rendering decision (first mounted instance for current breakpoint)
@@ -812,8 +819,10 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
   // show thanks message when user has reviewed (from verify endpoint) OR when review was just submitted
   const showThanksMessage = Boolean(userHasReviewed) || Boolean(reviewSubmitted);
 
-  // IMPORTANT: we allow hooks to run always. Only decide final rendering here:
-  if (!shouldRender) return null;
+  // FINAL render gating: avoid showing anything until both:
+  //  - this instance is allowed to render (shouldRender)
+  //  - we are on the client and have mounted (hasMounted)
+  if (!shouldRender || !hasMounted) return null;
 
   return (
     <section id="reviews-section" className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 sm:p-6 border border-gray-200/60 dark:border-gray-700/60">
@@ -840,7 +849,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
 
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 w-full">
                 {/* show top histogram ONLY on mobile / small screens to avoid duplication with side sticky on desktop */}
-                {!isDesktop && (
+                {hasMounted && !isDesktop && (
                   <div className="flex-1 min-w-[220px] sm:min-w-[280px] md:min-w-[360px] w-full">
                     {[5, 4, 3, 2, 1].map((s, i) => (
                       <div
@@ -900,9 +909,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
             <div className="mt-4 p-4 rounded-md bg-gray-50 dark:bg-gray-800/40 border">
               {/* show thanks instead of action prompt when user already reviewed or just submitted */}
               {showThanksMessage ? (
-                <div className="text-sm text-green-700 dark:text-green-300">
-                   
-                </div>
+                <div className="text-sm text-green-700 dark:text-green-300"></div>
               ) : (
                 <div className="text-sm text-gray-600 dark:text-gray-300">
                   Only verified buyers can leave reviews. Click{" "}
@@ -1012,7 +1019,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
           <div className="text-sm text-gray-500">Reviews that follow guidelines help everyone.</div>
 
           {/* sticky summary on large screens: render only on desktop to avoid duplication */}
-          {isDesktop && (
+          {hasMounted && isDesktop && (
             <div className="lg:sticky lg:top-20 p-4 rounded-md bg-gray-50 dark:bg-gray-800/30 border">
               <div className="flex items-center gap-3">
                 <div className="text-2xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
@@ -1055,7 +1062,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
           </div>
 
           {/* compact mobile summary: render only on non-desktop (mobile) */}
-          {!isDesktop && (
+          {hasMounted && !isDesktop && (
             <div className="p-4 rounded-md bg-gray-50 dark:bg-gray-800/30 border">
               <div className="flex items-center gap-3">
                 <div className="text-2xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
