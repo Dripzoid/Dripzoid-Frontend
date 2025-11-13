@@ -435,7 +435,19 @@ export default function ProductDetailsPage() {
         setSelectedImage(0);
 
         const firstColor = (pjson?.colors && pjson.colors.length && pjson.colors[0]) || "";
-        const firstSize = (pjson?.sizes && pjson.sizes.length && pjson.sizes[0]) || "";
+        // choose first size from sizeStock keys if available else product.sizes
+        let firstSize = "";
+        try {
+          if (pjson?.sizeStock && typeof pjson.sizeStock === "object" && Object.keys(pjson.sizeStock).length) {
+            firstSize = Object.keys(pjson.sizeStock)[0];
+          } else if (Array.isArray(pjson?.sizeRows) && pjson.sizeRows.length) {
+            firstSize = pjson.sizeRows[0].size;
+          } else if (Array.isArray(pjson?.sizes) && pjson.sizes.length) {
+            firstSize = pjson.sizes[0];
+          } else if (pjson?.sizes && typeof pjson.sizes === "string") {
+            firstSize = pjson.sizes.split(",").map(s => s.trim()).filter(Boolean)[0] || "";
+          }
+        } catch {}
         setSelectedColor(firstColor || "");
         setSelectedSize(firstSize || "");
 
@@ -581,7 +593,46 @@ export default function ProductDetailsPage() {
 
   /* ---------- gallery (color-aware) (unchanged logic) ---------- */
   const requiresColor = Array.isArray(product?.colors) && product.colors.length > 0;
-  const requiresSize = Array.isArray(product?.sizes) && product.sizes.length > 0;
+
+  // --- NEW: derive sizeStock map from backend shapes ---
+  const sizeStockMap = useMemo(() => {
+    if (!product) return {};
+    // preferred: product.sizeStock (object)
+    if (product.sizeStock && typeof product.sizeStock === "object" && !Array.isArray(product.sizeStock)) {
+      const out = {};
+      Object.keys(product.sizeStock).forEach((k) => (out[String(k)] = Number(product.sizeStock[k] || 0)));
+      return out;
+    }
+    // fallback: product.sizeRows [{size,stock}]
+    if (Array.isArray(product.sizeRows) && product.sizeRows.length) {
+      const out = {};
+      product.sizeRows.forEach((r) => {
+        if (r && (r.size || r.size === 0)) out[String(r.size)] = Number(r.stock || 0);
+      });
+      return out;
+    }
+    // fallback: product.size_stock JSON string
+    if (product.size_stock && typeof product.size_stock === "string") {
+      try {
+        const parsed = JSON.parse(product.size_stock);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const out = {};
+          Object.keys(parsed).forEach((k) => (out[String(k)] = Number(parsed[k] || 0)));
+          return out;
+        }
+      } catch {}
+    }
+    // fallback: product.sizes (array of strings) with no stock info -> return empty map
+    return {};
+  }, [product]);
+
+  const requiresSize = useMemo(() => {
+    // consider sizes required if we have explicit sizes shape OR product.sizes array
+    if (sizeStockMap && Object.keys(sizeStockMap).length) return true;
+    if (Array.isArray(product?.sizes) && product.sizes.length) return true;
+    if (product?.sizes && typeof product.sizes === "string" && product.sizes.trim()) return true;
+    return false;
+  }, [sizeStockMap, product]);
 
   const colorImageMap = useMemo(() => {
     const imgs = Array.isArray(product?.images) ? product.images.slice() : [];
@@ -679,6 +730,7 @@ export default function ProductDetailsPage() {
   };
   const closeLightbox = () => setLightboxOpen(false);
 
+  // compute selectedVariant the same as before
   const selectedVariant = useMemo(() => {
     const variants = Array.isArray(product?.variants) ? product.variants : [];
     if (!variants.length) return null;
@@ -693,21 +745,37 @@ export default function ProductDetailsPage() {
     );
   }, [product, selectedColor, selectedSize, requiresColor, requiresSize]);
 
+  // --- NEW: availableStock now considers sizeStockMap when size required ---
   const availableStock = useMemo(() => {
-    if (selectedVariant && selectedVariant.stock != null) {
-      return Number(selectedVariant.stock || 0);
+    // priority:
+    // 1) selectedVariant.stock if present
+    if (selectedVariant && selectedVariant.stock != null) return Number(selectedVariant.stock || 0);
+    // 2) If sizes are required and a size is selected -> per-size stock from sizeStockMap
+    if (requiresSize && selectedSize) {
+      const v = sizeStockMap && typeof sizeStockMap === "object" ? sizeStockMap[String(selectedSize)] : undefined;
+      return Number(v ?? 0);
     }
-    const s = product?.stock ?? product?.inventory ?? product?.quantity ?? 0;
+    // 3) If sizes are required but none selected, sum total of sizeStockMap if available
+    if (requiresSize && (!selectedSize || selectedSize === "")) {
+      const total = Object.values(sizeStockMap || {}).reduce((acc, x) => acc + Number(x || 0), 0);
+      // fallback to product.stock if mapping absent
+      return total || Number(product?.stock ?? product?.totalStock ?? 0);
+    }
+    // 4) fallback to product stock/quantity/inventory
+    const s = product?.stock ?? product?.inventory ?? product?.quantity ?? product?.totalStock ?? 0;
     return Number(s || 0);
-  }, [product, selectedVariant]);
+  }, [selectedVariant, requiresSize, selectedSize, sizeStockMap, product]);
 
+  // Ensure quantity respects availableStock:
   useEffect(() => {
-    setQuantity((q) => {
-      const min = 1;
-      const max = availableStock > 0 ? availableStock : 1;
-      return Math.min(Math.max(q, min), max);
+    setQuantity((prevQ) => {
+      const avail = Number(availableStock || 0);
+      if (avail <= 0) return 0;
+      // keep existing quantity if within bounds, else clamp to [1, avail]
+      const q = Math.max(1, Math.min(prevQ || 1, avail));
+      return q;
     });
-  }, [availableStock]);
+  }, [availableStock, selectedSize]);
 
   const cartFetchedRef = useRef(false);
   useEffect(() => {
@@ -827,7 +895,7 @@ export default function ProductDetailsPage() {
     }
   }, [cart, product, productId, selectedColor, selectedSize, selectedVariant]);
 
-  /* ---------- actions (unchanged) ---------- */
+  /* ---------- actions (unchanged except quantity checks) ---------- */
   async function addToCartHandler() {
     const needSelectionError = (requiresColor && !selectedColor) || (requiresSize && !selectedSize);
     if (needSelectionError) {
@@ -1121,47 +1189,57 @@ export default function ProductDetailsPage() {
     }
   };
 
+  // detect desktop/mobile to avoid duplicate histogram rendering in Reviews
+  const [isDesktop, setIsDesktop] = useState(() => (typeof window !== "undefined" ? window.innerWidth >= 768 : true));
+  useEffect(() => {
+    const onResize = () => {
+      try {
+        setIsDesktop(window.innerWidth >= 768);
+      } catch {}
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
+  const disablePurchase =
+    availableStock <= 0 ||
+    (requiresColor && !selectedColor) ||
+    (requiresSize && !selectedSize);
 
-const disablePurchase =
-  availableStock <= 0 ||
-  (requiresColor && !selectedColor) ||
-  (requiresSize && !selectedSize);
+  const actionButtonClass =
+    "shadow-[inset_0_0_0_2px_#616467] text-black px-6 py-2 rounded-full tracking-widest uppercase font-bold bg-transparent hover:bg-[#616467] hover:text-white dark:text-neutral-200 transition duration-200 flex items-center gap-2 justify-center";
 
-const actionButtonClass =
-  "shadow-[inset_0_0_0_2px_#616467] text-black px-6 py-2 rounded-full tracking-widest uppercase font-bold bg-transparent hover:bg-[#616467] hover:text-white dark:text-neutral-200 transition duration-200 flex items-center gap-2 justify-center";
+  /* shortDescLimit and derived description variables can remain here */
+  const shortDescLimit = 160;
+  const descriptionText = product.description || "";
+  const isLongDescription = descriptionText.length > shortDescLimit;
 
-/* shortDescLimit and derived description variables can remain here */
-const shortDescLimit = 160;
-const descriptionText = product.description || "";
-const isLongDescription = descriptionText.length > shortDescLimit;
+  /* ---- touch handlers for gallery swipe (mobile) ---- */
+  function onTouchStart(e) {
+    try {
+      touchStartXRef.current =
+        e.touches && e.touches[0] ? e.touches[0].clientX : null;
+    } catch {}
+  }
 
-/* ---- touch handlers for gallery swipe (mobile) ---- */
-function onTouchStart(e) {
-  try {
-    touchStartXRef.current =
-      e.touches && e.touches[0] ? e.touches[0].clientX : null;
-  } catch {}
-}
-
-function onTouchEnd(e) {
-  try {
-    const startX = touchStartXRef.current;
-    const endX =
-      e.changedTouches && e.changedTouches[0]
-        ? e.changedTouches[0].clientX
-        : null;
-    if (startX == null || endX == null) return;
-    const diff = startX - endX;
-    const threshold = 40;
-    if (diff > threshold) {
-      nextImage();
-    } else if (diff < -threshold) {
-      prevImage();
-    }
-    touchStartXRef.current = null;
-  } catch {}
-}
+  function onTouchEnd(e) {
+    try {
+      const startX = touchStartXRef.current;
+      const endX =
+        e.changedTouches && e.changedTouches[0]
+          ? e.changedTouches[0].clientX
+          : null;
+      if (startX == null || endX == null) return;
+      const diff = startX - endX;
+      const threshold = 40;
+      if (diff > threshold) {
+        nextImage();
+      } else if (diff < -threshold) {
+        prevImage();
+      }
+      touchStartXRef.current = null;
+    } catch {}
+  }
 
 
   return (
@@ -1313,11 +1391,24 @@ function onTouchEnd(e) {
               <div className="mb-4">
                 <div className="font-medium mb-2">Size</div>
                 <div className="flex gap-3 flex-wrap">
-                  {(product.sizes || []).map((s) => {
-                    const active = sizeEquals(s, selectedSize);
+                  {(product.sizes || Object.keys(sizeStockMap) || []).map((s) => {
+                    // normalize when sizes is a string or sizes array may contain objects
+                    const label = typeof s === "string" ? s : (s && (s.size || s.name)) || String(s || "");
+                    const active = sizeEquals(label, selectedSize);
                     return (
-                      <button key={String(s)} onClick={() => setSelectedSize(s)} className={`px-3 py-2 rounded-lg border text-sm ${active ? "bg-black text-white dark:bg-white dark:text-black" : "bg-gray-100 dark:bg-gray-800"}`} aria-pressed={active} type="button">
-                        {String(s)}
+                      <button
+                        key={String(label)}
+                        onClick={() => {
+                          setSelectedSize(label);
+                          // if stock for this size is zero, set quantity to 0 else set to 1
+                          const avail = Number(sizeStockMap && sizeStockMap[String(label)] || 0);
+                          setQuantity(avail > 0 ? 1 : 0);
+                        }}
+                        className={`px-3 py-2 rounded-lg border text-sm ${active ? "bg-black text-white dark:bg-white dark:text-black" : "bg-gray-100 dark:bg-gray-800"}`}
+                        aria-pressed={active}
+                        type="button"
+                      >
+                        {String(label)}
                       </button>
                     );
                   })}
@@ -1328,9 +1419,34 @@ function onTouchEnd(e) {
             <div className="mb-6">
               <div className="font-medium mb-2">Quantity</div>
               <div className="flex items-center gap-3">
-                <button onClick={() => setQuantity((q) => Math.max(1, q - 1))} className="px-3 py-1 border rounded" type="button" aria-label="Decrease quantity">-</button>
+                <button
+                  onClick={() => setQuantity((q) => {
+                    // decrease: if q > 1 then -1, else if q === 0 do nothing
+                    if (!q || q <= 0) return 0;
+                    return Math.max(1, q - 1);
+                  })}
+                  className="px-3 py-1 border rounded"
+                  type="button"
+                  aria-label="Decrease quantity"
+                  disabled={quantity <= 1}
+                >
+                  -
+                </button>
                 <span className="min-w-[36px] text-center" aria-live="polite">{quantity}</span>
-                <button onClick={() => setQuantity((q) => Math.min(availableStock || q, q + 1))} className={`px-3 py-1 border rounded ${availableStock <= 0 || quantity >= availableStock ? "opacity-50 cursor-not-allowed" : ""}`} type="button" disabled={availableStock <= 0 || quantity >= availableStock} aria-label="Increase quantity">+</button>
+                <button
+                  onClick={() => setQuantity((q) => {
+                    const avail = Number(availableStock || 0);
+                    if (avail <= 0) return 0;
+                    const curr = q || 0;
+                    return Math.min(avail, curr + 1);
+                  })}
+                  className={`px-3 py-1 border rounded ${availableStock <= 0 || quantity >= availableStock ? "opacity-50 cursor-not-allowed" : ""}`}
+                  type="button"
+                  disabled={availableStock <= 0 || quantity >= availableStock}
+                  aria-label="Increase quantity"
+                >
+                  +
+                </button>
               </div>
             </div>
 
@@ -1392,7 +1508,8 @@ function onTouchEnd(e) {
 
         {/* REVIEWS: single placement (JUST ABOVE Questions & Answers) */}
         <div className="w-full">
-          <Reviews productId={productId} apiBase={API_BASE} currentUser={currentUser} showToast={showToast} />
+          {/* pass isDesktop so Reviews can avoid rendering duplicate histogram on mobile */}
+          <Reviews productId={productId} apiBase={API_BASE} currentUser={currentUser} showToast={showToast} isDesktop={isDesktop} />
         </div>
 
         {/* Questions & Answers */}
