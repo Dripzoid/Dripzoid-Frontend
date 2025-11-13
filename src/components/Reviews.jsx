@@ -169,26 +169,18 @@ function HistogramBar({ pct = 0 }) {
 /* ---------- MAIN Reviews component with duplicate-instance protection ---------- */
 export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, currentUser = null, showToast = () => {} }) {
   /**
-   * Problem addressed:
-   * When the page has two placements of <Reviews /> (one for desktop and one for mobile),
-   * both instances could sometimes be visible or the desktop one could be hidden depending
-   * on initial page sizing and load order — leading to duplicate visible sections (mobile)
-   * or not-visible-on-desktop behavior. To mitigate we keep a small render-tracker per breakpoint.
-   *
-   * Implementation: synchronous check at mount-time (safe for hooks order) using window.innerWidth.
-   * We keep window.__REVIEWS_RENDER_TRACKER = { mobileRendered: bool, desktopRendered: bool }.
-   * Only the first mounted instance for the current breakpoint will render; subsequent instances
-   * will render nothing. On unmount we clear that flag so SPA navigation won't permanently block rendering.
-   *
-   * Note: we also derive an `isDesktop` hook which we use to decide where to render the histogram
-   * (top histogram for mobile; sticky sidebar histogram for desktop) to avoid duplication.
+   * Strategy:
+   * - Use a synchronous (non-hook) initial check to decide which instance should render first
+   *   (mobile or desktop). This prevents duplicate visible widgets when two <Reviews /> exist.
+   * - Keep an unconditional `isDesktop` hook for runtime breakpoint tracking and to decide
+   *   which histogram DOM to render (desktop vs mobile). This ensures only one histogram tree
+   *   exists at a time, preventing duplication during hydration/resizes.
    */
 
-  // synchronous detection for initial decision (no hooks)
   const isClient = typeof window !== "undefined" && typeof window.innerWidth === "number";
-  const isMobileInitial = isClient ? window.innerWidth < 1024 : false; // Tailwind lg ~1024px
+  const isMobileInitial = isClient ? window.innerWidth < 1024 : false; // Tailwind 'lg' ~ 1024
   const initialShouldRender = (() => {
-    if (!isClient) return true; // server-side: render (no duplication server-side)
+    if (!isClient) return true; // server-side: allow rendering (no duplication on server)
     if (!window.__REVIEWS_RENDER_TRACKER) window.__REVIEWS_RENDER_TRACKER = { mobileRendered: false, desktopRendered: false };
     const tracker = window.__REVIEWS_RENDER_TRACKER;
     if (isMobileInitial) {
@@ -215,7 +207,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
   }, []);
 
   // Keep instance rendering decision (first mounted instance for current breakpoint)
-  const [shouldRender, setShouldRender] = useState(initialShouldRender);
+  const [shouldRender] = useState(initialShouldRender);
 
   // Clean up tracker flag on unmount for this breakpoint (so navigating back will allow re-render)
   useEffect(() => {
@@ -245,6 +237,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
   const [canReviewFlag, setCanReviewFlag] = useState(null);
   const [voteCache, setVoteCache] = useState(() => {
     try {
+      if (typeof window === "undefined") return {};
       return JSON.parse(localStorage.getItem("vote_cache_v1") || "{}");
     } catch {
       return {};
@@ -406,7 +399,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
   useEffect(() => {
     async function checkEligibility() {
       const actingUser = currentUser || (() => {
-        try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
+        try { return (typeof window !== "undefined") ? JSON.parse(localStorage.getItem("current_user") || "null") : null; } catch { return null; }
       })();
       if (!actingUser) {
         setUserCanReview(false);
@@ -416,7 +409,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
 
       // First, try the verify endpoint which can return { canReview, hasReviewed }
       try {
-        const token = localStorage.getItem("token");
+        const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
         const q = `${apiBase}/api/user/orders/verify?userId=${actingUser.id}&productId=${productId}`;
         const res = await fetch(q, {
           method: "GET",
@@ -536,7 +529,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
   async function userHasPurchased(productIdToCheck, user) {
     if (!user || !user.id) return false;
     try {
-      const token = localStorage.getItem("token");
+      const token = (typeof window !== "undefined") ? localStorage.getItem("token") : null;
       const res = await fetch(`${apiBase}/api/user/orders/verify?userId=${user.id}&productId=${productIdToCheck}`, {
         method: "GET",
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -551,7 +544,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
       }
     } catch { /* ignore */ }
     try {
-      const token = localStorage.getItem("token");
+      const token = (typeof window !== "undefined") ? localStorage.getItem("token") : null;
       const res = await fetch(`${apiBase}/api/user/orders/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -567,7 +560,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
       }
     } catch { /* ignore */ }
     try {
-      const orders = JSON.parse(localStorage.getItem("orders_v1") || "[]");
+      const orders = (typeof window !== "undefined") ? JSON.parse(localStorage.getItem("orders_v1") || "[]") : [];
       return orders.some((o) => String(o.productId) === String(productIdToCheck) && String(o.userId) === String(user.id));
     } catch {
       return false;
@@ -576,7 +569,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
 
   async function handleSubmitReview() {
     const actingUser = currentUser || (() => {
-      try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
+      try { return (typeof window !== "undefined") ? JSON.parse(localStorage.getItem("current_user") || "null") : null; } catch { return null; }
     })();
 
     if (!actingUser) {
@@ -653,7 +646,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         imageUrl: uploaded.length ? uploaded[0].url : "",
       };
 
-      const token = localStorage.getItem("token");
+      const token = (typeof window !== "undefined") ? localStorage.getItem("token") : null;
       const res = await fetch(`${apiBase}/api/reviews`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -719,12 +712,12 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
   async function deleteReview(reviewId) {
     if (!reviewId) return;
     const actingUser = currentUser || (() => {
-      try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
+      try { return (typeof window !== "undefined") ? JSON.parse(localStorage.getItem("current_user") || "null") : null; } catch { return null; }
     })();
 
     setReviews((prev) => (Array.isArray(prev) ? prev.filter((r) => String(r.id) !== String(reviewId)) : []));
     try {
-      const token = localStorage.getItem("token");
+      const token = (typeof window !== "undefined") ? localStorage.getItem("token") : null;
       const res = await fetch(`${apiBase}/api/reviews/${reviewId}`, {
         method: "DELETE",
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -766,12 +759,12 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
       const clone = { ...(prev || {}) };
       if (newVote === "none") delete clone[key];
       else clone[key] = newVote;
-      try { localStorage.setItem("vote_cache_v1", JSON.stringify(clone)); } catch {}
+      try { if (typeof window !== "undefined") localStorage.setItem("vote_cache_v1", JSON.stringify(clone)); } catch {}
       return clone;
     });
 
     try {
-      const token = localStorage.getItem("token");
+      const token = (typeof window !== "undefined") ? localStorage.getItem("token") : null;
       const res = await fetch(`${apiBase}/api/votes`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -851,7 +844,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
                   <div className="flex-1 min-w-[220px] sm:min-w-[280px] md:min-w-[360px] w-full">
                     {[5, 4, 3, 2, 1].map((s, i) => (
                       <div
-                        key={`hist-${s}`}
+                        key={`hist-mobile-top-${s}`}
                         className="flex items-center gap-3 text-sm mb-2 w-full"
                       >
                         <div className="w-8 text-right text-gray-700 dark:text-gray-300">{s}★</div>
@@ -873,7 +866,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
                   <button
                     onClick={async () => {
                       const actingUser = currentUser || (() => {
-                        try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
+                        try { return (typeof window !== "undefined") ? JSON.parse(localStorage.getItem("current_user") || "null") : null; } catch { return null; }
                       })();
                       if (!actingUser) {
                         internalToast("Please sign in to rate.");
@@ -916,7 +909,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
                   <button
                     onClick={async () => {
                       const actingUser = currentUser || (() => {
-                        try { return JSON.parse(localStorage.getItem("current_user") || "null"); } catch { return null; }
+                        try { return (typeof window !== "undefined") ? JSON.parse(localStorage.getItem("current_user") || "null") : null; } catch { return null; }
                       })();
                       if (!actingUser) {
                         internalToast("Please sign in to rate.");
@@ -1020,7 +1013,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
 
           {/* sticky summary on large screens: render only on desktop to avoid duplication */}
           {isDesktop && (
-            <div className="hidden lg:block lg:sticky lg:top-20 p-4 rounded-md bg-gray-50 dark:bg-gray-800/30 border">
+            <div className="lg:sticky lg:top-20 p-4 rounded-md bg-gray-50 dark:bg-gray-800/30 border">
               <div className="flex items-center gap-3">
                 <div className="text-2xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
                 <div>
@@ -1031,7 +1024,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
 
               <div className="mt-3 space-y-2">
                 {[5, 4, 3, 2, 1].map((s, i) => (
-                  <div key={`hist-side-${s}`} className="flex items-center gap-3 text-sm mb-2">
+                  <div key={`hist-desktop-side-${s}`} className="flex items-center gap-3 text-sm mb-2">
                     <div className="w-8 text-gray-700 dark:text-gray-300">{s}★</div>
                     <HistogramBar pct={pctArray[i]} />
                     <div className="w-10 text-right text-gray-700 dark:text-gray-300">{pctArray[i] || 0}%</div>
@@ -1063,7 +1056,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
 
           {/* compact mobile summary: render only on non-desktop (mobile) */}
           {!isDesktop && (
-            <div className="block lg:hidden p-4 rounded-md bg-gray-50 dark:bg-gray-800/30 border">
+            <div className="p-4 rounded-md bg-gray-50 dark:bg-gray-800/30 border">
               <div className="flex items-center gap-3">
                 <div className="text-2xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
                 <div>
@@ -1074,7 +1067,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
 
               <div className="mt-3 space-y-2">
                 {[5, 4, 3, 2, 1].map((s, i) => (
-                  <div key={`hist-side-sm-${s}`} className="flex items-center gap-3 text-sm mb-2">
+                  <div key={`hist-mobile-side-${s}`} className="flex items-center gap-3 text-sm mb-2">
                     <div className="w-8">{s}★</div>
                     <HistogramBar pct={pctArray[i]} />
                     <div className="w-10 text-right">{pctArray[i] || 0}%</div>
