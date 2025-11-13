@@ -340,6 +340,18 @@ export default function ProductDetailsPage() {
   const [deliveryMsg, setDeliveryMsg] = useState(null);
   const [isCheckingDelivery, setIsCheckingDelivery] = useState(false);
    // ✅ Place this at the top level of your component, not inside any if/else/return
+
+    // detect desktop/mobile to avoid duplicate histogram rendering in Reviews
+  const [isDesktop, setIsDesktop] = useState(() => (typeof window !== "undefined" ? window.innerWidth >= 768 : true));
+  useEffect(() => {
+    const onResize = () => {
+      try {
+        setIsDesktop(window.innerWidth >= 768);
+      } catch {}
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
   const touchStartXRef = useRef(null);
 
   // ---- MOVED: descExpanded hook must be declared unconditionally (moved here) ----
@@ -1189,17 +1201,7 @@ export default function ProductDetailsPage() {
     }
   };
 
-  // detect desktop/mobile to avoid duplicate histogram rendering in Reviews
-  const [isDesktop, setIsDesktop] = useState(() => (typeof window !== "undefined" ? window.innerWidth >= 768 : true));
-  useEffect(() => {
-    const onResize = () => {
-      try {
-        setIsDesktop(window.innerWidth >= 768);
-      } catch {}
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
+
 
   const disablePurchase =
     availableStock <= 0 ||
