@@ -11,18 +11,8 @@ import OnSale from "../components/OnSale";
 const slides = [
   {
     id: 1,
-    src: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1755031336/my_project/zvipefqerhrrwazser7f.jpg",
-    title: "Festive Sale — Up to 15% off",
-  },
-  {
-    id: 2,
-    src: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1755031334/my_project/nfozagnujns4vatuaht5.jpg",
-    title: "New Arrivals At Dripzoid",
-  },
-  {
-    id: 3,
-    src: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1755030052/my_project/f7iaebagidtamdcquino.jpg",
-    title: "Dripzoid's First Drop",
+    src: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1763476327/my_project/dqdsmhr2165v29xajfm4.jpg",
+    title: "Launch Sale is Live Now..!",
   },
 ];
 
