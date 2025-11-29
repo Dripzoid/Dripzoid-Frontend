@@ -44,9 +44,13 @@ function authHeaders(hasJson = true) {
 }
 function formatDateTime(iso) {
   if (!iso) return "";
-  const d = new Date(iso);
+  // Shiprocket timestamps are "YYYY-MM-DD HH:mm:ss" — convert to ISO-friendly if needed
+  let d = iso;
+  if (typeof iso === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(iso)) {
+    d = iso.replace(" ", "T");
+  }
   try {
-    return d.toLocaleString();
+    return new Date(d).toLocaleString();
   } catch {
     return String(iso);
   }
@@ -65,6 +69,153 @@ const BTN =
 const MARKER_SIZE_PX = 28;
 const MARKER_INNER_OFFSET_PX = 6;
 const LEFT_6_PX = 24;
+
+// -------------------- Shiprocket normalizer --------------------
+/**
+ * Accepts:
+ *  - an object like { tracking_data: {...} } or
+ *  - an array [ { tracking_data: {...} }, ... ]
+ *  - or a server-normalized object (will be returned unchanged if it already looks normalized)
+ *
+ * Returns:
+ *  {
+ *    status: "confirmed"|"packed"|"shipped"|"out for delivery"|"delivered"|"rto",
+ *    progressIndex: 0..4,
+ *    tracking: [ { step, done, date } ... ],
+ *    activities: [ { date, status, location, description, raw } ],
+ *    courier: { name, awb },
+ *    history: [ { title, time }, ... ],
+ *    raw: originalTrackingData
+ *  }
+ */
+function normalizeShiprocketResponse(resp) {
+  // If already normalized (quick heuristic): has status + tracking as array of steps
+  if (resp && typeof resp === "object" && !resp.tracking_data && Array.isArray(resp.tracking)) {
+    return {
+      status: resp.status ?? "confirmed",
+      progressIndex: (() => {
+        const map = { confirmed: 0, packed: 1, shipped: 2, "out for delivery": 3, delivered: 4 };
+        return map[(resp.status || "confirmed").toLowerCase()] ?? 0;
+      })(),
+      tracking: resp.tracking,
+      activities: resp.activities ?? [],
+      courier: resp.courier ?? {},
+      history: resp.history ?? [],
+      raw: resp.raw ?? resp,
+    };
+  }
+
+  const root = Array.isArray(resp) ? resp[0]?.tracking_data ?? resp[0] ?? {} : resp?.tracking_data ?? resp ?? {};
+  const td = root || {};
+
+  // shipment entry (Shiprocket uses shipment_track array)
+  const shipment = Array.isArray(td.shipment_track) && td.shipment_track.length ? td.shipment_track[0] : td.shipment_track || {};
+
+  // gather activities
+  const activitiesRaw = Array.isArray(td.shipment_track_activities) ? td.shipment_track_activities : (td.shipment_track?.[0]?.activities ?? []) || [];
+  // normalize activities
+  const activities = (activitiesRaw || []).map((a) => ({
+    date: a.date || a.time || a.timestamp || a.updated_time_stamp || null,
+    status: a.status || a.activity || a["sr-status-label"] || "",
+    location: a.location || "",
+    description: a.description || a.activity || "",
+    raw: a,
+  }));
+
+  // helper to find latest activity matching regex (search from start which is typically latest-first)
+  function findActivityDate(acts, re) {
+    if (!Array.isArray(acts)) return null;
+    for (const a of acts) {
+      const combined = `${a.status || ""} ${a.activity || ""} ${a["sr-status-label"] || ""}`.toLowerCase();
+      if (re.test(combined)) return a.date || a.time || a.timestamp || a.updated_time_stamp || null;
+    }
+    return null;
+  }
+
+  // determine status index
+  let progressIndex = 0; // 0: confirmed, 1: packed, 2: shipped, 3: out for delivery, 4: delivered
+  const latestAct = activities[0] || {};
+  const lastSrLabel = (latestAct["sr-status-label"] || latestAct.status || "").toString();
+  const lastSr = latestAct["sr-status"] ?? latestAct.sr_status ?? null;
+  const current_status = (shipment.current_status || td.current_status || "").toString().toLowerCase();
+
+  // delivered
+  if (/delivered/i.test(current_status) || /delivered/i.test(lastSrLabel) || lastSr === 7) {
+    progressIndex = 4;
+  } else if (/out\s*for\s*delivery/i.test(current_status) || /out for delivery/i.test(lastSrLabel) || lastSr === 17) {
+    progressIndex = 3;
+  } else if (/arrivedatcarrierfacility|in transit/i.test(lastSrLabel.toLowerCase()) || /arrivedatcarrierfacility/i.test((latestAct.status || "").toString().toLowerCase()) || lastSr === 18 || lastSr === 38) {
+    progressIndex = 2;
+  } else if (/readyforreceive|ready for receive/i.test((latestAct.status || "").toString().toLowerCase())) {
+    progressIndex = 1;
+  } else if ((!shipment || !shipment.awb_code || !(shipment.current_status || "").trim()) && (td.track_status === 0 || td.track_status === "0" || td.error)) {
+    progressIndex = 0;
+  } else if (shipment.pickup_date) {
+    // fallback: if pickup exists but no clearer status, treat as shipped
+    progressIndex = 2;
+  } else {
+    progressIndex = 0;
+  }
+
+  // Build history entries that match TimelineCard step titles exactly so TimelineCard will find dates
+  const history = [];
+  // Order placed: use order.created_at from order object elsewhere; we won't duplicate here
+  // Packed
+  const packedDate = findActivityDate(activitiesRaw, /readyforreceive|ready for receive|ready_for_receive/i);
+  if (packedDate) history.push({ title: "Packed", time: packedDate });
+  // Shipped
+  if (shipment.pickup_date) history.push({ title: "Shipped", time: shipment.pickup_date });
+  else {
+    const shippedAct = findActivityDate(activitiesRaw, /arrivedatcarrierfacility|in transit|departed/i);
+    if (shippedAct) history.push({ title: "Shipped", time: shippedAct });
+  }
+  // Out For Delivery
+  const ofd = findActivityDate(activitiesRaw, /outfordelivery|out for delivery|out_for_delivery|outfor delivery/i);
+  if (ofd) history.push({ title: "Out For Delivery", time: ofd });
+  // Delivered
+  if (shipment.delivered_date) history.push({ title: "Delivered", time: shipment.delivered_date });
+  else {
+    const delAct = findActivityDate(activitiesRaw, /delivered/i);
+    if (delAct) history.push({ title: "Delivered", time: delAct });
+  }
+  // Return / RTO
+  const returnAct = findActivityDate(activitiesRaw, /returninitiated|rto/i);
+  if (returnAct) history.push({ title: "Return initiated", time: returnAct });
+
+  // Build a lightweight tracking array matching your TimelineCard steps (used as fallback)
+  const steps = [
+    { step: "Order Confirmed", idx: 0, date: null },
+    { step: "Packed", idx: 1, date: packedDate || null },
+    { step: "Shipped", idx: 2, date: shipment.pickup_date || null },
+    { step: "Out For Delivery", idx: 3, date: ofd || null },
+    { step: "Delivered", idx: 4, date: shipment.delivered_date || null },
+  ];
+  const tracking = steps.map((s) => ({ step: s.step, done: s.idx <= progressIndex, date: s.date, detail: "" }));
+
+  const courier = { name: shipment.courier_name || td.courier_name || shipment.courier || "", awb: shipment.awb_code || shipment.awb || "" };
+
+  // user-friendly status strings that match your Timeline mapping keys (lowercased later)
+  const statusName =
+    progressIndex === 4
+      ? "delivered"
+      : progressIndex === 3
+      ? "out for delivery"
+      : progressIndex === 2
+      ? "shipped"
+      : progressIndex === 1
+      ? "packed"
+      : "confirmed";
+
+  return {
+    status: statusName,
+    progressIndex,
+    tracking,
+    activities,
+    courier,
+    history,
+    raw: td,
+  };
+}
 
 // -------------------- Main component --------------------
 export default function OrderDetailsPage({ orderId: propOrderId }) {
@@ -87,7 +238,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
   const [showEditAddress, setShowEditAddress] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
   const invoiceRef = useRef(null);
-  const [infoModal, setInfo] = useState({ open: false, title: "", message: "" });
+  // removed infoModal state (no automatic modals after fetch)
   const [currentUser, setCurrentUser] = useState(null);
   const [openReviews, setOpenReviews] = useState({});
   // track modal data
@@ -105,7 +256,8 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       extraDiscount: payload.pricing?.extraDiscount ?? 0,
       specialPrice: payload.pricing?.specialPrice ?? 0,
       otherDiscount: payload.pricing?.otherDiscount ?? 0,
-      couponDiscount: payload.pricing?.couponDiscount ?? payload.pricing?.coupon ?? 0,
+      // ensure coupon discount is non-negative number
+      couponDiscount: Math.max(0, Number(payload.pricing?.couponDiscount ?? payload.pricing?.coupon ?? payload.pricing?.otherDiscount ?? 0)),
     };
 
     const sa = payload.shipping_address || payload.shipping || null;
@@ -188,7 +340,11 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
         });
 
         const payload = await parseJsonSafe(res);
-        if (!res.ok) throw new Error(payload?.message || `Failed to fetch order: ${res.status}`);
+        if (!res.ok) {
+          // don't open a modal; log and bail
+          console.error("Failed to fetch order:", payload?.message || `HTTP ${res.status}`);
+          throw new Error(payload?.message || `Failed to fetch order: ${res.status}`);
+        }
 
         const normalized = normalizeApiOrder(payload);
         if (!mounted) return;
@@ -196,7 +352,6 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       } catch (err) {
         if (err.name === "AbortError") return;
         console.error("Error loading order:", err);
-        setInfo({ open: true, title: "Error", message: err.message || "Could not load order. Check network or try again." });
       } finally {
         if (mounted) setLoading(false);
       }
@@ -221,9 +376,8 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     if (!order) return null;
     const productPrice = (order.items || []).reduce((s, it) => s + (Number(it.price || 0) * Number(it.qty || 1)), 0);
     const fees = Number(order.pricing?.fees || 0);
-    const couponDiscount = Number(order.pricing?.couponDiscount ?? order.pricing?.otherDiscount ?? 0);
-    const shippingCharge =
-      (order.paymentMethod || "").toString().toLowerCase() === "cod" ? 25 : 0;
+    const couponDiscount = Math.max(0, Number(order.pricing?.couponDiscount ?? order.pricing?.otherDiscount ?? 0));
+    const shippingCharge = (order.paymentMethod || "").toString().toLowerCase() === "cod" ? 25 : 0;
     const total = productPrice + fees + shippingCharge - couponDiscount;
     return {
       productPrice,
@@ -258,15 +412,17 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       });
 
       const payload = await parseJsonSafe(res);
-      if (!res.ok) throw new Error(payload?.message || `Cancel failed (${res.status})`);
+      if (!res.ok) {
+        console.error("Cancel failed:", payload?.message || `HTTP ${res.status}`);
+        throw new Error(payload?.message || `Cancel failed (${res.status})`);
+      }
 
       const normalized = normalizeApiOrder(payload?.order ?? payload) ?? { ...order, status: payload?.status ?? "cancelled" };
       setOrder((o) => ({ ...o, ...normalized }));
-      setInfo({ open: true, title: "Cancelled", message: payload?.message ?? "Order cancelled" });
+      // no modal shown after fetch
     } catch (err) {
       console.error("Cancel error:", err);
       setOrder(prevOrder);
-      setInfo({ open: true, title: "Error", message: err.message || "Could not cancel order" });
     } finally {
       setLoading(false);
     }
@@ -284,14 +440,15 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       });
 
       const payload = await parseJsonSafe(res);
-      if (!res.ok) throw new Error(payload?.message || `Return failed (${res.status})`);
+      if (!res.ok) {
+        console.error("Return failed:", payload?.message || `HTTP ${res.status}`);
+        throw new Error(payload?.message || `Return failed (${res.status})`);
+      }
 
       const normalized = normalizeApiOrder(payload?.order ?? payload) ?? order;
       setOrder((o) => ({ ...o, ...normalized }));
-      setInfo({ open: true, title: "Return requested", message: payload?.message ?? "Return requested" });
     } catch (err) {
       console.error("Return error:", err);
-      setInfo({ open: true, title: "Error", message: err.message || "Could not request return" });
     } finally {
       setLoading(false);
     }
@@ -310,7 +467,10 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       });
 
       const payload = await parseJsonSafe(res);
-      if (!res.ok) throw new Error(payload?.message || `Address update failed (${res.status})`);
+      if (!res.ok) {
+        console.error("Address update failed:", payload?.message || `HTTP ${res.status}`);
+        throw new Error(payload?.message || `Address update failed (${res.status})`);
+      }
 
       setOrder((o) => ({
         ...o,
@@ -322,11 +482,8 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
         },
         history: payload?.history ? [...(payload.history || []), ...(o.history || [])] : o.history,
       }));
-
-      setInfo({ open: true, title: "Address updated", message: payload?.message ?? "Address updated" });
     } catch (err) {
       console.error("Update address error:", err);
-      setInfo({ open: true, title: "Error", message: err.message || "Could not update address" });
     } finally {
       setLoading(false);
     }
@@ -335,11 +492,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
   // ------------------ track-order (updated to show modal with details) ------------------
   async function handleTrackOrder() {
     if (!order?.id) {
-      setInfo({
-        open: true,
-        title: "Track order",
-        message: "No order to track",
-      });
+      console.warn("Track order: no order to track");
       return;
     }
 
@@ -358,41 +511,68 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
 
       const payload = await parseJsonSafe(res);
       if (!res.ok) {
+        console.error("Track API error:", payload?.message || `HTTP ${res.status}`);
         throw new Error(payload?.message || `Track API error (${res.status})`);
+      }
+
+      // server might return raw Shiprocket payload, or already-normalized structure.
+      const isShiprocketRaw =
+        payload && (payload.tracking_data || payload.shipment_track || payload.shipment_track_activities || Array.isArray(payload));
+      let normalized;
+      if (isShiprocketRaw) {
+        normalized = normalizeShiprocketResponse(payload);
+      } else {
+        // assume server already returned normalized shape
+        normalized = {
+          status: payload.status ?? payload.tracking?.status ?? order.status,
+          tracking: payload.tracking ?? order.tracking ?? [],
+          activities: payload.activities ?? [],
+          courier: payload.courier ?? order.courier ?? null,
+          history: payload.history ?? [],
+          raw: payload,
+        };
       }
 
       // Merge tracking info into order (server wins)
       setOrder((prev) => ({
         ...prev,
-        tracking: payload.tracking ?? prev.tracking,
-        status: payload.status ?? prev.status,
-        courier: payload.courier ?? prev.courier,
-        history: payload.history
-          ? [...payload.history, ...(prev.history || [])]
-          : prev.history,
+        tracking: normalized.tracking ?? prev.tracking,
+        status: normalized.status ?? prev.status,
+        courier: { ...(prev.courier || {}), ...(normalized.courier || {}) },
+        history: normalized.history ? [...normalized.history, ...(prev.history || [])] : prev.history,
+        raw_tracking: normalized.raw ?? prev.raw_tracking,
       }));
 
       // set data for the track modal and open it
-      const info = payload.tracking ?? payload;
-      setTrackInfo(info);
-      setShowTrackModal(true);
+      const infoForModal = {
+        shipment_track: (normalized.raw && normalized.raw.shipment_track) || normalized.raw?.shipment_track || (Array.isArray(normalized.raw) ? normalized.raw[0]?.shipment_track : undefined) || [],
+        shipment_track_activities: normalized.raw?.shipment_track_activities || normalized.activities || [],
+        courier_name: normalized.courier?.name || "",
+        awb_code: normalized.courier?.awb || "",
+        current_status: normalized.status || "",
+        origin: (normalized.raw?.shipment_track?.[0]?.origin) || "",
+        destination: (normalized.raw?.shipment_track?.[0]?.destination) || "",
+        etd: normalized.raw?.etd || normalized.raw?.shipment_track?.[0]?.edd || "",
+        raw: normalized.raw || payload,
+        status: normalized.status,
+      };
 
-      setInfo({
-        open: true,
-        title: "Tracking updated",
-        message: payload?.message ?? "Latest tracking information received.",
-      });
+      setTrackInfo(infoForModal);
+      setShowTrackModal(true);
     } catch (err) {
       console.error("Track order failed:", err);
-      setInfo({
-        open: true,
-        title: "Tracking error",
-        message: err.message || "Could not fetch live tracking.",
-      });
-
       // still open modal with any available tracking info in order
-      if (order?.tracking) {
-        setTrackInfo(order.tracking);
+      if (order?.raw?.shipment_track || order?.raw_tracking) {
+        const raw = order.raw_tracking || order.raw;
+        const fallback = {
+          shipment_track: raw?.shipment_track || [],
+          shipment_track_activities: raw?.shipment_track_activities || [],
+          courier_name: raw?.courier_name || order.courier?.name || "",
+          awb_code: raw?.shipment_track?.[0]?.awb_code || order.courier?.awb || "",
+          current_status: order.status || "",
+          raw,
+        };
+        setTrackInfo(fallback);
         setShowTrackModal(true);
       }
     } finally {
@@ -403,7 +583,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
   useEffect(() => {
     function onKey(e) {
       if (e.key === "Escape") {
-        setInfo({ open: false, title: "", message: "" });
+        // close UI overlays that are user-initiated
         setShowCancel(false);
         setShowReturn(false);
         setShowEditAddress(false);
@@ -418,27 +598,31 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     if (!order) return;
     const shareText = `Order ${order.id} • ${order.items?.length ?? 0} items • ${currency(computedPricing?.total ?? order.pricing?.total)}`;
     if (navigator.share) {
-      navigator.share({ title: `Order ${order.id}`, text: shareText }).catch(() => setInfo({ open: true, title: "Share", message: "Sharing cancelled or not supported" }));
+      navigator.share({ title: `Order ${order.id}`, text: shareText }).catch(() => {
+        // silent fallback; no modal
+        console.warn("Sharing cancelled or not supported");
+      });
     } else {
       navigator.clipboard
         ?.writeText(`${shareText}\nView in your orders`)
-        .then(() => setInfo({ open: true, title: "Copied", message: "Order summary copied to clipboard" }))
-        .catch(() => setInfo({ open: true, title: "Share", message: "Share not available" }));
+        .then(() => console.log("Order summary copied to clipboard"))
+        .catch(() => console.warn("Share not available"));
     }
   }
 
   function contactCourier() {
     if (!order?.courier?.phone) {
-      setInfo({ open: true, title: "No courier number", message: "Courier phone not available" });
+      console.warn("Courier phone not available");
       return;
     }
-    setInfo({ open: true, title: "Contact courier", message: `Call ${order.courier.phone}` });
+    // no modal — just use window.open tel: for action or console
+    window.location.href = `tel:${order.courier.phone}`;
   }
 
   // UPDATED: use POST /api/shipping/download-invoice
   async function handleDownloadInvoice() {
     if (!order?.id) {
-      setInfo({ open: true, title: "Download invoice", message: "No order available to download invoice." });
+      console.warn("No order available to download invoice.");
       return;
     }
     setLoading(true);
@@ -456,6 +640,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
 
       if (!res.ok) {
         const payload = await parseJsonSafe(res);
+        console.error("Invoice download failed:", payload?.message || `HTTP ${res.status}`);
         throw new Error(payload?.message || `Invoice download failed (${res.status})`);
       }
 
@@ -469,10 +654,9 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(blobUrl);
-      setInfo({ open: true, title: "Downloaded", message: "Invoice downloaded." });
+      console.log("Invoice downloaded.");
     } catch (err) {
       console.error("Download invoice failed:", err);
-      setInfo({ open: true, title: "Error", message: err.message || "Could not download invoice." });
     } finally {
       setLoading(false);
     }
@@ -488,9 +672,11 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     );
   }
 
-  const isDelivered = order.status?.toLowerCase() === "delivered" || order.tracking?.some?.((t) => (t.step || t.status)?.toString().toLowerCase() === "delivered" && (t.done || t.status === "delivered"));
-  const isPacked = order.status?.toLowerCase() === "packed";
-  const isCancelled = order.status?.toLowerCase() === "cancelled";
+  const isDelivered =
+    (order.status || "").toString().toLowerCase() === "delivered" ||
+    order.tracking?.some?.((t) => (t.step || t.status)?.toString().toLowerCase() === "delivered" && (t.done || t.status === "delivered"));
+  const isPacked = (order.status || "").toString().toLowerCase() === "packed";
+  const isCancelled = (order.status || "").toString().toLowerCase() === "cancelled";
 
   return (
     <div className="min-h-screen bg-white dark:bg-black text-neutral-900 dark:text-neutral-100 transition-colors duration-200">
@@ -559,7 +745,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
 
                   {openReviews[String(it.id)] && (
                     <div className="mt-4">
-                      <Reviews productId={it.id} apiBase={API_BASE} currentUser={currentUser} showToast={(m) => setInfo({ open: true, title: "Notice", message: m || "" })} />
+                      <Reviews productId={it.id} apiBase={API_BASE} currentUser={currentUser} showToast={(m) => console.log("Review:", m)} />
                     </div>
                   )}
                 </div>
@@ -711,8 +897,6 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
           }}
         />
 
-        <InfoModal open={!!infoModal.open} title={infoModal.title} message={infoModal.message} onClose={() => setInfo({ open: false, title: "", message: "" })} />
-
         <TrackModal open={showTrackModal} info={trackInfo} onClose={() => setShowTrackModal(false)} />
       </main>
     </div>
@@ -775,9 +959,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
   const innerSize = MARKER_SIZE_PX - MARKER_INNER_OFFSET_PX;
   const isCancelled = order.status && order.status.toLowerCase() === "cancelled";
 
-  const allSteps = isCancelled
-    ? ["Order Confirmed", "Cancelled"]
-    : ["Order Confirmed", "Packed", "Shipped", "Out For Delivery", "Delivered"];
+  const allSteps = isCancelled ? ["Order Confirmed", "Cancelled"] : ["Order Confirmed", "Packed", "Shipped", "Out For Delivery", "Delivered"];
 
   const progressMap = {
     pending: 0,
@@ -1012,9 +1194,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
             </button>
           )}
 
-          {isCancelled && (
-            <div className="text-sm text-red-600 italic px-2">This order has been cancelled.</div>
-          )}
+          {isCancelled && <div className="text-sm text-red-600 italic px-2">This order has been cancelled.</div>}
         </div>
         <div className="w-full sm:w-44" />
       </div>
@@ -1181,32 +1361,6 @@ function InputModal({ open, title, initialShipping = { name: "", phone: "", addr
           <button onClick={() => onConfirm({ name: name.trim(), phone: phone.trim(), address: address.trim() })} className={BTN + " text-sm px-3 py-1"}>
             Save
           </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-function InfoModal({ open, title = "", message = "", onClose = () => {} }) {
-  if (!open) return null;
-  // Important: this modal is informational, we don't want it to block navigation behind it
-  return (
-    <div className="fixed inset-0 z-50 pointer-events-none p-4">
-      <div className="absolute inset-0 bg-transparent pointer-events-none" />
-      <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="pointer-events-auto mx-auto relative bottom-8 bg-white dark:bg-neutral-900 rounded-lg shadow-lg max-w-sm w-full p-4">
-        <div className="flex items-start gap-3">
-          <div className="p-2 rounded-full bg-emerald-50 text-emerald-600">
-            <CheckCircle />
-          </div>
-          <div className="flex-1">
-            <div className="font-semibold">{title}</div>
-            <div className="text-sm text-neutral-600 dark:text-neutral-300 mt-1">{message}</div>
-            <div className="mt-3 text-right">
-              <button onClick={onClose} className={BTN + " text-sm px-3 py-1"}>
-                Close
-              </button>
-            </div>
-          </div>
         </div>
       </motion.div>
     </div>
