@@ -71,25 +71,7 @@ const MARKER_INNER_OFFSET_PX = 6;
 const LEFT_6_PX = 24;
 
 // -------------------- Shiprocket normalizer --------------------
-/**
- * Accepts:
- *  - an object like { tracking_data: {...} } or
- *  - an array [ { tracking_data: {...} }, ... ]
- *  - or a server-normalized object (will be returned unchanged if it already looks normalized)
- *
- * Returns:
- *  {
- *    status: "confirmed"|"packed"|"shipped"|"out for delivery"|"delivered"|"rto",
- *    progressIndex: 0..4,
- *    tracking: [ { step, done, date } ... ],
- *    activities: [ { date, status, location, description, raw } ],
- *    courier: { name, awb },
- *    history: [ { title, time }, ... ],
- *    raw: originalTrackingData
- *  }
- */
 function normalizeShiprocketResponse(resp) {
-  // If already normalized (quick heuristic): has status + tracking as array of steps
   if (resp && typeof resp === "object" && !resp.tracking_data && Array.isArray(resp.tracking)) {
     return {
       status: resp.status ?? "confirmed",
@@ -108,21 +90,19 @@ function normalizeShiprocketResponse(resp) {
   const root = Array.isArray(resp) ? resp[0]?.tracking_data ?? resp[0] ?? {} : resp?.tracking_data ?? resp ?? {};
   const td = root || {};
 
-  // shipment entry (Shiprocket uses shipment_track array)
   const shipment = Array.isArray(td.shipment_track) && td.shipment_track.length ? td.shipment_track[0] : td.shipment_track || {};
 
-  // gather activities
   const activitiesRaw = Array.isArray(td.shipment_track_activities) ? td.shipment_track_activities : (td.shipment_track?.[0]?.activities ?? []) || [];
-  // normalize activities
   const activities = (activitiesRaw || []).map((a) => ({
     date: a.date || a.time || a.timestamp || a.updated_time_stamp || null,
     status: a.status || a.activity || a["sr-status-label"] || "",
     location: a.location || "",
     description: a.description || a.activity || "",
     raw: a,
+    "sr-status": a["sr-status"] ?? a["sr-status"] ?? null,
+    "sr-status-label": a["sr-status-label"] ?? a["sr-status-label"] ?? "",
   }));
 
-  // helper to find latest activity matching regex (search from start which is typically latest-first)
   function findActivityDate(acts, re) {
     if (!Array.isArray(acts)) return null;
     for (const a of acts) {
@@ -132,57 +112,50 @@ function normalizeShiprocketResponse(resp) {
     return null;
   }
 
-  // determine status index
-  let progressIndex = 0; // 0: confirmed, 1: packed, 2: shipped, 3: out for delivery, 4: delivered
+  let progressIndex = 0;
   const latestAct = activities[0] || {};
   const lastSrLabel = (latestAct["sr-status-label"] || latestAct.status || "").toString();
   const lastSr = latestAct["sr-status"] ?? latestAct.sr_status ?? null;
   const current_status = (shipment.current_status || td.current_status || "").toString().toLowerCase();
 
-  // delivered
   if (/delivered/i.test(current_status) || /delivered/i.test(lastSrLabel) || lastSr === 7) {
     progressIndex = 4;
   } else if (/out\s*for\s*delivery/i.test(current_status) || /out for delivery/i.test(lastSrLabel) || lastSr === 17) {
     progressIndex = 3;
-  } else if (/arrivedatcarrierfacility|in transit/i.test(lastSrLabel.toLowerCase()) || /arrivedatcarrierfacility/i.test((latestAct.status || "").toString().toLowerCase()) || lastSr === 18 || lastSr === 38) {
+  } else if (/arrivedatcarrierfacility|in transit/i.test((lastSrLabel || "").toLowerCase()) || /arrivedatcarrierfacility/i.test((latestAct.status || "").toString().toLowerCase()) || lastSr === 18 || lastSr === 38) {
     progressIndex = 2;
   } else if (/readyforreceive|ready for receive/i.test((latestAct.status || "").toString().toLowerCase())) {
     progressIndex = 1;
   } else if ((!shipment || !shipment.awb_code || !(shipment.current_status || "").trim()) && (td.track_status === 0 || td.track_status === "0" || td.error)) {
     progressIndex = 0;
   } else if (shipment.pickup_date) {
-    // fallback: if pickup exists but no clearer status, treat as shipped
     progressIndex = 2;
   } else {
     progressIndex = 0;
   }
 
-  // Build history entries that match TimelineCard step titles exactly so TimelineCard will find dates
   const history = [];
-  // Order placed: use order.created_at from order object elsewhere; we won't duplicate here
-  // Packed
   const packedDate = findActivityDate(activitiesRaw, /readyforreceive|ready for receive|ready_for_receive/i);
   if (packedDate) history.push({ title: "Packed", time: packedDate });
-  // Shipped
+
   if (shipment.pickup_date) history.push({ title: "Shipped", time: shipment.pickup_date });
   else {
     const shippedAct = findActivityDate(activitiesRaw, /arrivedatcarrierfacility|in transit|departed/i);
     if (shippedAct) history.push({ title: "Shipped", time: shippedAct });
   }
-  // Out For Delivery
+
   const ofd = findActivityDate(activitiesRaw, /outfordelivery|out for delivery|out_for_delivery|outfor delivery/i);
   if (ofd) history.push({ title: "Out For Delivery", time: ofd });
-  // Delivered
+
   if (shipment.delivered_date) history.push({ title: "Delivered", time: shipment.delivered_date });
   else {
     const delAct = findActivityDate(activitiesRaw, /delivered/i);
     if (delAct) history.push({ title: "Delivered", time: delAct });
   }
-  // Return / RTO
+
   const returnAct = findActivityDate(activitiesRaw, /returninitiated|rto/i);
   if (returnAct) history.push({ title: "Return initiated", time: returnAct });
 
-  // Build a lightweight tracking array matching your TimelineCard steps (used as fallback)
   const steps = [
     { step: "Order Confirmed", idx: 0, date: null },
     { step: "Packed", idx: 1, date: packedDate || null },
@@ -194,7 +167,6 @@ function normalizeShiprocketResponse(resp) {
 
   const courier = { name: shipment.courier_name || td.courier_name || shipment.courier || "", awb: shipment.awb_code || shipment.awb || "" };
 
-  // user-friendly status strings that match your Timeline mapping keys (lowercased later)
   const statusName =
     progressIndex === 4
       ? "delivered"
@@ -238,26 +210,80 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
   const [showEditAddress, setShowEditAddress] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
   const invoiceRef = useRef(null);
-  // removed infoModal state (no automatic modals after fetch)
   const [currentUser, setCurrentUser] = useState(null);
   const [openReviews, setOpenReviews] = useState({});
-  // track modal data
   const [showTrackModal, setShowTrackModal] = useState(false);
   const [trackInfo, setTrackInfo] = useState(null);
 
   function normalizeApiOrder(payload) {
     if (!payload) return null;
 
+    // Map items first
+    const items = Array.isArray(payload.items)
+      ? payload.items.map((it) => {
+          const firstImg = (it.image || it.images || "")
+            .toString()
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)[0] || "";
+
+          const opts = it.options || {};
+          const optionsText =
+            typeof opts === "string"
+              ? opts
+              : [opts.color ? `${opts.color}` : null, opts.size ? `${opts.size}` : null, opts.variant ? `${opts.variant}` : null].filter(Boolean).join(" • ");
+
+          return {
+            id: it.id,
+            title: it.name ?? it.title ?? "",
+            img: firstImg,
+            qty: it.quantity ?? it.qty ?? 1,
+            price: Number(it.price ?? it.amount ?? 0),
+            options: optionsText,
+            seller: it.seller ?? "",
+            raw: it,
+          };
+        })
+      : [];
+
+    // productPrice computed from items (source of truth)
+    const productPriceComputed = items.reduce((s, it) => s + Number(it.price || 0) * Number(it.qty || 1), 0);
+
+    // fees from payload if present
+    const feesFromPayload = Number(payload.pricing?.fees ?? payload.fees ?? 0);
+
+    // shippingCharge heuristics: prefer payload pricing shipping fields, else detect COD
+    const shippingFromPayload = Number(payload.pricing?.shippingCharge ?? payload.pricing?.shipping ?? payload.shipping_charge ?? 0);
+    const paymentMethod = (payload.payment_method ?? payload.paymentMethod ?? "").toString().toLowerCase();
+    const shippingChargeComputed = shippingFromPayload || (paymentMethod === "cod" ? 25 : 0);
+
+    // determine reported total (the value stored in order record)
+    const reportedTotalRaw = payload.total_amount ?? payload.pricing?.total ?? payload.pricing?.sellingPrice ?? payload.total ?? 0;
+    const reportedTotal = Number(reportedTotalRaw ?? 0);
+
+    // expected gross (what frontend would sum without discounts)
+    const expectedGross = productPriceComputed + feesFromPayload + shippingChargeComputed;
+
+    // compute couponDiscount: prefer explicit payload value, else infer from difference between expectedGross and reportedTotal
+    const explicitCoupon = Number(payload.pricing?.couponDiscount ?? payload.pricing?.coupon ?? payload.coupon ?? 0);
+    const inferredCoupon = reportedTotal > 0 ? Math.max(0, expectedGross - reportedTotal) : 0;
+    const couponDiscount = Math.max(0, explicitCoupon || inferredCoupon);
+
+    // final total - prefer reportedTotal if present, otherwise compute from expectedGross - coupon
+    const finalTotal = reportedTotal > 0 ? reportedTotal : Math.max(0, expectedGross - couponDiscount);
+
     const pricing = {
-      total: payload.total_amount ?? (payload.pricing && payload.pricing.total) ?? 0,
-      sellingPrice: (payload.total_amount ?? payload.pricing?.sellingPrice) ?? 0,
-      listingPrice: payload.pricing?.listingPrice ?? payload.total_amount ?? 0,
-      fees: payload.pricing?.fees ?? 0,
+      total: finalTotal,
+      sellingPrice: payload.total_amount ?? payload.pricing?.sellingPrice ?? finalTotal,
+      listingPrice: payload.pricing?.listingPrice ?? payload.total_amount ?? finalTotal,
+      fees: feesFromPayload,
       extraDiscount: payload.pricing?.extraDiscount ?? 0,
       specialPrice: payload.pricing?.specialPrice ?? 0,
       otherDiscount: payload.pricing?.otherDiscount ?? 0,
-      // ensure coupon discount is non-negative number
-      couponDiscount: Math.max(0, Number(payload.pricing?.couponDiscount ?? payload.pricing?.coupon ?? payload.pricing?.otherDiscount ?? 0)),
+      couponDiscount,
+      // include computed fields for clarity
+      computedGross: expectedGross,
+      shippingCharge: shippingChargeComputed,
     };
 
     const sa = payload.shipping_address || payload.shipping || null;
@@ -280,33 +306,6 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
           raw: sa,
         }
       : { address: "", name: "", phone: "" };
-
-    const items = Array.isArray(payload.items)
-      ? payload.items.map((it) => {
-          const firstImg = (it.image || it.images || "")
-            .toString()
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean)[0] || "";
-
-          const opts = it.options || {};
-          const optionsText =
-            typeof opts === "string"
-              ? opts
-              : [opts.color ? `${opts.color}` : null, opts.size ? `${opts.size}` : null, opts.variant ? `${opts.variant}` : null].filter(Boolean).join(" • ");
-
-          return {
-            id: it.id,
-            title: it.name ?? it.title ?? "",
-            img: firstImg,
-            qty: it.quantity ?? it.qty ?? 1,
-            price: it.price ?? it.amount ?? 0,
-            options: optionsText,
-            seller: it.seller ?? "",
-            raw: it,
-          };
-        })
-      : [];
 
     return {
       id: payload.id,
@@ -341,7 +340,6 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
 
         const payload = await parseJsonSafe(res);
         if (!res.ok) {
-          // don't open a modal; log and bail
           console.error("Failed to fetch order:", payload?.message || `HTTP ${res.status}`);
           throw new Error(payload?.message || `Failed to fetch order: ${res.status}`);
         }
@@ -349,6 +347,58 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
         const normalized = normalizeApiOrder(payload);
         if (!mounted) return;
         setOrder(normalized);
+
+        // Immediately fetch live tracking (silent) and merge into order status/tracking
+        try {
+          // call your track endpoint
+          const trackRes = await fetch(apiUrl(`/api/shipping/track-order`), {
+            method: "POST",
+            headers: {
+              ...authHeaders(true),
+              "Content-Type": "application/json",
+            },
+            credentials: "same-origin",
+            body: JSON.stringify({ order_id: normalized.id }),
+          });
+
+          const trackPayload = await parseJsonSafe(trackRes);
+          if (trackRes.ok && trackPayload) {
+            const isShiprocketRaw =
+              trackPayload && (trackPayload.tracking_data || trackPayload.shipment_track || trackPayload.shipment_track_activities || Array.isArray(trackPayload));
+            let normalizedTrack = null;
+            if (isShiprocketRaw) {
+              normalizedTrack = normalizeShiprocketResponse(trackPayload);
+            } else {
+              normalizedTrack = {
+                status: trackPayload.status ?? trackPayload.tracking?.status ?? normalized.status,
+                tracking: trackPayload.tracking ?? normalized.tracking ?? [],
+                activities: trackPayload.activities ?? [],
+                courier: trackPayload.courier ?? normalized.courier ?? null,
+                history: trackPayload.history ?? [],
+                raw: trackPayload,
+              };
+            }
+
+            // Merge tracking into order silently
+            setOrder((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                tracking: normalizedTrack.tracking ?? prev.tracking,
+                status: normalizedTrack.status ?? prev.status,
+                courier: { ...(prev.courier || {}), ...(normalizedTrack.courier || {}) },
+                history: normalizedTrack.history ? [...normalizedTrack.history, ...(prev.history || [])] : prev.history,
+                raw_tracking: normalizedTrack.raw ?? prev.raw_tracking,
+              };
+            });
+          } else {
+            // if track API returned not-ok, ignore silently
+            // console.warn("Silent track fetch failed:", trackPayload?.message || trackRes.status);
+          }
+        } catch (e) {
+          // swallow tracking errors - don't block showing order
+          console.error("Silent tracking fetch error:", e);
+        }
       } catch (err) {
         if (err.name === "AbortError") return;
         console.error("Error loading order:", err);
@@ -376,8 +426,10 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     if (!order) return null;
     const productPrice = (order.items || []).reduce((s, it) => s + (Number(it.price || 0) * Number(it.qty || 1)), 0);
     const fees = Number(order.pricing?.fees || 0);
-    const couponDiscount = Math.max(0, Number(order.pricing?.couponDiscount ?? order.pricing?.otherDiscount ?? 0));
-    const shippingCharge = (order.paymentMethod || "").toString().toLowerCase() === "cod" ? 25 : 0;
+    // shipping: prefer computed shipping in pricing (normalizeApiOrder sets shippingCharge), fallback to payment method logic
+    const shippingCharge = Number(order.pricing?.shippingCharge ?? ((order.paymentMethod || "").toString().toLowerCase() === "cod" ? 25 : 0));
+    // coupon discount: from order.pricing if present (normalizeApiOrder tries to infer)
+    const couponDiscount = Math.max(0, Number(order.pricing?.couponDiscount ?? 0));
     const total = productPrice + fees + shippingCharge - couponDiscount;
     return {
       productPrice,
@@ -419,7 +471,6 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
 
       const normalized = normalizeApiOrder(payload?.order ?? payload) ?? { ...order, status: payload?.status ?? "cancelled" };
       setOrder((o) => ({ ...o, ...normalized }));
-      // no modal shown after fetch
     } catch (err) {
       console.error("Cancel error:", err);
       setOrder(prevOrder);
@@ -489,7 +540,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     }
   }
 
-  // ------------------ track-order (updated to show modal with details) ------------------
+  // ------------------ track-order (full modal) ------------------
   async function handleTrackOrder() {
     if (!order?.id) {
       console.warn("Track order: no order to track");
@@ -515,14 +566,12 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
         throw new Error(payload?.message || `Track API error (${res.status})`);
       }
 
-      // server might return raw Shiprocket payload, or already-normalized structure.
       const isShiprocketRaw =
         payload && (payload.tracking_data || payload.shipment_track || payload.shipment_track_activities || Array.isArray(payload));
       let normalized;
       if (isShiprocketRaw) {
         normalized = normalizeShiprocketResponse(payload);
       } else {
-        // assume server already returned normalized shape
         normalized = {
           status: payload.status ?? payload.tracking?.status ?? order.status,
           tracking: payload.tracking ?? order.tracking ?? [],
@@ -533,7 +582,6 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
         };
       }
 
-      // Merge tracking info into order (server wins)
       setOrder((prev) => ({
         ...prev,
         tracking: normalized.tracking ?? prev.tracking,
@@ -543,7 +591,6 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
         raw_tracking: normalized.raw ?? prev.raw_tracking,
       }));
 
-      // set data for the track modal and open it
       const infoForModal = {
         shipment_track: (normalized.raw && normalized.raw.shipment_track) || normalized.raw?.shipment_track || (Array.isArray(normalized.raw) ? normalized.raw[0]?.shipment_track : undefined) || [],
         shipment_track_activities: normalized.raw?.shipment_track_activities || normalized.activities || [],
@@ -561,7 +608,6 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       setShowTrackModal(true);
     } catch (err) {
       console.error("Track order failed:", err);
-      // still open modal with any available tracking info in order
       if (order?.raw?.shipment_track || order?.raw_tracking) {
         const raw = order.raw_tracking || order.raw;
         const fallback = {
@@ -583,7 +629,6 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
   useEffect(() => {
     function onKey(e) {
       if (e.key === "Escape") {
-        // close UI overlays that are user-initiated
         setShowCancel(false);
         setShowReturn(false);
         setShowEditAddress(false);
@@ -599,7 +644,6 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     const shareText = `Order ${order.id} • ${order.items?.length ?? 0} items • ${currency(computedPricing?.total ?? order.pricing?.total)}`;
     if (navigator.share) {
       navigator.share({ title: `Order ${order.id}`, text: shareText }).catch(() => {
-        // silent fallback; no modal
         console.warn("Sharing cancelled or not supported");
       });
     } else {
@@ -615,11 +659,9 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       console.warn("Courier phone not available");
       return;
     }
-    // no modal — just use window.open tel: for action or console
     window.location.href = `tel:${order.courier.phone}`;
   }
 
-  // UPDATED: use POST /api/shipping/download-invoice
   async function handleDownloadInvoice() {
     if (!order?.id) {
       console.warn("No order available to download invoice.");
@@ -817,7 +859,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
                 <div>{currency(computedPricing?.fees ?? order.pricing?.fees ?? 0)}</div>
               </div>
 
-              {/* shipping charge if COD */}
+              {/* shipping charge if COD or computed */}
               <div className="flex justify-between">
                 <div>Shipping</div>
                 <div>{currency(computedPricing?.shippingCharge ?? 0)}</div>
@@ -1016,7 +1058,6 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
   const lastDoneIndex = trackingToUse.map((t) => t.done).lastIndexOf(true);
 
   useEffect(() => {
-    // ensure markersRef length matches steps
     markersRef.current = new Array(trackingToUse.length);
 
     function measure() {
@@ -1204,11 +1245,10 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
 
 // InvoiceTemplate converted to Tailwind
 function InvoiceTemplate({ order, pricing }) {
-  // pricing: computedPricing (productPrice, fees, couponDiscount, shippingCharge, total)
   const productPrice = pricing?.productPrice ?? order.pricing?.sellingPrice ?? 0;
   const fees = pricing?.fees ?? order.pricing?.fees ?? 0;
   const couponDiscount = pricing?.couponDiscount ?? order.pricing?.couponDiscount ?? 0;
-  const shippingCharge = pricing?.shippingCharge ?? 0;
+  const shippingCharge = pricing?.shippingCharge ?? order.pricing?.shippingCharge ?? 0;
   const total = pricing?.total ?? order.pricing?.total ?? productPrice + fees + shippingCharge - couponDiscount;
 
   return (
@@ -1291,7 +1331,6 @@ function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose 
   }, [open]);
 
   if (!open) return null;
-  // NOTE: backdrop is pointer-events-none so it won't block outside clicks.
   return (
     <div className="fixed inset-0 z-50 pointer-events-none p-4">
       <div className="absolute inset-0 bg-black/40 pointer-events-none" />
@@ -1330,7 +1369,6 @@ function InputModal({ open, title, initialShipping = { name: "", phone: "", addr
   }, [initialShipping, open]);
 
   if (!open) return null;
-  // non-blocking backdrop pattern used here too
   return (
     <div className="fixed inset-0 z-50 pointer-events-none p-4">
       <div className="absolute inset-0 bg-black/40 pointer-events-none" />
@@ -1375,7 +1413,6 @@ function TrackModal({ open, info, onClose }) {
   const activities = info?.shipment_track_activities ?? info?.shipment_track_activities ?? info?.shipmentTrackActivities ?? [];
   const rawError = info?.raw?.error ?? info?.error ?? "";
 
-  // non-blocking backdrop (so links and navigation can still be clicked if needed)
   return (
     <div className="fixed inset-0 z-50 pointer-events-none p-4">
       <div className="absolute inset-0 bg-black/40 pointer-events-none" />
