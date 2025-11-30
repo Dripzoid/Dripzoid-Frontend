@@ -13,13 +13,25 @@ import {
 } from "lucide-react";
 import Reviews from "../components/Reviews";
 
-/* ----------------------------- helpers & config ----------------------------- */
+/**
+ * OrderDetailsPage.jsx
+ * - Modern Tailwind UI + full original logic
+ * - Shiprocket-first tracking on load; DB fallback.
+ * - Coupon discount computed from product sum + COD (25) if not present in payload.
+ *
+ * NOTE:
+ * - Ensure REACT_APP_API_BASE is set in env or adjust API_BASE below.
+ * - This file is large by purpose (you requested full, un-omitted file).
+ */
+
+// ----------------------------- Config / Helpers -----------------------------
 const API_BASE = process.env.REACT_APP_API_BASE || "";
 const apiUrl = (path = "") => {
   if (!path.startsWith("/")) path = `/${path}`;
   const combined = API_BASE ? `${API_BASE}${path}` : path;
   return combined.replace(/([^:]\/)\/+/g, "$1");
 };
+
 function getAuthToken() {
   if (typeof window === "undefined") return null;
   const ls = localStorage.getItem("token") || localStorage.getItem("authToken");
@@ -28,6 +40,7 @@ function getAuthToken() {
   if (m) return decodeURIComponent(m[1]);
   return null;
 }
+
 function authHeaders(hasJson = true) {
   const headers = {};
   if (hasJson) {
@@ -40,6 +53,7 @@ function authHeaders(hasJson = true) {
   if (token) headers["Authorization"] = `Bearer ${token}`;
   return headers;
 }
+
 function formatDateTime(iso) {
   if (!iso) return "";
   let d = iso;
@@ -62,25 +76,33 @@ const BTN =
   "hover:bg-white hover:text-black dark:hover:bg-black dark:hover:text-white " +
   "hover:ring-2 hover:ring-black dark:hover:ring-white hover:shadow-[0_8px_20px_rgba(0,0,0,0.12)] focus:outline-none";
 
-const MARKER_SIZE_PX = 28;
-const MARKER_INNER_OFFSET_PX = 6;
-const LEFT_6_PX = 24;
-
-/* -------------------- Shiprocket normalizer -------------------- */
+// -------------------- Shiprocket normalizer --------------------
 /**
- * Accepts:
- * - a Shiprocket-style object (either raw "tracking" object, or "tracking_data", or an array)
- * - or an already-normalized object (with .tracking array)
+ * Accepts various shapes:
+ *  - payload.tracking (your server wrapper): { success, tracking: {...} }
+ *  - raw Shiprocket payload (tracking_data / shipment_track / shipment_track_activities)
+ *  - already-normalized object (status + tracking array)
  *
- * Returns consistent shape:
- * {
- *   status, progressIndex, tracking[], activities[], courier, history[], raw
- * }
+ * Returns normalized:
+ *  {
+ *    status: "confirmed"|"packed"|"shipped"|"out for delivery"|"delivered"|"rto",
+ *    progressIndex: 0..4,
+ *    tracking: [ { step, done, date } ... ],
+ *    activities: [ { date, status, location, description, raw } ],
+ *    courier: { name, awb },
+ *    history: [ { title, time }, ... ],
+ *    raw: originalTrackingData
+ *  }
  */
 function normalizeShiprocketResponse(resp) {
   if (!resp) return { status: "confirmed", progressIndex: 0, tracking: [], activities: [], courier: {}, history: [], raw: resp };
 
-  // If already normalized (quick heuristic)
+  // If the server wrapped Shiprocket under `tracking` (your example)
+  if (resp.tracking && typeof resp.tracking === "object") {
+    resp = resp.tracking;
+  }
+
+  // If already normalized shape (quick heuristic)
   if (resp && typeof resp === "object" && !resp.tracking_data && Array.isArray(resp.tracking)) {
     return {
       status: resp.status ?? "confirmed",
@@ -96,22 +118,21 @@ function normalizeShiprocketResponse(resp) {
     };
   }
 
-  // Many responses wrap the useful data under different keys:
-  // - payload.tracking (your server returns { tracking: {...} })
-  // - payload.tracking_data (Shiprocket direct)
-  // - payload (direct)
-  const root = resp.tracking_data ?? resp.tracking ?? resp.raw ?? resp ?? {};
+  // Accept many variants: resp.tracking_data, resp.shipment_track, resp.shipment_track_activities, or raw resp itself
+  const root = Array.isArray(resp) ? resp[0]?.tracking_data ?? resp[0] ?? {} : resp?.tracking_data ?? resp ?? {};
   const td = root || {};
 
-  // If server returned wrapper like { success:true, tracking: { ... } }
-  const shipRoot = resp.tracking ?? td;
+  // Support when the server returns fields at top (like your example)
+  const shipment = Array.isArray(td.shipment_track) && td.shipment_track.length ? td.shipment_track[0] : td.shipment_track || {};
 
-  // shipment entry (Shiprocket uses shipment_track array)
-  const shipment = Array.isArray(shipRoot.shipment_track) && shipRoot.shipment_track.length ? shipRoot.shipment_track[0] : shipRoot.shipment_track || {};
-
-  // gather activities
-  const activitiesRaw =
-    Array.isArray(shipRoot.shipment_track_activities) ? shipRoot.shipment_track_activities : shipRoot.shipment_track?.[0]?.activities ?? shipRoot.shipment_track_activities ?? shipRoot.shipment_track?.[0]?.shipment_track_activities ?? [];
+  // activities arrays might be named shipment_track_activities or an activities array
+  const activitiesRaw = Array.isArray(td.shipment_track_activities)
+    ? td.shipment_track_activities
+    : Array.isArray(td.shipment_track?.[0]?.activities)
+    ? td.shipment_track?.[0]?.activities
+    : Array.isArray(td.activities)
+    ? td.activities
+    : [];
 
   const activities = (activitiesRaw || []).map((a) => ({
     date: a.date || a.time || a.timestamp || a.updated_time_stamp || null,
@@ -130,12 +151,11 @@ function normalizeShiprocketResponse(resp) {
     return null;
   }
 
-  // determine progress
   let progressIndex = 0;
   const latestAct = activities[0] || {};
   const lastSrLabel = (latestAct["sr-status-label"] || latestAct.status || "").toString();
   const lastSr = latestAct["sr-status"] ?? latestAct.sr_status ?? null;
-  const current_status = (shipment.current_status || shipRoot.current_status || "").toString().toLowerCase();
+  const current_status = (shipment.current_status || td.current_status || td.current_status || "").toString().toLowerCase();
 
   if (/delivered/i.test(current_status) || /delivered/i.test(lastSrLabel) || lastSr === 7) {
     progressIndex = 4;
@@ -145,7 +165,7 @@ function normalizeShiprocketResponse(resp) {
     progressIndex = 2;
   } else if (/readyforreceive|ready for receive/i.test((latestAct.status || "").toString().toLowerCase())) {
     progressIndex = 1;
-  } else if ((!shipment || !shipment.awb_code || !(shipment.current_status || "").trim()) && (shipRoot.track_status === 0 || shipRoot.track_status === "0" || shipRoot.error)) {
+  } else if ((!shipment || !shipment.awb_code || !(shipment.current_status || "").trim()) && (td.track_status === 0 || td.track_status === "0" || td.error)) {
     progressIndex = 0;
   } else if (shipment.pickup_date) {
     progressIndex = 2;
@@ -153,6 +173,7 @@ function normalizeShiprocketResponse(resp) {
     progressIndex = 0;
   }
 
+  // history matches TimelineCard titles
   const history = [];
   const packedDate = findActivityDate(activitiesRaw, /readyforreceive|ready for receive|ready_for_receive/i);
   if (packedDate) history.push({ title: "Packed", time: packedDate });
@@ -162,16 +183,20 @@ function normalizeShiprocketResponse(resp) {
     const shippedAct = findActivityDate(activitiesRaw, /arrivedatcarrierfacility|in transit|departed/i);
     if (shippedAct) history.push({ title: "Shipped", time: shippedAct });
   }
+
   const ofd = findActivityDate(activitiesRaw, /outfordelivery|out for delivery|out_for_delivery|outfor delivery/i);
   if (ofd) history.push({ title: "Out For Delivery", time: ofd });
+
   if (shipment.delivered_date) history.push({ title: "Delivered", time: shipment.delivered_date });
   else {
     const delAct = findActivityDate(activitiesRaw, /delivered/i);
     if (delAct) history.push({ title: "Delivered", time: delAct });
   }
+
   const returnAct = findActivityDate(activitiesRaw, /returninitiated|rto/i);
   if (returnAct) history.push({ title: "Return initiated", time: returnAct });
 
+  // steps fallback
   const steps = [
     { step: "Order Confirmed", idx: 0, date: null },
     { step: "Packed", idx: 1, date: packedDate || null },
@@ -181,9 +206,18 @@ function normalizeShiprocketResponse(resp) {
   ];
   const tracking = steps.map((s) => ({ step: s.step, done: s.idx <= progressIndex, date: s.date, detail: "" }));
 
-  const courier = { name: shipment.courier_name || shipRoot.courier_name || shipment.courier || "", awb: shipment.awb_code || shipRoot.awb_code || shipment.awb || "" };
+  const courier = { name: shipment.courier_name || td.courier_name || shipment.courier || "", awb: shipment.awb_code || shipment.awb || "" };
 
-  const statusName = progressIndex === 4 ? "delivered" : progressIndex === 3 ? "out for delivery" : progressIndex === 2 ? "shipped" : progressIndex === 1 ? "packed" : "confirmed";
+  const statusName =
+    progressIndex === 4
+      ? "delivered"
+      : progressIndex === 3
+      ? "out for delivery"
+      : progressIndex === 2
+      ? "shipped"
+      : progressIndex === 1
+      ? "packed"
+      : "confirmed";
 
   return {
     status: statusName,
@@ -192,11 +226,91 @@ function normalizeShiprocketResponse(resp) {
     activities,
     courier,
     history,
-    raw: shipRoot,
+    raw: td,
   };
 }
 
-/* -------------------- Main component -------------------- */
+// -------------------- Order normalizer (API -> UI) --------------------
+function normalizeApiOrder(payload) {
+  if (!payload) return null;
+
+  const pricing = {
+    total: payload.total_amount ?? (payload.pricing && payload.pricing.total) ?? payload.total ?? 0,
+    sellingPrice: (payload.total_amount ?? payload.pricing?.sellingPrice) ?? 0,
+    listingPrice: payload.pricing?.listingPrice ?? payload.total_amount ?? 0,
+    fees: payload.pricing?.fees ?? 0,
+    extraDiscount: payload.pricing?.extraDiscount ?? 0,
+    specialPrice: payload.pricing?.specialPrice ?? 0,
+    otherDiscount: payload.pricing?.otherDiscount ?? 0,
+    // couponDiscount might be present; if not, we'll compute later
+    couponDiscount: payload.pricing?.couponDiscount ?? payload.pricing?.coupon ?? payload.pricing?.otherDiscount ?? 0,
+  };
+
+  const sa = payload.shipping_address || payload.shipping || null;
+  const shipping = sa
+    ? {
+        id: sa.id ?? null,
+        label: sa.label ?? null,
+        name: sa.name ?? sa.label ?? payload.user_name ?? null,
+        phone: sa.phone ?? null,
+        address: [
+          sa.line1 ?? sa.address_line1 ?? sa.address1 ?? null,
+          sa.line2 ?? sa.address_line2 ?? sa.address2 ?? null,
+          sa.city ?? sa.town ?? null,
+          sa.state ?? null,
+          sa.pincode ?? sa.postcode ?? sa.zip ?? null,
+          sa.country ?? null,
+        ]
+          .filter(Boolean)
+          .join(", "),
+        raw: sa,
+      }
+    : { address: "", name: "", phone: "" };
+
+  const items = Array.isArray(payload.items)
+    ? payload.items.map((it) => {
+        const firstImg = (it.image || it.images || "")
+          .toString()
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)[0] || "";
+
+        const opts = it.options || {};
+        const optionsText =
+          typeof opts === "string"
+            ? opts
+            : [opts.color ? `${opts.color}` : null, opts.size ? `${opts.size}` : null, opts.variant ? `${opts.variant}` : null].filter(Boolean).join(" • ");
+
+        return {
+          id: it.id,
+          title: it.name ?? it.title ?? "",
+          img: firstImg,
+          qty: it.quantity ?? it.qty ?? 1,
+          price: it.price ?? it.amount ?? 0,
+          options: optionsText,
+          seller: it.seller ?? "",
+          raw: it,
+        };
+      })
+    : [];
+
+  return {
+    id: payload.id,
+    status: payload.status,
+    created_at: payload.created_at ?? payload.placedAt ?? payload.createdAt,
+    user_name: payload.user_name ?? payload.userName ?? null,
+    paymentMethod: payload.payment_method ?? payload.paymentMethod ?? null,
+    shipping,
+    pricing,
+    items,
+    tracking: payload.tracking ?? payload.tracking_info ?? payload.tracking ?? [],
+    courier: payload.courier ?? null,
+    history: payload.history ?? [],
+    raw: payload,
+  };
+}
+
+// -------------------- Main component --------------------
 export default function OrderDetailsPage({ orderId: propOrderId }) {
   const [orderId] = useState(() => {
     if (propOrderId) return String(propOrderId);
@@ -217,95 +331,19 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
   const [showEditAddress, setShowEditAddress] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
   const invoiceRef = useRef(null);
+
   const [currentUser, setCurrentUser] = useState(null);
   const [openReviews, setOpenReviews] = useState({});
+
+  // Track modal
   const [showTrackModal, setShowTrackModal] = useState(false);
   const [trackInfo, setTrackInfo] = useState(null);
 
-  // Normalize the backend order into a consistent shape
-  function normalizeApiOrder(payload) {
-    if (!payload) return null;
-
-    const pricing = {
-      total: Number(payload.total_amount ?? payload.pricing?.total ?? payload.pricing?.grand_total ?? payload.pricing?.final_total ?? payload.pricing?.sellingPrice ?? 0),
-      sellingPrice: Number(payload.total_amount ?? payload.pricing?.sellingPrice ?? 0),
-      listingPrice: Number(payload.pricing?.listingPrice ?? payload.total_amount ?? 0),
-      fees: Number(payload.pricing?.fees ?? 0),
-      extraDiscount: Number(payload.pricing?.extraDiscount ?? 0),
-      specialPrice: Number(payload.pricing?.specialPrice ?? 0),
-      otherDiscount: Number(payload.pricing?.otherDiscount ?? 0),
-      // couponDiscount may not be present in payload — keep as provided (maybe 0)
-      couponDiscount: Number(payload.pricing?.couponDiscount ?? payload.pricing?.coupon ?? payload.pricing?.otherDiscount ?? 0),
-    };
-
-    const sa = payload.shipping_address || payload.shipping || null;
-    const shipping = sa
-      ? {
-          id: sa.id ?? null,
-          label: sa.label ?? null,
-          name: sa.name ?? sa.label ?? payload.user_name ?? null,
-          phone: sa.phone ?? null,
-          address: [
-            sa.line1 ?? sa.address_line1 ?? sa.address1 ?? null,
-            sa.line2 ?? sa.address_line2 ?? sa.address2 ?? null,
-            sa.city ?? sa.town ?? null,
-            sa.state ?? null,
-            sa.pincode ?? sa.postcode ?? sa.zip ?? null,
-            sa.country ?? null,
-          ]
-            .filter(Boolean)
-            .join(", "),
-          raw: sa,
-        }
-      : { address: "", name: "", phone: "" };
-
-    const items = Array.isArray(payload.items)
-      ? payload.items.map((it) => {
-          const firstImg = (it.image || it.images || "")
-            .toString()
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean)[0] || "";
-
-          const opts = it.options || {};
-          const optionsText =
-            typeof opts === "string"
-              ? opts
-              : [opts.color ? `${opts.color}` : null, opts.size ? `${opts.size}` : null, opts.variant ? `${opts.variant}` : null].filter(Boolean).join(" • ");
-
-          return {
-            id: it.id,
-            title: it.name ?? it.title ?? "",
-            img: firstImg,
-            qty: it.quantity ?? it.qty ?? 1,
-            price: Number(it.price ?? it.amount ?? 0),
-            options: optionsText,
-            seller: it.seller ?? "",
-            raw: it,
-          };
-        })
-      : [];
-
-    return {
-      id: payload.id,
-      status: payload.status,
-      created_at: payload.created_at ?? payload.placedAt ?? payload.createdAt,
-      user_name: payload.user_name ?? payload.userName ?? null,
-      paymentMethod: payload.payment_method ?? payload.paymentMethod ?? null,
-      shipping,
-      pricing,
-      items,
-      tracking: payload.tracking ?? payload.tracking_info ?? payload.tracking ?? [],
-      courier: payload.courier ?? null,
-      history: payload.history ?? [],
-      raw: payload,
-    };
-  }
-
-  // Fetch order from backend
+  // ------------------ initial load: fetch order then attempt tracking ------------------
   useEffect(() => {
     let mounted = true;
     const ac = new AbortController();
+
     (async () => {
       setLoading(true);
       try {
@@ -327,15 +365,9 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
         if (!mounted) return;
         setOrder(normalized);
 
-        // Immediately attempt to fetch Shiprocket tracking and merge that into state.
-        // We do this *after* the DB order is available so we have order.id and fallback info.
-        // This will not open the modal; it only updates the displayed status/stepper.
-        try {
-          await fetchAndMergeTracking(normalized, { openModal: false });
-        } catch (e) {
-          // swallow — UI will fall back to DB order
-          console.warn("Initial tracking lookup failed; using DB order as fallback.", e);
-        }
+        // Immediately attempt to fetch Shiprocket tracking and use it to set status/timeline (no modal)
+        // If track fails, keep DB order as-is (fallback)
+        await fetchTrackAndMerge(normalized.id, false);
       } catch (err) {
         if (err.name === "AbortError") return;
         console.error("Error loading order:", err);
@@ -359,28 +391,35 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     }
   }, []);
 
-  // derived pricing: product price (sum of items), shipping charge (cod -> 25), coupon discount (derived if missing), computed total
+  // -------------------- Pricing compute with coupon fallback --------------------
   const computedPricing = useMemo(() => {
     if (!order) return null;
+    // product price (sum of items)
     const productPrice = (order.items || []).reduce((s, it) => s + (Number(it.price || 0) * Number(it.qty || 1)), 0);
     const fees = Number(order.pricing?.fees || 0);
-    // prefer paymentMethod present on normalized order (user-level)
+    // shippingCharge: COD -> 25
     const shippingCharge = (order.paymentMethod || "").toString().toLowerCase() === "cod" ? 25 : 0;
 
-    // reportedTotal: try multiple fields the backend might use
-    const reportedTotal = Number(order.pricing?.total ?? order.pricing?.total_amount ?? order.pricing?.sellingPrice ?? order.pricing?.listingPrice ?? order.pricing?.grand_total ?? 0);
+    // reported total from API (try multiple keys)
+    const reportedTotal = Number(order.pricing?.total ?? order.pricing?.total_amount ?? order.raw?.total_amount ?? order.raw?.total ?? order.raw?.pricing?.total ?? 0);
 
-    // If backend provided a couponDiscount explicitly, trust it (and ensure non-negative)
-    let couponDiscount = Math.max(0, Number(order.pricing?.couponDiscount ?? order.pricing?.coupon ?? order.pricing?.otherDiscount ?? 0));
+    // compute coupon discount if not provided or seems inconsistent:
+    // compute expected sum = productPrice + fees + shippingCharge
+    const expectedSum = productPrice + fees + shippingCharge;
 
-    // If couponDiscount is zero but reportedTotal is present and differs from computed (productPrice + fees + shippingCharge),
-    // infer couponDiscount = computedExpected - reportedTotal (if positive).
-    const computedExpected = productPrice + fees + shippingCharge;
-    if (couponDiscount === 0 && reportedTotal > 0 && computedExpected > reportedTotal) {
-      couponDiscount = Math.max(0, computedExpected - reportedTotal);
+    // server coupon (if present)
+    let serverCoupon = Number(order.pricing?.couponDiscount ?? order.pricing?.coupon ?? order.pricing?.otherDiscount ?? 0);
+
+    // If serverCoupon is missing or zero and reportedTotal exists and expectedSum > reportedTotal -> infer coupon
+    if ((!serverCoupon || serverCoupon === 0) && reportedTotal > 0 && expectedSum - reportedTotal > 0) {
+      serverCoupon = Math.max(0, expectedSum - reportedTotal);
     }
 
-    const total = Math.max(0, computedExpected - couponDiscount);
+    // final couponDiscount
+    const couponDiscount = Math.max(0, serverCoupon || 0);
+
+    // final total: prefer reportedTotal when present, else calculate
+    const total = reportedTotal > 0 ? reportedTotal : Math.max(0, expectedSum - couponDiscount);
 
     return {
       productPrice,
@@ -391,7 +430,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     };
   }, [order]);
 
-  /* ------------------ backend-integrated actions ------------------ */
+  // ------------------ backend-integrated actions ------------------
   async function handleCancel() {
     if (!order) return;
     const prevOrder = order;
@@ -491,11 +530,11 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     }
   }
 
-  /* ------------------ track-order (used by both initial load and user click) ------------------ */
-  // options: { openModal: boolean } - open modal only when user clicked
-  async function fetchAndMergeTracking(orderObj, options = { openModal: false }) {
-    if (!orderObj?.id) {
-      console.warn("fetchAndMergeTracking: no order id");
+  // ------------------ Track order (used for both initial load and manual track) ------------------
+  // openModal: if true, open the track modal showing detailed activities and shipment_track
+  async function fetchTrackAndMerge(orderIdToTrack, openModal = false) {
+    if (!orderIdToTrack) {
+      console.warn("Track order: no orderId");
       return;
     }
     setLoading(true);
@@ -508,112 +547,97 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
           "Content-Type": "application/json",
         },
         credentials: "same-origin",
-        body: JSON.stringify({ order_id: orderObj.id }),
+        body: JSON.stringify({ order_id: orderIdToTrack }),
       });
 
       const payload = await parseJsonSafe(res);
-      if (!res.ok) {
-        console.error("Track API error:", payload?.message || `HTTP ${res.status}`);
-        throw new Error(payload?.message || `Track API error (${res.status})`);
+      if (!res.ok && !payload) {
+        throw new Error(`Track API failed: HTTP ${res.status}`);
       }
 
-      // The server might return { tracking: { ... } } (your example) or return raw Shiprocket data
-      let shipPayload = null;
-      if (payload.tracking) {
-        shipPayload = payload.tracking;
-      } else if (payload.tracking_data) {
-        shipPayload = payload.tracking_data;
-      } else if (Array.isArray(payload)) {
-        shipPayload = payload;
-      } else {
-        // Maybe server already returned normalized structure
-        shipPayload = payload;
-      }
+      // payload could be { success, tracking: {...} } (your example)
+      // or raw Shiprocket shape (tracking_data / shipment_track / activities)
+      // or normalized shape.
 
-      const isShiprocketRaw = shipPayload && (shipPayload.shipment_track || shipPayload.shipment_track_activities || shipPayload.shipment_track?.length > 0 || shipPayload.latest_activity);
-      let normalized;
+      const isWrapped = payload && payload.tracking;
+      const rawCandidate = isWrapped ? payload.tracking : payload;
+
+      const isShiprocketRaw =
+        rawCandidate && (rawCandidate.tracking_data || rawCandidate.shipment_track || rawCandidate.shipment_track_activities || Array.isArray(rawCandidate));
+
+      let normalizedTrack;
       if (isShiprocketRaw) {
-        normalized = normalizeShiprocketResponse(shipPayload);
+        normalizedTrack = normalizeShiprocketResponse(rawCandidate);
       } else {
-        // assume server already returned normalized shape
-        normalized = {
-          status: payload.status ?? payload.tracking?.status ?? orderObj.status,
-          tracking: payload.tracking ?? orderObj.tracking ?? [],
-          activities: payload.activities ?? [],
-          courier: payload.courier ?? orderObj.courier ?? null,
-          history: payload.history ?? [],
-          raw: payload,
+        // assume server returned normalized shape
+        normalizedTrack = {
+          status: rawCandidate.status ?? rawCandidate.tracking?.status ?? order?.status,
+          tracking: rawCandidate.tracking ?? order?.tracking ?? [],
+          activities: rawCandidate.activities ?? [],
+          courier: rawCandidate.courier ?? order?.courier ?? {},
+          history: rawCandidate.history ?? [],
+          raw: rawCandidate,
         };
       }
 
-      // Merge tracking info into order (server wins)
-      setOrder((prev) => {
-        const merged = {
-          ...prev,
-          tracking: normalized.tracking ?? prev.tracking,
-          status: normalized.status ?? prev.status,
-          courier: { ...(prev.courier || {}), ...(normalized.courier || {}) },
-          history: normalized.history ? [...normalized.history, ...(prev.history || [])] : prev.history,
-          raw_tracking: normalized.raw ?? prev.raw_tracking,
-        };
-        return merged;
-      });
+      // Merge into order (server-wins for tracking info)
+      setOrder((prev) => ({
+        ...prev,
+        tracking: normalizedTrack.tracking ?? prev?.tracking,
+        status: normalizedTrack.status ?? prev?.status,
+        courier: { ...(prev?.courier || {}), ...(normalizedTrack.courier || {}) },
+        history: normalizedTrack.history ? [...normalizedTrack.history, ...(prev?.history || [])] : prev?.history,
+        raw_tracking: normalizedTrack.raw ?? prev?.raw_tracking,
+      }));
 
-      // Prepare modal info (if requested to open modal)
+      // If user requested modal, prepare info and open
       const infoForModal = {
         shipment_track:
-          (normalized.raw && normalized.raw.shipment_track) ||
-          normalized.raw?.shipment_track ||
-          (Array.isArray(normalized.raw) ? normalized.raw[0]?.shipment_track : undefined) ||
-          (payload.shipment_track || payload.tracking?.shipment_track) ||
+          (normalizedTrack.raw && normalizedTrack.raw.shipment_track) ||
+          normalizedTrack.raw?.shipment_track ||
+          (Array.isArray(normalizedTrack.raw) ? normalizedTrack.raw[0]?.shipment_track : undefined) ||
           [],
-        shipment_track_activities: normalized.raw?.shipment_track_activities || normalized.activities || payload.shipment_track_activities || [],
-        courier_name: normalized.courier?.name || normalized.raw?.courier_name || "",
-        awb_code: normalized.courier?.awb || normalized.raw?.awb_code || "",
-        current_status: normalized.status || "",
-        origin: (normalized.raw?.shipment_track?.[0]?.origin) || "",
-        destination: (normalized.raw?.shipment_track?.[0]?.destination) || "",
-        etd: normalized.raw?.etd || normalized.raw?.shipment_track?.[0]?.edd || payload.etd || "",
-        raw: normalized.raw || payload,
-        status: normalized.status,
+        shipment_track_activities: normalizedTrack.raw?.shipment_track_activities || normalizedTrack.activities || [],
+        courier_name: normalizedTrack.courier?.name || "",
+        awb_code: normalizedTrack.courier?.awb || "",
+        current_status: normalizedTrack.status || "",
+        origin: (normalizedTrack.raw?.shipment_track?.[0]?.origin) || "",
+        destination: (normalizedTrack.raw?.shipment_track?.[0]?.destination) || "",
+        etd: normalizedTrack.raw?.etd || normalizedTrack.raw?.shipment_track?.[0]?.edd || "",
+        raw: normalizedTrack.raw || payload,
+        status: normalizedTrack.status,
       };
 
       setTrackInfo(infoForModal);
-      if (options.openModal) setShowTrackModal(true);
+      if (openModal) setShowTrackModal(true);
     } catch (err) {
       console.error("Track order failed:", err);
-      // fallback: if DB order had some raw tracking, use that
-      if (order?.raw?.shipment_track || order?.raw_tracking) {
+      // fallback: if order already has raw tracking, use that to show modal (if openModal requested)
+      if (openModal && (order?.raw_tracking || order?.raw?.shipment_track || order?.raw?.shipment_track_activities)) {
         const raw = order.raw_tracking || order.raw;
         const fallback = {
           shipment_track: raw?.shipment_track || [],
           shipment_track_activities: raw?.shipment_track_activities || [],
-          courier_name: raw?.courier_name || order.courier?.name || "",
-          awb_code: raw?.shipment_track?.[0]?.awb_code || order.courier?.awb || "",
-          current_status: order.status || "",
+          courier_name: raw?.courier_name || order?.courier?.name || "",
+          awb_code: raw?.shipment_track?.[0]?.awb_code || order?.courier?.awb || "",
+          current_status: order?.status || "",
           raw,
         };
         setTrackInfo(fallback);
-        if (options.openModal) setShowTrackModal(true);
-      } else {
-        // no raw data — if openModal requested, show a modal with "No activities"
-        if (options.openModal) {
-          setTrackInfo({ shipment_track: [], shipment_track_activities: [], courier_name: "", awb_code: "", current_status: order.status || "", raw: null });
-          setShowTrackModal(true);
-        }
+        setShowTrackModal(true);
       }
     } finally {
       setLoading(false);
     }
   }
 
+  // wrapper used when user clicks Track button
   async function handleTrackOrder() {
     if (!order?.id) {
-      console.warn("Track order: no order to track");
+      console.warn("no order to track");
       return;
     }
-    // on user click, open modal with full details (openModal: true)
-    await fetchAndMergeTracking(order, { openModal: true });
+    await fetchTrackAndMerge(order.id, true);
   }
 
   useEffect(() => {
@@ -694,85 +718,188 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     }
   }
 
+  // Loading state UI
   if (loading || !order) {
     return (
       <div className="min-h-screen bg-white dark:bg-black text-neutral-900 dark:text-neutral-100 transition-colors duration-200">
-        <div className="max-w-7xl mx-auto px-4 py-10">
+        <div className="max-w-7xl mx-auto px-4 py-12">
           <SkeletonPage />
         </div>
       </div>
     );
   }
 
+  // derived booleans
   const isDelivered =
     (order.status || "").toString().toLowerCase() === "delivered" ||
     order.tracking?.some?.((t) => (t.step || t.status)?.toString().toLowerCase() === "delivered" && (t.done || t.status === "delivered"));
   const isPacked = (order.status || "").toString().toLowerCase() === "packed";
   const isCancelled = (order.status || "").toString().toLowerCase() === "cancelled";
 
+  // Timeline steps for the stepper
+  const timelineSteps = isCancelled ? ["Order Confirmed", "Cancelled"] : ["Order Confirmed", "Packed", "Shipped", "Out For Delivery", "Delivered"];
+
+  // Determine progress index from order.status matched to map
+  const progressMap = {
+    pending: 0,
+    confirmed: 0,
+    processing: 1,
+    packed: 1,
+    shipped: 2,
+    "out for delivery": 3,
+    delivered: 4,
+    cancelled: isCancelled ? 1 : 0,
+  };
+  const normalizedStatus = (order.status || "").toLowerCase();
+  const progressIndex = progressMap[normalizedStatus] ?? 0;
+
+  // Build trackingToUse similar to previous TimelineCard logic
+  const trackingToUse = timelineSteps.map((step, idx) => {
+    const done = idx <= progressIndex;
+
+    const detailRaw =
+      step.toLowerCase().includes("cancel")
+        ? "Order cancelled"
+        : step.toLowerCase().includes("confirmed")
+        ? "Order placed successfully."
+        : step.toLowerCase().includes("packed")
+        ? "Order packed and waiting for shipping partner to pickup."
+        : step.toLowerCase().includes("shipped")
+        ? "Shipped successfully — waiting for delivery partner to pick up."
+        : step.toLowerCase().includes("out for delivery")
+        ? "Out for delivery — with delivery partner."
+        : step.toLowerCase().includes("delivered")
+        ? "Delivered successfully. Share your feedback through review."
+        : "";
+
+    const date =
+      idx === progressIndex
+        ? order.history?.find((h) => (h.title || "").toString().toLowerCase().includes(step.toLowerCase()))?.time || order.created_at || null
+        : null;
+
+    const detail = idx === progressIndex && done ? detailRaw : "";
+
+    return {
+      step,
+      done,
+      date,
+      detail,
+    };
+  });
+
+  // ---------------- UI - Modern layout ----------------
   return (
-    <div className="min-h-screen bg-white dark:bg-black text-neutral-900 dark:text-neutral-100 transition-colors duration-200">
-      <div className="bg-neutral-50 dark:bg-neutral-900/40 border-b border-neutral-200 dark:border-neutral-800">
-        <div className="max-w-7xl mx-auto px-4 py-3 text-sm text-neutral-600 dark:text-neutral-400">
-          Home &gt; My Account &gt; My Orders &gt; <span className="font-mono">{order.id}</span>
+    <div className="min-h-screen bg-gradient-to-b from-neutral-50 to-white dark:from-neutral-950 dark:to-neutral-900 text-neutral-900 dark:text-neutral-100">
+      <div className="border-b backdrop-blur bg-white/70 dark:bg-neutral-900/60 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div>
+            <div className="text-sm text-neutral-500">Home &gt; My Account &gt; My Orders &gt; <span className="font-mono">{order.id}</span></div>
+            <h1 className="text-lg font-semibold tracking-tight mt-1">Order #{order.id}</h1>
+            <div className="mt-1 text-sm text-neutral-500">Placed: {formatDateTime(order.created_at)}</div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <StatusBadge status={order.status} />
+            <button onClick={handleShare} className="px-3 py-2 rounded-full border bg-white dark:bg-neutral-900 text-sm">Share</button>
+            <button onClick={handleDownloadInvoice} className="px-3 py-2 rounded-full border bg-white dark:bg-neutral-900 text-sm flex items-center gap-2">
+              <Download size={14} /> Invoice
+            </button>
+          </div>
         </div>
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <section className="lg:col-span-2 space-y-6">
-          <TimelineCard
-            order={order}
-            onCancel={() => setShowCancel(true)}
-            onRequestReturn={() => setShowReturn(true)}
-            onTrackAll={handleTrackOrder}
-            isDelivered={isDelivered}
-          />
+      <main className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <section className="lg:col-span-2 space-y-8">
+          {/* Tracking Card */}
+          <div className="bg-white dark:bg-neutral-900 shadow-lg border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-3">
+                  <Truck className="text-neutral-600 dark:text-neutral-300" />
+                  <div>
+                    <div className="text-sm text-neutral-500">Tracking status</div>
+                    <div className="font-semibold capitalize">{order.status || "Order Confirmed"}</div>
+                  </div>
+                </div>
+                <div className="text-xs text-neutral-500 mt-2">Delivery Executive details will be available once the order is out for delivery</div>
+              </div>
 
-          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-4">
+              <div className="text-sm text-neutral-500">
+                AWB: {order.courier?.awb ?? order.raw_tracking?.shipment_track?.[0]?.awb_code ?? "—"}
+                <div className="mt-2">{order.courier?.name ?? order.raw_tracking?.shipment_track?.[0]?.courier_name ?? "—"}</div>
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <ModernStepper steps={timelineSteps} activeIndex={progressIndex} />
+            </div>
+
+            <div className="mt-4 flex gap-3">
+              {!isCancelled && !isDelivered && (
+                <>
+                  <button onClick={() => setShowCancel(true)} className={`${BTN} flex-1 py-2 flex items-center justify-center gap-2 text-sm`}>
+                    Cancel
+                  </button>
+                  <button onClick={handleTrackOrder} className={`${BTN} flex-1 py-2 flex items-center justify-center gap-2 text-sm`}>
+                    <Truck size={16} /> Track order
+                  </button>
+                </>
+              )}
+
+              {!isCancelled && isDelivered && (
+                <button onClick={() => setShowReturn(true)} className={`${BTN} flex-1 py-2 flex items-center justify-center gap-2 text-sm`}>
+                  Return
+                </button>
+              )}
+
+              {isCancelled && <div className="text-sm text-red-600 italic px-2">This order has been cancelled.</div>}
+            </div>
+          </div>
+
+          {/* Items Card */}
+          <div className="bg-white dark:bg-neutral-900 shadow-md border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6">
             <div className="flex items-center justify-between">
-              <h3 className="font-medium">Items in this order</h3>
+              <h3 className="text-base font-semibold">Items in this order</h3>
               <div className="text-sm text-neutral-500">{order.items?.length ?? 0} item(s)</div>
             </div>
 
             <div className="mt-4 divide-y divide-neutral-100 dark:divide-neutral-800">
               {order.items?.map((it) => (
-                <div key={it.id || `${it.title}-${Math.random()}`} className="py-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                    <div className="w-full sm:w-auto flex items-center gap-4">
-                      <div className="w-20 h-20 flex-shrink-0 rounded overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-gray-50">
-                        <img
-                          src={it.img || "/placeholder.png"}
-                          alt={it.title}
-                          className="w-full h-full object-cover"
-                          onError={(e) => (e.currentTarget.src = "/placeholder.png")}
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-medium">{it.title}</div>
-                        <div className="text-sm text-neutral-500">{it.options || "—"}</div>
-                        <div className="text-sm text-neutral-500 mt-1">Seller: {it.seller || "—"}</div>
-                      </div>
+                <div key={it.id || `${it.title}-${Math.random()}`} className="py-4 flex flex-col sm:flex-row sm:items-center gap-4">
+                  <div className="w-full sm:w-auto flex items-center gap-4">
+                    <div className="w-20 h-20 flex-shrink-0 rounded overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-gray-50">
+                      <img
+                        src={it.img || "/placeholder.png"}
+                        alt={it.title}
+                        className="w-full h-full object-cover"
+                        onError={(e) => (e.currentTarget.src = "/placeholder.png")}
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-medium">{it.title}</div>
+                      <div className="text-sm text-neutral-500">{it.options || "—"}</div>
+                      <div className="text-sm text-neutral-500 mt-1">Seller: {it.seller || "—"}</div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between sm:justify-end gap-4">
+                    <div className="text-right">
+                      <div className="font-semibold">{currency(it.price)}</div>
+                      <div className="text-sm text-neutral-500">Qty: {it.qty}</div>
                     </div>
 
-                    <div className="flex items-center justify-between sm:justify-end gap-4">
-                      <div className="text-right">
-                        <div className="font-semibold">{currency(it.price)}</div>
-                        <div className="text-sm text-neutral-500">Qty: {it.qty}</div>
+                    {isDelivered && !isCancelled && (
+                      <div className="flex-shrink-0">
+                        <button
+                          onClick={() =>
+                            setOpenReviews((prev) => ({ ...(prev || {}), [String(it.id)]: !Boolean(prev?.[String(it.id)]) }))
+                          }
+                          className={`${BTN} text-sm px-3 py-1`}
+                        >
+                          Submit review
+                        </button>
                       </div>
-
-                      {isDelivered && !isCancelled && (
-                        <div className="flex-shrink-0">
-                          <button
-                            onClick={() =>
-                              setOpenReviews((prev) => ({ ...(prev || {}), [String(it.id)]: !Boolean(prev?.[String(it.id)]) }))
-                            }
-                            className={`${BTN} text-sm px-3 py-1`}
-                          >
-                            Submit review
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </div>
 
                   {openReviews[String(it.id)] && (
@@ -781,16 +908,16 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
                     </div>
                   )}
                 </div>
-              )) ?? null}
+              ))}
             </div>
           </div>
         </section>
 
         <aside className="space-y-6">
-          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-4">
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-md p-6">
             <div className="flex items-center justify-between">
-              <div className="font-medium">Delivery details</div>
-              <div className="text-sm text-neutral-400">AWB: {order.courier?.awb ?? order.raw_tracking?.shipment_track?.[0]?.awb_code ?? "—"}</div>
+              <h3 className="text-base font-semibold">Delivery details</h3>
+              <div className="text-sm text-neutral-400">AWB: {order.courier?.awb ?? "—"}</div>
             </div>
 
             <div className="mt-3 space-y-3">
@@ -814,7 +941,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
               <div className="bg-neutral-50 dark:bg-neutral-800 rounded p-3 flex items-center justify-between">
                 <div>
                   <div className="text-sm text-neutral-500">Courier</div>
-                  <div className="text-sm font-medium">{order.courier?.name ?? order.raw_tracking?.shipment_track?.[0]?.courier_name ?? "—"}</div>
+                  <div className="text-sm font-medium">{order.courier?.name ?? "—"}</div>
                   <div className="text-sm text-neutral-500">
                     {order.courier?.exec?.name ?? ""} • {order.courier?.exec?.phone ?? ""}
                   </div>
@@ -831,9 +958,9 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-4">
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-md p-6">
             <div className="flex items-center justify-between">
-              <div className="font-medium">Price details</div>
+              <h3 className="text-base font-semibold">Price details</h3>
               <div className="text-sm text-neutral-400">Items: {order.items?.length ?? 0}</div>
             </div>
 
@@ -883,6 +1010,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
           </div>
         </aside>
 
+        {/* Modals */}
         {showInvoice && (
           <div className="hidden" aria-hidden>
             <div ref={invoiceRef}>
@@ -932,8 +1060,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
   );
 }
 
-/* -------------------- Subcomponents -------------------- */
-
+// -------------------- Subcomponents --------------------
 function SkeletonPage() {
   return (
     <div className="animate-pulse space-y-4">
@@ -953,360 +1080,52 @@ function SkeletonPage() {
   );
 }
 
-function ProductHeader({ order }) {
-  const item = order.items?.[0] || { title: "", options: "", seller: "", price: 0, img: "" };
-  return (
-    <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-6">
-      <div className="flex items-start gap-4">
-        <div className="flex-1">
-          <h1 className="text-lg font-semibold leading-tight">{item.title}</h1>
-          <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">{item.options}</div>
-          <div className="text-xs text-neutral-500 dark:text-neutral-500 mt-2">Seller: {item.seller}</div>
-
-          <div className="mt-4 flex items-center gap-4">
-            <div className="text-2xl font-bold">{currency(item.price)}</div>
-            <div className="text-sm text-emerald-600">1 offer</div>
-          </div>
-        </div>
-
-        <div className="w-28 h-28 flex-shrink-0 rounded overflow-hidden border border-neutral-200 dark:border-neutral-800">
-          <img src={item.img} alt={item.title} className="w-full h-full object-cover" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * TimelineCard
- */
-function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivered }) {
-  const timelineRef = useRef(null);
-  const markersRef = useRef([]);
-  const [overlayRect, setOverlayRect] = useState(null);
-
-  const innerSize = MARKER_SIZE_PX - MARKER_INNER_OFFSET_PX;
-  const isCancelled = order.status && order.status.toLowerCase() === "cancelled";
-
-  const allSteps = isCancelled ? ["Order Confirmed", "Cancelled"] : ["Order Confirmed", "Packed", "Shipped", "Out For Delivery", "Delivered"];
-
-  const progressMap = {
-    pending: 0,
-    confirmed: 0,
-    processing: 1,
-    packed: 1,
-    shipped: 2,
-    "out for delivery": 3,
-    delivered: 4,
-    cancelled: isCancelled ? 1 : 0,
+function StatusBadge({ status }) {
+  const map = {
+    delivered: "bg-emerald-100 text-emerald-800 border-emerald-300",
+    shipped: "bg-blue-100 text-blue-800 border-blue-300",
+    "out for delivery": "bg-indigo-100 text-indigo-800 border-indigo-300",
+    packed: "bg-amber-100 text-amber-800 border-amber-300",
+    confirmed: "bg-neutral-100 text-neutral-700 border-neutral-300",
+    cancelled: "bg-red-100 text-red-700 border-red-300",
   };
-
-  const normalizedStatus = (order.status || "").toLowerCase();
-  const progressIndex = progressMap[normalizedStatus] ?? 0;
-
-  const trackingToUse = allSteps.map((step, idx) => {
-    const done = idx <= progressIndex;
-
-    const detailRaw =
-      step.toLowerCase().includes("cancel")
-        ? "Order cancelled"
-        : step.toLowerCase().includes("confirmed")
-        ? "Order placed successfully."
-        : step.toLowerCase().includes("packed")
-        ? "Order packed and waiting for shipping partner to pickup."
-        : step.toLowerCase().includes("shipped")
-        ? "Shipped successfully — waiting for delivery partner to pick up."
-        : step.toLowerCase().includes("out for delivery")
-        ? "Out for delivery — with delivery partner."
-        : step.toLowerCase().includes("delivered")
-        ? "Delivered successfully. Share your feedback through review."
-        : "";
-
-    const date =
-      idx === progressIndex
-        ? order.history?.find((h) => (h.title || "").toString().toLowerCase().includes(step.toLowerCase()))?.time ||
-          order.created_at ||
-          null
-        : null;
-
-    const detail = idx === progressIndex && done ? detailRaw : "";
-
-    return {
-      step,
-      done,
-      date,
-      detail,
-    };
-  });
-
-  const lastDoneIndex = trackingToUse.map((t) => t.done).lastIndexOf(true);
-
-  useEffect(() => {
-    markersRef.current = new Array(trackingToUse.length);
-
-    function measure() {
-      const container = timelineRef.current;
-      const nodes = markersRef.current || [];
-      if (!container || !nodes.length) {
-        setOverlayRect(null);
-        return;
-      }
-
-      if (lastDoneIndex < 0) {
-        setOverlayRect(null);
-        return;
-      }
-      const containerRect = container.getBoundingClientRect();
-      const firstNode = nodes[0];
-      const lastNode = nodes[lastDoneIndex] || firstNode;
-      if (!firstNode || !lastNode) {
-        setOverlayRect(null);
-        return;
-      }
-
-      const firstRect = firstNode.getBoundingClientRect();
-      const lastRect = lastNode.getBoundingClientRect();
-
-      const firstCenter = firstRect.top - containerRect.top + MARKER_SIZE_PX / 2;
-      const lastCenter = lastRect.top - containerRect.top + MARKER_SIZE_PX / 2;
-
-      const topPx = Math.round(firstCenter - 2);
-      const heightPx = Math.max(4, Math.round(lastCenter - firstCenter) + 4);
-
-      const spineLeftPx = LEFT_6_PX + MARKER_SIZE_PX / 2 - 2;
-      setOverlayRect({ leftPx: Math.round(spineLeftPx), topPx, heightPx });
-    }
-
-    measure();
-    window.addEventListener("resize", measure);
-    const ro = new ResizeObserver(measure);
-    if (timelineRef.current) ro.observe(timelineRef.current);
-    markersRef.current.forEach((el) => el && ro.observe(el));
-    return () => {
-      window.removeEventListener("resize", measure);
-      try {
-        ro.disconnect();
-      } catch (e) {}
-    };
-  }, [trackingToUse, lastDoneIndex, order.status]);
-
-  const spineLeftForCSS = LEFT_6_PX + MARKER_SIZE_PX / 2 - 2;
-  const markerLeftPx = spineLeftForCSS - MARKER_SIZE_PX / 2;
-
-  const showActions = !isCancelled;
+  const cls = map[(status || "").toLowerCase()] || map.confirmed;
 
   return (
-    <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Truck className="text-neutral-600 dark:text-neutral-300" />
-          <div>
-            <div className="text-sm text-neutral-500 dark:text-neutral-400">Tracking status</div>
-            <div className="font-semibold capitalize">{order.status || "Order Confirmed"}</div>
+    <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${cls}`}>
+      {(status || "Confirmed").toString().toUpperCase()}
+    </span>
+  );
+}
+
+function ModernStepper({ steps, activeIndex }) {
+  return (
+    <div className="relative flex justify-between items-center w-full py-6">
+      <div className="absolute top-1/2 left-0 right-0 h-[4px] bg-neutral-200 dark:bg-neutral-800 -translate-y-1/2" />
+
+      {steps.map((step, i) => {
+        const isActive = i <= activeIndex;
+        return (
+          <div key={i} className="relative z-10 flex flex-col items-center text-center w-full">
+            <div
+              className={`w-9 h-9 flex items-center justify-center rounded-full border-2 shadow-sm transition-all duration-200
+              ${isActive ? "bg-black text-white border-black" : "bg-white dark:bg-neutral-900 border-neutral-300 dark:border-neutral-600"}`}
+            >
+              {isActive ? <CheckCircle size={16} /> : <PackageIcon size={16} />}
+            </div>
+            <p
+              className={`mt-2 text-xs font-medium transition-all duration-200 ${isActive ? "text-black dark:text-white" : "text-neutral-500 dark:text-neutral-400"}`}
+            >
+              {step}
+            </p>
           </div>
-        </div>
-
-        <div className="text-sm text-neutral-500 hidden sm:block">Order placed: {formatDateTime(order.created_at)}</div>
-      </div>
-
-      <div className="mt-6 relative" ref={timelineRef}>
-        <div className="absolute top-0 bottom-0 w-[4px] bg-neutral-100 dark:bg-neutral-800 z-0" style={{ left: `${spineLeftForCSS}px` }} />
-
-        {overlayRect && (
-          <motion.div
-            key={`overlay-${overlayRect.heightPx}-${overlayRect.topPx}-${isCancelled ? "cancel" : "ok"}`}
-            initial={{ scaleY: 0 }}
-            animate={{ scaleY: 1 }}
-            transition={{ duration: 0.42, ease: [0.2, 0.9, 0.2, 1] }}
-            aria-hidden
-            style={{
-              position: "absolute",
-              left: `${overlayRect.leftPx}px`,
-              top: `${overlayRect.topPx}px`,
-              width: 4,
-              height: `${overlayRect.heightPx}px`,
-              backgroundColor: isCancelled ? "rgb(239,68,68)" : "rgb(16,185,129)",
-              zIndex: 5,
-              borderRadius: 2,
-              transformOrigin: "top center",
-            }}
-          />
-        )}
-
-        <div className="space-y-6 relative z-10">
-          {trackingToUse.map((t, idx) => {
-            const done = t.done;
-            const nextDone = trackingToUse[idx + 1]?.done;
-            const isCancelStep = t.step?.toLowerCase().includes("cancel");
-
-            const outerClasses = isCancelStep
-              ? "rounded-full bg-red-600"
-              : done
-              ? "rounded-full bg-emerald-600"
-              : nextDone
-              ? "rounded-full bg-white border border-neutral-300 dark:border-neutral-700"
-              : "rounded-full bg-white border border-neutral-200 dark:border-neutral-800";
-
-            const iconColorDone = done ? "text-white" : "text-neutral-500 dark:text-neutral-400";
-
-            return (
-              <div key={t.step + "-" + idx} className="pl-14 relative">
-                <div
-                  ref={(el) => (markersRef.current[idx] = el)}
-                  style={{ position: "absolute", left: `${markerLeftPx}px`, top: 0, width: MARKER_SIZE_PX, height: MARKER_SIZE_PX }}
-                >
-                  <div style={{ width: "100%", height: "100%" }} className={`z-10 ${outerClasses}`} />
-
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: `${MARKER_INNER_OFFSET_PX / 2}px`,
-                      top: `${MARKER_INNER_OFFSET_PX / 2}px`,
-                      width: innerSize,
-                      height: innerSize,
-                      zIndex: 30,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderRadius: "9999px",
-                      background: "transparent",
-                    }}
-                  >
-                    {isCancelStep ? (
-                      <XCircle size={Math.max(12, innerSize - 8)} className={"text-white"} />
-                    ) : done ? (
-                      <CheckCircle size={Math.max(12, innerSize - 8)} className={iconColorDone} />
-                    ) : nextDone ? (
-                      <Clock size={Math.max(12, innerSize - 8)} className={iconColorDone} />
-                    ) : (
-                      <PackageIcon size={Math.max(12, innerSize - 8)} className={iconColorDone} />
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <div className={`font-medium ${done ? "text-neutral-700 dark:text-neutral-200" : "text-neutral-500"}`}>{t.step}</div>
-                  <div className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-                    {t.date ? formatDateTime(t.date) : done ? "" : "Pending"}
-                  </div>
-                  {t.detail && <div className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">{t.detail}</div>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mt-4 border-t border-neutral-100 dark:border-neutral-800 pt-4 text-sm text-neutral-500">
-        Delivery Executive details will be available once the order is out for delivery
-      </div>
-
-      <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex-1 flex gap-3 w-full">
-          {showActions && !isDelivered && (
-            <>
-              <button onClick={onCancel} className={BTN + " flex-1 py-2 flex items-center justify-center gap-2 text-sm"}>
-                Cancel
-              </button>
-              <button onClick={onTrackAll} className={BTN + " flex-1 py-2 flex items-center justify-center gap-2 text-sm"}>
-                <Truck size={16} /> Track order
-              </button>
-            </>
-          )}
-          {showActions && isDelivered && (
-            <button onClick={onRequestReturn} className={BTN + " flex-1 py-2 flex items-center justify-center gap-2 text-sm"}>
-              Return
-            </button>
-          )}
-
-          {isCancelled && <div className="text-sm text-red-600 italic px-2">This order has been cancelled.</div>}
-        </div>
-        <div className="w-full sm:w-44" />
-      </div>
+        );
+      })}
     </div>
   );
 }
 
-// InvoiceTemplate converted to Tailwind
-function InvoiceTemplate({ order, pricing }) {
-  const productPrice = pricing?.productPrice ?? order.pricing?.sellingPrice ?? 0;
-  const fees = pricing?.fees ?? order.pricing?.fees ?? 0;
-  const couponDiscount = pricing?.couponDiscount ?? order.pricing?.couponDiscount ?? 0;
-  const shippingCharge = pricing?.shippingCharge ?? 0;
-  const total = pricing?.total ?? order.pricing?.total ?? productPrice + fees + shippingCharge - couponDiscount;
-
-  return (
-    <div className="p-6 max-w-3xl">
-      <h2 className="text-xl font-semibold">Invoice</h2>
-      <div className="mt-4 flex justify-between">
-        <div>
-          <div>
-            <strong>Order ID:</strong> {order.id}
-          </div>
-          <div>
-            <strong>Placed:</strong> {formatDateTime(order.created_at)}
-          </div>
-        </div>
-        <div>
-          <div>
-            <strong>Ship to:</strong>
-          </div>
-          <div className="font-medium">{order.shipping?.name}</div>
-          <div className="max-w-xs break-words">{order.shipping?.address}</div>
-        </div>
-      </div>
-
-      <div className="mt-6 border-t border-neutral-200 pt-4">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left">
-              <th className="pb-2">Item</th>
-              <th className="pb-2 text-right">Qty</th>
-              <th className="pb-2 text-right">Price</th>
-            </tr>
-          </thead>
-          <tbody>
-            {order.items?.map((it) => (
-              <tr key={it.id}>
-                <td className="py-2 border-t border-neutral-100">{it.title}</td>
-                <td className="py-2 border-t border-neutral-100 text-right">{it.qty}</td>
-                <td className="py-2 border-t border-neutral-100 text-right">{currency(Number(it.price) * Number(it.qty || 1))}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        <div className="mt-6 flex justify-end">
-          <div className="w-64 text-sm">
-            <div className="flex justify-between">
-              <div>Subtotal</div>
-              <div>{currency(productPrice)}</div>
-            </div>
-            <div className="flex justify-between">
-              <div>Fees</div>
-              <div>{currency(fees)}</div>
-            </div>
-            <div className="flex justify-between">
-              <div>Shipping</div>
-              <div>{currency(shippingCharge)}</div>
-            </div>
-            {couponDiscount > 0 && (
-              <div className="flex justify-between text-emerald-600">
-                <div>Coupon discount</div>
-                <div>-{currency(couponDiscount)}</div>
-              </div>
-            )}
-            <div className="flex justify-between font-semibold mt-3">
-              <div>Total</div>
-              <div>{currency(total)}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
+// ConfirmModal (non-blocking backdrop pattern)
 function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose = () => {}, onConfirm = () => {} }) {
   useEffect(() => {
     if (!open) return;
@@ -1341,6 +1160,7 @@ function ConfirmModal({ open, title, message, confirmLabel = "Confirm", onClose 
   );
 }
 
+// InputModal (Edit shipping address)
 function InputModal({ open, title, initialShipping = { name: "", phone: "", address: "" }, onClose = () => {}, onConfirm = (val) => {} }) {
   const [name, setName] = useState(initialShipping?.name || "");
   const [phone, setPhone] = useState(initialShipping?.phone || "");
@@ -1353,6 +1173,7 @@ function InputModal({ open, title, initialShipping = { name: "", phone: "", addr
   }, [initialShipping, open]);
 
   if (!open) return null;
+
   return (
     <div className="fixed inset-0 z-50 pointer-events-none p-4">
       <div className="absolute inset-0 bg-black/40 pointer-events-none" />
@@ -1389,7 +1210,7 @@ function InputModal({ open, title, initialShipping = { name: "", phone: "", addr
   );
 }
 
-/* TrackModal: shows shipment_track and shipment_track_activities */
+/* TrackModal: shows shipment_track and shipment_track_activities (pure Tailwind) */
 function TrackModal({ open, info, onClose }) {
   if (!open) return null;
 
@@ -1400,11 +1221,7 @@ function TrackModal({ open, info, onClose }) {
   return (
     <div className="fixed inset-0 z-50 pointer-events-none p-4">
       <div className="absolute inset-0 bg-black/40 pointer-events-none" />
-      <motion.div
-        initial={{ y: 12, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        className="pointer-events-auto mx-auto relative top-8 bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-3xl w-full p-6 max-h-[80vh] overflow-y-auto"
-      >
+      <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="pointer-events-auto mx-auto relative top-8 bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-3xl w-full p-6 max-h-[80vh] overflow-y-auto">
         <div className="flex items-start justify-between">
           <div>
             <h3 className="text-lg font-semibold">Track order</h3>
@@ -1490,7 +1307,87 @@ function TrackModal({ open, info, onClose }) {
   );
 }
 
-/* -------------------- small helpers -------------------- */
+// InvoiceTemplate
+function InvoiceTemplate({ order, pricing }) {
+  const productPrice = pricing?.productPrice ?? order.pricing?.sellingPrice ?? 0;
+  const fees = pricing?.fees ?? order.pricing?.fees ?? 0;
+  const couponDiscount = pricing?.couponDiscount ?? order.pricing?.couponDiscount ?? 0;
+  const shippingCharge = pricing?.shippingCharge ?? 0;
+  const total = pricing?.total ?? order.pricing?.total ?? productPrice + fees + shippingCharge - couponDiscount;
+
+  return (
+    <div className="p-6 max-w-3xl">
+      <h2 className="text-xl font-semibold">Invoice</h2>
+      <div className="mt-4 flex justify-between">
+        <div>
+          <div>
+            <strong>Order ID:</strong> {order.id}
+          </div>
+          <div>
+            <strong>Placed:</strong> {formatDateTime(order.created_at)}
+          </div>
+        </div>
+        <div>
+          <div>
+            <strong>Ship to:</strong>
+          </div>
+          <div className="font-medium">{order.shipping?.name}</div>
+          <div className="max-w-xs break-words">{order.shipping?.address}</div>
+        </div>
+      </div>
+
+      <div className="mt-6 border-t border-neutral-200 pt-4">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left">
+              <th className="pb-2">Item</th>
+              <th className="pb-2 text-right">Qty</th>
+              <th className="pb-2 text-right">Price</th>
+            </tr>
+          </thead>
+          <tbody>
+            {order.items?.map((it) => (
+              <tr key={it.id}>
+                <td className="py-2 border-t border-neutral-100">{it.title}</td>
+                <td className="py-2 border-t border-neutral-100 text-right">{it.qty}</td>
+                <td className="py-2 border-t border-neutral-100 text-right">{currency(Number(it.price) * Number(it.qty || 1))}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="mt-6 flex justify-end">
+          <div className="w-64 text-sm">
+            <div className="flex justify-between">
+              <div>Subtotal</div>
+              <div>{currency(productPrice)}</div>
+            </div>
+            <div className="flex justify-between">
+              <div>Fees</div>
+              <div>{currency(fees)}</div>
+            </div>
+            <div className="flex justify-between">
+              <div>Shipping</div>
+              <div>{currency(shippingCharge)}</div>
+            </div>
+            {couponDiscount > 0 && (
+              <div className="flex justify-between text-emerald-600">
+                <div>Coupon discount</div>
+                <div>-{currency(couponDiscount)}</div>
+              </div>
+            )}
+            <div className="flex justify-between font-semibold mt-3">
+              <div>Total</div>
+              <div>{currency(total)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// parseJsonSafe helper
 async function parseJsonSafe(res) {
   try {
     return await res.json();
