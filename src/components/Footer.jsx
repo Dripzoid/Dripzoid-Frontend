@@ -87,23 +87,20 @@ const Footer = () => {
   ];
 
   return (
-    <footer className="bg-black text-white px-6 py-12">
+    <footer className="bg-black text-white px-6 py-16">
       <div className="max-w-7xl mx-auto">
 
         {/* ================= DESKTOP ================= */}
         {isDesktop ? (
-          <div className="grid grid-cols-5 gap-10">
+          <div className="grid grid-cols-5 gap-12 items-start">
 
-            {/* BRAND */}
-            <div className="flex flex-col items-start flex-shrink-0">
+            {/* BRAND — MAX SIZE */}
+            <div className="flex items-start justify-start flex-shrink-0">
               <img
                 src="/logo-dark.png"
                 alt="Dripzoid"
-                className="h-14 w-auto object-contain mb-4"
+                className="h-24 w-auto object-contain"
               />
-              <p className="text-gray-400 text-sm">
-                Wear the Confidence
-              </p>
             </div>
 
             {sections.map((section) => (
@@ -122,15 +119,13 @@ const Footer = () => {
         ) : (
         /* ================= MOBILE ================= */
           <div>
-            <div className="flex flex-col items-start mb-6">
+            {/* LOGO — MAX MOBILE */}
+            <div className="mb-8">
               <img
                 src="/logo-dark.png"
                 alt="Dripzoid"
-                className="h-16 w-auto object-contain mb-3"
+                className="h-28 w-auto object-contain"
               />
-              <p className="text-gray-400 text-sm">
-                Wear the Confidence
-              </p>
             </div>
 
             {sections.map((section) => (
@@ -157,7 +152,7 @@ const Footer = () => {
       </div>
 
       {/* ================= BOTTOM BAR ================= */}
-      <div className="mt-10 border-t border-gray-800 pt-6 text-center text-sm text-gray-500">
+      <div className="mt-12 border-t border-gray-800 pt-6 text-center text-sm text-gray-500">
         © {new Date().getFullYear()} DRIPZOID. All rights reserved.
       </div>
     </footer>
