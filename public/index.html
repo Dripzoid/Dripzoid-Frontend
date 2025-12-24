@@ -14,7 +14,12 @@
       href="https://res.cloudinary.com/dvid0uzwo/image/upload/v1766549454/my_project/ydgeno1kgkuesk3wzgyt.png"
     />
 
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- ✅ FIXED VIEWPORT (important) -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1"
+    />
+
     <meta name="theme-color" content="#0d0d0d" />
 
     <!-- ✅ SEO Meta -->
@@ -73,6 +78,24 @@
       gtag("js", new Date());
       gtag("config", "G-CPRRQ07SG9");
     </script>
+
+    <!-- ✅ GLOBAL SCALE FIX -->
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow-x: hidden;
+      }
+
+      #root {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+    </style>
 
     <title>Dripzoid</title>
   </head>
