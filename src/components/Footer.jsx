@@ -16,7 +16,9 @@ const Footer = () => {
   const [openSection, setOpenSection] = useState(null);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
 
-  // Handle resize
+  // -----------------------------
+  // Handle responsive mode
+  // -----------------------------
   useEffect(() => {
     const handleResize = () => setIsDesktop(window.innerWidth >= 768);
     window.addEventListener("resize", handleResize);
@@ -27,39 +29,35 @@ const Footer = () => {
     setOpenSection(openSection === section ? null : section);
   };
 
-  // Navigate to home and scroll
+  // -----------------------------
+  // Smooth scroll helper
+  // -----------------------------
   const handleGoToSection = (sectionId) => {
     if (location.pathname === "/") {
       const el = document.getElementById(sectionId);
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (el) el.scrollIntoView({ behavior: "smooth" });
       return;
     }
+
     navigate("/");
     setTimeout(() => {
       const el = document.getElementById(sectionId);
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (el) el.scrollIntoView({ behavior: "smooth" });
     }, 200);
   };
 
+  // -----------------------------
+  // Footer data (OLD STRUCTURE + NEW ITEMS)
+  // -----------------------------
   const sections = [
     {
       title: "Shop",
       items: [
-        <Link key="all" to="/shop" className="hover:text-white">
-          All Products
-        </Link>,
-        <button
-          key="featured"
-          onClick={() => handleGoToSection("featured")}
-          className="hover:text-white text-left w-full"
-        >
+        <Link key="all" to="/shop">All Products</Link>,
+        <button key="featured" onClick={() => handleGoToSection("featured")}>
           Featured Products
         </button>,
-        <button
-          key="trending"
-          onClick={() => handleGoToSection("trending")}
-          className="hover:text-white text-left w-full"
-        >
+        <button key="trending" onClick={() => handleGoToSection("trending")}>
           Trending
         </button>,
       ],
@@ -67,25 +65,15 @@ const Footer = () => {
     {
       title: "Company",
       items: [
-        <Link key="about" to="/about-us" className="hover:text-white">
-          About Us
-        </Link>,
-        <Link key="contact" to="/contact" className="hover:text-white">
-          Contact
-        </Link>,
-        <Link key="privacy" to="/privacy-policy" className="hover:text-white">
-          Privacy Policy
-        </Link>,
+        <Link key="about" to="/about-us">About Us</Link>,
+        <Link key="contact" to="/contact">Contact</Link>,
+        <Link key="privacy" to="/privacy-policy">Privacy Policy</Link>,
       ],
     },
     {
       title: "Contact",
       items: [
-        <a
-          key="email"
-          href="mailto:support@dripzoid.com"
-          className="hover:text-white"
-        >
+        <a key="email" href="mailto:support@dripzoid.com">
           support@dripzoid.com
         </a>,
         <span key="location">Pithapuram, Andhra Pradesh</span>,
@@ -94,40 +82,16 @@ const Footer = () => {
     {
       title: "Follow Us",
       items: [
-        <a
-          key="insta"
-          href="https://www.instagram.com/dripzoidofficial?igsh=MWZzbzltczdnNzh2aw=="
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-white flex items-center gap-3"
-        >
+        <a key="ig" href="https://www.instagram.com/dripzoidofficial" target="_blank" rel="noreferrer">
           <FaInstagram /> Instagram
         </a>,
-        <a
-          key="wa"
-          href="https://wa.me/message/NSIW5WOQRBDFG1"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-white flex items-center gap-3"
-        >
+        <a key="wa" href="https://wa.me/message/NSIW5WOQRBDFG1" target="_blank" rel="noreferrer">
           <FaWhatsapp /> WhatsApp
         </a>,
-        <a
-          key="yt"
-          href="https://youtube.com/@dripzoidofficial"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-white flex items-center gap-3"
-        >
+        <a key="yt" href="https://youtube.com/@dripzoidofficial" target="_blank" rel="noreferrer">
           <FaYoutube /> YouTube
         </a>,
-        <a
-          key="fb"
-          href="https://www.facebook.com/share/1Begozxt9S/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-white flex items-center gap-3"
-        >
+        <a key="fb" href="https://www.facebook.com/share/1Begozxt9S/" target="_blank" rel="noreferrer">
           <FaFacebookF /> Facebook
         </a>,
       ],
@@ -135,69 +99,71 @@ const Footer = () => {
   ];
 
   return (
-    <footer className="bg-black text-white py-10 px-6">
+    <footer className="bg-black text-white px-6 py-12 text-base">
       <div className="max-w-7xl mx-auto">
+
+        {/* =============================
+            DESKTOP FOOTER (OLD STYLE)
+        ============================== */}
         {isDesktop ? (
-          /* Desktop */
-          <div className="grid grid-cols-5 gap-8">
-            <div className="flex flex-col items-start">
-              <Link to="/" aria-label="Dripzoid home">
-                <img
-                  src="/logo-dark.png"
-                  alt="DRIPZOID Logo"
-                  className="h-10 mb-4"
-                />
+          <div className="grid grid-cols-5 gap-10">
+            {/* Brand */}
+            <div>
+              <Link to="/">
+                <img src="/logo-dark.png" alt="Dripzoid Logo" className="h-10 mb-4" />
               </Link>
-              <p className="text-sm text-gray-400">
+              <p className="text-gray-400 text-sm">
                 Wear the Confidence
               </p>
             </div>
 
+            {/* Sections */}
             {sections.map((section) => (
-              <div key={section.title} className="flex flex-col">
-                <h2 className="font-semibold text-lg mb-4">
+              <div key={section.title}>
+                {/* 🔒 Explicit header size (OLD behavior) */}
+                <h3 className="text-lg font-semibold mb-4">
                   {section.title}
-                </h2>
-                <ul className="space-y-2 text-sm text-gray-400">
+                </h3>
+
+                {/* 🔒 Items intentionally smaller */}
+                <ul className="space-y-3 text-sm text-gray-400">
                   {section.items.map((item) => (
-                    <li key={item.key}>{item}</li>
+                    <li key={item.key}>
+                      {item}
+                    </li>
                   ))}
                 </ul>
               </div>
             ))}
           </div>
         ) : (
-          /* Mobile */
-          <div className="space-y-4">
-            <div>
-              <Link to="/" aria-label="Dripzoid home">
-                <img
-                  src="/logo-dark.png"
-                  alt="DRIPZOID Logo"
-                  className="h-10 mb-2"
-                />
+          /* =============================
+              MOBILE FOOTER (ACCORDION)
+          ============================== */
+          <div>
+            {/* Brand */}
+            <div className="mb-6">
+              <Link to="/">
+                <img src="/logo-dark.png" alt="Dripzoid Logo" className="h-10 mb-2" />
               </Link>
-              <p className="text-sm text-gray-400 mb-4">
+              <p className="text-gray-400 text-sm">
                 Wear the Confidence
               </p>
             </div>
 
             {sections.map((section) => (
               <div key={section.title} className="border-t border-gray-800">
+                {/* 🔒 Header locked to text-lg */}
                 <button
                   onClick={() => handleToggle(section.title)}
-                  className="w-full flex justify-between items-center py-3 font-semibold"
+                  className="w-full flex justify-between items-center py-4 text-lg font-semibold"
                 >
                   {section.title}
-                  {openSection === section.title ? (
-                    <FaChevronUp />
-                  ) : (
-                    <FaChevronDown />
-                  )}
+                  {openSection === section.title ? <FaChevronUp /> : <FaChevronDown />}
                 </button>
 
                 {openSection === section.title && (
-                  <ul className="pl-2 pb-2 space-y-2 text-sm text-gray-400">
+                  <ul className="pb-4 pl-2 space-y-3 text-sm text-gray-400">
                     {section.items.map((item) => (
                       <li key={item.key}>{item}</li>
                     ))}
@@ -209,7 +175,9 @@ const Footer = () => {
         )}
       </div>
 
-      {/* Bottom bar */}
+      {/* =============================
+          BOTTOM BAR (OLD FORMAT)
+      ============================== */}
       <div className="mt-10 border-t border-gray-800 pt-6 text-center text-sm text-gray-500">
         © {new Date().getFullYear()} DRIPZOID. All rights reserved.
       </div>
