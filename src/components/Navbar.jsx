@@ -26,17 +26,13 @@ export default function Navbar() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
 
-  // -----------------------------
   // Theme handling
-  // -----------------------------
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
     localStorage.setItem("theme", theme);
   }, [theme]);
 
-  // -----------------------------
   // Responsive handling
-  // -----------------------------
   useEffect(() => {
     const handleResize = () => setIsDesktop(window.innerWidth >= 768);
     window.addEventListener("resize", handleResize);
@@ -64,17 +60,15 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <div className="flex-shrink-0">
-            <Link to="/" onClick={() => setMobileMenu(false)}>
-              <img
-                src={theme === "light" ? "/logo-light.png" : "/logo-dark.png"}
-                alt="Dripzoid Logo"
-                className="h-8"
-              />
-            </Link>
-          </div>
+          <Link to="/" onClick={() => setMobileMenu(false)}>
+            <img
+              src={theme === "light" ? "/logo-light.png" : "/logo-dark.png"}
+              alt="Dripzoid Logo"
+              className="h-8"
+            />
+          </Link>
 
-          {/* Desktop Nav Links */}
+          {/* Desktop Links */}
           {isDesktop && (
             <div className="flex items-center space-x-8">
               {navLinks.map((link) => (
@@ -89,7 +83,7 @@ export default function Navbar() {
             </div>
           )}
 
-          {/* Right Side */}
+          {/* Right side */}
           <div className="flex items-center gap-3 md:gap-4">
             {isDesktop && (
               <div className="w-52">
@@ -100,11 +94,11 @@ export default function Navbar() {
             {/* Wishlist */}
             <Link
               to="/account/wishlist"
-              className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-200"
+              className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
             >
               <Heart size={20} />
               {wishlist.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 flex items-center justify-center rounded-full">
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
                   {wishlist.length}
                 </span>
               )}
@@ -113,29 +107,29 @@ export default function Navbar() {
             {/* Cart */}
             <Link
               to="/cart"
-              className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-200"
+              className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
             >
               <ShoppingCart size={20} />
               {cart.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 flex items-center justify-center rounded-full">
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
                   {cart.length}
                 </span>
               )}
             </Link>
 
-            {/* Theme Toggle */}
+            {/* Theme toggle */}
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-200"
+              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
             >
               {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
             </button>
 
-            {/* User / Login */}
+            {/* User */}
             {user ? (
               <Link
                 to="/account"
-                className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-200"
+                className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
               >
                 <User size={18} />
                 <span className="hidden sm:inline">{displayName}</span>
@@ -149,7 +143,7 @@ export default function Navbar() {
               </Link>
             )}
 
-            {/* Mobile Menu Toggle */}
+            {/* Mobile menu */}
             {!isDesktop && (
               <button
                 onClick={() => setMobileMenu((m) => !m)}
