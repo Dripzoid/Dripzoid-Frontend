@@ -15,10 +15,6 @@ import {
 } from "lucide-react";
 import GlobalSearchBar from "./GlobalSearch.jsx";
 
-// Logo imports (cache-safe)
-import logoLight from "/logo-light.png";
-import logoDark from "/logo-dark.png";
-
 export default function Navbar() {
   const { user } = useContext(UserContext);
   const { cart = [] } = useCart();
@@ -30,11 +26,17 @@ export default function Navbar() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
 
+  // -----------------------------
+  // Theme handling
+  // -----------------------------
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
     localStorage.setItem("theme", theme);
   }, [theme]);
 
+  // -----------------------------
+  // Responsive handling
+  // -----------------------------
   useEffect(() => {
     const handleResize = () => setIsDesktop(window.innerWidth >= 768);
     window.addEventListener("resize", handleResize);
@@ -65,7 +67,7 @@ export default function Navbar() {
           <div className="flex-shrink-0">
             <Link to="/" onClick={() => setMobileMenu(false)}>
               <img
-                src={theme === "light" ? logoLight : logoDark}
+                src={theme === "light" ? "/logo-light.png" : "/logo-dark.png"}
                 alt="Dripzoid Logo"
                 className="h-8"
               />
@@ -129,7 +131,7 @@ export default function Navbar() {
               {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
             </button>
 
-            {/* User */}
+            {/* User / Login */}
             {user ? (
               <Link
                 to="/account"
@@ -147,7 +149,7 @@ export default function Navbar() {
               </Link>
             )}
 
-            {/* Mobile Menu */}
+            {/* Mobile Menu Toggle */}
             {!isDesktop && (
               <button
                 onClick={() => setMobileMenu((m) => !m)}
