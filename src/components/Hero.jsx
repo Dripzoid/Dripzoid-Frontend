@@ -3,25 +3,53 @@ import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const variants = {
-  enter: (dir) => ({ x: dir > 0 ? 60 : -60, opacity: 0, scale: 1.02 }),
-  center: { x: 0, opacity: 1, scale: 1 },
-  exit: (dir) => ({ x: dir < 0 ? 60 : -60, opacity: 0, scale: 0.98 }),
+  enter: (dir) => ({
+    x: dir > 0 ? 60 : -60,
+    opacity: 0,
+    scale: 1.02,
+  }),
+  center: {
+    x: 0,
+    opacity: 1,
+    scale: 1,
+  },
+  exit: (dir) => ({
+    x: dir < 0 ? 60 : -60,
+    opacity: 0,
+    scale: 0.98,
+  }),
 };
 
 export default function Hero({ slides = [], autoPlayMs = 4500 }) {
   const [index, setIndex] = useState(0);
   const [dir, setDir] = useState(1);
   const [paused, setPaused] = useState(false);
-  const throttled = useRef(false);
 
+  const throttled = useRef(false);
+  const intervalRef = useRef(null);
+
+  const total = slides.length;
+
+  // ---- Autoplay (stable) ----
   useEffect(() => {
-    if (paused) return;
-    const t = setInterval(() => {
+    if (paused || total <= 1) return;
+
+    intervalRef.current = setInterval(() => {
       changeIndex(1);
     }, autoPlayMs);
-    return () => clearInterval(t);
-  }, [index, paused, autoPlayMs]);
 
+    return () => clearInterval(intervalRef.current);
+  }, [paused, autoPlayMs, total]);
+
+  // ---- Pause when tab inactive ----
+  useEffect(() => {
+    const onVisibility = () => setPaused(document.hidden);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () =>
+      document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
+  // ---- Keyboard navigation ----
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "ArrowRight") changeIndex(1);
@@ -32,34 +60,39 @@ export default function Hero({ slides = [], autoPlayMs = 4500 }) {
   }, []);
 
   function changeIndex(delta) {
-    if (throttled.current) return;
+    if (throttled.current || total <= 1) return;
     throttled.current = true;
+
     setDir(delta);
-    setIndex((i) => (i + delta + slides.length) % slides.length);
-    setTimeout(() => (throttled.current = false), 300); // throttle for animation overlap
+    setIndex((i) => (i + delta + total) % total);
+
+    setTimeout(() => {
+      throttled.current = false;
+    }, 350);
   }
 
-  function handleDragEnd(e, info) {
+  function handleDragEnd(_, info) {
     const offset = info.offset.x;
     const velocity = info.velocity.x;
-    if (offset < -40 || velocity < -500) changeIndex(1);
-    else if (offset > 40 || velocity > 500) changeIndex(-1);
+
+    if (offset < -50 || velocity < -500) changeIndex(1);
+    else if (offset > 50 || velocity > 500) changeIndex(-1);
   }
 
-  if (!slides || slides.length === 0) return null;
+  if (!slides || total === 0) return null;
 
   return (
-    <div
-      className="relative max-w-5xl mx-auto rounded-2xl overflow-hidden border border-black/5 dark:border-white/10"
+    <section
+      className="relative max-w-6xl mx-auto rounded-2xl overflow-hidden border border-black/5 dark:border-white/10"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       aria-roledescription="carousel"
+      aria-label="Featured collections"
     >
-      <div className="aspect-[16/7] bg-black/5 dark:bg-white/5 relative">
+      <div className="aspect-[16/7] relative bg-black/5 dark:bg-white/5">
         <AnimatePresence custom={dir} initial={false} mode="wait">
           <motion.div
             key={slides[index].id}
-            className="absolute inset-0 w-full h-full"
             custom={dir}
             variants={variants}
             initial="enter"
@@ -70,7 +103,9 @@ export default function Hero({ slides = [], autoPlayMs = 4500 }) {
             dragConstraints={{ left: 0, right: 0 }}
             dragElastic={0.2}
             onDragEnd={handleDragEnd}
+            className="absolute inset-0"
             style={{ touchAction: "pan-y" }}
+            aria-live="polite"
           >
             <img
               src={slides[index].src}
@@ -79,32 +114,42 @@ export default function Hero({ slides = [], autoPlayMs = 4500 }) {
               loading="lazy"
               draggable="false"
             />
-            <div className="absolute left-6 bottom-6 text-white drop-shadow">
-              <div className="text-xs uppercase tracking-wider bg-black/40 inline-block px-3 py-1 rounded-full">
+
+            {/* Gradient overlay for text */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
+
+            {/* Caption */}
+            <div className="absolute left-6 bottom-6 text-white">
+              <span className="text-xs uppercase tracking-wider bg-black/50 px-3 py-1 rounded-full">
                 Seasonal
-              </div>
-              <h3 className="mt-3 text-2xl md:text-3xl font-bold">{slides[index].title}</h3>
+              </span>
+              <h2 className="mt-3 text-2xl md:text-3xl font-bold leading-tight">
+                {slides[index].title}
+              </h2>
             </div>
           </motion.div>
         </AnimatePresence>
       </div>
 
+      {/* Prev */}
       <button
         onClick={() => changeIndex(-1)}
-        aria-label="Previous"
-        className="absolute left-3 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-white/90 dark:bg-black/90 shadow focus:outline-none"
+        aria-label="Previous slide"
+        className="absolute left-3 top-1/2 -translate-y-1/2 z-20 h-10 w-10 rounded-full bg-white/90 dark:bg-black/90 shadow flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-black"
       >
-        ‹
+        ←
       </button>
 
+      {/* Next */}
       <button
         onClick={() => changeIndex(1)}
-        aria-label="Next"
-        className="absolute right-3 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-white/90 dark:bg-black/90 shadow focus:outline-none"
+        aria-label="Next slide"
+        className="absolute right-3 top-1/2 -translate-y-1/2 z-20 h-10 w-10 rounded-full bg-white/90 dark:bg-black/90 shadow flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-black"
       >
-        ›
+        →
       </button>
 
+      {/* Dots */}
       <div className="absolute left-1/2 -translate-x-1/2 bottom-3 flex gap-2 z-20">
         {slides.map((_, i) => (
           <button
@@ -115,12 +160,15 @@ export default function Hero({ slides = [], autoPlayMs = 4500 }) {
               setIndex(i);
             }}
             aria-current={i === index}
-            className={`w-3 h-3 rounded-full focus:outline-none ${
-              i === index ? "scale-125 bg-white dark:bg-black" : "bg-white/40 dark:bg-white/20"
+            aria-label={`Go to slide ${i + 1}`}
+            className={`w-3 h-3 rounded-full transition ${
+              i === index
+                ? "scale-125 bg-white"
+                : "bg-white/40 hover:bg-white/70"
             }`}
           />
         ))}
       </div>
-    </div>
+    </section>
   );
 }
