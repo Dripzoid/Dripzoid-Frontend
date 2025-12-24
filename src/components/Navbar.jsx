@@ -59,7 +59,7 @@ export default function Navbar() {
     <nav className="bg-white dark:bg-gray-900 shadow-md sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Navbar Row */}
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-20">
 
           {/* ================= LEFT: LOGO ================= */}
           <div className="flex items-center h-full flex-shrink-0">
@@ -72,7 +72,7 @@ export default function Navbar() {
                 src={theme === "light" ? "/logo-light.png" : "/logo-dark.png"}
                 alt="Dripzoid"
                 style={{
-                  height: "52px",
+                  height: "56px",
                   width: "auto",
                   maxHeight: "none",
                   display: "block",
