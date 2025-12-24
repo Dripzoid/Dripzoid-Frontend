@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import GlobalSearchBar from "./GlobalSearch.jsx";
 
-// ✅ import logos (cache-safe, build-safe)
+// Logo imports (cache-safe)
 import logoLight from "/logo-light.png";
 import logoDark from "/logo-dark.png";
 
@@ -23,7 +23,10 @@ export default function Navbar() {
   const { user } = useContext(UserContext);
   const { cart = [] } = useCart();
   const { wishlist = [] } = useWishlist();
-  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
+
+  const [theme, setTheme] = useState(
+    () => localStorage.getItem("theme") || "light"
+  );
   const [mobileMenu, setMobileMenu] = useState(false);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
 
@@ -38,10 +41,15 @@ export default function Navbar() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const toggleTheme = () => setTheme((t) => (t === "light" ? "dark" : "light"));
+  const toggleTheme = () =>
+    setTheme((t) => (t === "light" ? "dark" : "light"));
 
   const displayName =
-    user?.name || user?.fullName || user?.username || user?.email?.split?.("@")?.[0] || "";
+    user?.name ||
+    user?.fullName ||
+    user?.username ||
+    user?.email?.split?.("@")?.[0] ||
+    "";
 
   const navLinks = [
     { name: "Men", path: "/men" },
@@ -65,7 +73,7 @@ export default function Navbar() {
           </div>
 
           {/* Desktop Nav Links */}
-          {isDesktop ? (
+          {isDesktop && (
             <div className="flex items-center space-x-8">
               {navLinks.map((link) => (
                 <Link
@@ -77,7 +85,80 @@ export default function Navbar() {
                 </Link>
               ))}
             </div>
-          ) : null}
+          )}
 
-          {/* Right side unchanged */}
-          {/* …everything else stays exactly the same */}
+          {/* Right Side */}
+          <div className="flex items-center gap-3 md:gap-4">
+            {isDesktop && (
+              <div className="w-52">
+                <GlobalSearchBar />
+              </div>
+            )}
+
+            {/* Wishlist */}
+            <Link
+              to="/account/wishlist"
+              className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-200"
+            >
+              <Heart size={20} />
+              {wishlist.length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 flex items-center justify-center rounded-full">
+                  {wishlist.length}
+                </span>
+              )}
+            </Link>
+
+            {/* Cart */}
+            <Link
+              to="/cart"
+              className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-200"
+            >
+              <ShoppingCart size={20} />
+              {cart.length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 flex items-center justify-center rounded-full">
+                  {cart.length}
+                </span>
+              )}
+            </Link>
+
+            {/* Theme Toggle */}
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-200"
+            >
+              {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+            </button>
+
+            {/* User */}
+            {user ? (
+              <Link
+                to="/account"
+                className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-200"
+              >
+                <User size={18} />
+                <span className="hidden sm:inline">{displayName}</span>
+              </Link>
+            ) : (
+              <Link
+                to="/login"
+                className="px-3 py-1.5 text-sm font-medium rounded-full ring-2 ring-black dark:ring-white"
+              >
+                Login
+              </Link>
+            )}
+
+            {/* Mobile Menu */}
+            {!isDesktop && (
+              <button
+                onClick={() => setMobileMenu((m) => !m)}
+                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                {mobileMenu ? <X size={20} /> : <Menu size={20} />}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </nav>
+  );
+}
