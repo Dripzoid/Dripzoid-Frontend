@@ -87,19 +87,19 @@ const Footer = () => {
   ];
 
   return (
-    <footer className="bg-black text-white px-6 py-16">
+    <footer className="bg-black text-white px-6 py-14">
       <div className="max-w-7xl mx-auto">
 
-        {/* ================= DESKTOP ================= */}
+        {/* ================= DESKTOP / TABLET ================= */}
         {isDesktop ? (
-          <div className="grid grid-cols-5 gap-12 items-start">
+          <div className="grid grid-cols-5 gap-10 items-start">
 
-            {/* BRAND — MAX SIZE */}
-            <div className="flex items-start justify-start flex-shrink-0">
+            {/* LOGO — MAX SIZE */}
+            <div className="col-span-1 flex items-start">
               <img
                 src="/logo-dark.png"
                 alt="Dripzoid"
-                className="h-24 w-auto object-contain"
+                className="h-28 w-auto object-contain"
               />
             </div>
 
@@ -117,14 +117,15 @@ const Footer = () => {
             ))}
           </div>
         ) : (
-        /* ================= MOBILE ================= */
+          /* ================= MOBILE ================= */
           <div>
-            {/* LOGO — MAX MOBILE */}
-            <div className="mb-8">
+
+            {/* LOGO — MOBILE MAX SPACE */}
+            <div className="flex justify-center mb-8">
               <img
                 src="/logo-dark.png"
                 alt="Dripzoid"
-                className="h-28 w-auto object-contain"
+                className="h-32 w-auto object-contain"
               />
             </div>
 
