@@ -26,28 +26,16 @@ export default function Navbar() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
 
-  // Theme handling
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
     localStorage.setItem("theme", theme);
   }, [theme]);
 
-  // Responsive handling
   useEffect(() => {
     const handleResize = () => setIsDesktop(window.innerWidth >= 768);
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
-
-  const toggleTheme = () =>
-    setTheme((t) => (t === "light" ? "dark" : "light"));
-
-  const displayName =
-    user?.name ||
-    user?.fullName ||
-    user?.username ||
-    user?.email?.split?.("@")?.[0] ||
-    "";
 
   const navLinks = [
     { name: "Men", path: "/men" },
@@ -56,120 +44,107 @@ export default function Navbar() {
   ];
 
   return (
-    <nav className="sticky top-0 z-50 bg-white dark:bg-gray-900 shadow-md">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* NAVBAR ROW */}
-        <div className="flex items-center justify-between h-[96px]">
-          
-          {/* LEFT — LOGO */}
-          <Link
-            to="/"
-            onClick={() => setMobileMenu(false)}
-            className="flex items-center h-full flex-shrink-0"
-          >
-            <img
-              src={theme === "light" ? "/logo-light.png" : "/logo-dark.png"}
-              alt="Dripzoid"
-              className="h-full max-h-[72px] w-auto object-contain"
-            />
-          </Link>
+    <>
+      {/* ================= NAVBAR ================= */}
+      <nav className="sticky top-0 z-50 bg-white dark:bg-gray-900 shadow-md">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="flex items-center justify-between h-[96px]">
+            
+            {/* LOGO — 90% HEIGHT */}
+            <Link to="/" className="flex items-center h-full">
+              <img
+                src={theme === "light" ? "/logo-light.png" : "/logo-dark.png"}
+                alt="Dripzoid"
+                className="h-[86px] w-auto object-contain"
+              />
+            </Link>
 
-          {/* CENTER — NAV LINKS (DESKTOP) */}
-          {isDesktop && (
-            <div className="flex items-center space-x-10">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.name}
-                  to={link.path}
-                  className="text-sm font-medium text-gray-700 dark:text-gray-200 hover:text-black dark:hover:text-white transition"
-                >
-                  {link.name}
-                </Link>
-              ))}
-            </div>
-          )}
-
-          {/* RIGHT — ACTIONS */}
-          <div className="flex items-center gap-4">
+            {/* DESKTOP NAV */}
             {isDesktop && (
-              <div className="w-52">
-                <GlobalSearchBar />
+              <div className="flex items-center space-x-10">
+                {navLinks.map((link) => (
+                  <Link
+                    key={link.name}
+                    to={link.path}
+                    className="text-sm font-medium text-gray-700 dark:text-gray-200"
+                  >
+                    {link.name}
+                  </Link>
+                ))}
               </div>
             )}
 
-            <Link to="/account/wishlist" className="relative p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
-              <Heart size={20} />
-              {wishlist.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
-                  {wishlist.length}
-                </span>
+            {/* RIGHT ACTIONS */}
+            <div className="flex items-center gap-3">
+              {isDesktop && <GlobalSearchBar />}
+
+              {isDesktop && (
+                <>
+                  <Link to="/wishlist"><Heart size={20} /></Link>
+                  <Link to="/cart"><ShoppingCart size={20} /></Link>
+                  <button onClick={() => setTheme(t => t === "light" ? "dark" : "light")}>
+                    {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+                  </button>
+                  <Link to="/login" className="px-4 py-1.5 rounded-full ring-2">
+                    Login
+                  </Link>
+                </>
               )}
+
+              {/* MOBILE MENU TOGGLE */}
+              {!isDesktop && (
+                <button
+                  onClick={() => setMobileMenu(!mobileMenu)}
+                  className="p-2"
+                >
+                  {mobileMenu ? <X size={26} /> : <Menu size={26} />}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      {/* ================= MOBILE DROPDOWN ================= */}
+      {!isDesktop && mobileMenu && (
+        <div className="fixed top-[96px] left-0 right-0 z-40 bg-white dark:bg-gray-900 border-t shadow-lg">
+          <div className="flex flex-col p-4 space-y-4 text-gray-800 dark:text-gray-200">
+            
+            {navLinks.map((link) => (
+              <Link
+                key={link.name}
+                to={link.path}
+                onClick={() => setMobileMenu(false)}
+                className="text-lg font-medium"
+              >
+                {link.name}
+              </Link>
+            ))}
+
+            <GlobalSearchBar />
+
+            <Link to="/wishlist" className="flex items-center gap-2">
+              <Heart size={18} /> Wishlist ({wishlist.length})
             </Link>
 
-            <Link to="/cart" className="relative p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
-              <ShoppingCart size={20} />
-              {cart.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
-                  {cart.length}
-                </span>
-              )}
+            <Link to="/cart" className="flex items-center gap-2">
+              <ShoppingCart size={18} /> Cart ({cart.length})
             </Link>
 
             <button
-              onClick={toggleTheme}
-              className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+              onClick={() => setTheme(t => t === "light" ? "dark" : "light")}
+              className="flex items-center gap-2"
             >
               {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+              Toggle Theme
             </button>
 
-            {user ? (
-              <Link to="/account" className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
-                <User size={18} />
-                <span className="hidden sm:inline text-sm">{displayName}</span>
-              </Link>
-            ) : (
-              <Link
-                to="/login"
-                className="px-5 py-2 text-sm font-medium rounded-full ring-2 ring-black dark:ring-white"
-              >
-                Login
-              </Link>
-            )}
-
-            {/* MOBILE MENU BUTTON */}
-            {!isDesktop && (
-              <button
-                onClick={() => setMobileMenu((m) => !m)}
-                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
-              >
-                {mobileMenu ? <X size={20} /> : <Menu size={20} />}
-              </button>
-            )}
+            <Link to="/login" className="font-semibold">
+              {user ? "My Account" : "Login"}
+            </Link>
           </div>
         </div>
-
-        {/* ✅ MOBILE DROPDOWN MENU */}
-        {!isDesktop && mobileMenu && (
-          <div className="pb-4 pt-2 border-t border-gray-200 dark:border-gray-800">
-            <div className="flex flex-col space-y-3">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.name}
-                  to={link.path}
-                  onClick={() => setMobileMenu(false)}
-                  className="px-2 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:text-black dark:hover:text-white"
-                >
-                  {link.name}
-                </Link>
-              ))}
-
-              <div className="px-2 pt-2">
-                <GlobalSearchBar />
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </nav>
+      )}
+    </>
   );
 }
