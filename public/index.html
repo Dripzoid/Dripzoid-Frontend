@@ -1,9 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <!-- =========================
+         BASIC META
+    ========================== -->
     <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
 
-    <!-- ✅ Favicon -->
+    <!-- ✅ VIEWPORT (CRITICAL FIX) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- =========================
+         FAVICONS
+    ========================== -->
     <link
       rel="icon"
       type="image/x-icon"
@@ -13,38 +22,37 @@
       rel="shortcut icon"
       href="https://res.cloudinary.com/dvid0uzwo/image/upload/v1766549454/my_project/ydgeno1kgkuesk3wzgyt.png"
     />
-
-    <!-- ✅ FIXED VIEWPORT (important) -->
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, maximum-scale=1"
-    />
-
-    <meta name="theme-color" content="#0d0d0d" />
-
-    <!-- ✅ SEO Meta -->
-    <meta
-      name="description"
-      content="Shop Trendy Fashion, Exclusive Styles, and the Latest Collections on Dripzoid."
-    />
-    <meta
-      name="keywords"
-      content="Dripzoid, fashion, clothing, shopping, ecommerce"
-    />
-    <meta name="author" content="Dripzoid" />
-
-    <!-- ✅ Apple / PWA -->
     <link
       rel="apple-touch-icon"
       href="https://res.cloudinary.com/dvid0uzwo/image/upload/v1766549454/my_project/ydgeno1kgkuesk3wzgyt.png"
     />
-    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
 
-    <!-- ✅ Open Graph -->
+    <!-- =========================
+         THEME
+    ========================== -->
+    <meta name="theme-color" content="#0d0d0d" />
+
+    <!-- =========================
+         SEO
+    ========================== -->
+    <title>Dripzoid – Wear The Confidence</title>
+    <meta
+      name="description"
+      content="Shop trendy fashion, exclusive styles, and the latest collections on Dripzoid. Wear the confidence."
+    />
+    <meta
+      name="keywords"
+      content="Dripzoid, fashion, clothing, ecommerce, streetwear, online shopping"
+    />
+    <meta name="author" content="Dripzoid" />
+
+    <!-- =========================
+         OPEN GRAPH
+    ========================== -->
     <meta property="og:title" content="Dripzoid – Wear The Confidence" />
     <meta
       property="og:description"
-      content="Shop Trendy Fashion, Exclusive Styles, and the Latest Collections on Dripzoid."
+      content="Shop trendy fashion, exclusive styles, and the latest collections on Dripzoid."
     />
     <meta
       property="og:image"
@@ -53,34 +61,35 @@
     <meta property="og:url" content="https://dripzoid.com" />
     <meta property="og:type" content="website" />
 
-    <!-- ✅ Twitter Cards -->
+    <!-- =========================
+         TWITTER CARD
+    ========================== -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Dripzoid – Wear The Confidence" />
     <meta
       name="twitter:description"
-      content="Shop Trendy Fashion, Exclusive Styles, and the Latest Collections on Dripzoid."
+      content="Shop trendy fashion, exclusive styles, and the latest collections on Dripzoid."
     />
     <meta
       name="twitter:image"
       content="https://res.cloudinary.com/dvid0uzwo/image/upload/v1766549418/my_project/ssspciedqyea2xway1mm.png"
     />
 
-    <!-- ✅ Google Analytics 4 -->
-    <script
-      async
-      src="https://www.googletagmanager.com/gtag/js?id=G-CPRRQ07SG9"
-    ></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag() {
-        dataLayer.push(arguments);
-      }
-      gtag("js", new Date());
-      gtag("config", "G-CPRRQ07SG9");
-    </script>
+    <!-- =========================
+         PWA
+    ========================== -->
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
 
-    <!-- ✅ GLOBAL SCALE FIX -->
+    <!-- =========================
+         GLOBAL LAYOUT SAFETY
+    ========================== -->
     <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
       html,
       body {
         width: 100%;
@@ -97,14 +106,31 @@
       }
     </style>
 
-    <title>Dripzoid</title>
+    <!-- =========================
+         GOOGLE ANALYTICS 4
+    ========================== -->
+    <script
+      async
+      src="https://www.googletagmanager.com/gtag/js?id=G-CPRRQ07SG9"
+    ></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag("js", new Date());
+      gtag("config", "G-CPRRQ07SG9");
+    </script>
   </head>
 
   <body>
     <noscript>You need to enable JavaScript to run Dripzoid.</noscript>
+
     <div id="root"></div>
 
-    <!-- ✅ MSG91 OTP Provider -->
+    <!-- =========================
+         MSG91 OTP PROVIDER
+    ========================== -->
     <script
       src="https://verify.msg91.com/otp-provider/otp-provider.js"
       type="text/javascript"
