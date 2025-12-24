@@ -88,14 +88,17 @@ const Footer = () => {
   return (
     <footer className="bg-black text-white px-6 py-12">
       <div className="max-w-7xl mx-auto">
+
+        {/* ================= DESKTOP ================= */}
         {isDesktop ? (
           <div className="grid grid-cols-5 gap-10">
-            {/* Brand */}
-            <div>
+
+            {/* BRAND (fixed column, no shrink) */}
+            <div className="flex flex-col items-start flex-shrink-0">
               <img
                 src="/logo-dark.png"
                 alt="Dripzoid"
-                className="h-12 w-auto mb-4"
+                className="block h-14 w-auto mb-4"
               />
               <p className="text-gray-400 text-sm">
                 Wear the Confidence
@@ -116,16 +119,18 @@ const Footer = () => {
             ))}
           </div>
         ) : (
+        /* ================= MOBILE ================= */
           <div>
-            {/* Brand (Mobile) */}
-            <img
-              src="/logo-dark.png"
-              alt="Dripzoid"
-              className="h-14 w-auto mb-3"
-            />
-            <p className="text-gray-400 text-sm mb-6">
-              Wear the Confidence
-            </p>
+            <div className="flex flex-col items-start">
+              <img
+                src="/logo-dark.png"
+                alt="Dripzoid"
+                className="block h-16 w-auto mb-3"
+              />
+              <p className="text-gray-400 text-sm mb-6">
+                Wear the Confidence
+              </p>
+            </div>
 
             {sections.map((section) => (
               <div key={section.title} className="border-t border-gray-800">
@@ -154,6 +159,7 @@ const Footer = () => {
         )}
       </div>
 
+      {/* Bottom bar */}
       <div className="mt-10 border-t border-gray-800 pt-6 text-center text-sm text-gray-500">
         © {new Date().getFullYear()} DRIPZOID. All rights reserved.
       </div>
