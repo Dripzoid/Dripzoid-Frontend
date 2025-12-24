@@ -58,22 +58,30 @@ export default function Navbar() {
   return (
     <nav className="bg-white dark:bg-gray-900 shadow-md sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Navbar Row */}
         <div className="flex items-center justify-between h-16">
 
-          {/* ================= LOGO (FIXED) ================= */}
-          <Link
-            to="/"
-            onClick={() => setMobileMenu(false)}
-            className="flex items-center flex-shrink-0"
-          >
-            <img
-              src={theme === "light" ? "/logo-light.png" : "/logo-dark.png"}
-              alt="Dripzoid"
-              className="block h-12 md:h-14 w-auto"
-            />
-          </Link>
+          {/* ================= LEFT: LOGO ================= */}
+          <div className="flex items-center h-full flex-shrink-0">
+            <Link
+              to="/"
+              onClick={() => setMobileMenu(false)}
+              className="flex items-center h-full"
+            >
+              <img
+                src={theme === "light" ? "/logo-light.png" : "/logo-dark.png"}
+                alt="Dripzoid"
+                style={{
+                  height: "52px",
+                  width: "auto",
+                  maxHeight: "none",
+                  display: "block",
+                }}
+              />
+            </Link>
+          </div>
 
-          {/* Desktop Nav Links */}
+          {/* ================= CENTER: NAV LINKS ================= */}
           {isDesktop && (
             <div className="flex items-center space-x-8">
               {navLinks.map((link) => (
@@ -88,7 +96,7 @@ export default function Navbar() {
             </div>
           )}
 
-          {/* Right side */}
+          {/* ================= RIGHT: ACTIONS ================= */}
           <div className="flex items-center gap-3 md:gap-4">
             {isDesktop && (
               <div className="w-52">
@@ -122,7 +130,7 @@ export default function Navbar() {
               )}
             </Link>
 
-            {/* Theme toggle */}
+            {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
               className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -148,7 +156,7 @@ export default function Navbar() {
               </Link>
             )}
 
-            {/* Mobile menu */}
+            {/* Mobile Menu */}
             {!isDesktop && (
               <button
                 onClick={() => setMobileMenu((m) => !m)}
@@ -163,4 +171,3 @@ export default function Navbar() {
     </nav>
   );
 }
-
