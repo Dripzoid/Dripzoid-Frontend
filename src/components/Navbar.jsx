@@ -1,11 +1,8 @@
+// src/components/Navbar.jsx
 import React, { useContext, useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { UserContext } from "../contexts/UserContext.js";
-import { useCart } from "../contexts/CartContext.jsx";
-import { useWishlist } from "../contexts/WishlistContext.jsx";
 import {
-  Heart,
-  ShoppingCart,
   Sun,
   Moon,
   User,
@@ -16,15 +13,12 @@ import GlobalSearchBar from "./GlobalSearch.jsx";
 
 export default function Navbar() {
   const { user } = useContext(UserContext);
-  const { cart = [] } = useCart();
-  const { wishlist = [] } = useWishlist();
 
   const [theme, setTheme] = useState(
     () => localStorage.getItem("theme") || "light"
   );
   const [mobileMenu, setMobileMenu] = useState(false);
 
-  // Theme handling (SAFE)
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
     localStorage.setItem("theme", theme);
@@ -41,12 +35,11 @@ export default function Navbar() {
       {/* ================= NAVBAR ================= */}
       <nav className="sticky top-0 z-50 bg-white dark:bg-gray-900 shadow-md">
         <div className="max-w-7xl mx-auto px-4">
-          {/* NAVBAR ROW — HEIGHT LOCKED */}
           <div className="flex items-center justify-between h-[96px]">
 
-            {/* LOGO — FRAME CONTROLS SIZE (KEY FIX) */}
+            {/* LEFT — LOGO */}
             <Link to="/" className="flex items-center h-full flex-shrink-0">
-              <div className="h-[86px] w-auto overflow-hidden flex items-center">
+              <div className="h-[86px] flex items-center pr-3">
                 <img
                   src={theme === "light" ? "/logo-light.png" : "/logo-dark.png"}
                   alt="Dripzoid"
@@ -68,57 +61,33 @@ export default function Navbar() {
               ))}
             </div>
 
-            {/* RIGHT ACTIONS */}
+            {/* RIGHT — ACTIONS */}
             <div className="flex items-center gap-3">
-              {/* Desktop search */}
+
+              {/* Desktop Search */}
               <div className="hidden md:block w-52">
                 <GlobalSearchBar />
               </div>
 
-              {/* Wishlist */}
-              <Link
-                to="/account/wishlist"
-                className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
-              >
-                <Heart size={20} />
-                {wishlist.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
-                    {wishlist.length}
-                  </span>
-                )}
-              </Link>
-
-              {/* Cart */}
-              <Link
-                to="/cart"
-                className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
-              >
-                <ShoppingCart size={20} />
-                {cart.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
-                    {cart.length}
-                  </span>
-                )}
-              </Link>
-
-              {/* Theme toggle */}
+              {/* Theme Toggle */}
               <button
                 onClick={() =>
                   setTheme((t) => (t === "light" ? "dark" : "light"))
                 }
                 className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+                aria-label="Toggle theme"
               >
                 {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
               </button>
 
-              {/* Login / User — ALWAYS IN NAVBAR */}
+              {/* LOGIN / ACCOUNT — REPLACES CART & WISHLIST */}
               {user ? (
                 <Link
                   to="/account"
-                  className="hidden sm:flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                  className="hidden sm:inline-flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-full ring-2 ring-black dark:ring-white"
                 >
-                  <User size={18} />
-                  <span className="text-sm">{user.name || "Account"}</span>
+                  <User size={16} />
+                  Account
                 </Link>
               ) : (
                 <Link
@@ -133,6 +102,7 @@ export default function Navbar() {
               <button
                 onClick={() => setMobileMenu((m) => !m)}
                 className="md:hidden p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+                aria-label="Toggle menu"
               >
                 {mobileMenu ? <X size={26} /> : <Menu size={26} />}
               </button>
@@ -158,22 +128,6 @@ export default function Navbar() {
             ))}
 
             <GlobalSearchBar />
-
-            <Link
-              to="/account/wishlist"
-              onClick={() => setMobileMenu(false)}
-              className="flex items-center gap-2"
-            >
-              <Heart size={18} /> Wishlist ({wishlist.length})
-            </Link>
-
-            <Link
-              to="/cart"
-              onClick={() => setMobileMenu(false)}
-              className="flex items-center gap-2"
-            >
-              <ShoppingCart size={18} /> Cart ({cart.length})
-            </Link>
           </div>
         </div>
       )}
