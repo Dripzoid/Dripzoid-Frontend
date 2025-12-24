@@ -9,7 +9,6 @@ import {
   ShoppingCart,
   Sun,
   Moon,
-  User,
   Menu,
   X,
 } from "lucide-react";
@@ -49,8 +48,8 @@ export default function Navbar() {
       <nav className="sticky top-0 z-50 bg-white dark:bg-gray-900 shadow-md">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between h-[96px]">
-            
-            {/* LOGO — 90% HEIGHT */}
+
+            {/* LEFT — LOGO */}
             <Link to="/" className="flex items-center h-full">
               <img
                 src={theme === "light" ? "/logo-light.png" : "/logo-dark.png"}
@@ -59,7 +58,7 @@ export default function Navbar() {
               />
             </Link>
 
-            {/* DESKTOP NAV */}
+            {/* CENTER — DESKTOP NAV */}
             {isDesktop && (
               <div className="flex items-center space-x-10">
                 {navLinks.map((link) => (
@@ -74,21 +73,35 @@ export default function Navbar() {
               </div>
             )}
 
-            {/* RIGHT ACTIONS */}
+            {/* RIGHT — ACTIONS */}
             <div className="flex items-center gap-3">
-              {isDesktop && <GlobalSearchBar />}
 
+              {/* DESKTOP ACTIONS */}
               {isDesktop && (
                 <>
+                  <GlobalSearchBar />
                   <Link to="/wishlist"><Heart size={20} /></Link>
                   <Link to="/cart"><ShoppingCart size={20} /></Link>
                   <button onClick={() => setTheme(t => t === "light" ? "dark" : "light")}>
                     {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
                   </button>
-                  <Link to="/login" className="px-4 py-1.5 rounded-full ring-2">
+                  <Link
+                    to="/login"
+                    className="px-4 py-1.5 rounded-full ring-2 ring-black dark:ring-white"
+                  >
                     Login
                   </Link>
                 </>
+              )}
+
+              {/* MOBILE LOGIN (OUTSIDE DROPDOWN) */}
+              {!isDesktop && (
+                <Link
+                  to="/login"
+                  className="px-4 py-1.5 text-sm font-medium rounded-full ring-2 ring-black dark:ring-white"
+                >
+                  Login
+                </Link>
               )}
 
               {/* MOBILE MENU TOGGLE */}
@@ -109,7 +122,7 @@ export default function Navbar() {
       {!isDesktop && mobileMenu && (
         <div className="fixed top-[96px] left-0 right-0 z-40 bg-white dark:bg-gray-900 border-t shadow-lg">
           <div className="flex flex-col p-4 space-y-4 text-gray-800 dark:text-gray-200">
-            
+
             {navLinks.map((link) => (
               <Link
                 key={link.name}
@@ -139,9 +152,6 @@ export default function Navbar() {
               Toggle Theme
             </button>
 
-            <Link to="/login" className="font-semibold">
-              {user ? "My Account" : "Login"}
-            </Link>
           </div>
         </div>
       )}
