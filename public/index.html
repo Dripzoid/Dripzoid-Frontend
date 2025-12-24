@@ -1,85 +1,67 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <!-- =========================
+         BASIC META
+    ========================== -->
     <meta charset="utf-8" />
-
-    <!-- ✅ Favicon (keep local for reliability) -->
-    <link rel="icon" type="image/x-icon" href="%PUBLIC_URL%/favicon.ico" />
-    <link rel="shortcut icon" href="%PUBLIC_URL%/favicon.ico" />
-
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0d0d0d" />
+    <meta name="theme-color" content="#0f172a" />
 
-    <!-- ✅ Preload Brand Logo (CDN) -->
-    <link
-      rel="preload"
-      as="image"
-      href="https://res.cloudinary.com/dvid0uzwo/image/upload/v1766549418/my_project/ssspciedqyea2xway1mm.png"
-    />
+    <title>Dripzoid – Engineering Scalable Systems</title>
 
-    <!-- ✅ SEO Meta -->
     <meta
       name="description"
-      content="Shop Trendy Fashion, Exclusive Styles, and the Latest Collections on Dripzoid."
+      content="Dripzoid Dev Team – Full-Stack Engineering, AI-Driven Systems, and Production-Ready Software Solutions."
     />
-    <meta
-      name="keywords"
-      content="Dripzoid, fashion, clothing, shopping, ecommerce"
-    />
-    <meta name="author" content="Dripzoid" />
 
-    <!-- ✅ Apple / PWA support -->
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/favicon.ico" />
+    <!-- =========================
+         FAVICONS (EXACT SIZES)
+    ========================== -->
+    <link rel="icon" type="image/png" sizes="16x16" href="%PUBLIC_URL%/favicon-16x16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="%PUBLIC_URL%/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="%PUBLIC_URL%/favicon-48x48.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="%PUBLIC_URL%/favicon-192x192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="%PUBLIC_URL%/favicon-512x512.png" />
+
+    <!-- =========================
+         APPLE TOUCH ICON
+    ========================== -->
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="%PUBLIC_URL%/apple-touch-icon.png"
+    />
+
+    <!-- =========================
+         PWA MANIFEST
+    ========================== -->
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
 
-    <!-- ✅ Open Graph (Cloudinary image) -->
-    <meta property="og:title" content="Dripzoid - Wear The Confidence" />
+    <!-- =========================
+         SOCIAL PREVIEW (OG)
+    ========================== -->
+    <meta property="og:title" content="Dripzoid Dev Team" />
     <meta
       property="og:description"
-      content="Shop Trendy Fashion, Exclusive Styles, and the Latest Collections on Dripzoid."
+      content="Engineering scalable, AI-driven, production-ready software systems."
     />
-    <meta
-      property="og:image"
-      content="https://res.cloudinary.com/dvid0uzwo/image/upload/v1766549418/my_project/ssspciedqyea2xway1mm.png"
-    />
-    <meta property="og:url" content="https://dripzoid.com" />
+    <meta property="og:image" content="%PUBLIC_URL%/og-image.png" />
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Dripzoid" />
 
-    <!-- ✅ Twitter Cards -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Dripzoid - Wear The Confidence" />
-    <meta
-      name="twitter:description"
-      content="Shop Trendy Fashion, Exclusive Styles, and the Latest Collections on Dripzoid."
-    />
-    <meta
-      name="twitter:image"
-      content="https://res.cloudinary.com/dvid0uzwo/image/upload/v1766549418/my_project/ssspciedqyea2xway1mm.png"
-    />
-
-    <!-- ✅ Google Analytics 4 -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-CPRRQ07SG9"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag() {
-        dataLayer.push(arguments);
-      }
-      gtag("js", new Date());
-      gtag("config", "G-CPRRQ07SG9");
-    </script>
-
-    <title>Dripzoid</title>
+    <!-- =========================
+         PERFORMANCE HINTS
+    ========================== -->
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   </head>
 
   <body>
-    <noscript>You need to enable JavaScript to run Dripzoid.</noscript>
-    <div id="root"></div>
+    <noscript>
+      JavaScript is required to run this application.
+    </noscript>
 
-    <!-- ✅ MSG91 OTP Provider -->
-    <script
-      src="https://verify.msg91.com/otp-provider/otp-provider.js"
-      type="text/javascript"
-      async
-    ></script>
+    <!-- React mounts here -->
+    <div id="root"></div>
   </body>
 </html>
