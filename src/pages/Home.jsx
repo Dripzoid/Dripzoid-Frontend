@@ -6,7 +6,7 @@ import TrendingSection from "../components/TrendingSection";
 import OnSale from "../components/OnSale";
 
 // -----------------------------
-// Helper data (Hero)
+// Hero slides
 // -----------------------------
 const slides = [
   {
@@ -23,7 +23,7 @@ function scrollSectionById(sectionId, direction = "right") {
   const root = document.getElementById(sectionId);
   if (!root) return;
 
-  const selectorCandidates = [
+  const candidates = [
     ".overflow-x-auto",
     "[data-scroll]",
     ".scrollable",
@@ -33,42 +33,46 @@ function scrollSectionById(sectionId, direction = "right") {
   ];
 
   let el = null;
-  for (const sel of selectorCandidates) {
+  for (const sel of candidates) {
     const found = root.querySelector(sel);
-    if (!found) continue;
-
-    if (found.scrollWidth > found.clientWidth) {
+    if (found && found.scrollWidth > found.clientWidth) {
       el = found;
       break;
     }
   }
 
   if (!el) return;
-  const amount = Math.round(el.clientWidth * 0.9);
+
   el.scrollBy({
-    left: direction === "right" ? amount : -amount,
+    left: direction === "right" ? el.clientWidth * 0.9 : -el.clientWidth * 0.9,
     behavior: "smooth",
   });
 }
 
 // -----------------------------
-// Home Page
+// Home Page (OLD FORMAT RESTORED)
 // -----------------------------
 export default function HomePage() {
   return (
-    <div className="min-h-screen text-base bg-white text-black dark:bg-black dark:text-white antialiased space-y-12">
+    <main className="min-h-screen bg-white text-black dark:bg-black dark:text-white antialiased">
       {/* Spacer for fixed navbar */}
       <div className="h-16" />
 
-      {/* Hero */}
-      <Hero slides={slides} />
+      {/* =============================
+          HERO
+      ============================== */}
+      <section className="mb-14">
+        <Hero slides={slides} />
+      </section>
 
-      {/* CTA */}
-      <div className="max-w-6xl mx-auto px-4">
-        <div className="relative rounded-2xl p-8 text-center shadow-lg overflow-hidden">
+      {/* =============================
+          CTA (Old-style spacing)
+      ============================== */}
+      <section className="max-w-6xl mx-auto px-4 mb-20">
+        <div className="relative rounded-xl p-8 text-center shadow-md">
           <div className="absolute inset-0 -z-10 bg-gradient-to-r from-white to-slate-100 dark:from-slate-900 dark:to-slate-800" />
 
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">
+          <h2 className="text-3xl md:text-4xl font-bold mb-3">
             Shop the Drop
           </h2>
           <p className="text-sm text-slate-700 dark:text-slate-300 mb-6">
@@ -77,49 +81,58 @@ export default function HomePage() {
 
           <Link
             to="/shop"
-            className="inline-block px-8 py-4 rounded-lg font-semibold shadow transition-colors bg-slate-900 text-white dark:bg-white dark:text-slate-900 hover:opacity-95"
+            className="inline-block px-8 py-4 rounded-lg font-semibold shadow transition bg-slate-900 text-white dark:bg-white dark:text-slate-900 hover:opacity-95"
           >
             Shop Now
           </Link>
         </div>
-      </div>
+      </section>
 
-      {/* On Sale */}
-      <section id="sale" className="relative max-w-6xl mx-auto px-4">
+      {/* =============================
+          ON SALE
+      ============================== */}
+      <section
+        id="sale"
+        className="relative max-w-6xl mx-auto px-4 mb-20"
+      >
         <button
-          aria-label="Scroll Sale left"
+          aria-label="Scroll sale left"
           onClick={() => scrollSectionById("sale", "left")}
-          className="hidden md:flex absolute left-4 top-1/2 -translate-y-1/2 z-50 w-10 h-10 rounded-full bg-white/95 dark:bg-black/75 shadow"
+          className="hidden md:flex absolute left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/95 dark:bg-black/75 shadow items-center justify-center"
         >
           ←
         </button>
 
         <button
-          aria-label="Scroll Sale right"
+          aria-label="Scroll sale right"
           onClick={() => scrollSectionById("sale", "right")}
-          className="hidden md:flex absolute right-4 top-1/2 -translate-y-1/2 z-50 w-10 h-10 rounded-full bg-white/95 dark:bg-black/75 shadow"
+          className="hidden md:flex absolute right-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/95 dark:bg-black/75 shadow items-center justify-center"
         >
           →
         </button>
 
-        <div className="mt-2">
-          <OnSale />
-        </div>
+        <OnSale />
       </section>
 
-      {/* Featured */}
-      <section id="featured" className="relative max-w-6xl mx-auto px-4">
-        <div className="mt-2">
-          <FeaturedSection />
-        </div>
+      {/* =============================
+          FEATURED
+      ============================== */}
+      <section
+        id="featured"
+        className="max-w-6xl mx-auto px-4 mb-20"
+      >
+        <FeaturedSection />
       </section>
 
-      {/* Trending */}
-      <section id="trending" className="relative max-w-6xl mx-auto px-4">
-        <div className="mt-2">
-          <TrendingSection />
-        </div>
+      {/* =============================
+          TRENDING
+      ============================== */}
+      <section
+        id="trending"
+        className="max-w-6xl mx-auto px-4 mb-24"
+      >
+        <TrendingSection />
       </section>
-    </div>
+    </main>
   );
 }
