@@ -1,3 +1,4 @@
+// src/components/Footer.jsx
 import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -93,12 +94,12 @@ const Footer = () => {
         {isDesktop ? (
           <div className="grid grid-cols-5 gap-10">
 
-            {/* BRAND (fixed column, no shrink) */}
+            {/* BRAND */}
             <div className="flex flex-col items-start flex-shrink-0">
               <img
                 src="/logo-dark.png"
                 alt="Dripzoid"
-                className="block h-14 w-auto mb-4"
+                className="h-14 w-auto object-contain mb-4"
               />
               <p className="text-gray-400 text-sm">
                 Wear the Confidence
@@ -121,13 +122,13 @@ const Footer = () => {
         ) : (
         /* ================= MOBILE ================= */
           <div>
-            <div className="flex flex-col items-start">
+            <div className="flex flex-col items-start mb-6">
               <img
                 src="/logo-dark.png"
                 alt="Dripzoid"
-                className="block h-16 w-auto mb-3"
+                className="h-16 w-auto object-contain mb-3"
               />
-              <p className="text-gray-400 text-sm mb-6">
+              <p className="text-gray-400 text-sm">
                 Wear the Confidence
               </p>
             </div>
@@ -139,11 +140,7 @@ const Footer = () => {
                   className="w-full flex justify-between items-center py-4 text-lg font-semibold"
                 >
                   {section.title}
-                  {openSection === section.title ? (
-                    <FaChevronUp />
-                  ) : (
-                    <FaChevronDown />
-                  )}
+                  {openSection === section.title ? <FaChevronUp /> : <FaChevronDown />}
                 </button>
 
                 {openSection === section.title && (
@@ -159,7 +156,7 @@ const Footer = () => {
         )}
       </div>
 
-      {/* Bottom bar */}
+      {/* ================= BOTTOM BAR ================= */}
       <div className="mt-10 border-t border-gray-800 pt-6 text-center text-sm text-gray-500">
         © {new Date().getFullYear()} DRIPZOID. All rights reserved.
       </div>
