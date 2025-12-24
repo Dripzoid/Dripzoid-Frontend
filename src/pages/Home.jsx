@@ -1,3 +1,6 @@
+// src/pages/Home.jsx
+// Version: V1.0 (Startup Release)
+
 import React from "react";
 import { Link } from "react-router-dom";
 import Hero from "../components/Hero";
@@ -6,7 +9,7 @@ import TrendingSection from "../components/TrendingSection";
 import OnSale from "../components/OnSale";
 
 // -----------------------------
-// Hero slides
+// Hero slides (Cloudinary – V1.0 OK)
 // -----------------------------
 const slides = [
   {
@@ -44,13 +47,15 @@ function scrollSectionById(sectionId, direction = "right") {
   if (!el) return;
 
   el.scrollBy({
-    left: direction === "right" ? el.clientWidth * 0.9 : -el.clientWidth * 0.9,
+    left: direction === "right"
+      ? el.clientWidth * 0.9
+      : -el.clientWidth * 0.9,
     behavior: "smooth",
   });
 }
 
 // -----------------------------
-// Home Page (OLD FORMAT RESTORED)
+// Home Page (V1.0 – LOCKED)
 // -----------------------------
 export default function HomePage() {
   return (
@@ -66,7 +71,7 @@ export default function HomePage() {
       </section>
 
       {/* =============================
-          CTA (Old-style spacing)
+          CTA
       ============================== */}
       <section className="max-w-6xl mx-auto px-4 mb-20">
         <div className="relative rounded-xl p-8 text-center shadow-md">
