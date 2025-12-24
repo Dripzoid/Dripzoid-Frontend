@@ -1,88 +1,50 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <!-- =========================
+    <!-- =====================
          BASIC META
-    ========================== -->
+    ====================== -->
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
 
-    <!-- ✅ VIEWPORT (CRITICAL FIX) -->
+    <!-- ✅ VIEWPORT (CRITICAL) -->
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <!-- =========================
-         FAVICONS
-    ========================== -->
-    <link
-      rel="icon"
-      type="image/x-icon"
-      href="https://res.cloudinary.com/dvid0uzwo/image/upload/v1766549454/my_project/ydgeno1kgkuesk3wzgyt.png"
-    />
-    <link
-      rel="shortcut icon"
-      href="https://res.cloudinary.com/dvid0uzwo/image/upload/v1766549454/my_project/ydgeno1kgkuesk3wzgyt.png"
-    />
-    <link
-      rel="apple-touch-icon"
-      href="https://res.cloudinary.com/dvid0uzwo/image/upload/v1766549454/my_project/ydgeno1kgkuesk3wzgyt.png"
-    />
-
-    <!-- =========================
-         THEME
-    ========================== -->
-    <meta name="theme-color" content="#0d0d0d" />
-
-    <!-- =========================
-         SEO
-    ========================== -->
+    <!-- =====================
+         TITLE & SEO
+    ====================== -->
     <title>Dripzoid – Wear The Confidence</title>
+
     <meta
       name="description"
-      content="Shop trendy fashion, exclusive styles, and the latest collections on Dripzoid. Wear the confidence."
+      content="Shop trendy fashion, exclusive styles, and the latest collections on Dripzoid."
     />
     <meta
       name="keywords"
-      content="Dripzoid, fashion, clothing, ecommerce, streetwear, online shopping"
+      content="Dripzoid, fashion, clothing, ecommerce"
     />
     <meta name="author" content="Dripzoid" />
 
-    <!-- =========================
-         OPEN GRAPH
-    ========================== -->
-    <meta property="og:title" content="Dripzoid – Wear The Confidence" />
-    <meta
-      property="og:description"
-      content="Shop trendy fashion, exclusive styles, and the latest collections on Dripzoid."
-    />
-    <meta
-      property="og:image"
-      content="https://res.cloudinary.com/dvid0uzwo/image/upload/v1766549418/my_project/ssspciedqyea2xway1mm.png"
-    />
-    <meta property="og:url" content="https://dripzoid.com" />
-    <meta property="og:type" content="website" />
+    <!-- =====================
+         THEME COLOR
+    ====================== -->
+    <meta name="theme-color" content="#0d0d0d" />
 
-    <!-- =========================
-         TWITTER CARD
-    ========================== -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Dripzoid – Wear The Confidence" />
-    <meta
-      name="twitter:description"
-      content="Shop trendy fashion, exclusive styles, and the latest collections on Dripzoid."
-    />
-    <meta
-      name="twitter:image"
-      content="https://res.cloudinary.com/dvid0uzwo/image/upload/v1766549418/my_project/ssspciedqyea2xway1mm.png"
-    />
+    <!-- =====================
+         ICONS (MATCHES YOUR FOLDER)
+    ====================== -->
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
 
-    <!-- =========================
-         PWA
-    ========================== -->
+    <!-- =====================
+         PWA MANIFEST
+    ====================== -->
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
 
-    <!-- =========================
-         GLOBAL LAYOUT SAFETY
-    ========================== -->
+    <!-- =====================
+         GLOBAL RENDERING FIX
+         (THIS IS THE LAST PIECE)
+    ====================== -->
     <style>
       *,
       *::before,
@@ -90,7 +52,14 @@
         box-sizing: border-box;
       }
 
-      html,
+      html {
+        width: 100%;
+        height: 100%;
+        font-size: 16px;
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+      }
+
       body {
         width: 100%;
         height: 100%;
@@ -105,36 +74,10 @@
         flex-direction: column;
       }
     </style>
-
-    <!-- =========================
-         GOOGLE ANALYTICS 4
-    ========================== -->
-    <script
-      async
-      src="https://www.googletagmanager.com/gtag/js?id=G-CPRRQ07SG9"
-    ></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag() {
-        dataLayer.push(arguments);
-      }
-      gtag("js", new Date());
-      gtag("config", "G-CPRRQ07SG9");
-    </script>
   </head>
 
   <body>
     <noscript>You need to enable JavaScript to run Dripzoid.</noscript>
-
     <div id="root"></div>
-
-    <!-- =========================
-         MSG91 OTP PROVIDER
-    ========================== -->
-    <script
-      src="https://verify.msg91.com/otp-provider/otp-provider.js"
-      type="text/javascript"
-      async
-    ></script>
   </body>
 </html>
