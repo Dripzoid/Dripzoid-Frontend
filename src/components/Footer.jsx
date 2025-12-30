@@ -1,20 +1,17 @@
 // src/components/Footer.jsx
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   FaInstagram,
   FaWhatsapp,
   FaYoutube,
   FaFacebookF,
-  FaChevronDown,
-  FaChevronUp,
 } from "react-icons/fa";
 
 const Footer = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [openSection, setOpenSection] = useState(null);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
 
   useEffect(() => {
@@ -23,9 +20,6 @@ const Footer = () => {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const handleToggle = (section) =>
-    setOpenSection(openSection === section ? null : section);
-
   const handleGoToSection = (id) => {
     if (location.pathname === "/") {
       document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
@@ -33,68 +27,17 @@ const Footer = () => {
       navigate("/");
       setTimeout(() => {
         document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
-      }, 200);
+      }, 250);
     }
   };
-
-  const sections = [
-    {
-      title: "Shop",
-      items: [
-        <Link key="all" to="/shop">All Products</Link>,
-        <button key="featured" onClick={() => handleGoToSection("featured")}>
-          Featured
-        </button>,
-        <button key="trending" onClick={() => handleGoToSection("trending")}>
-          Trending
-        </button>,
-      ],
-    },
-    {
-      title: "Company",
-      items: [
-        <Link key="about" to="/about-us">About Us</Link>,
-        <Link key="contact" to="/contact">Contact</Link>,
-        <Link key="privacy" to="/privacy-policy">Privacy Policy</Link>,
-      ],
-    },
-    {
-      title: "Contact",
-      items: [
-        <a key="email" href="mailto:support@dripzoid.com">
-          support@dripzoid.com
-        </a>,
-        <span key="loc">Pithapuram, Andhra Pradesh</span>,
-      ],
-    },
-    {
-      title: "Follow Us",
-      items: [
-        <a key="ig" href="https://www.instagram.com/dripzoidofficial" target="_blank" rel="noreferrer">
-          <FaInstagram /> Instagram
-        </a>,
-        <a key="wa" href="https://wa.me/message/NSIW5WOQRBDFG1" target="_blank" rel="noreferrer">
-          <FaWhatsapp /> WhatsApp
-        </a>,
-        <a key="yt" href="https://youtube.com/@dripzoidofficial" target="_blank" rel="noreferrer">
-          <FaYoutube /> YouTube
-        </a>,
-        <a key="fb" href="https://www.facebook.com/share/1Begozxt9S/" target="_blank" rel="noreferrer">
-          <FaFacebookF /> Facebook
-        </a>,
-      ],
-    },
-  ];
 
   return (
     <footer className="bg-black text-white px-6 py-14">
       <div className="max-w-7xl mx-auto">
-
-        {/* ================= DESKTOP / TABLET ================= */}
+        {/* DESKTOP / TABLET */}
         {isDesktop ? (
-          <div className="grid grid-cols-5 gap-10 items-start">
-
-            {/* LOGO — MAX SIZE */}
+          <div className="grid grid-cols-4 gap-10 items-start">
+            {/* LOGO — LARGE */}
             <div className="col-span-1 flex items-start">
               <img
                 src="/logo-dark.png"
@@ -103,56 +46,151 @@ const Footer = () => {
               />
             </div>
 
-            {sections.map((section) => (
-              <div key={section.title}>
-                <h3 className="text-lg font-semibold mb-4">
-                  {section.title}
-                </h3>
-                <ul className="space-y-3 text-sm text-gray-400">
-                  {section.items.map((item, i) => (
-                    <li key={i}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+            {/* SHOP */}
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Shop</h3>
+              <ul className="space-y-3 text-sm text-gray-400">
+                <li>
+                  <Link to="/shop" className="hover:text-white">
+                    All Products
+                  </Link>
+                </li>
+                <li>
+                  <button
+                    onClick={() => handleGoToSection("featured")}
+                    className="hover:text-white text-left"
+                  >
+                    Featured
+                  </button>
+                </li>
+                <li>
+                  <button
+                    onClick={() => handleGoToSection("trending")}
+                    className="hover:text-white text-left"
+                  >
+                    Trending
+                  </button>
+                </li>
+              </ul>
+            </div>
+
+            {/* COMPANY */}
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Company</h3>
+              <ul className="space-y-3 text-sm text-gray-400">
+                <li>
+                  <Link to="/about-us" className="hover:text-white">
+                    About Us
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/contact" className="hover:text-white">
+                    Contact
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/privacy-policy" className="hover:text-white">
+                    Privacy Policy
+                  </Link>
+                </li>
+              </ul>
+            </div>
+
+            {/* FOLLOW US (icons + names aligned) */}
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Follow Us</h3>
+              <ul className="space-y-3 text-sm text-gray-400">
+                <li>
+                  <a
+                    href="https://www.instagram.com/dripzoidofficial"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-3 hover:text-white"
+                  >
+                    <FaInstagram className="w-5 h-5" />
+                    <span>Instagram</span>
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="https://wa.me/message/NSIW5WOQRBDFG1"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-3 hover:text-white"
+                  >
+                    <FaWhatsapp className="w-5 h-5" />
+                    <span>WhatsApp</span>
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="https://youtube.com/@dripzoidofficial"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-3 hover:text-white"
+                  >
+                    <FaYoutube className="w-5 h-5" />
+                    <span>YouTube</span>
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="https://www.facebook.com/share/1Begozxt9S/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-3 hover:text-white"
+                  >
+                    <FaFacebookF className="w-5 h-5" />
+                    <span>Facebook</span>
+                  </a>
+                </li>
+              </ul>
+            </div>
           </div>
         ) : (
-          /* ================= MOBILE ================= */
-          <div>
-
-            {/* LOGO — MOBILE MAX SPACE */}
-            <div className="flex justify-center mb-8">
+          /* MOBILE: only logo + three links (About, Contact, Privacy) */
+          <div className="flex flex-col items-center">
+            <div className="flex justify-center mb-6">
               <img
                 src="/logo-dark.png"
                 alt="Dripzoid"
-                className="h-32 w-auto object-contain"
+                className="h-28 w-auto object-contain"
               />
             </div>
 
-            {sections.map((section) => (
-              <div key={section.title} className="border-t border-gray-800">
-                <button
-                  onClick={() => handleToggle(section.title)}
-                  className="w-full flex justify-between items-center py-4 text-lg font-semibold"
-                >
-                  {section.title}
-                  {openSection === section.title ? <FaChevronUp /> : <FaChevronDown />}
-                </button>
-
-                {openSection === section.title && (
-                  <ul className="pb-4 pl-2 space-y-3 text-sm text-gray-400">
-                    {section.items.map((item, i) => (
-                      <li key={i}>{item}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ))}
+            <div className="w-full max-w-xs">
+              <ul className="flex flex-col divide-y divide-gray-800 rounded-lg overflow-hidden bg-gray-900/40">
+                <li>
+                  <Link
+                    to="/about-us"
+                    className="block w-full px-4 py-4 text-center text-sm text-white hover:bg-gray-800"
+                  >
+                    About Us
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    to="/contact"
+                    className="block w-full px-4 py-4 text-center text-sm text-white hover:bg-gray-800"
+                  >
+                    Contact
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    to="/privacy-policy"
+                    className="block w-full px-4 py-4 text-center text-sm text-white hover:bg-gray-800"
+                  >
+                    Privacy Policy
+                  </Link>
+                </li>
+              </ul>
+            </div>
           </div>
         )}
       </div>
 
-      {/* ================= BOTTOM BAR ================= */}
+      {/* BOTTOM COPYRIGHT */}
       <div className="mt-12 border-t border-gray-800 pt-6 text-center text-sm text-gray-500">
         © {new Date().getFullYear()} DRIPZOID. All rights reserved.
       </div>
