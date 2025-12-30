@@ -13,6 +13,7 @@ import { CartProvider } from "./contexts/CartContext.jsx";
 import Navbar from "./components/Navbar.jsx";
 import Footer from "./components/Footer.jsx";
 import CartSidebar from "./components/CartSidebar.jsx";
+import MobileFooter from "./components/MobileFooter.jsx"; // ✅ NEW
 
 // 🏠 Public Pages
 import Home from "./pages/Home.jsx";
@@ -57,11 +58,12 @@ function App() {
       <CartProvider>
         <Router>
           <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white flex flex-col">
-            {/* ✅ Navbar Always Visible */}
+            
+            {/* ✅ Navbar (Top) */}
             <Navbar />
 
-            {/* ✅ Routes */}
-            <main className="flex-grow">
+            {/* ✅ Main Content (padding added for mobile footer) */}
+            <main className="flex-grow pb-[72px] md:pb-0">
               <Routes>
                 {/* Public Routes */}
                 <Route path="/" element={<Home />} />
@@ -100,7 +102,7 @@ function App() {
                   <Route path="products" element={<ProductsAdmin />} />
                   <Route path="bulk-upload" element={<BulkUpload />} />
                   <Route path="upload" element={<ImageUpload />} />
-                  <Route path="users" element={<UserManagement />} />          
+                  <Route path="users" element={<UserManagement />} />
                   <Route path="orders" element={<AdminOrdersDashboard />} />
                   <Route path="labels" element={<LabelsManager />} />
                   <Route path="coupons" element={<CouponManagement />} />
@@ -113,10 +115,13 @@ function App() {
               </Routes>
             </main>
 
-            {/* ✅ Footer Always Visible */}
+            {/* ✅ Desktop Footer */}
             <Footer />
 
-            {/* ✅ Cart Sidebar Always Available */}
+            {/* ✅ Mobile Footer (Bottom, Mobile Only) */}
+            <MobileFooter />
+
+            {/* ✅ Cart Sidebar */}
             <CartSidebar />
           </div>
         </Router>
