@@ -116,7 +116,10 @@ export default function GlobalSearch() {
 
   const saveRecent = (term) => {
     if (!term?.trim()) return;
-    const list = [term.trim(), ...recent.filter((r) => r !== term.trim())].slice(0, MAX_RECENT);
+    const list = [term.trim(), ...recent.filter((r) => r !== term.trim())].slice(
+      0,
+      MAX_RECENT
+    );
     setRecent(list);
     localStorage.setItem(RECENT_KEY, JSON.stringify(list));
   };
@@ -147,8 +150,8 @@ export default function GlobalSearch() {
 
   /* ================= RENDER ================= */
   return (
-    <div ref={wrapperRef} className="relative">
-      {/* ICON (collapsed) */}
+    <div ref={wrapperRef} className="relative flex items-center">
+      {/* COLLAPSED ICON */}
       {!expanded && (
         <button
           onClick={expand}
@@ -162,14 +165,14 @@ export default function GlobalSearch() {
       {/* EXPANDED SEARCH */}
       {expanded && (
         <div className="relative w-[220px] sm:w-[280px]">
-          <div className="flex items-center rounded-full
+          <div
+            className="relative flex items-center rounded-full
             bg-gray-50 dark:bg-gray-900
             border border-gray-300 dark:border-gray-800
             focus-within:ring-2 focus-within:ring-black
-            transition">
-
-            <Search className="ml-3 text-gray-500" size={18} />
-
+            transition"
+          >
+            {/* INPUT */}
             <input
               ref={inputRef}
               type="text"
@@ -181,25 +184,36 @@ export default function GlobalSearch() {
                 setHighlight(-1);
               }}
               onFocus={() => setShowDropdown(true)}
-              className="flex-1 bg-transparent px-3 py-2 outline-none text-sm"
+              className="w-full bg-transparent
+                pl-4 pr-16 py-2
+                outline-none text-sm"
             />
 
+            {/* SEARCH ICON — RIGHT INSIDE */}
+            <Search
+              size={18}
+              className="absolute right-9 text-gray-500 pointer-events-none"
+            />
+
+            {/* CLOSE (X) — FAR RIGHT INSIDE */}
             <button
               onClick={collapse}
-              className="mr-2 p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800"
+              className="absolute right-2 p-1 rounded-full
+                hover:bg-gray-200 dark:hover:bg-gray-800"
               aria-label="Close search"
             >
-              <X size={16} />
+              <X size={14} />
             </button>
           </div>
 
           {/* DROPDOWN */}
           {showDropdown && (
-            <div className="absolute top-full left-0 mt-2 w-full
+            <div
+              className="absolute top-full left-0 mt-2 w-full
               bg-white dark:bg-gray-900
               border border-gray-200 dark:border-gray-800
-              rounded-xl shadow-xl z-50 max-h-[420px] overflow-auto">
-
+              rounded-xl shadow-xl z-50 max-h-[420px] overflow-auto"
+            >
               <div className="p-2">
                 {query.trim() ? (
                   <>
@@ -218,16 +232,25 @@ export default function GlobalSearch() {
                           onMouseEnter={() => setHighlight(idx)}
                           className={`flex gap-3 p-3 rounded-lg cursor-pointer
                             hover:bg-gray-100 dark:hover:bg-gray-800
-                            ${highlight === idx ? "bg-gray-100 dark:bg-gray-800" : ""}`}
+                            ${
+                              highlight === idx
+                                ? "bg-gray-100 dark:bg-gray-800"
+                                : ""
+                            }`}
                           onClick={() => openProduct(product)}
                         >
                           <img
-                            src={product.image || "https://via.placeholder.com/80"}
+                            src={
+                              product.image ||
+                              "https://via.placeholder.com/80"
+                            }
                             alt={product.name}
                             className="w-12 h-12 rounded-md object-cover"
                           />
                           <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{product.name}</p>
+                            <p className="text-sm font-medium truncate">
+                              {product.name}
+                            </p>
                             <p className="text-xs text-gray-500 truncate">
                               {product.category}
                             </p>
@@ -240,7 +263,10 @@ export default function GlobalSearch() {
                   <>
                     <div className="flex justify-between px-3 py-2 text-xs text-gray-500">
                       <span>Recent</span>
-                      <button onClick={clearRecent} className="underline">
+                      <button
+                        onClick={clearRecent}
+                        className="underline"
+                      >
                         Clear
                       </button>
                     </div>
