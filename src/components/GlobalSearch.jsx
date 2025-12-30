@@ -103,6 +103,8 @@ export default function GlobalSearch() {
   /* ================= HELPERS ================= */
   const expand = () => {
     setExpanded(true);
+    setShowDropdown(true);
+    // focus next tick
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
@@ -145,13 +147,14 @@ export default function GlobalSearch() {
   const onRecentClick = (term) => {
     setQuery(term);
     setShowDropdown(true);
-    inputRef.current?.focus();
+    setTimeout(() => inputRef.current?.focus(), 0);
   };
 
   /* ================= RENDER ================= */
   return (
-    <div ref={wrapperRef} className="relative flex items-center">
-      {/* COLLAPSED ICON */}
+    // wrapper is relative so expanded absolute box anchors to the icon's right edge
+    <div ref={wrapperRef} className="relative">
+      {/* COLLAPSED ICON: sits inline where you place <GlobalSearch /> (e.g. next to theme toggle) */}
       {!expanded && (
         <button
           onClick={expand}
@@ -162,136 +165,133 @@ export default function GlobalSearch() {
         </button>
       )}
 
-      {/* EXPANDED SEARCH */}
+      {/* EXPANDED — absolutely anchored to the right so it grows left and won't cover theme toggle */}
       {expanded && (
-        <div className="relative w-[220px] sm:w-[280px]">
-          <div
-            className="relative flex items-center rounded-full
-            bg-gray-50 dark:bg-gray-900
-            border border-gray-300 dark:border-gray-800
-            focus-within:ring-2 focus-within:ring-black
-            transition"
-          >
-            {/* INPUT */}
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              placeholder="Search..."
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setShowDropdown(true);
-                setHighlight(-1);
-              }}
-              onFocus={() => setShowDropdown(true)}
-              className="w-full bg-transparent
-                pl-4 pr-16 py-2
-                outline-none text-sm"
-            />
-
-            {/* SEARCH ICON — RIGHT INSIDE */}
-            <Search
-              size={18}
-              className="absolute right-9 text-gray-500 pointer-events-none"
-            />
-
-            {/* CLOSE (X) — FAR RIGHT INSIDE */}
-            <button
-              onClick={collapse}
-              className="absolute right-2 p-1 rounded-full
-                hover:bg-gray-200 dark:hover:bg-gray-800"
-              aria-label="Close search"
-            >
-              <X size={14} />
-            </button>
-          </div>
-
-          {/* DROPDOWN */}
-          {showDropdown && (
+        <div
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-50 w-[220px] sm:w-[300px] transition-all duration-150"
+          role="search"
+        >
+          <div className="relative">
+            {/* Input ring */}
             <div
-              className="absolute top-full left-0 mt-2 w-full
-              bg-white dark:bg-gray-900
-              border border-gray-200 dark:border-gray-800
-              rounded-xl shadow-xl z-50 max-h-[420px] overflow-auto"
+              className="relative flex items-center rounded-full
+                bg-gray-50 dark:bg-gray-900
+                border border-gray-300 dark:border-gray-800
+                focus-within:ring-2 focus-within:ring-black
+                px-3 py-1"
             >
-              <div className="p-2">
-                {query.trim() ? (
-                  <>
-                    <div className="px-3 py-2 text-xs text-gray-500">
-                      {loading ? "Searching..." : `${results.length} results`}
-                    </div>
+              {/* TEXT INPUT — full width, padded for icons */}
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                placeholder="Search products..."
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setShowDropdown(true);
+                  setHighlight(-1);
+                }}
+                onFocus={() => setShowDropdown(true)}
+                className="w-full bg-transparent outline-none text-sm py-2 pr-12 pl-2 text-gray-900 dark:text-white placeholder-gray-500"
+                aria-label="Global product search"
+              />
 
-                    {results.length === 0 && !loading ? (
-                      <p className="p-4 text-center text-sm text-gray-500">
-                        No results found
-                      </p>
-                    ) : (
-                      results.map((product, idx) => (
-                        <div
-                          key={product.id}
-                          onMouseEnter={() => setHighlight(idx)}
-                          className={`flex gap-3 p-3 rounded-lg cursor-pointer
-                            hover:bg-gray-100 dark:hover:bg-gray-800
-                            ${
-                              highlight === idx
-                                ? "bg-gray-100 dark:bg-gray-800"
-                                : ""
-                            }`}
-                          onClick={() => openProduct(product)}
-                        >
-                          <img
-                            src={
-                              product.image ||
-                              "https://via.placeholder.com/80"
-                            }
-                            alt={product.name}
-                            className="w-12 h-12 rounded-md object-cover"
-                          />
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {product.name}
-                            </p>
-                            <p className="text-xs text-gray-500 truncate">
-                              {product.category}
-                            </p>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <div className="flex justify-between px-3 py-2 text-xs text-gray-500">
-                      <span>Recent</span>
-                      <button
-                        onClick={clearRecent}
-                        className="underline"
-                      >
-                        Clear
-                      </button>
-                    </div>
+              {/* SEARCH ICON — inside input on the right (left of the close X) */}
+              <Search
+                size={16}
+                className="absolute right-10 text-gray-500 pointer-events-none"
+              />
 
-                    {recent.length === 0 ? (
-                      <p className="p-4 text-center text-sm text-gray-500">
-                        No recent searches
-                      </p>
-                    ) : (
-                      recent.map((r) => (
-                        <button
-                          key={r}
-                          onClick={() => onRecentClick(r)}
-                          className="w-full text-left px-3 py-2 rounded-md
-                            hover:bg-gray-100 dark:hover:bg-gray-800 text-sm"
-                        >
-                          {r}
-                        </button>
-                      ))
-                    )}
-                  </>
-                )}
-              </div>
+              {/* CLOSE (X) — far right inside the ring, won't overflow */}
+              <button
+                onClick={collapse}
+                className="absolute right-2 p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800"
+                aria-label="Close search"
+              >
+                <X size={14} />
+              </button>
             </div>
-          )}
+
+            {/* DROPDOWN */}
+            {showDropdown && (
+              <div
+                className="absolute top-full left-0 mt-2 w-full
+                  bg-white dark:bg-gray-900
+                  border border-gray-200 dark:border-gray-800
+                  rounded-xl shadow-xl z-50 max-h-[420px] overflow-auto"
+              >
+                <div className="p-2">
+                  {query.trim() ? (
+                    <>
+                      <div className="px-3 py-2 text-xs text-gray-500">
+                        {loading ? "Searching..." : `${results.length} results`}
+                      </div>
+
+                      {results.length === 0 && !loading ? (
+                        <p className="p-4 text-center text-sm text-gray-500">
+                          No results found
+                        </p>
+                      ) : (
+                        results.map((product, idx) => (
+                          <div
+                            key={product.id}
+                            onMouseEnter={() => setHighlight(idx)}
+                            className={`flex gap-3 p-3 rounded-lg cursor-pointer
+                              hover:bg-gray-100 dark:hover:bg-gray-800
+                              ${
+                                highlight === idx
+                                  ? "bg-gray-100 dark:bg-gray-800"
+                                  : ""
+                              }`}
+                            onClick={() => openProduct(product)}
+                          >
+                            <img
+                              src={product.image || "https://via.placeholder.com/80"}
+                              alt={product.name}
+                              className="w-12 h-12 rounded-md object-cover"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">
+                                {product.name}
+                              </p>
+                              <p className="text-xs text-gray-500 truncate">
+                                {product.category}
+                              </p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex justify-between px-3 py-2 text-xs text-gray-500">
+                        <span>Recent</span>
+                        <button onClick={clearRecent} className="underline">
+                          Clear
+                        </button>
+                      </div>
+
+                      {recent.length === 0 ? (
+                        <p className="p-4 text-center text-sm text-gray-500">
+                          No recent searches
+                        </p>
+                      ) : (
+                        recent.map((r) => (
+                          <button
+                            key={r}
+                            onClick={() => onRecentClick(r)}
+                            className="w-full text-left px-3 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-sm"
+                          >
+                            {r}
+                          </button>
+                        ))
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
