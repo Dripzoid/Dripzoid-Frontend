@@ -14,10 +14,33 @@ const Footer = () => {
 
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
 
+  // theme detection for mobile-only logo + mobile theme-friendly styles
+  const [isDark, setIsDark] = useState(
+    typeof document !== "undefined" && document.documentElement.classList.contains("dark")
+  );
+
   useEffect(() => {
     const handleResize = () => setIsDesktop(window.innerWidth >= 768);
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+
+    // watch html.class for `dark` changes
+    const el = document.documentElement;
+    const mo = new MutationObserver(() => {
+      setIsDark(el.classList.contains("dark"));
+    });
+    mo.observe(el, { attributes: true, attributeFilter: ["class"] });
+
+    // fallback: listen to storage changes for theme toggles
+    const onStorage = (e) => {
+      if (e.key === "theme") setIsDark((e.newValue || "") === "dark");
+    };
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      mo.disconnect();
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
 
   const handleGoToSection = (id) => {
@@ -31,8 +54,14 @@ const Footer = () => {
     }
   };
 
+  // container classes adapt to theme (mobile-friendly)
+  const containerBg = isDark ? "bg-black text-white" : "bg-white text-gray-900";
+  const borderColor = isDark ? "border-gray-800" : "border-gray-200";
+  const linkHover = isDark ? "hover:text-white" : "hover:text-black";
+  const subtleBg = isDark ? "bg-gray-900/40" : "bg-gray-50/60";
+
   return (
-    <footer className="bg-black text-white px-6 py-14">
+    <footer className={`${containerBg} px-6 py-14`}>
       <div className="max-w-7xl mx-auto">
         {/* DESKTOP / TABLET */}
         {isDesktop ? (
@@ -49,16 +78,16 @@ const Footer = () => {
             {/* SHOP */}
             <div>
               <h3 className="text-lg font-semibold mb-4">Shop</h3>
-              <ul className="space-y-3 text-sm text-gray-400">
+              <ul className={`space-y-3 text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
                 <li>
-                  <Link to="/shop" className="hover:text-white">
+                  <Link to="/shop" className={`${linkHover}`}>
                     All Products
                   </Link>
                 </li>
                 <li>
                   <button
                     onClick={() => handleGoToSection("featured")}
-                    className="hover:text-white text-left"
+                    className={`${linkHover} text-left`}
                   >
                     Featured
                   </button>
@@ -66,7 +95,7 @@ const Footer = () => {
                 <li>
                   <button
                     onClick={() => handleGoToSection("trending")}
-                    className="hover:text-white text-left"
+                    className={`${linkHover} text-left`}
                   >
                     Trending
                   </button>
@@ -77,19 +106,19 @@ const Footer = () => {
             {/* COMPANY */}
             <div>
               <h3 className="text-lg font-semibold mb-4">Company</h3>
-              <ul className="space-y-3 text-sm text-gray-400">
+              <ul className={`space-y-3 text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
                 <li>
-                  <Link to="/about-us" className="hover:text-white">
+                  <Link to="/about-us" className={`${linkHover}`}>
                     About Us
                   </Link>
                 </li>
                 <li>
-                  <Link to="/contact" className="hover:text-white">
+                  <Link to="/contact" className={`${linkHover}`}>
                     Contact
                   </Link>
                 </li>
                 <li>
-                  <Link to="/privacy-policy" className="hover:text-white">
+                  <Link to="/privacy-policy" className={`${linkHover}`}>
                     Privacy Policy
                   </Link>
                 </li>
@@ -99,7 +128,7 @@ const Footer = () => {
             {/* FOLLOW US (icons + names aligned) */}
             <div>
               <h3 className="text-lg font-semibold mb-4">Follow Us</h3>
-              <ul className="space-y-3 text-sm text-gray-400">
+              <ul className={`space-y-3 text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}>
                 <li>
                   <a
                     href="https://www.instagram.com/dripzoidofficial"
@@ -148,50 +177,55 @@ const Footer = () => {
             </div>
           </div>
         ) : (
-          /* MOBILE: only logo + three links (About, Contact, Privacy) */
+          /* MOBILE: logo on top + three links horizontal centered */
           <div className="flex flex-col items-center">
-            <div className="flex justify-center mb-6">
+            <div className="flex justify-center mb-4">
+              {/* Mobile-only logo switches based on theme */}
               <img
-                src="/logo-dark.png"
+                src={isDark ? "/logo-dark.png" : "/logo-light.png"}
                 alt="Dripzoid"
-                className="h-28 w-auto object-contain"
+                className="h-20 w-auto object-contain"
               />
             </div>
 
-            <div className="w-full max-w-xs">
-              <ul className="flex flex-col divide-y divide-gray-800 rounded-lg overflow-hidden bg-gray-900/40">
-                <li>
-                  <Link
-                    to="/about-us"
-                    className="block w-full px-4 py-4 text-center text-sm text-white hover:bg-gray-800"
-                  >
-                    About Us
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    to="/contact"
-                    className="block w-full px-4 py-4 text-center text-sm text-white hover:bg-gray-800"
-                  >
-                    Contact
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    to="/privacy-policy"
-                    className="block w-full px-4 py-4 text-center text-sm text-white hover:bg-gray-800"
-                  >
-                    Privacy Policy
-                  </Link>
-                </li>
-              </ul>
+            <div className="w-full max-w-md">
+              <div
+                className={`mx-auto flex items-center justify-center gap-3 rounded-lg ${subtleBg} px-2 py-2`}
+                role="navigation"
+                aria-label="Footer quick links"
+              >
+                <Link
+                  to="/about-us"
+                  className="px-3 py-2 text-sm rounded-md text-center w-full hover:bg-gray-200/10"
+                >
+                  About Us
+                </Link>
+
+                <Link
+                  to="/contact"
+                  className="px-3 py-2 text-sm rounded-md text-center w-full hover:bg-gray-200/10"
+                >
+                  Contact
+                </Link>
+
+                <Link
+                  to="/privacy-policy"
+                  className="px-3 py-2 text-sm rounded-md text-center w-full hover:bg-gray-200/10"
+                >
+                  Privacy
+                </Link>
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* BOTTOM COPYRIGHT */}
-      <div className="mt-12 border-t border-gray-800 pt-6 text-center text-sm text-gray-500">
+      {/* BOTTOM COPYRIGHT (move slightly up on mobile and avoid overlap with fixed mobile footer) */}
+      <div
+        className={`mt-6 md:mt-12 border-t ${borderColor} pt-4 text-center text-sm ${isDark ? "text-gray-400" : "text-gray-600"}`}
+        // add extra bottom padding on mobile so a fixed mobile-footer won't cover this area
+        style={{ paddingBottom: isDesktop ? undefined : "72px" }}
+      >
         © {new Date().getFullYear()} DRIPZOID. All rights reserved.
       </div>
     </footer>
