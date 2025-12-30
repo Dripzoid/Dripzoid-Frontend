@@ -77,14 +77,10 @@ export default function Navbar() {
             )}
 
             {/* RIGHT — ACTIONS */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
 
-              {/* GLOBAL SEARCH — MOBILE ONLY */}
-              {!isDesktop && (
-                <div className="w-[45vw] max-w-xs">
-                  <GlobalSearchBar />
-                </div>
-              )}
+              {/* GLOBAL SEARCH — DESKTOP (FULL) & MOBILE (ICON) */}
+              <GlobalSearchBar />
 
               {/* THEME TOGGLE */}
               <button
@@ -97,9 +93,8 @@ export default function Navbar() {
                 {theme === "light" ? <Moon size={20} /> : <Sun size={20} />}
               </button>
 
-              {/* ================= AUTH ACTIONS ================= */}
+              {/* ================= AUTH ================= */}
               {isDesktop ? (
-                /* ===== DESKTOP AUTH ===== */
                 user ? (
                   <>
                     {/* Wishlist */}
@@ -145,7 +140,6 @@ export default function Navbar() {
                   </Link>
                 )
               ) : (
-                /* ===== MOBILE AUTH ===== */
                 user ? (
                   <button
                     onClick={() => setMobileMenu((m) => !m)}
