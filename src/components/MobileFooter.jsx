@@ -1,31 +1,63 @@
 // src/components/MobileFooter.jsx
-import React, { useContext } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { UserContext } from "../contexts/UserContext.js";
 import { Home, Heart, ShoppingCart, User } from "lucide-react";
 
 /**
- * MobileFooter
+ * MobileFooter (theme-aware)
  * - Mobile-only (hidden on md+)
- * - Icons only: Home, Wishlist, Cart, User
+ * - Icons only: Home, Wishlist (/account/wishlist), Cart, User (/account or /login)
  * - Fixed to bottom with safe-area handling
- * - Stateless navigation (uses links + conditional redirect for user icon)
+ * - Detects theme by observing the <html> class list for "dark"
  */
 export default function MobileFooter() {
   const { user } = useContext(UserContext);
   const navigate = useNavigate();
 
+  // theme detection: watch <html class> for "dark"
+  const [isDark, setIsDark] = useState(
+    () => typeof document !== "undefined" && document.documentElement.classList.contains("dark")
+  );
+
+  useEffect(() => {
+    const el = document.documentElement;
+    // callback when attributes change
+    const mo = new MutationObserver(() => {
+      setIsDark(el.classList.contains("dark"));
+    });
+
+    mo.observe(el, { attributes: true, attributeFilter: ["class"] });
+
+    // fallback: also listen to storage (in case theme toggles write to localStorage)
+    function onStorage(e) {
+      if (e.key === "theme") {
+        setIsDark((e.newValue || "") === "dark");
+      }
+    }
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      mo.disconnect();
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
   const handleUserClick = () => {
-    if (user) navigate("/profile");
+    if (user) navigate("/account");
     else navigate("/login");
   };
+
+  // theme aware classes
+  const containerBg = isDark ? "bg-gray-900 text-white border-t border-gray-800" : "bg-white text-gray-900 border-t border-gray-200";
+  const iconColor = isDark ? "text-white" : "text-gray-800";
+  const hoverBg = isDark ? "hover:bg-gray-800" : "hover:bg-gray-100";
 
   return (
     <footer
       aria-label="Mobile primary navigation"
-      className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-black text-white border-t border-gray-800"
+      className={`fixed bottom-0 left-0 right-0 z-50 md:hidden ${containerBg}`}
       style={{
-        // ensure it respects iPhone safe area and provide fallback spacing
         paddingBottom: "env(safe-area-inset-bottom, 12px)",
       }}
     >
@@ -34,38 +66,38 @@ export default function MobileFooter() {
           {/* Home */}
           <Link
             to="/"
-            className="flex-1 flex flex-col items-center justify-center p-2"
+            className={`flex-1 flex flex-col items-center justify-center p-2 ${hoverBg} transition`}
             aria-label="Home"
           >
-            <Home size={22} />
+            <Home size={22} className={`${iconColor}`} />
           </Link>
 
-          {/* Wishlist */}
+          {/* Wishlist -> /account/wishlist */}
           <Link
-            to="/wishlist"
-            className="flex-1 flex flex-col items-center justify-center p-2"
+            to="/account/wishlist"
+            className={`flex-1 flex flex-col items-center justify-center p-2 ${hoverBg} transition`}
             aria-label="Wishlist"
           >
-            <Heart size={22} />
+            <Heart size={22} className={`${iconColor}`} />
           </Link>
 
           {/* Cart */}
           <Link
             to="/cart"
-            className="flex-1 flex flex-col items-center justify-center p-2"
+            className={`flex-1 flex flex-col items-center justify-center p-2 ${hoverBg} transition`}
             aria-label="Cart"
           >
-            <ShoppingCart size={22} />
+            <ShoppingCart size={22} className={`${iconColor}`} />
           </Link>
 
-          {/* User (conditional redirect on click) */}
+          {/* User (go to /account or /login) */}
           <button
             type="button"
             onClick={handleUserClick}
-            className="flex-1 flex flex-col items-center justify-center p-2"
-            aria-label={user ? "Profile" : "Login"}
+            className={`flex-1 flex flex-col items-center justify-center p-2 ${hoverBg} transition`}
+            aria-label={user ? "Account" : "Login"}
           >
-            <User size={22} />
+            <User size={22} className={`${iconColor}`} />
           </button>
         </div>
       </div>
