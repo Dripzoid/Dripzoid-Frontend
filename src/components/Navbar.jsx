@@ -26,13 +26,13 @@ export default function Navbar() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
 
-  // Theme
+  /* ================= THEME ================= */
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
     localStorage.setItem("theme", theme);
   }, [theme]);
 
-  // Responsive
+  /* ================= RESPONSIVE ================= */
   useEffect(() => {
     const onResize = () => setIsDesktop(window.innerWidth >= 768);
     window.addEventListener("resize", onResize);
@@ -79,7 +79,14 @@ export default function Navbar() {
             {/* RIGHT — ACTIONS */}
             <div className="flex items-center gap-4">
 
-              {/* Theme Toggle */}
+              {/* GLOBAL SEARCH — MOBILE ONLY */}
+              {!isDesktop && (
+                <div className="w-[45vw] max-w-xs">
+                  <GlobalSearchBar />
+                </div>
+              )}
+
+              {/* THEME TOGGLE */}
               <button
                 onClick={() =>
                   setTheme((t) => (t === "light" ? "dark" : "light"))
@@ -90,62 +97,71 @@ export default function Navbar() {
                 {theme === "light" ? <Moon size={20} /> : <Sun size={20} />}
               </button>
 
-              {/* AUTH ACTIONS */}
-              {user ? (
-                <>
-                  {/* Wishlist */}
-                  <Link
-                    to="/wishlist"
-                    className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
-                  >
-                    <Heart size={20} />
-                    {wishlist.length > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
-                        {wishlist.length}
-                      </span>
-                    )}
-                  </Link>
+              {/* ================= AUTH ACTIONS ================= */}
+              {isDesktop ? (
+                /* ===== DESKTOP AUTH ===== */
+                user ? (
+                  <>
+                    {/* Wishlist */}
+                    <Link
+                      to="/wishlist"
+                      className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+                    >
+                      <Heart size={20} />
+                      {wishlist.length > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
+                          {wishlist.length}
+                        </span>
+                      )}
+                    </Link>
 
-                  {/* Cart */}
-                  <Link
-                    to="/cart"
-                    className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
-                  >
-                    <ShoppingCart size={20} />
-                    {cart.length > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
-                        {cart.length}
-                      </span>
-                    )}
-                  </Link>
+                    {/* Cart */}
+                    <Link
+                      to="/cart"
+                      className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+                    >
+                      <ShoppingCart size={20} />
+                      {cart.length > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
+                          {cart.length}
+                        </span>
+                      )}
+                    </Link>
 
-                  {/* User Profile */}
+                    {/* User */}
+                    <Link
+                      to="/account"
+                      className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+                    >
+                      <User size={22} />
+                    </Link>
+                  </>
+                ) : (
                   <Link
-                    to="/account"
-                    className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
-                    aria-label="My account"
+                    to="/login"
+                    className="px-5 py-2 text-sm font-medium rounded-full ring-2 ring-black dark:ring-white hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition"
                   >
-                    <User size={22} />
+                    Login
                   </Link>
-                </>
+                )
               ) : (
-                <Link
-                  to="/login"
-                  className="px-5 py-2 text-sm font-medium rounded-full ring-2 ring-black dark:ring-white hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition"
-                >
-                  Login
-                </Link>
-              )}
-
-              {/* MOBILE MENU TOGGLE */}
-              {!isDesktop && (
-                <button
-                  onClick={() => setMobileMenu((m) => !m)}
-                  className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
-                  aria-label="Menu"
-                >
-                  {mobileMenu ? <X size={26} /> : <Menu size={26} />}
-                </button>
+                /* ===== MOBILE AUTH ===== */
+                user ? (
+                  <button
+                    onClick={() => setMobileMenu((m) => !m)}
+                    className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+                    aria-label="Menu"
+                  >
+                    {mobileMenu ? <X size={26} /> : <Menu size={26} />}
+                  </button>
+                ) : (
+                  <Link
+                    to="/login"
+                    className="px-4 py-2 text-sm font-medium rounded-full ring-2 ring-black dark:ring-white"
+                  >
+                    Login
+                  </Link>
+                )
               )}
             </div>
           </div>
@@ -166,8 +182,6 @@ export default function Navbar() {
                 {link.name}
               </Link>
             ))}
-
-            <GlobalSearchBar />
           </div>
         </div>
       )}
