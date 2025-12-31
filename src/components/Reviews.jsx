@@ -12,8 +12,9 @@ const READ_MORE_LIMIT = 280;
 const MAX_FILES = 6;
 const MAX_FILE_SIZE_BYTES = 12 * 1024 * 1024; // 12MB
 
+// Modern, responsive button base
 const BUTTON_CLASS =
-  "shadow-[inset_0_0_0_2px_#616467] text-black px-4 py-2 rounded text-sm flex items-center gap-2 bg-transparent hover:bg-[#616467] hover:text-white dark:text-neutral-200 transition duration-200";
+  "inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-shadow duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-black/20 dark:focus:ring-white/20";
 
 /* ---------- Helpers & small components ---------- */
 function ReadMore({ text }) {
@@ -21,11 +22,11 @@ function ReadMore({ text }) {
   if (!text) return null;
   if (text.length <= READ_MORE_LIMIT) return <div className="text-black dark:text-white">{text}</div>;
   return (
-    <div className="text-sm leading-relaxed">
-      <div className="text-black dark:text-white">{open ? text : text.slice(0, READ_MORE_LIMIT) + "..."}</div>
+    <div className="text-sm leading-relaxed text-gray-800 dark:text-gray-200">
+      <div className="break-words">{open ? text : text.slice(0, READ_MORE_LIMIT) + "..."}</div>
       <button
         onClick={() => setOpen((s) => !s)}
-        className="mt-2 text-xs underline decoration-black/50 dark:decoration-white/50"
+        className="mt-2 text-xs underline decoration-black/30 dark:decoration-white/30"
         type="button"
         aria-expanded={open}
       >
@@ -59,12 +60,12 @@ function Lightbox({ item, onClose }) {
       <div onClick={(e) => e.stopPropagation()} className="max-w-[95vw] max-h-[95vh]">
         {item.type === "image" ? (
           // eslint-disable-next-line
-          <img src={item.url} alt={item.name} className="max-w-full max-h-full object-contain rounded" />
+          <img src={item.url} alt={item.name} className="max-w-full max-h-full object-contain rounded-xl shadow-lg" />
         ) : (
-          <video src={item.url} controls className="max-w-full max-h-full rounded" />
+          <video src={item.url} controls className="max-w-full max-h-full rounded-xl shadow-lg" />
         )}
       </div>
-      <button onClick={onClose} className="absolute top-6 right-6 text-white text-xl" type="button" aria-label="Close">
+      <button onClick={onClose} className="absolute top-6 right-6 text-white text-xl bg-black/40 rounded-full p-2" type="button" aria-label="Close">
         ✕
       </button>
     </div>
@@ -74,11 +75,11 @@ function Lightbox({ item, onClose }) {
 function StarDisplay({ value = 0, size = 16 }) {
   const stars = [];
   for (let i = 1; i <= 5; i++) {
-    if (value >= i) stars.push(<FaStar key={i} size={size} />);
-    else if (value >= i - 0.5) stars.push(<FaStarHalfAlt key={i} size={size} />);
-    else stars.push(<FaRegStar key={i} size={size} />);
+    if (value >= i) stars.push(<FaStar key={i} size={size} className="text-yellow-400" />);
+    else if (value >= i - 0.5) stars.push(<FaStarHalfAlt key={i} size={size} className="text-yellow-400" />);
+    else stars.push(<FaRegStar key={i} size={size} className="text-yellow-400" />);
   }
-  return <div className="flex items-center gap-1 text-yellow-500" aria-hidden="true">{stars}</div>;
+  return <div className="flex items-center gap-1" aria-hidden="true">{stars}</div>;
 }
 
 function StarSelector({ value = 5, onChange, size = 20 }) {
@@ -89,13 +90,13 @@ function StarSelector({ value = 5, onChange, size = 20 }) {
   const stars = [];
   for (let i = 1; i <= 5; i++) {
     const key = `star-${i}`;
-    const el = value >= i ? <FaStar key={key} size={size} /> : <FaRegStar key={key} size={size} />;
+    const el = value >= i ? <FaStar key={key} size={size} className="text-yellow-400" /> : <FaRegStar key={key} size={size} className="text-yellow-400" />;
     stars.push(
       <button
         key={key}
         onClick={() => handleClick(i)}
         type="button"
-        className="p-1 bg-transparent rounded-md"
+        className="p-1 rounded-md hover:scale-110 transition-transform"
         aria-label={`Set rating to ${i}`}
       >
         {el}
@@ -158,8 +159,8 @@ function HistogramBar({ pct = 0 }) {
         className="absolute left-0 top-0 bottom-0 rounded-full transition-all duration-600"
         style={{
           width: foregroundWidth,
-          backgroundColor: "#616467",
-          boxShadow: "inset 0 -1px 0 rgba(0,0,0,0.08)",
+          background: "linear-gradient(90deg,#4b5563,#111827)",
+          boxShadow: "inset 0 -1px 0 rgba(0,0,0,0.08)"
         }}
       />
     </div>
@@ -169,19 +170,17 @@ function HistogramBar({ pct = 0 }) {
 /* ---------- MAIN Reviews component with duplicate-instance protection ---------- */
 export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, currentUser = null, showToast = () => {} }) {
   /**
-   * Strategy:
-   * - Use a synchronous (non-hook) initial check to decide which instance should render first
-   *   (mobile or desktop). This prevents duplicate visible widgets when two <Reviews /> exist.
-   * - Keep an unconditional `isDesktop` hook for runtime breakpoint tracking and to decide
-   *   which histogram DOM to render (desktop vs mobile). This ensures only one histogram tree
-   *   exists at a time, preventing duplication during hydration/resizes.
-   * - Use `hasMounted` to ensure client-only decisions happen after mount to avoid SSR/hydration duplication.
+   * Rendering strategy:
+   * - Keep the duplicate-instance protection logic to avoid two visible <Reviews /> copies (mobile vs desktop).
+   * - Render the histogram **once** per breakpoint:
+   *    - mobile: show histogram inline in the header (top)
+   *    - desktop: show histogram in the sticky side column
    */
 
   const isClient = typeof window !== "undefined" && typeof window.innerWidth === "number";
   const isMobileInitial = isClient ? window.innerWidth < 1024 : false; // Tailwind 'lg' ~ 1024
   const initialShouldRender = (() => {
-    if (!isClient) return true; // server-side: allow rendering (no duplication on server)
+    if (!isClient) return true;
     if (!window.__REVIEWS_RENDER_TRACKER) window.__REVIEWS_RENDER_TRACKER = { mobileRendered: false, desktopRendered: false };
     const tracker = window.__REVIEWS_RENDER_TRACKER;
     if (isMobileInitial) {
@@ -195,7 +194,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
     }
   })();
 
-  // ---------- unconditional hook: isDesktop ----------
   const [isDesktop, setIsDesktop] = useState(() => (typeof window !== "undefined" ? window.innerWidth >= 1024 : true));
   useEffect(() => {
     const onResize = () => {
@@ -207,16 +205,13 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // mount guard to avoid hydration duplication
   const [hasMounted, setHasMounted] = useState(false);
   useEffect(() => {
     setHasMounted(true);
   }, []);
 
-  // Keep instance rendering decision (first mounted instance for current breakpoint)
   const [shouldRender] = useState(initialShouldRender);
 
-  // Clean up tracker flag on unmount for this breakpoint (so navigating back will allow re-render)
   useEffect(() => {
     return () => {
       try {
@@ -414,7 +409,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         return;
       }
 
-      // First, try the verify endpoint which can return { canReview, hasReviewed }
       try {
         const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
         const q = `${apiBase}/api/user/orders/verify?userId=${actingUser.id}&productId=${productId}`;
@@ -424,7 +418,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         });
         if (res.ok) {
           const json = await res.json();
-          // If the shape matches, use it directly
           if (json && (typeof json.canReview === "boolean" || typeof json.hasReviewed === "boolean")) {
             if (typeof json.canReview === "boolean") setUserCanReview(Boolean(json.canReview));
             if (typeof json.hasReviewed === "boolean") setUserHasReviewed(Boolean(json.hasReviewed));
@@ -435,7 +428,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
         // fallthrough to fallback logic below
       }
 
-      // Fallback: try userHasPurchased (legacy)
       try {
         const purchased = await userHasPurchased(productId, actingUser);
         setUserCanReview(Boolean(purchased));
@@ -816,7 +808,6 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
 
   const pctArray = Array.isArray(overall.pct) && overall.pct.length === 5 ? overall.pct : [0, 0, 0, 0, 0];
 
-  // show thanks message when user has reviewed (from verify endpoint) OR when review was just submitted
   const showThanksMessage = Boolean(userHasReviewed) || Boolean(reviewSubmitted);
 
   // FINAL render gating: avoid showing anything until both:
@@ -825,19 +816,80 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
   if (!shouldRender || !hasMounted) return null;
 
   return (
-    <section id="reviews-section" className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 sm:p-6 border border-gray-200/60 dark:border-gray-700/60">
-      <div className="flex items-start justify-between">
-        <div>
-          <h3 className="text-lg font-semibold text-black dark:text-white">Rate & review</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Share your experience with the product</p>
+    <section id="reviews-section" className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 rounded-2xl bg-gradient-to-br from-white/80 to-gray-50 dark:from-gray-900/80 dark:to-gray-900/60 p-4 sm:p-6 border border-gray-200/60 dark:border-gray-700/60">
+      {/* header */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
+          <h3 className="text-lg sm:text-xl font-semibold text-black dark:text-white">Rate & review</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Share your experience with the product</p>
+
+          {/* Mobile histogram: show only when NOT desktop — this ensures histogram appears once on mobile */}
+          {hasMounted && !isDesktop && (
+            <div className="mt-4 p-3 bg-white dark:bg-gray-900/30 rounded-lg shadow-sm border border-gray-100 dark:border-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="text-2xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
+                <div>
+                  <StarDisplay value={overall.avg} size={18} />
+                  <div className="text-sm text-gray-500">{overall.ratingsCount} review{overall.ratingsCount !== 1 ? "s" : ""}</div>
+                </div>
+              </div>
+
+              <div className="mt-3 space-y-2">
+                {[5, 4, 3, 2, 1].map((s, i) => (
+                  <div key={`hist-mobile-top-${s}`} className="flex items-center gap-3 text-sm mb-2">
+                    <div className="w-8 text-right text-gray-700 dark:text-gray-300">{s}★</div>
+                    <HistogramBar pct={pctArray[i]} />
+                    <div className="w-12 text-right text-gray-700 dark:text-gray-300">
+                      {pctArray[i] || 0}%
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-        <div className="text-sm text-gray-500">Guidelines apply</div>
+
+        <div className="w-44 hidden sm:flex flex-col items-end gap-2">
+          <div className="text-sm text-gray-500">Guidelines apply</div>
+          {!showThanksMessage ? (
+            <button
+              onClick={async () => {
+                const actingUser = currentUser || (() => {
+                  try { return (typeof window !== "undefined") ? JSON.parse(localStorage.getItem("current_user") || "null") : null; } catch { return null; }
+                })();
+                if (!actingUser) {
+                  internalToast("Please sign in to rate.");
+                  return;
+                }
+                if (!userCanReview) {
+                  alert("You did not buy this product — only verified buyers can write reviews.");
+                  setCanReviewFlag(false);
+                  return;
+                }
+                if (userHasReviewed) {
+                  internalToast("You already left a review. Delete it to submit a new one.");
+                  return;
+                }
+                setShowReviewForm(true);
+                setTimeout(() => window.scrollTo({ top: window.scrollY + 300, behavior: "smooth" }), 200);
+              }}
+              disabled={!userCanReview || userHasReviewed}
+              className={`${BUTTON_CLASS} bg-black text-white hover:bg-black/90`}
+              type="button"
+              aria-disabled={!userCanReview || userHasReviewed}
+            >
+              Rate product
+            </button>
+          ) : (
+            <div className="text-sm text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 rounded px-3 py-2 text-center">Thanks for reviewing</div>
+          )}
+        </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* main column */}
         <div className="lg:col-span-9">
-          <div className="p-4 sm:p-6 rounded-md bg-gray-50 dark:bg-gray-800/40 border">
+          <div className="p-4 sm:p-6 rounded-md bg-white dark:bg-gray-900/40 border border-gray-100 dark:border-gray-800 shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex items-center gap-4">
                 <div className="text-3xl sm:text-4xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
@@ -847,69 +899,21 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 w-full">
-                {/* show top histogram ONLY on mobile / small screens to avoid duplication with side sticky on desktop */}
-                {hasMounted && !isDesktop && (
-                  <div className="flex-1 min-w-[220px] sm:min-w-[280px] md:min-w-[360px] w-full">
-                    {[5, 4, 3, 2, 1].map((s, i) => (
-                      <div
-                        key={`hist-mobile-top-${s}`}
-                        className="flex items-center gap-3 text-sm mb-2 w-full"
-                      >
-                        <div className="w-8 text-right text-gray-700 dark:text-gray-300">{s}★</div>
-                        <HistogramBar pct={pctArray[i]} />
-                        <div className="w-12 text-right text-gray-700 dark:text-gray-300">
-                          {pctArray[i] || 0}%
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* If the user already reviewed (from verify) or review was just submitted => show thanks message */}
+              <div className="flex items-center gap-4 w-full sm:w-auto">
                 {showThanksMessage ? (
-                  <div className="text-sm text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 rounded px-4 py-2">
-                    Thanks for reviewing — we appreciate your feedback.
-                  </div>
+                  <div className="text-sm text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 rounded px-4 py-2">Thanks for your feedback</div>
                 ) : (
-                  <button
-                    onClick={async () => {
-                      const actingUser = currentUser || (() => {
-                        try { return (typeof window !== "undefined") ? JSON.parse(localStorage.getItem("current_user") || "null") : null; } catch { return null; }
-                      })();
-                      if (!actingUser) {
-                        internalToast("Please sign in to rate.");
-                        return;
-                      }
-                      if (!userCanReview) {
-                        alert("You did not buy this product — only verified buyers can write reviews.");
-                        setCanReviewFlag(false);
-                        return;
-                      }
-                      if (userHasReviewed) {
-                        internalToast("You already left a review. Delete it to submit a new one.");
-                        return;
-                      }
-                      setShowReviewForm(true);
-                      setTimeout(() => window.scrollTo({ top: window.scrollY + 300, behavior: "smooth" }), 200);
-                    }}
-                    disabled={!userCanReview || userHasReviewed}
-                    className={` ${BUTTON_CLASS} min-w-[140px] px-4 py-2 ${(!userCanReview || userHasReviewed) ? "opacity-50 cursor-not-allowed" : ""}`}
-                    type="button"
-                    aria-disabled={!userCanReview || userHasReviewed}
-                  >
-                    Rate product
-                  </button>
+                  <div className="text-sm text-gray-600 dark:text-gray-300">Only verified buyers can leave reviews.</div>
                 )}
               </div>
             </div>
           </div>
 
+          {/* review form / prompt */}
           {!showReviewForm ? (
-            <div className="mt-4 p-4 rounded-md bg-gray-50 dark:bg-gray-800/40 border">
-              {/* show thanks instead of action prompt when user already reviewed or just submitted */}
+            <div className="mt-4 p-4 rounded-md bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800">
               {showThanksMessage ? (
-                <div className="text-sm text-green-700 dark:text-green-300"></div>
+                <div className="text-sm text-green-700 dark:text-green-300">Thank you — your review is recorded.</div>
               ) : (
                 <div className="text-sm text-gray-600 dark:text-gray-300">
                   Only verified buyers can leave reviews. Click{" "}
@@ -935,7 +939,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
                       setTimeout(() => window.scrollTo({ top: window.scrollY + 300, behavior: "smooth" }), 200);
                     }}
                     disabled={!userCanReview || userHasReviewed}
-                    className={`${(!userCanReview || userHasReviewed) ? "underline opacity-50 cursor-not-allowed" : "underline"}`}
+                    className={`${!userCanReview || userHasReviewed ? "underline opacity-50 cursor-not-allowed" : "underline text-black dark:text-white"}`}
                     type="button"
                   >
                     Rate product
@@ -949,7 +953,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
               <div className="text-sm text-green-800 dark:text-green-200">{userHasReviewed ? "You have already submitted a review for this product." : "Review submitted successfully. Thank you!"}</div>
             </div>
           ) : (
-            <div className="mt-4 p-4 rounded-md bg-white dark:bg-gray-900 border">
+            <div className="mt-4 p-4 rounded-md bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800">
               <div className="flex flex-col sm:flex-row gap-4">
                 <div className="sm:w-48">
                   <div className="mb-2 text-sm text-gray-700 dark:text-gray-300">Your rating</div>
@@ -959,18 +963,18 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
                 <div className="flex-1">
                   <div className="mb-3">
                     <label htmlFor="review-title" className="font-semibold text-sm text-black dark:text-white">Title</label>
-                    <input id="review-title" value={reviewTitle} onChange={(e) => setReviewTitle(e.target.value)} placeholder="Review title (optional)" className="w-full p-3 border rounded-lg bg-white dark:bg-gray-900 text-black dark:text-white mt-1" />
+                    <input id="review-title" value={reviewTitle} onChange={(e) => setReviewTitle(e.target.value)} placeholder="Review title (optional)" className="w-full p-3 border rounded-lg bg-gray-50 dark:bg-gray-900 text-black dark:text-white mt-1" />
                   </div>
 
                   <div className="mb-3">
                     <label htmlFor="review-text" className="font-semibold text-sm text-black dark:text-white">Review</label>
-                    <textarea id="review-text" placeholder="Write your review..." rows={6} value={reviewText} onChange={(e) => setReviewText(e.target.value)} className="w-full p-3 border rounded-lg bg-white dark:bg-gray-900 text-black dark:text-white mt-1 resize-y" />
+                    <textarea id="review-text" placeholder="Write your review..." rows={6} value={reviewText} onChange={(e) => setReviewText(e.target.value)} className="w-full p-3 border rounded-lg bg-gray-50 dark:bg-gray-900 text-black dark:text-white mt-1 resize-y" />
                   </div>
 
                   <div className="mb-3">
                     <label className="font-semibold text-sm text-black dark:text-white">Photos & videos (optional)</label>
                     <div className="mt-2 flex gap-2 items-center">
-                      <label className={`${BUTTON_CLASS} px-4 py-2 cursor-pointer bg-white dark:bg-gray-800 inline-flex items-center`}>
+                      <label className={`${BUTTON_CLASS} bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 cursor-pointer`}>
                         <Paperclip size={14} /> Attach
                         <input type="file" accept="image/*,video/*" multiple onChange={onFilesSelected} className="hidden" />
                       </label>
@@ -1012,6 +1016,100 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
               </div>
             </div>
           )}
+
+          {/* reviews list */}
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+            {displayedReviews.length === 0 && <div className="text-gray-500">No reviews yet — be the first to review.</div>}
+            {displayedReviews.map((r) => {
+              const authorName = r.userName || r.user_name || r.name || "Anonymous";
+              const createdAt = r.created_at || r.createdAt || new Date().toISOString();
+              const avatarSrc = r.avatar || r.userAvatar || null;
+              const initials = (authorName || "A").split(" ").map((p) => p?.[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "A";
+
+              return (
+                <Card key={r.id} className="w-full bg-white dark:bg-gray-900 shadow-sm">
+                  <div className="mx-0 flex items-start gap-4 pb-4 pt-4 px-4">
+                    <Avatar
+                      variant="rounded"
+                      alt={authorName || "user"}
+                      src={avatarSrc || undefined}
+                      sx={{
+                        width: 56,
+                        height: 56,
+                        bgcolor: avatarSrc ? undefined : stringToHslColor(authorName || initials),
+                        color: "#fff",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {!avatarSrc ? initials : null}
+                    </Avatar>
+
+                    <div className="flex w-full flex-col gap-0.5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Typography variant="subtitle2" className="!text-sm font-semibold text-black dark:text-white">
+                            {authorName}
+                          </Typography>
+                          <div className="text-xs text-gray-500">{formatRelativeTime(createdAt)}</div>
+                        </div>
+
+                        <div className="flex items-center gap-2 text-black dark:text-white">
+                          <div className="flex items-center gap-2">
+                            <StarDisplay value={Number(r.rating) || 0} />
+                            <div className="text-xs font-medium">{r.rating}★</div>
+                          </div>
+
+                          {(currentUser && (String(currentUser.id) === String(r.userId) || currentUser.role === "admin" || currentUser.isAdmin)) && (
+                            <button onClick={() => deleteReview(r.id)} className={`${BUTTON_CLASS} ml-3 bg-red-50 text-red-700 border border-red-100`} type="button" aria-label="Delete review"><Trash2 size={12} /> Delete</button>
+                          )}
+                        </div>
+                      </div>
+                      {r.title && <Typography className="text-sm font-medium mt-2 text-black dark:text-white">{r.title}</Typography>}
+                    </div>
+                  </div>
+
+                  <CardContent className="p-4 pt-0 bg-white dark:bg-gray-900">
+                    <Typography className="text-black dark:text-white text-sm">
+                      <ReadMore text={r.text} />
+                    </Typography>
+
+                    {Array.isArray(r.media) && r.media.length > 0 && (
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        {r.media.map((m, mi) => (
+                          <div key={`${String(r.id)}-media-${mi}`} className="relative border rounded overflow-hidden bg-gray-50 flex items-center justify-center">
+                            {m.type === "image" ? (
+                              // eslint-disable-next-line
+                              <img
+                                src={m.url}
+                                alt={m.name || "media"}
+                                className="w-full h-28 object-cover cursor-pointer bg-gray-100"
+                                onClick={() => setLightboxItem({ url: m.url, type: "image", name: m.name })}
+                                style={{ maxHeight: 112 }}
+                              />
+                            ) : (
+                              <video
+                                src={m.url}
+                                className="w-full h-28 object-cover cursor-pointer bg-gray-100"
+                                onClick={() => setLightboxItem({ url: m.url, type: "video", name: m.name })}
+                                muted
+                                playsInline
+                                style={{ maxHeight: 112 }}
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-3 mt-3">
+                      <button onClick={() => toggleVote(r.id, "like")} className={`${BUTTON_CLASS} bg-white border border-gray-100`} type="button" aria-pressed={voteCache[`review_${r.id}`] === "like"} aria-label="Like review"><ThumbsUp size={14} /> <span className="ml-1">{r.likes || 0}</span></button>
+                      <button onClick={() => toggleVote(r.id, "dislike")} className={`${BUTTON_CLASS} bg-white border border-gray-100`} type="button" aria-pressed={voteCache[`review_${r.id}`] === "dislike"} aria-label="Dislike review"><ThumbsDown size={14} /> <span className="ml-1">{r.dislikes || 0}</span></button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         </div>
 
         {/* side column */}
@@ -1020,7 +1118,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
 
           {/* sticky summary on large screens: render only on desktop to avoid duplication */}
           {hasMounted && isDesktop && (
-            <div className="lg:sticky lg:top-20 p-4 rounded-md bg-gray-50 dark:bg-gray-800/30 border">
+            <div className="lg:sticky lg:top-20 p-4 rounded-md bg-white dark:bg-gray-900/30 border border-gray-100 dark:border-gray-800 shadow-sm">
               <div className="flex items-center gap-3">
                 <div className="text-2xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
                 <div>
@@ -1043,7 +1141,7 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
                 {showThanksMessage ? (
                   <div className="text-sm text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 rounded px-3 py-2 text-center">You Reviewed This Product</div>
                 ) : (
-                  <button onClick={() => { setShowReviewForm(true); setTimeout(() => window.scrollTo({ top: window.scrollY + 300, behavior: "smooth" }), 200); }} className={`${BUTTON_CLASS} w-full justify-center`} type="button">Write review</button>
+                  <button onClick={() => { setShowReviewForm(true); setTimeout(() => window.scrollTo({ top: window.scrollY + 300, behavior: "smooth" }), 200); }} className={`${BUTTON_CLASS} w-full bg-black text-white justify-center`} type="button">Write review</button>
                 )}
               </div>
             </div>
@@ -1052,131 +1150,15 @@ export default function Reviews({ productId, apiBase = DEFAULT_API_BASE, current
           <div className="w-full">
             {showReviewForm && !reviewSubmitted && !userHasReviewed && (
               <>
-                <button onClick={handleSubmitReview} disabled={isSubmittingReview || canReviewFlag === false || isUploadingFiles} className={`${BUTTON_CLASS} justify-center w-full mb-2`} type="button" aria-label="Submit review">
+                <button onClick={handleSubmitReview} disabled={isSubmittingReview || canReviewFlag === false || isUploadingFiles} className={`${BUTTON_CLASS} justify-center w-full mb-2 bg-black text-white`} type="button" aria-label="Submit review">
                   {isSubmittingReview || isUploadingFiles ? (<><Send size={16} /> Submitting...</>) : (<><Send size={16} /> Submit</>)}
                 </button>
-                <button onClick={() => { setReviewText(""); setReviewTitle(""); setReviewFiles([]); reviewPreviews.forEach((p) => { if (p.url && p.url.startsWith("blob:")) URL.revokeObjectURL(p.url); }); setReviewPreviews([]); previewsRef.current = []; }} className={`${BUTTON_CLASS} justify-center w-full`} type="button" aria-label="Reset review"><Trash2 size={16} /> Reset</button>
+                <button onClick={() => { resetForm(); }} className={`${BUTTON_CLASS} justify-center w-full bg-white border border-gray-100`} type="button" aria-label="Reset review"><Trash2 size={16} /> Reset</button>
                 {uploadError && <div className="text-xs text-red-600 mt-2">Upload error: {String(uploadError)}</div>}
               </>
             )}
           </div>
-
-          {/* compact mobile summary: render only on non-desktop (mobile) */}
-          {hasMounted && !isDesktop && (
-            <div className="p-4 rounded-md bg-gray-50 dark:bg-gray-800/30 border">
-              <div className="flex items-center gap-3">
-                <div className="text-2xl font-bold text-black dark:text-white">{overall.avg || 0}</div>
-                <div>
-                  <StarDisplay value={overall.avg} size={18} />
-                  <div className="text-sm text-gray-500">{overall.ratingsCount} review{overall.ratingsCount !== 1 ? "s" : ""}</div>
-                </div>
-              </div>
-
-              <div className="mt-3 space-y-2">
-                {[5, 4, 3, 2, 1].map((s, i) => (
-                  <div key={`hist-mobile-side-${s}`} className="flex items-center gap-3 text-sm mb-2">
-                    <div className="w-8">{s}★</div>
-                    <HistogramBar pct={pctArray[i]} />
-                    <div className="w-10 text-right">{pctArray[i] || 0}%</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
-      </div>
-
-      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-        {displayedReviews.length === 0 && <div className="text-gray-500">No reviews yet — be the first to review.</div>}
-        {displayedReviews.map((r) => {
-          const authorName = r.userName || r.user_name || r.name || "Anonymous";
-          const createdAt = r.created_at || r.createdAt || new Date().toISOString();
-          const avatarSrc = r.avatar || r.userAvatar || null;
-          const initials = (authorName || "A").split(" ").map((p) => p?.[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "A";
-
-          return (
-            <Card key={r.id} className="w-full bg-white dark:bg-gray-900">
-              <div className="mx-0 flex items-start gap-4 pb-4 pt-4 px-4">
-                <Avatar
-                  variant="rounded"
-                  alt={authorName || "user"}
-                  src={avatarSrc || undefined}
-                  sx={{
-                    width: 56,
-                    height: 56,
-                    bgcolor: avatarSrc ? undefined : stringToHslColor(authorName || initials),
-                    color: "#fff",
-                    fontWeight: 600,
-                  }}
-                >
-                  {!avatarSrc ? initials : null}
-                </Avatar>
-
-                <div className="flex w-full flex-col gap-0.5">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Typography variant="subtitle2" className="!text-sm font-semibold text-black dark:text-white">
-                        {authorName}
-                      </Typography>
-                      <div className="text-xs text-gray-500">{formatRelativeTime(createdAt)}</div>
-                    </div>
-
-                    <div className="flex items-center gap-2 text-black dark:text-white">
-                      <div className="flex items-center gap-2">
-                        <StarDisplay value={Number(r.rating) || 0} />
-                        <div className="text-xs font-medium">{r.rating}★</div>
-                      </div>
-
-                      {(currentUser && (String(currentUser.id) === String(r.userId) || currentUser.role === "admin" || currentUser.isAdmin)) && (
-                        <button onClick={() => deleteReview(r.id)} className={`${BUTTON_CLASS} ml-3`} type="button" aria-label="Delete review"><Trash2 size={12} /> Delete</button>
-                      )}
-                    </div>
-                  </div>
-                  {r.title && <Typography className="text-sm font-medium mt-2 text-black dark:text-white">{r.title}</Typography>}
-                </div>
-              </div>
-
-              <CardContent className="p-4 pt-0 bg-white dark:bg-gray-900">
-                <Typography className="text-black dark:text-white text-sm">
-                  <ReadMore text={r.text} />
-                </Typography>
-
-                {Array.isArray(r.media) && r.media.length > 0 && (
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    {r.media.map((m, mi) => (
-                      <div key={`${String(r.id)}-media-${mi}`} className="relative border rounded overflow-hidden bg-gray-50 flex items-center justify-center">
-                        {m.type === "image" ? (
-                          // eslint-disable-next-line
-                          <img
-                            src={m.url}
-                            alt={m.name || "media"}
-                            className="w-full h-28 object-cover cursor-pointer bg-gray-100"
-                            onClick={() => setLightboxItem({ url: m.url, type: "image", name: m.name })}
-                            style={{ maxHeight: 112 }}
-                          />
-                        ) : (
-                          <video
-                            src={m.url}
-                            className="w-full h-28 object-cover cursor-pointer bg-gray-100"
-                            onClick={() => setLightboxItem({ url: m.url, type: "video", name: m.name })}
-                            muted
-                            playsInline
-                            style={{ maxHeight: 112 }}
-                          />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex items-center gap-3 mt-3">
-                  <button onClick={() => toggleVote(r.id, "like")} className={`${BUTTON_CLASS}`} type="button" aria-pressed={voteCache[`review_${r.id}`] === "like"} aria-label="Like review"><ThumbsUp size={14} /> <span className="ml-1">{r.likes || 0}</span></button>
-                  <button onClick={() => toggleVote(r.id, "dislike")} className={`${BUTTON_CLASS}`} type="button" aria-pressed={voteCache[`review_${r.id}`] === "dislike"} aria-label="Dislike review"><ThumbsDown size={14} /> <span className="ml-1">{r.dislikes || 0}</span></button>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
       </div>
 
       <Lightbox item={lightboxItem} onClose={() => setLightboxItem(null)} />
