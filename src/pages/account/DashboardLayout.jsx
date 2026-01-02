@@ -216,7 +216,7 @@ export default function DashboardLayout() {
 
       {/* MAIN CONTENT */}
       <main
-        className="relative flex-1 min-w-0 mt-4 sm:mt-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950 
+        className="relative flex-1 min-w-0 pt-4 sm:pt-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950 
                    rounded-tl-none lg:rounded-tl-3xl lg:rounded-bl-3xl
                    shadow-none lg:shadow-lg overflow-auto"
       >
