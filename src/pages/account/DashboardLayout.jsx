@@ -16,13 +16,13 @@ export default function DashboardLayout() {
   const { user, login, logout } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
-
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [isDesktop, setIsDesktop] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth >= 1024 : false
   );
+
   useEffect(() => {
     const handleResize = () => setIsDesktop(window.innerWidth >= 1024);
     window.addEventListener("resize", handleResize);
@@ -75,8 +75,6 @@ export default function DashboardLayout() {
           try {
             const userData = await fetchMe(tokenFromUrl);
             if (!cancelled && isMountedRef.current) login(userData, tokenFromUrl);
-          } catch {
-            // ignore
           } finally {
             const newUrl = location.pathname + location.hash;
             window.history.replaceState({}, document.title, newUrl);
@@ -89,9 +87,7 @@ export default function DashboardLayout() {
           if (!cancelled && isMountedRef.current && data?.user) {
             login(data.user, null);
           }
-        } catch {
-          // ignore
-        }
+        } catch {}
       } catch (err) {
         console.error("Session check failed:", err);
       } finally {
@@ -150,8 +146,14 @@ export default function DashboardLayout() {
 
   if (checkingAuth) return null;
 
+  const isProfileActive = () =>
+    location.pathname === "/account" ||
+    location.pathname === "/account/" ||
+    location.pathname.startsWith("/account/profile");
+
   return (
-    <div className="relative flex flex-col lg:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    // ✅ OPTION 1 APPLIED HERE
+    <div className="pt-16 relative flex flex-col lg:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       {/* SIDEBAR */}
       <aside
         className={`fixed lg:static top-0 left-0 z-40 w-64 bg-white dark:bg-gray-800 shadow-lg flex flex-col
@@ -161,105 +163,63 @@ export default function DashboardLayout() {
       >
         {/* Mobile Header inside sidebar */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 lg:hidden">
-          <h2 className="text-xl font-extrabold text-gray-900 dark:text-white">Dashboard</h2>
-          <button onClick={closeSidebar} className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
+          <h2 className="text-xl font-extrabold text-gray-900 dark:text-white">
+            Dashboard
+          </h2>
+          <button
+            onClick={closeSidebar}
+            className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
             <XIcon size={20} />
           </button>
         </div>
 
-        {/* Desktop title */}
         <div className="hidden lg:block">
-          <h2 className="text-2xl font-extrabold p-6 text-gray-900 dark:text-white">Dashboard</h2>
+          <h2 className="text-2xl font-extrabold p-6 text-gray-900 dark:text-white">
+            Dashboard
+          </h2>
         </div>
 
-        {/* Navigation */}
         <nav className="flex flex-col flex-grow overflow-auto">
           {links.map(({ to, label, icon }) => (
             <NavLink
               key={to}
               to={to}
               onClick={closeSidebar}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-6 py-4 font-semibold transition-colors duration-300 w-full ${
-                  isActive
+              className={({ isActive }) => {
+                const active =
+                  isActive || (to === "/account/profile" && isProfileActive());
+                return `flex items-center gap-3 px-6 py-4 font-semibold transition-colors duration-300 w-full ${
+                  active
                     ? "bg-black text-white"
                     : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
-                }`
-              }
+                }`;
+              }}
             >
               {icon} <span>{label}</span>
             </NavLink>
           ))}
         </nav>
 
-        <div className="mt-auto p-4 text-xs text-center text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700">
+        <div className="mt-auto p-4 text-xs text-center text-gray-500 dark:text-gray-400 border-t">
           <div>Logged in as</div>
-          <div className="mt-1 font-medium text-gray-800 dark:text-gray-100">
+          <div className="mt-1 font-medium">
             {user?.email ?? user?.name ?? "Account"}
           </div>
         </div>
       </aside>
 
-      {/* OVERLAY for mobile sidebar */}
+      {/* OVERLAY */}
       {sidebarOpen && (
         <div
           onClick={closeSidebar}
           className="fixed inset-0 bg-black/40 backdrop-blur-sm z-30 lg:hidden"
-        ></div>
+        />
       )}
 
-      {/* MAIN CONTENT */}
-      <main
-        className="relative flex-1 min-w-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950 
-                   rounded-tl-none lg:rounded-tl-3xl lg:rounded-bl-3xl
-                   shadow-none lg:shadow-lg overflow-auto"
-      >
-        <div className="w-full">
-          {/* Desktop Header */}
-          {isDesktop ? (
-            <header className="flex items-center justify-between mb-8">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                  Welcome, {user?.name || "User"}!
-                </h1>
-                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                  Manage your account, orders, and preferences from here.
-                </p>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="px-4 py-2 rounded-md bg-rose-100 text-rose-700 hover:bg-rose-200 
-                          dark:bg-rose-900/40 dark:text-rose-300 dark:hover:bg-rose-900/60 
-                          font-semibold text-sm flex items-center gap-2 transition"
-              >
-                <LogOut size={16} /> Logout
-              </button>
-            </header>
-          ) : (
-            <header className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={openSidebar}
-                  className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  <MenuIcon size={20} />
-                </button>
-                <span className="text-lg font-semibold">
-                  Hi, {user?.name ? user.name.split(" ")[0] : "User"}
-                </span>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 text-rose-600"
-              >
-                <LogOut size={20} />
-              </button>
-            </header>
-          )}
-
-          {/* Page content */}
-          <Outlet />
-        </div>
+      {/* MAIN */}
+      <main className="relative flex-1 min-w-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950 rounded-tl-none lg:rounded-tl-3xl lg:rounded-bl-3xl shadow-none lg:shadow-lg overflow-auto">
+        <Outlet />
       </main>
     </div>
   );
