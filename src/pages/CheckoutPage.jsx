@@ -1,5 +1,6 @@
 // src/pages/CheckoutPage.jsx
 // CheckoutPage with Razorpay as primary payment method and COD fallback
+// + Coupon redemption wired to /api/coupons/redeem
 import React, { useEffect, useMemo, useState, useContext } from "react";
 import { useCart } from "../contexts/CartContext";
 import {
@@ -10,6 +11,8 @@ import {
   MapPin,
   Wallet,
   Clock,
+  X,
+  Tag,
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -19,16 +22,10 @@ import { UserContext } from "../contexts/UserContext";
  * Notes:
  * - /api/orders/place-order expects: { items, buyNow, shippingAddress, paymentMethod, paymentDetails, totalAmount, ... }
  * - /api/payments/razorpay/create-order expects: { items, shipping, totalAmount }
- *
- * Changes made:
- * - Sends product_name, sku and unit_price on COD place-order just like Razorpay.
- * - UI styling improved for both light & dark themes (consistent input/button styles).
- * - Place order button slightly wider and more prominent.
- * - Sends deliveryDate (from place-order response) to order confirmation page/localStorage.
- * - Payment selector styling: selected = black in light mode, white in dark mode (text color flips).
+ * - Coupon redemption uses: POST /api/coupons/redeem with { code, order_id, user_id, cart_total }
  */
 
-const API_BASE = process.env.REACT_APP_API_BASE;
+const API_BASE = process.env.REACT_APP_API_BASE || "";
 const RAZORPAY_KEY = process.env.REACT_APP_RAZORPAY_KEY_ID || "";
 
 export default function CheckoutPage() {
@@ -40,7 +37,8 @@ export default function CheckoutPage() {
 
   const [step, setStep] = useState(1);
   const [promoCode, setPromoCode] = useState("");
-  const [promoApplied, setPromoApplied] = useState(null);
+  const [promoApplied, setPromoApplied] = useState(null); // { code, amount, coupon }
+  const [redeeming, setRedeeming] = useState(false);
 
   // Normalized shipping shape used everywhere
   const emptyShipping = {
@@ -220,23 +218,6 @@ export default function CheckoutPage() {
     return false;
   };
 
-  const applyPromo = () => {
-    if (!promoCode) return alert("Enter a promo code (demo)");
-
-    const code = promoCode.toUpperCase();
-
-    if (code === "SAVE50") {
-      setPromoApplied({ code: "SAVE50", amount: 50 });
-      alert("Promo applied: ₹50 off (demo)");
-    } else if (code === "RAJU200") {
-      setPromoApplied({ code: "RAJU200", amount: 200 });
-      alert("Promo applied: ₹200 off (demo)");
-    } else {
-      setPromoApplied(null);
-      alert("Invalid/expired promo (demo)");
-    }
-  };
-
   // Save / delete addresses
   const handleSaveAddress = async () => {
     if (!isShippingValid()) return alert("Please fill required shipping fields before saving.");
@@ -359,6 +340,67 @@ export default function CheckoutPage() {
     }
     setStep((s) => Math.min(3, s + 1));
   };
+
+  // ---------------- Coupon: Redeem ----------------
+  // Calls POST /api/coupons/redeem with { code, order_id, user_id, cart_total }
+  async function redeemCoupon(code) {
+    if (!code) return alert("Please enter a coupon code.");
+    if (!token) {
+      return alert("Please login to redeem coupons.");
+    }
+
+    // Prevent double apply
+    if (promoApplied && promoApplied.code === code.toUpperCase()) {
+      return alert("Coupon already applied.");
+    }
+
+    setRedeeming(true);
+    try {
+      const payload = {
+        code: String(code).toUpperCase(),
+        order_id: null,
+        user_id: user?.id ?? user?._id ?? null,
+        cart_total: Math.round(itemsTotal),
+      };
+
+      const res = await fetch(`${API_BASE}/api/coupons/redeem`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        // Map server error codes to user-friendly messages
+        const err = data?.error || data?.message || "redeem_failed";
+        if (err === "invalid_coupon") alert("Coupon not found or inactive.");
+        else if (err === "usage_limit_reached") alert("Coupon usage limit reached.");
+        else if (err === "min_purchase_not_met") alert(`This coupon requires a minimum purchase of ₹${data?.coupon?.min_purchase ?? "?"}.`);
+        else alert(err);
+        setRedeeming(false);
+        return;
+      }
+
+      // success: server returns { success: true, discount, coupon }
+      const discount = Number(data.discount ?? 0);
+      const coupon = data.coupon ?? null;
+
+      setPromoApplied({ code: String(code).toUpperCase(), amount: discount, coupon });
+      setPromoCode("");
+      alert(`Coupon applied — ₹${fmt(discount)} off`);
+    } catch (e) {
+      console.error("redeem error", e);
+      alert("Failed to redeem coupon. Try again.");
+    } finally {
+      setRedeeming(false);
+    }
+  }
+
+  function removeAppliedCoupon() {
+    setPromoApplied(null);
+    alert("Coupon removed.");
+  }
 
   // ---------------- RAZORPAY HELPERS ----------------
   const loadRazorpayScript = () =>
@@ -500,6 +542,9 @@ export default function CheckoutPage() {
         paymentMethod: paymentType === "cod" ? "COD" : "Razorpay",
         paymentDetails: paymentType === "cod" ? { method: "COD" } : { method: "Razorpay" },
         totalAmount: Math.round(grandTotal),
+        // include applied coupon id/code if any
+        coupon: promoApplied?.coupon ? { id: promoApplied.coupon.id, code: promoApplied.code } : undefined,
+        coupon_discount: promoApplied?.amount ? Number(promoApplied.amount) : undefined,
       };
 
       // Payload for /api/payments/razorpay/create-order (expects shipping)
@@ -526,6 +571,8 @@ export default function CheckoutPage() {
           email: user?.email || "",
         },
         totalAmount: Math.round(grandTotal),
+        coupon: promoApplied?.coupon ? { id: promoApplied.coupon.id, code: promoApplied.code } : undefined,
+        coupon_discount: promoApplied?.amount ? Number(promoApplied.amount) : undefined,
       };
 
       // ---------------- COD flow ----------------
@@ -803,10 +850,34 @@ export default function CheckoutPage() {
                 <div className="rounded-lg border p-4 bg-gray-50 dark:bg-gray-800">
                   <div className="text-xs text-gray-600">Apply promo code</div>
                   <div className="mt-2 flex gap-2">
-                    <input aria-label="Promo code" placeholder="Promo code (demo)" value={promoCode} onChange={(e) => setPromoCode(e.target.value)} className={`${inputBase} ${inputLight} ${inputDark} py-2`} />
-                    <button onClick={applyPromo} className="px-4 py-2 rounded bg-gradient-to-r from-neutral-900 to-neutral-700 text-white hover:opacity-95 transition">Apply</button>
+                    <input
+                      aria-label="Promo code"
+                      placeholder="Enter coupon code"
+                      value={promoCode}
+                      onChange={(e) => setPromoCode(e.target.value)}
+                      className={`${inputBase} ${inputLight} ${inputDark} py-2`}
+                    />
+                    <button
+                      onClick={() => redeemCoupon(promoCode)}
+                      className="px-4 py-2 rounded bg-gradient-to-r from-neutral-900 to-neutral-700 text-white hover:opacity-95 transition flex items-center gap-2"
+                      disabled={redeeming || !promoCode}
+                    >
+                      {redeeming ? "Applying..." : <><Tag size={14} /> Apply</>}
+                    </button>
                   </div>
-                  {promoApplied && <div className="mt-2 text-xs text-emerald-600">Applied: {promoApplied.code} — ₹{fmt(promoApplied.amount)} off</div>}
+
+                  {promoApplied ? (
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <div className="text-sm text-emerald-600 flex items-center gap-2">
+                        <Check size={14} /> Applied: {promoApplied.code} — ₹{fmt(promoApplied.amount)} off
+                      </div>
+                      <button onClick={removeAppliedCoupon} className="text-xs text-red-600 flex items-center gap-1">
+                        <X size={14} /> Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-xs text-gray-500">Have a coupon? Apply it to get instant discount.</div>
+                  )}
                 </div>
 
                 <div className="rounded-lg border p-4 bg-gray-50 dark:bg-gray-800">
@@ -947,7 +1018,7 @@ export default function CheckoutPage() {
                     <div className="font-medium">Pay Online (Razorpay)</div>
                     <div className="text-xs text-gray-500 mt-1">Cards, UPI, Netbanking and more. Fast and secure.</div>
                   </div>
-                  {paymentType === "razorpay" && <div className="text-xs font-semibold">{/* visually indicates selected */}Selected</div>}
+                  {paymentType === "razorpay" && <div className="text-xs font-semibold">Selected</div>}
                 </button>
 
                 {/* COD button */}
