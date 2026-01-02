@@ -41,7 +41,7 @@ import {
 const STORAGE_KEY = "coupons_v2_ui_state";
 const AUDIT_KEY = "coupon_audit_v2_ui";
 
-const API_BASE = ""; // leave empty to hit same origin, or set to "https://api.dripzoid.com"
+const API_BASE = "https://api.dripzoid.com"; // leave empty to hit same origin, or set to "https://api.dripzoid.com"
 
 function uid(prefix = "c_") {
   return `${prefix}${Math.random().toString(36).slice(2, 9)}`;
