@@ -155,7 +155,7 @@ export default function DashboardLayout() {
     location.pathname.startsWith("/account/profile");
 
   return (
-    // added pt-16 to push content below a fixed navbar (navbar assumed h-16)
+    // keep top padding to offset fixed navbar (navbar assumed h-16)
     <div className="pt-16 relative flex flex-col lg:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       {/* SIDEBAR */}
       <aside
@@ -216,7 +216,7 @@ export default function DashboardLayout() {
 
       {/* MAIN CONTENT */}
       <main
-        className="relative flex-1 min-w-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950 
+        className="relative flex-1 min-w-0 mt-4 sm:mt-0 p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-950 
                    rounded-tl-none lg:rounded-tl-3xl lg:rounded-bl-3xl
                    shadow-none lg:shadow-lg overflow-auto"
       >
