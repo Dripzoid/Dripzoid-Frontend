@@ -1,3 +1,4 @@
+// CouponManagerAdvanced.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus,
@@ -10,9 +11,7 @@ import {
   X,
   Activity,
   BarChart2,
-  RefreshCw,
   AlertTriangle,
-  FileText,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -25,56 +24,30 @@ import {
 } from "recharts";
 
 /*
-  CouponManagerAdvanced.jsx
-  - Single-file, modern, accessible coupon manager UI built with React + Tailwind
-  - Features:
-    • Persistent localStorage (export / import)
-    • Robust CSV import (handles quoted fields)
-    • Bulk actions with confirmation
-    • Debounced search, filters, sorting
-    • Inline toasts and confirmations
-    • Responsive layout and accessible controls
+  CouponManagerAdvanced.jsx (API-wired)
+  - Connects to:
+    GET  /api/coupons?perPage=1000        (list)
+    POST /api/coupons                     (create)
+    PUT  /api/coupons/:id                 (update)
+    DELETE /api/coupons/:id               (delete)
+    POST /api/coupons/bulk                (bulk actions)
+    POST /api/coupons/import              (multipart csv upload -> 'file')
+    GET  /api/coupons/export              (csv download)
+    GET  /api/coupons/analytics           (analytics summary)
+    GET  /api/coupons/audit               (audit logs)
+  - Sends credentials (cookies) by default (credentials: 'include').
 */
 
-const STORAGE_KEY = "coupons_v2";
-const AUDIT_KEY = "coupon_audit_v2";
+const STORAGE_KEY = "coupons_v2_ui_state";
+const AUDIT_KEY = "coupon_audit_v2_ui";
 
-/* ----------------- Utilities ----------------- */
+const API_BASE = ""; // leave empty to hit same origin, or set to "https://api.dripzoid.com"
+
 function uid(prefix = "c_") {
   return `${prefix}${Math.random().toString(36).slice(2, 9)}`;
 }
 function nowISO() {
   return new Date().toISOString();
-}
-
-function saveToStorage(key, data) {
-  try {
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch (e) {
-    // silently fail
-    // In production you may want to surface this to the user
-    console.error("saveToStorage error", e);
-  }
-}
-
-function loadFromStorage(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw);
-  } catch (e) {
-    console.error("Failed to load from storage", e);
-    return fallback;
-  }
-}
-
-function generateCode({ prefix = "", length = 6, pattern = "alnum" } = {}) {
-  const alph = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const nums = "0123456789";
-  const pool = pattern === "alpha" ? alph : pattern === "num" ? nums : alph + nums;
-  let s = "";
-  for (let i = 0; i < length; i++) s += pool[Math.floor(Math.random() * pool.length)];
-  return (prefix ? `${prefix.toUpperCase()}-` : "") + s;
 }
 
 function csvEscape(val) {
@@ -116,7 +89,6 @@ function parseCSV(text) {
         row = [];
         cur = "";
       }
-      // consume possible \r\n
       if (ch === "\r" && nxt === "\n") i++;
       continue;
     }
@@ -127,45 +99,6 @@ function parseCSV(text) {
     rows.push(row);
   }
   return rows;
-}
-
-/* ----------------- Sample seed ----------------- */
-function seedCoupons() {
-  const today = new Date().toISOString().slice(0, 10);
-  return [
-    {
-      id: uid(),
-      code: "WELCOME-10",
-      type: "percentage",
-      amount: 10,
-      min_purchase: 0,
-      usage_limit: 1000,
-      used: 12,
-      starts_at: today,
-      ends_at: null,
-      active: true,
-      applies_to: "all",
-      created_at: nowISO(),
-      updated_at: nowISO(),
-      metadata: { description: "New user discount" },
-    },
-    {
-      id: uid(),
-      code: "SHIPFREE",
-      type: "fixed",
-      amount: 50,
-      min_purchase: 500,
-      usage_limit: 500,
-      used: 120,
-      starts_at: today,
-      ends_at: null,
-      active: true,
-      applies_to: "shipping",
-      created_at: nowISO(),
-      updated_at: nowISO(),
-      metadata: { description: "Free shipping over ₹500" },
-    },
-  ];
 }
 
 /* ----------------- Small UI primitives ----------------- */
@@ -248,6 +181,15 @@ function CouponForm({ editing, onCancel, onSave, pushToast }) {
   const [prefix, setPrefix] = useState("");
   const [length, setLength] = useState(6);
   const [pattern, setPattern] = useState("alnum");
+
+  function generateCode({ prefix = "", length = 6, pattern = "alnum" } = {}) {
+    const alph = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const nums = "0123456789";
+    const pool = pattern === "alpha" ? alph : pattern === "num" ? nums : alph + nums;
+    let s = "";
+    for (let i = 0; i < length; i++) s += pool[Math.floor(Math.random() * pool.length)];
+    return (prefix ? `${prefix.toUpperCase()}-` : "") + s;
+  }
 
   function handleGenerate() {
     const g = generateCode({ prefix: prefix.trim(), length: Number(length) || 6, pattern });
@@ -367,11 +309,11 @@ function CouponForm({ editing, onCancel, onSave, pushToast }) {
   );
 }
 
-/* ----------------- Main Component ----------------- */
+/* ----------------- Main Component (API-wired) ----------------- */
 export default function CouponManagerAdvanced() {
   // data
-  const [coupons, setCoupons] = useState(() => loadFromStorage(STORAGE_KEY, null) || seedCoupons());
-  const [audit, setAudit] = useState(() => loadFromStorage(AUDIT_KEY, []));
+  const [coupons, setCoupons] = useState([]);
+  const [audit, setAudit] = useState([]);
 
   // UI state
   const [query, setQuery] = useState("");
@@ -387,9 +329,191 @@ export default function CouponManagerAdvanced() {
   const [toasts, setToasts] = useState([]);
   const fileRef = useRef(null);
   const [sortBy, setSortBy] = useState({ key: "created_at", dir: "desc" });
+  const [loading, setLoading] = useState(false);
+  const [analytics, setAnalytics] = useState(null);
 
-  useEffect(() => saveToStorage(STORAGE_KEY, coupons), [coupons]);
-  useEffect(() => saveToStorage(AUDIT_KEY, audit), [audit]);
+  // helper to include credentials/cookies
+  const fetchOpts = (method = "GET", body = null, customHeaders = {}) => {
+    const opts = { method, credentials: "include", headers: { Accept: "application/json", ...customHeaders } };
+    if (body && !(body instanceof FormData)) {
+      opts.headers["Content-Type"] = "application/json";
+      opts.body = JSON.stringify(body);
+    } else if (body instanceof FormData) {
+      opts.body = body;
+    }
+    return opts;
+  };
+
+  /* --- API calls --- */
+  async function loadAll() {
+    setLoading(true);
+    try {
+      // fetch coupons (request many results)
+      const url = `${API_BASE || ""}/api/coupons?perPage=1000`;
+      const r = await fetch(url, fetchOpts());
+      if (!r.ok) throw new Error(`Failed to fetch coupons (${r.status})`);
+      const payload = await r.json();
+      // server returns { data, page, perPage, total } OR may return array. Handle both:
+      const items = Array.isArray(payload) ? payload : (payload.data || payload);
+      setCoupons(items.map(normalizeCoupon));
+    } catch (e) {
+      console.error("loadAll error", e);
+      pushToast("Error", "Failed to load coupons");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadAudit() {
+    try {
+      const r = await fetch(`${API_BASE || ""}/api/coupons/audit`, fetchOpts());
+      if (!r.ok) throw new Error("audit fetch failed");
+      const rows = await r.json();
+      setAudit(rows || []);
+    } catch (e) {
+      console.error("loadAudit", e);
+    }
+  }
+
+  async function loadAnalytics() {
+    try {
+      const r = await fetch(`${API_BASE || ""}/api/coupons/analytics`, fetchOpts());
+      if (!r.ok) throw new Error("analytics fetch failed");
+      const d = await r.json();
+      setAnalytics(d);
+    } catch (e) {
+      console.error("loadAnalytics", e);
+    }
+  }
+
+  // CREATE
+  async function createCouponAPI(payload) {
+    try {
+      const r = await fetch(`${API_BASE || ""}/api/coupons`, fetchOpts("POST", payload));
+      if (!r.ok) {
+        const txt = await r.json().catch(() => ({}));
+        throw new Error(txt.error || txt.message || `create failed (${r.status})`);
+      }
+      const created = await r.json();
+      pushToast("Created", `Coupon ${payload.code} created`);
+      await reloadAll();
+      return created;
+    } catch (e) {
+      console.error("createCouponAPI", e);
+      pushToast("Error", String(e.message || e));
+      throw e;
+    }
+  }
+
+  // UPDATE
+  async function updateCouponAPI(id, payload) {
+    try {
+      const r = await fetch(`${API_BASE || ""}/api/coupons/${id}`, fetchOpts("PUT", payload));
+      if (!r.ok) {
+        const txt = await r.json().catch(() => ({}));
+        throw new Error(txt.error || txt.message || `update failed (${r.status})`);
+      }
+      const updated = await r.json();
+      pushToast("Saved", `Coupon ${payload.code} updated`);
+      await reloadAll();
+      return updated;
+    } catch (e) {
+      console.error("updateCouponAPI", e);
+      pushToast("Error", String(e.message || e));
+      throw e;
+    }
+  }
+
+  // DELETE
+  async function deleteCouponAPI(id) {
+    try {
+      const r = await fetch(`${API_BASE || ""}/api/coupons/${id}`, fetchOpts("DELETE"));
+      if (!r.ok) {
+        const txt = await r.json().catch(() => ({}));
+        throw new Error(txt.error || txt.message || `delete failed (${r.status})`);
+      }
+      pushToast("Deleted", "Coupon removed");
+      await reloadAll();
+      return true;
+    } catch (e) {
+      console.error("deleteCouponAPI", e);
+      pushToast("Error", String(e.message || e));
+      throw e;
+    }
+  }
+
+  // BULK
+  async function bulkActionAPI(action, ids) {
+    try {
+      const r = await fetch(`${API_BASE || ""}/api/coupons/bulk`, fetchOpts("POST", { action, ids }));
+      if (!r.ok) {
+        const txt = await r.json().catch(() => ({}));
+        throw new Error(txt.error || txt.message || `bulk failed (${r.status})`);
+      }
+      pushToast("Updated", `Bulk action ${action} applied`);
+      await reloadAll();
+      return true;
+    } catch (e) {
+      console.error("bulkActionAPI", e);
+      pushToast("Error", String(e.message || e));
+      throw e;
+    }
+  }
+
+  // IMPORT CSV (multipart)
+  async function importCSVAPI(file) {
+    try {
+      const form = new FormData();
+      form.append("file", file, file.name || "upload.csv");
+      const r = await fetch(`${API_BASE || ""}/api/coupons/import`, fetchOpts("POST", form));
+      if (!r.ok) {
+        const txt = await r.json().catch(() => ({}));
+        throw new Error(txt.error || txt.message || `import failed (${r.status})`);
+      }
+      const res = await r.json();
+      pushToast("Imported", `Imported ${res.imported || "?"} coupons`);
+      await reloadAll();
+      return res;
+    } catch (e) {
+      console.error("importCSVAPI", e);
+      pushToast("Error", String(e.message || e));
+      throw e;
+    }
+  }
+
+  // EXPORT CSV (download blob)
+  async function exportCSVAPI(list = null) {
+    try {
+      // If the backend supports filtering/export query, you could call /api/coupons/export?ids=...
+      // We'll fetch the export endpoint and download the returned CSV blob.
+      const r = await fetch(`${API_BASE || ""}/api/coupons/export`, fetchOpts("GET"));
+      if (!r.ok) throw new Error(`Export failed (${r.status})`);
+      const blob = await r.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `coupons_export_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      pushToast("Exported", "CSV exported to your downloads");
+    } catch (e) {
+      console.error("exportCSVAPI", e);
+      pushToast("Error", String(e.message || e));
+      throw e;
+    }
+  }
+
+  async function reloadAll() {
+    await Promise.all([loadAll(), loadAudit(), loadAnalytics()]);
+  }
+
+  useEffect(() => {
+    // initial load
+    reloadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // debounce search
   useEffect(() => {
@@ -397,7 +521,49 @@ export default function CouponManagerAdvanced() {
     return () => clearTimeout(t);
   }, [query]);
 
-  function pushAudit(id, message) {
+  // normalize coupon shape from server (ensure metadata field)
+  function normalizeCoupon(c) {
+    return {
+      ...c,
+      active: Boolean(Number(c.active ?? c.active ?? 0)),
+      amount: Number(c.amount ?? 0),
+      used: Number(c.used ?? 0),
+      usage_limit: c.usage_limit ? Number(c.usage_limit) : 0,
+      metadata: c.metadata || (c.description ? { description: c.description } : {}),
+    };
+  }
+
+  /* Derived data */
+  const filtered = useMemo(() => {
+    return coupons
+      .filter((c) => {
+        if (filterActive === "active" && !c.active) return false;
+        if (filterActive === "inactive" && c.active) return false;
+        if (filterType !== "all" && c.type !== filterType) return false;
+        if (!debouncedQuery) return true;
+        return (
+          (c.code || "").toLowerCase().includes(debouncedQuery) ||
+          ((c.metadata && c.metadata.description) || "").toLowerCase().includes(debouncedQuery)
+        );
+      })
+      .sort((a, b) => {
+        const key = sortBy.key;
+        const dir = sortBy.dir === "asc" ? 1 : -1;
+        const va = a[key];
+        const vb = b[key];
+        if (va == null && vb == null) return 0;
+        if (va == null) return 1 * dir;
+        if (vb == null) return -1 * dir;
+        if (typeof va === "string") return va.localeCompare(vb) * dir;
+        return (va - vb) * dir;
+      });
+  }, [coupons, debouncedQuery, filterActive, filterType, sortBy]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+  const pageData = filtered.slice((page - 1) * perPage, page * perPage);
+
+  // UI helpers
+  function pushAuditLocal(id, message) {
     const item = { id: uid("a_"), coupon_id: id, message, at: nowISO() };
     setAudit((prev) => [item, ...prev].slice(0, 200));
   }
@@ -410,34 +576,7 @@ export default function CouponManagerAdvanced() {
     }, ttl);
   }
 
-  /* Derived data */
-  const filtered = useMemo(() => {
-    return coupons
-      .filter((c) => {
-        if (filterActive === "active" && !c.active) return false;
-        if (filterActive === "inactive" && c.active) return false;
-        if (filterType !== "all" && c.type !== filterType) return false;
-        if (!debouncedQuery) return true;
-        return (
-          c.code.toLowerCase().includes(debouncedQuery) ||
-          (c.metadata && c.metadata.description && c.metadata.description.toLowerCase().includes(debouncedQuery))
-        );
-      })
-      .sort((a, b) => {
-        const key = sortBy.key;
-        const dir = sortBy.dir === "asc" ? 1 : -1;
-        if (!a[key] && !b[key]) return 0;
-        if (!a[key]) return 1 * dir;
-        if (!b[key]) return -1 * dir;
-        if (typeof a[key] === "string") return a[key].localeCompare(b[key]) * dir;
-        return (a[key] - b[key]) * dir;
-      });
-  }, [coupons, debouncedQuery, filterActive, filterType, sortBy]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
-  const pageData = filtered.slice((page - 1) * perPage, page * perPage);
-
-  /* CRUD */
+  /* Actions wired to API */
   function openCreate() {
     setEditing(null);
     setShowModal(true);
@@ -447,134 +586,86 @@ export default function CouponManagerAdvanced() {
     setShowModal(true);
   }
 
-  function saveCoupon(payload) {
-    if (payload.id) {
-      setCoupons((prev) => prev.map((p) => (p.id === payload.id ? { ...p, ...payload, updated_at: nowISO() } : p)));
-      pushAudit(payload.id, `Edited coupon ${payload.code}`);
-      pushToast("Saved", `Coupon ${payload.code} updated`);
-    } else {
-      const newC = { ...payload, id: uid(), created_at: nowISO(), updated_at: nowISO(), used: 0 };
-      setCoupons((prev) => [newC, ...prev]);
-      pushAudit(newC.id, `Created coupon ${newC.code}`);
-      pushToast("Created", `Coupon ${newC.code} created`);
+  async function saveCoupon(payload) {
+    try {
+      if (payload.id) {
+        // call update
+        await updateCouponAPI(payload.id, payload);
+        pushAuditLocal(payload.id, `Edited coupon ${payload.code}`);
+      } else {
+        await createCouponAPI(payload);
+        pushAuditLocal(null, `Created coupon ${payload.code}`);
+      }
+      setShowModal(false);
+    } catch (e) {
+      // error already handled in API functions
     }
-    setShowModal(false);
   }
 
-  function toggleActive(id) {
-    setCoupons((prev) => prev.map((c) => (c.id === id ? { ...c, active: !c.active, updated_at: nowISO() } : c)));
-    pushAudit(id, `Toggled active`);
+  async function toggleActiveLocal(id) {
+    const c = coupons.find((x) => x.id === id);
+    if (!c) return;
+    try {
+      // update server
+      await updateCouponAPI(id, { ...c, active: !c.active });
+      pushAuditLocal(id, `Toggled active`);
+    } catch (e) {
+      // ignore
+    }
   }
 
-  function softDelete(id) {
-    setCoupons((prev) => prev.filter((c) => c.id !== id));
-    pushAudit(id, `Deleted coupon`);
-    pushToast("Deleted", `Coupon removed`);
-    setSelected(new Set());
+  async function softDeleteLocal(id) {
+    try {
+      await deleteCouponAPI(id);
+      pushAuditLocal(id, `Deleted coupon`);
+      setSelected(new Set());
+    } catch (e) {
+      // ignore
+    }
   }
 
-  function bulkAction(action) {
+  async function bulkAction(action) {
     if (action === "delete") {
       setConfirm({ open: true, action: "delete" });
       return;
     }
-    if (action === "enable") {
-      setCoupons((prev) => prev.map((c) => (selected.has(c.id) ? { ...c, active: true, updated_at: nowISO() } : c)));
-      pushAudit(null, `Bulk enabled ${selected.size} coupons`);
-      pushToast("Updated", `Enabled ${selected.size} coupons`);
-    } else if (action === "disable") {
-      setCoupons((prev) => prev.map((c) => (selected.has(c.id) ? { ...c, active: false, updated_at: nowISO() } : c)));
-      pushAudit(null, `Bulk disabled ${selected.size} coupons`);
-      pushToast("Updated", `Disabled ${selected.size} coupons`);
+    if (selected.size === 0) {
+      pushToast("No selection", "Select coupons first");
+      return;
+    }
+    try {
+      await bulkActionAPI(action, Array.from(selected));
+      pushAuditLocal(null, `Bulk ${action} ${selected.size}`);
+      setSelected(new Set());
+    } catch (e) {
+      // handled
     }
   }
 
-  function confirmDeleteSelected() {
-    setCoupons((prev) => prev.filter((c) => !selected.has(c.id)));
-    pushAudit(null, `Bulk deleted ${selected.size} coupons`);
-    pushToast("Deleted", `Removed ${selected.size} coupons`);
-    setSelected(new Set());
-    setConfirm({ open: false, action: null });
-  }
-
-  /* CSV */
-  function exportCSV(list = coupons) {
-    const headers = [
-      "id",
-      "code",
-      "type",
-      "amount",
-      "min_purchase",
-      "usage_limit",
-      "used",
-      "starts_at",
-      "ends_at",
-      "active",
-      "applies_to",
-      "metadata_description",
-      "created_at",
-      "updated_at",
-    ];
-    const rows = [headers.join(",")];
-    for (const c of list) {
-      rows.push(
-        headers
-          .map((h) => {
-            if (h === "metadata_description") return csvEscape(c.metadata?.description);
-            return csvEscape(c[h]);
-          })
-          .join(",")
-      );
+  async function confirmDeleteSelected() {
+    if (selected.size === 0) {
+      setConfirm({ open: false, action: null });
+      return;
     }
-    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `coupons_export_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    pushAudit(null, "Exported coupons CSV");
-    pushToast("Exported", "CSV exported to your downloads");
+    try {
+      await bulkActionAPI("delete", Array.from(selected));
+      pushAuditLocal(null, `Bulk deleted ${selected.size}`);
+      setSelected(new Set());
+      setConfirm({ open: false, action: null });
+    } catch (e) {
+      // handled
+    }
   }
 
-  function importCSVFile(file) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target.result;
-      const rows = parseCSV(text);
-      if (rows.length < 2) return pushToast("Import", "CSV seemed empty or invalid");
-      const headers = rows[0].map((h) => h.trim());
-      const parsed = rows.slice(1).map((r) => {
-        const obj = {};
-        for (let i = 0; i < headers.length; i++) {
-          obj[headers[i]] = r[i] || "";
-        }
-        return obj;
-      });
-      const mapped = parsed.map((p) => ({
-        id: p.id || uid(),
-        code: p.code || generateCode({ length: 6 }),
-        type: p.type || "percentage",
-        amount: Number(p.amount) || 0,
-        min_purchase: Number(p.min_purchase) || 0,
-        usage_limit: Number(p.usage_limit) || 0,
-        used: Number(p.used) || 0,
-        starts_at: p.starts_at || null,
-        ends_at: p.ends_at || null,
-        active: p.active === "true" || p.active === true,
-        applies_to: p.applies_to || "all",
-        metadata: { description: p.metadata_description || "" },
-        created_at: p.created_at || nowISO(),
-        updated_at: p.updated_at || nowISO(),
-      }));
-      setCoupons((prev) => [...mapped, ...prev]);
-      pushAudit(null, `Imported ${mapped.length} coupons from CSV`);
-      pushToast("Imported", `Added ${mapped.length} coupons`);
-    };
-    reader.readAsText(file);
+  async function handleImportCSV(file) {
+    if (!file) return;
+    try {
+      await importCSVAPI(file);
+    } catch (e) {
+      // handled
+    }
   }
 
-  /* Select helpers */
   function toggleSelect(id) {
     setSelected((prev) => {
       const n = new Set(prev);
@@ -601,19 +692,6 @@ export default function CouponManagerAdvanced() {
     setFilterType("all");
   }
 
-  /* Analytics */
-  const analyticsData = useMemo(() => {
-    const days = 14;
-    const arr = [];
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      arr.push({ date: d.toISOString().slice(0, 10), redemptions: Math.floor(Math.random() * 40) });
-    }
-    return arr;
-  }, [coupons.length]);
-
-  /* Sort toggle */
   function toggleSort(key) {
     setSortBy((s) => ({ key, dir: s.key === key && s.dir === "asc" ? "desc" : "asc" }));
   }
@@ -631,7 +709,7 @@ export default function CouponManagerAdvanced() {
               <Plus size={16} /> Create coupon
             </button>
             <div className="relative inline-flex">
-              <button onClick={() => exportCSV(filtered)} className="inline-flex items-center gap-2 bg-white border px-3 py-2 rounded-lg text-sm hover:bg-gray-100 dark:bg-gray-900 dark:border-gray-800">
+              <button onClick={() => exportCSVAPI()} className="inline-flex items-center gap-2 bg-white border px-3 py-2 rounded-lg text-sm hover:bg-gray-100 dark:bg-gray-900 dark:border-gray-800">
                 <Download size={16} /> Export
               </button>
             </div>
@@ -659,7 +737,7 @@ export default function CouponManagerAdvanced() {
                 <option value="fixed">Fixed amount</option>
               </select>
               <div>
-                <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={(e) => importCSVFile(e.target.files[0])} />
+                <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={(e) => handleImportCSV(e.target.files[0])} />
                 <button onClick={() => fileRef.current?.click()} className="px-3 py-2 rounded-lg border text-sm">Import CSV</button>
               </div>
             </div>
@@ -678,7 +756,7 @@ export default function CouponManagerAdvanced() {
             </div>
             <div style={{ height: 140 }}>
               <ResponsiveContainer width="100%" height={140}>
-                <LineChart data={analyticsData}>
+                <LineChart data={(analytics && analytics.timeseries) || []}>
                   <XAxis dataKey="date" hide />
                   <YAxis hide />
                   <Tooltip />
@@ -722,7 +800,7 @@ export default function CouponManagerAdvanced() {
                   <option value="disable">Disable</option>
                   <option value="delete">Delete</option>
                 </select>
-                <button onClick={() => exportCSV(Array.from(selected).length ? coupons.filter((c) => selected.has(c.id)) : coupons)} className="px-3 py-2 rounded-lg border text-sm inline-flex items-center gap-2">
+                <button onClick={() => exportCSVAPI(Array.from(selected).length ? coupons.filter((c) => selected.has(c.id)) : coupons)} className="px-3 py-2 rounded-lg border text-sm inline-flex items-center gap-2">
                   <Download size={14} /> Export
                 </button>
               </div>
@@ -764,7 +842,7 @@ export default function CouponManagerAdvanced() {
                       </td>
                       <td className="py-3">
                         <div className="flex items-center gap-2">
-                          <IconButton title="Copy code" onClick={() => { navigator.clipboard.writeText(c.code); pushAudit(c.id, `Copied code ${c.code}`); pushToast("Copied", `${c.code} copied to clipboard`); }}>
+                          <IconButton title="Copy code" onClick={() => { navigator.clipboard.writeText(c.code); pushAuditLocal(c.id, `Copied code ${c.code}`); pushToast("Copied", `${c.code} copied to clipboard`); }}>
                             <Copy size={14} />
                           </IconButton>
 
@@ -772,7 +850,7 @@ export default function CouponManagerAdvanced() {
                             <Edit3 size={14} />
                           </IconButton>
 
-                          <button onClick={() => toggleActive(c.id)} className={`px-3 py-1 rounded-full text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 ${c.active ? "bg-emerald-700 text-white dark:bg-emerald-600" : "bg-gray-100 text-gray-700 dark:bg-gray-800"}`} title={c.active ? "Disable" : "Enable"}>
+                          <button onClick={() => toggleActiveLocal(c.id)} className={`px-3 py-1 rounded-full text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 ${c.active ? "bg-emerald-700 text-white dark:bg-emerald-600" : "bg-gray-100 text-gray-700 dark:bg-gray-800"}`} title={c.active ? "Disable" : "Enable"}>
                             {c.active ? "Enabled" : "Enable"}
                           </button>
 
@@ -812,7 +890,7 @@ export default function CouponManagerAdvanced() {
             <div className="space-y-2 text-sm text-gray-500 dark:text-gray-400 max-h-48 overflow-y-auto">
               {audit.map((a) => (
                 <div key={a.id} className="flex items-start gap-2">
-                  <div className="text-xs w-28 text-gray-400">{a.at.slice(0, 19).replace("T", " ")}</div>
+                  <div className="text-xs w-28 text-gray-400">{a.created_at ? a.created_at.slice(0, 19).replace("T", " ") : (a.at || "").slice(0,19).replace("T"," ")}</div>
                   <div>{a.message}</div>
                 </div>
               ))}
@@ -840,9 +918,9 @@ export default function CouponManagerAdvanced() {
         onConfirm={() => {
           if (!confirm.action) return setConfirm({ open: false, action: null });
           if (confirm.action.type === "single") {
-            softDelete(confirm.action.id);
+            softDeleteLocal(confirm.action.id);
             setConfirm({ open: false, action: null });
-          } else if (confirm.action === "delete" || confirm.action.type === "bulk") {
+          } else {
             confirmDeleteSelected();
           }
         }}
