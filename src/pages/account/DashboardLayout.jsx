@@ -164,13 +164,21 @@ export default function DashboardLayout() {
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
           lg:translate-x-0 lg:h-auto lg:flex-shrink-0`}
       >
-        {/* Mobile Header inside sidebar */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 lg:hidden">
-          <h2 className="text-xl font-extrabold text-gray-900 dark:text-white">Dashboard</h2>
-          <button onClick={closeSidebar} className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
-            <XIcon size={20} />
-          </button>
-        </div>
+       {/* Mobile Header inside sidebar */}
+<div className="flex items-center justify-between px-6 pt-6 pb-4
+                border-b border-gray-200 dark:border-gray-700
+                lg:hidden">
+  <h2 className="text-xl font-extrabold text-gray-900 dark:text-white">
+    Dashboard
+  </h2>
+  <button
+    onClick={closeSidebar}
+    className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+  >
+    <XIcon size={20} />
+  </button>
+</div>
+
 
         {/* Desktop title */}
         <div className="hidden lg:block">
