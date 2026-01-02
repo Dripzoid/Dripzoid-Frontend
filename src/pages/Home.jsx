@@ -1,5 +1,5 @@
 // src/pages/Home.jsx
-// Version: V1.0 (Startup Release)
+// Version: V1.1 (Premium Startup Release)
 
 import React from "react";
 import { Link } from "react-router-dom";
@@ -9,13 +9,13 @@ import TrendingSection from "../components/TrendingSection";
 import OnSale from "../components/OnSale";
 
 // -----------------------------
-// Hero slides (Cloudinary – V1.0 OK)
+// Hero slides (Editorial / Fashion)
 // -----------------------------
 const slides = [
   {
     id: 1,
     src: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1763476327/my_project/dqdsmhr2165v29xajfm4.jpg",
-    title: "Launch Sale is Live Now..!",
+    title: "Launch Sale is Live",
   },
 ];
 
@@ -47,63 +47,72 @@ function scrollSectionById(sectionId, direction = "right") {
   if (!el) return;
 
   el.scrollBy({
-    left: direction === "right"
-      ? el.clientWidth * 0.9
-      : -el.clientWidth * 0.9,
+    left:
+      direction === "right"
+        ? el.clientWidth * 0.9
+        : -el.clientWidth * 0.9,
     behavior: "smooth",
   });
 }
 
 // -----------------------------
-// Home Page (V1.0 – LOCKED)
+// Home Page (V1.1 – Premium)
 // -----------------------------
 export default function HomePage() {
   return (
-    <main className="min-h-screen bg-white text-black dark:bg-black dark:text-white antialiased">
+    <main className="min-h-screen bg-[#fafafa] text-black dark:bg-black dark:text-white antialiased">
       {/* Spacer for fixed navbar */}
       <div className="h-16" />
 
       {/* =============================
-          HERO
+          HERO (Editorial Focus)
       ============================== */}
-      <section className="mb-14">
+      <section className="mb-20">
         <Hero slides={slides} />
       </section>
 
       {/* =============================
-          CTA
+          PRIMARY COLLECTION CTA
       ============================== */}
-      <section className="max-w-6xl mx-auto px-4 mb-20">
-        <div className="relative rounded-xl p-8 text-center shadow-md">
-          <div className="absolute inset-0 -z-10 bg-gradient-to-r from-white to-slate-100 dark:from-slate-900 dark:to-slate-800" />
+      <section className="max-w-7xl mx-auto px-6 mb-28">
+        <div className="relative overflow-hidden rounded-2xl p-12 text-center shadow-sm">
+          {/* Soft luxury background */}
+          <div className="absolute inset-0 -z-10 bg-gradient-to-br from-[#f7f5f2] to-[#ffffff] dark:from-slate-900 dark:to-black" />
 
-          <h2 className="text-3xl md:text-4xl font-bold mb-3">
-            Shop the Drop
+          <span className="block text-xs tracking-widest uppercase text-slate-500 dark:text-slate-400 mb-4">
+            New Season Drop
+          </span>
+
+          <h2 className="text-4xl md:text-5xl font-semibold tracking-tight mb-5">
+            Designed for Modern Living
           </h2>
-          <p className="text-sm text-slate-700 dark:text-slate-300 mb-6">
-            Discover new arrivals, limited editions and curated favourites.
+
+          <p className="max-w-xl mx-auto text-sm md:text-base text-slate-600 dark:text-slate-300 mb-10">
+            Discover thoughtfully curated styles — blending comfort,
+            craftsmanship, and contemporary fashion.
           </p>
 
           <Link
             to="/shop"
-            className="inline-block px-8 py-4 rounded-lg font-semibold shadow transition bg-slate-900 text-white dark:bg-white dark:text-slate-900 hover:opacity-95"
+            className="inline-flex items-center justify-center px-10 py-4 rounded-full text-sm font-semibold tracking-wide transition-all bg-black text-white dark:bg-white dark:text-black hover:scale-[1.02]"
           >
-            Shop Now
+            Explore Collection
           </Link>
         </div>
       </section>
 
       {/* =============================
-          ON SALE
+          ON SALE (Only when active)
       ============================== */}
       <section
         id="sale"
-        className="relative max-w-6xl mx-auto px-4 mb-20"
+        className="relative max-w-7xl mx-auto px-6 mb-28"
       >
+        {/* Desktop Scroll Controls */}
         <button
           aria-label="Scroll sale left"
           onClick={() => scrollSectionById("sale", "left")}
-          className="hidden md:flex absolute left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/95 dark:bg-black/75 shadow items-center justify-center"
+          className="hidden md:flex absolute left-3 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-white/90 dark:bg-black/70 shadow backdrop-blur items-center justify-center"
         >
           ←
         </button>
@@ -111,7 +120,7 @@ export default function HomePage() {
         <button
           aria-label="Scroll sale right"
           onClick={() => scrollSectionById("sale", "right")}
-          className="hidden md:flex absolute right-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/95 dark:bg-black/75 shadow items-center justify-center"
+          className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-white/90 dark:bg-black/70 shadow backdrop-blur items-center justify-center"
         >
           →
         </button>
@@ -120,22 +129,40 @@ export default function HomePage() {
       </section>
 
       {/* =============================
-          FEATURED
+          FEATURED PICKS
       ============================== */}
       <section
         id="featured"
-        className="max-w-6xl mx-auto px-4 mb-20"
+        className="max-w-7xl mx-auto px-6 mb-28"
       >
+        <div className="mb-10">
+          <h3 className="text-2xl md:text-3xl font-semibold tracking-tight mb-2">
+            Featured Picks
+          </h3>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            Handpicked styles our customers love.
+          </p>
+        </div>
+
         <FeaturedSection />
       </section>
 
       {/* =============================
-          TRENDING
+          TRENDING NOW
       ============================== */}
       <section
         id="trending"
-        className="max-w-6xl mx-auto px-4 mb-24"
+        className="max-w-7xl mx-auto px-6 mb-32"
       >
+        <div className="mb-10">
+          <h3 className="text-2xl md:text-3xl font-semibold tracking-tight mb-2">
+            Trending Now
+          </h3>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            Styles defining this season.
+          </p>
+        </div>
+
         <TrendingSection />
       </section>
     </main>
