@@ -16,6 +16,7 @@ export default function DashboardLayout() {
   const { user, login, logout } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
+
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -75,6 +76,7 @@ export default function DashboardLayout() {
             const userData = await fetchMe(tokenFromUrl);
             if (!cancelled && isMountedRef.current) login(userData, tokenFromUrl);
           } catch {
+            // ignore
           } finally {
             const newUrl = location.pathname + location.hash;
             window.history.replaceState({}, document.title, newUrl);
@@ -87,7 +89,9 @@ export default function DashboardLayout() {
           if (!cancelled && isMountedRef.current && data?.user) {
             login(data.user, null);
           }
-        } catch {}
+        } catch {
+          // ignore
+        }
       } catch (err) {
         console.error("Session check failed:", err);
       } finally {
@@ -146,11 +150,6 @@ export default function DashboardLayout() {
 
   if (checkingAuth) return null;
 
-  const isProfileActive = () =>
-    location.pathname === "/account" ||
-    location.pathname === "/account/" ||
-    location.pathname.startsWith("/account/profile");
-
   return (
     <div className="relative flex flex-col lg:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       {/* SIDEBAR */}
@@ -180,14 +179,13 @@ export default function DashboardLayout() {
               key={to}
               to={to}
               onClick={closeSidebar}
-              className={({ isActive }) => {
-                const active = isActive || (to === "/account/profile" && isProfileActive());
-                return `flex items-center gap-3 px-6 py-4 font-semibold transition-colors duration-300 w-full ${
-                  active
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-6 py-4 font-semibold transition-colors duration-300 w-full ${
+                  isActive
                     ? "bg-black text-white"
                     : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
-                }`;
-              }}
+                }`
+              }
             >
               {icon} <span>{label}</span>
             </NavLink>
