@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus,
   Search,
@@ -10,6 +10,9 @@ import {
   X,
   Activity,
   BarChart2,
+  RefreshCw,
+  AlertTriangle,
+  FileText,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -21,28 +24,37 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-/**
- * CouponManager
- * - Updated UI & Tailwind utility classes for better contrast and accessibility
- * - Removed local theme toggle (assumes global theme toggle in nav using `dark` class)
- * - Centralized button/input classes, improved focus states, hover states, and
- *   action affordances (active toggle is rendered as a visible button)
- */
+/*
+  CouponManagerAdvanced.jsx
+  - Single-file, modern, accessible coupon manager UI built with React + Tailwind
+  - Features:
+    • Persistent localStorage (export / import)
+    • Robust CSV import (handles quoted fields)
+    • Bulk actions with confirmation
+    • Debounced search, filters, sorting
+    • Inline toasts and confirmations
+    • Responsive layout and accessible controls
+*/
 
-const STORAGE_KEY = "coupons_v1";
-const AUDIT_KEY = "coupon_audit_v1";
+const STORAGE_KEY = "coupons_v2";
+const AUDIT_KEY = "coupon_audit_v2";
 
-/* ---------- Helpers ---------- */
+/* ----------------- Utilities ----------------- */
 function uid(prefix = "c_") {
   return `${prefix}${Math.random().toString(36).slice(2, 9)}`;
 }
-
 function nowISO() {
   return new Date().toISOString();
 }
 
 function saveToStorage(key, data) {
-  localStorage.setItem(key, JSON.stringify(data));
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {
+    // silently fail
+    // In production you may want to surface this to the user
+    console.error("saveToStorage error", e);
+  }
 }
 
 function loadFromStorage(key, fallback) {
@@ -62,7 +74,7 @@ function generateCode({ prefix = "", length = 6, pattern = "alnum" } = {}) {
   const pool = pattern === "alpha" ? alph : pattern === "num" ? nums : alph + nums;
   let s = "";
   for (let i = 0; i < length; i++) s += pool[Math.floor(Math.random() * pool.length)];
-  return (prefix ? `${prefix}-` : "") + s;
+  return (prefix ? `${prefix.toUpperCase()}-` : "") + s;
 }
 
 function csvEscape(val) {
@@ -74,16 +86,53 @@ function csvEscape(val) {
   return s;
 }
 
-/* ---------- Shared style helpers (module scope so Form + Manager can use them) ---------- */
-const inputCls =
-  "w-full px-3 py-2 rounded-lg border text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 transition-shadow shadow-sm dark:placeholder-gray-500 border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 focus:ring-gray-300 dark:focus:ring-gray-700";
+// Robust CSV parser supporting quoted fields. Returns array of rows (arrays)
+function parseCSV(text) {
+  const rows = [];
+  let cur = "";
+  let row = [];
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const nxt = text[i + 1];
+    if (ch === '"') {
+      if (inQuotes && nxt === '"') {
+        cur += '"';
+        i++; // skip escaped quote
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === "," && !inQuotes) {
+      row.push(cur);
+      cur = "";
+      continue;
+    }
+    if ((ch === "\n" || ch === "\r") && !inQuotes) {
+      if (cur !== "" || row.length > 0) {
+        row.push(cur);
+        rows.push(row);
+        row = [];
+        cur = "";
+      }
+      // consume possible \r\n
+      if (ch === "\r" && nxt === "\n") i++;
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur !== "" || row.length > 0) {
+    row.push(cur);
+    rows.push(row);
+  }
+  return rows;
+}
 
-const selectCls =
-  "px-3 py-2 rounded-lg border text-sm transition shadow-sm border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300 dark:focus:ring-gray-700";
-
-/* ---------- Mock sample data on first load ---------- */
+/* ----------------- Sample seed ----------------- */
 function seedCoupons() {
-  const base = [
+  const today = new Date().toISOString().slice(0, 10);
+  return [
     {
       id: uid(),
       code: "WELCOME-10",
@@ -92,7 +141,7 @@ function seedCoupons() {
       min_purchase: 0,
       usage_limit: 1000,
       used: 12,
-      starts_at: new Date().toISOString().slice(0, 10),
+      starts_at: today,
       ends_at: null,
       active: true,
       applies_to: "all",
@@ -108,7 +157,7 @@ function seedCoupons() {
       min_purchase: 500,
       usage_limit: 500,
       used: 120,
-      starts_at: new Date().toISOString().slice(0, 10),
+      starts_at: today,
       ends_at: null,
       active: true,
       applies_to: "shipping",
@@ -117,66 +166,284 @@ function seedCoupons() {
       metadata: { description: "Free shipping over ₹500" },
     },
   ];
-  return base;
 }
 
-/* ---------- Component ---------- */
-export default function CouponManager() {
+/* ----------------- Small UI primitives ----------------- */
+function IconButton({ children, title, onClick, className = "" }) {
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      className={`inline-flex items-center justify-center p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300 dark:focus:ring-gray-700 ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Toasts({ list, onClose }) {
+  return (
+    <div className="fixed right-4 bottom-4 z-50 flex flex-col gap-2">
+      <AnimatePresence>
+        {list.map((t) => (
+          <motion.div
+            key={t.id}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            className="max-w-sm w-full bg-white dark:bg-gray-800 border rounded-lg shadow p-3 flex items-start gap-3"
+          >
+            <div className="mt-0.5 text-sm text-gray-700 dark:text-gray-200 flex-1">
+              <div className="font-medium">{t.title}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">{t.message}</div>
+            </div>
+            <button onClick={() => onClose(t.id)} className="p-1">
+              <X size={14} />
+            </button>
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function ConfirmDialog({ open, title, body, onConfirm, onCancel }) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
+          <motion.div initial={{ y: 12 }} animate={{ y: 0 }} exit={{ y: 12 }} className="relative max-w-md w-full bg-white dark:bg-gray-900 border rounded-2xl p-6 shadow-lg">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={20} className="text-yellow-600" />
+              <div>
+                <div className="font-medium text-lg">{title}</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">{body}</div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={onCancel} className="px-4 py-2 rounded-md border">Cancel</button>
+              <button onClick={onConfirm} className="px-4 py-2 rounded-md bg-red-600 text-white">Delete</button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+/* ----------------- Coupon Form ----------------- */
+function CouponForm({ editing, onCancel, onSave, pushToast }) {
+  const [code, setCode] = useState(editing?.code || "");
+  const [type, setType] = useState(editing?.type || "percentage");
+  const [amount, setAmount] = useState(editing?.amount ?? 0);
+  const [min, setMin] = useState(editing?.min_purchase ?? 0);
+  const [limit, setLimit] = useState(editing?.usage_limit ?? 0);
+  const [startsAt, setStartsAt] = useState(editing?.starts_at || new Date().toISOString().slice(0, 10));
+  const [endsAt, setEndsAt] = useState(editing?.ends_at || "");
+  const [active, setActive] = useState(editing?.active ?? true);
+  const [appliesTo, setAppliesTo] = useState(editing?.applies_to || "all");
+  const [desc, setDesc] = useState(editing?.metadata?.description || "");
+  const [prefix, setPrefix] = useState("");
+  const [length, setLength] = useState(6);
+  const [pattern, setPattern] = useState("alnum");
+
+  function handleGenerate() {
+    const g = generateCode({ prefix: prefix.trim(), length: Number(length) || 6, pattern });
+    setCode(g);
+    pushToast("Generated", `Code ${g} generated`);
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!code) return pushToast("Error", "Please enter a code");
+    if (type === "percentage" && (amount <= 0 || amount > 100)) return pushToast("Error", "Percentage must be 1-100");
+    const payload = {
+      id: editing?.id,
+      code: code.trim().toUpperCase(),
+      type,
+      amount: Number(amount),
+      min_purchase: Number(min),
+      usage_limit: Number(limit),
+      starts_at: startsAt || null,
+      ends_at: endsAt || null,
+      active,
+      applies_to: appliesTo,
+      metadata: { description: desc },
+    };
+    onSave(payload);
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">{editing ? "Edit coupon" : "Create coupon"}</h3>
+          <div className="text-sm text-gray-500 dark:text-gray-400">Define coupon details</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => navigator.clipboard.writeText(code || "")} className="px-3 py-1 border rounded-md">Copy</button>
+          <button type="button" onClick={() => { setCode(""); setPrefix(""); setLength(6); setPattern("alnum"); }} className="px-3 py-1 border rounded-md">Reset</button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label className="text-sm">Code</label>
+          <input value={code} onChange={(e) => setCode(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 transition-shadow shadow-sm border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 focus:ring-gray-300 dark:focus:ring-gray-700" />
+        </div>
+        <div>
+          <label className="text-sm">Type</label>
+          <select value={type} onChange={(e) => setType(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-sm">
+            <option value="percentage">Percentage</option>
+            <option value="fixed">Fixed amount</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="text-sm">Amount</label>
+          <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-sm" />
+        </div>
+
+        <div>
+          <label className="text-sm">Minimum purchase</label>
+          <input type="number" value={min} onChange={(e) => setMin(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-sm" />
+        </div>
+
+        <div>
+          <label className="text-sm">Usage limit</label>
+          <input type="number" value={limit} onChange={(e) => setLimit(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-sm" />
+        </div>
+
+        <div>
+          <label className="text-sm">Applies to</label>
+          <select value={appliesTo} onChange={(e) => setAppliesTo(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-sm">
+            <option value="all">All products</option>
+            <option value="shipping">Shipping</option>
+            <option value="category">Category</option>
+            <option value="product">Specific products</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="text-sm">Starts</label>
+          <input type="date" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-sm" />
+        </div>
+
+        <div>
+          <label className="text-sm">Ends</label>
+          <input type="date" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-sm" />
+        </div>
+
+        <div className="col-span-1 md:col-span-2">
+          <label className="text-sm">Description</label>
+          <input value={desc} onChange={(e) => setDesc(e.target.value)} className="w-full px-3 py-2 rounded-lg border text-sm" />
+        </div>
+
+        <div className="col-span-1 md:col-span-2 p-3 rounded-lg border bg-white dark:bg-gray-900">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm font-medium">Generator</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Quickly create a randomized code</div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+            <input placeholder="prefix (eg: SALE)" value={prefix} onChange={(e) => setPrefix(e.target.value)} className="px-3 py-2 rounded-lg border text-sm" />
+            <input type="number" value={length} onChange={(e) => setLength(e.target.value)} className="px-3 py-2 rounded-lg border text-sm" />
+            <select value={pattern} onChange={(e) => setPattern(e.target.value)} className="px-3 py-2 rounded-lg border text-sm">
+              <option value="alnum">AlphaNumeric</option>
+              <option value="alpha">Alphabetic</option>
+              <option value="num">Numeric</option>
+            </select>
+            <button type="button" onClick={handleGenerate} className="px-3 py-2 rounded-lg border">Generate</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-end gap-2">
+        <button type="button" onClick={onCancel} className="px-4 py-2 rounded-md border">Cancel</button>
+        <button type="submit" className="px-4 py-2 rounded-md bg-black text-white">Save</button>
+      </div>
+    </form>
+  );
+}
+
+/* ----------------- Main Component ----------------- */
+export default function CouponManagerAdvanced() {
+  // data
   const [coupons, setCoupons] = useState(() => loadFromStorage(STORAGE_KEY, null) || seedCoupons());
   const [audit, setAudit] = useState(() => loadFromStorage(AUDIT_KEY, []));
+
+  // UI state
   const [query, setQuery] = useState("");
-  const [filterActive, setFilterActive] = useState("all"); // all, active, inactive
-  const [filterType, setFilterType] = useState("all"); // all, percentage, fixed
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [filterActive, setFilterActive] = useState("all");
+  const [filterType, setFilterType] = useState("all");
   const [selected, setSelected] = useState(new Set());
   const [page, setPage] = useState(1);
   const perPage = 10;
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [confirm, setConfirm] = useState({ open: false, action: null });
+  const [toasts, setToasts] = useState([]);
+  const fileRef = useRef(null);
+  const [sortBy, setSortBy] = useState({ key: "created_at", dir: "desc" });
 
-  // Buttons only used here (kept inside component)
-  const btnPrimary =
-    "inline-flex items-center gap-2 bg-black text-white px-4 py-2 rounded-lg shadow-md hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300 dark:focus:ring-gray-700";
+  useEffect(() => saveToStorage(STORAGE_KEY, coupons), [coupons]);
+  useEffect(() => saveToStorage(AUDIT_KEY, audit), [audit]);
 
-  const btnGhost =
-    "inline-flex items-center gap-2 bg-transparent px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200 dark:focus:ring-gray-700";
-
-  const actionBtn =
-    "p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200 dark:focus:ring-gray-700";
-
+  // debounce search
   useEffect(() => {
-    saveToStorage(STORAGE_KEY, coupons);
-  }, [coupons]);
+    const t = setTimeout(() => setDebouncedQuery(query.trim().toLowerCase()), 250);
+    return () => clearTimeout(t);
+  }, [query]);
 
-  useEffect(() => {
-    saveToStorage(AUDIT_KEY, audit);
-  }, [audit]);
+  function pushAudit(id, message) {
+    const item = { id: uid("a_"), coupon_id: id, message, at: nowISO() };
+    setAudit((prev) => [item, ...prev].slice(0, 200));
+  }
 
-  /* Derived */
+  function pushToast(title, message, ttl = 4000) {
+    const t = { id: uid("t_"), title, message };
+    setToasts((s) => [t, ...s]);
+    setTimeout(() => {
+      setToasts((s) => s.filter((x) => x.id !== t.id));
+    }, ttl);
+  }
+
+  /* Derived data */
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return coupons.filter((c) => {
-      if (filterActive === "active" && !c.active) return false;
-      if (filterActive === "inactive" && c.active) return false;
-      if (filterType !== "all" && c.type !== filterType) return false;
-      if (!q) return true;
-      return (
-        c.code.toLowerCase().includes(q) ||
-        (c.metadata && c.metadata.description && c.metadata.description.toLowerCase().includes(q))
-      );
-    });
-  }, [coupons, query, filterActive, filterType]);
+    return coupons
+      .filter((c) => {
+        if (filterActive === "active" && !c.active) return false;
+        if (filterActive === "inactive" && c.active) return false;
+        if (filterType !== "all" && c.type !== filterType) return false;
+        if (!debouncedQuery) return true;
+        return (
+          c.code.toLowerCase().includes(debouncedQuery) ||
+          (c.metadata && c.metadata.description && c.metadata.description.toLowerCase().includes(debouncedQuery))
+        );
+      })
+      .sort((a, b) => {
+        const key = sortBy.key;
+        const dir = sortBy.dir === "asc" ? 1 : -1;
+        if (!a[key] && !b[key]) return 0;
+        if (!a[key]) return 1 * dir;
+        if (!b[key]) return -1 * dir;
+        if (typeof a[key] === "string") return a[key].localeCompare(b[key]) * dir;
+        return (a[key] - b[key]) * dir;
+      });
+  }, [coupons, debouncedQuery, filterActive, filterType, sortBy]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
   const pageData = filtered.slice((page - 1) * perPage, page * perPage);
 
-  /* --------- CRUD actions (local) --------- */
+  /* CRUD */
   function openCreate() {
     setEditing(null);
     setShowModal(true);
   }
-
-  function openEdit(coupon) {
-    setEditing(coupon);
+  function openEdit(c) {
+    setEditing(c);
     setShowModal(true);
   }
 
@@ -184,10 +451,12 @@ export default function CouponManager() {
     if (payload.id) {
       setCoupons((prev) => prev.map((p) => (p.id === payload.id ? { ...p, ...payload, updated_at: nowISO() } : p)));
       pushAudit(payload.id, `Edited coupon ${payload.code}`);
+      pushToast("Saved", `Coupon ${payload.code} updated`);
     } else {
       const newC = { ...payload, id: uid(), created_at: nowISO(), updated_at: nowISO(), used: 0 };
       setCoupons((prev) => [newC, ...prev]);
       pushAudit(newC.id, `Created coupon ${newC.code}`);
+      pushToast("Created", `Coupon ${newC.code} created`);
     }
     setShowModal(false);
   }
@@ -200,30 +469,35 @@ export default function CouponManager() {
   function softDelete(id) {
     setCoupons((prev) => prev.filter((c) => c.id !== id));
     pushAudit(id, `Deleted coupon`);
+    pushToast("Deleted", `Coupon removed`);
     setSelected(new Set());
   }
 
   function bulkAction(action) {
     if (action === "delete") {
-      setCoupons((prev) => prev.filter((c) => !selected.has(c.id)));
-      pushAudit(null, `Bulk deleted ${selected.size} coupons`);
-      setSelected(new Set());
-    } else if (action === "enable") {
+      setConfirm({ open: true, action: "delete" });
+      return;
+    }
+    if (action === "enable") {
       setCoupons((prev) => prev.map((c) => (selected.has(c.id) ? { ...c, active: true, updated_at: nowISO() } : c)));
       pushAudit(null, `Bulk enabled ${selected.size} coupons`);
+      pushToast("Updated", `Enabled ${selected.size} coupons`);
     } else if (action === "disable") {
       setCoupons((prev) => prev.map((c) => (selected.has(c.id) ? { ...c, active: false, updated_at: nowISO() } : c)));
       pushAudit(null, `Bulk disabled ${selected.size} coupons`);
+      pushToast("Updated", `Disabled ${selected.size} coupons`);
     }
   }
 
-  /* ---------- Audit ---------- */
-  function pushAudit(id, message) {
-    const item = { id: uid("a_"), coupon_id: id, message, at: nowISO() };
-    setAudit((prev) => [item, ...prev.slice(0, 199)]);
+  function confirmDeleteSelected() {
+    setCoupons((prev) => prev.filter((c) => !selected.has(c.id)));
+    pushAudit(null, `Bulk deleted ${selected.size} coupons`);
+    pushToast("Deleted", `Removed ${selected.size} coupons`);
+    setSelected(new Set());
+    setConfirm({ open: false, action: null });
   }
 
-  /* ---------- CSV import/export ---------- */
+  /* CSV */
   function exportCSV(list = coupons) {
     const headers = [
       "id",
@@ -260,24 +534,23 @@ export default function CouponManager() {
     a.click();
     URL.revokeObjectURL(url);
     pushAudit(null, "Exported coupons CSV");
+    pushToast("Exported", "CSV exported to your downloads");
   }
 
-  function importCSV(file) {
+  function importCSVFile(file) {
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target.result;
-      const lines = text.split(/\r?\n/).filter(Boolean);
-      if (lines.length < 2) return;
-      const headers = lines[0].split(",").map((h) => h.trim());
-      const parsed = lines.slice(1).map((line) => {
-        const parts = line.split(",");
+      const rows = parseCSV(text);
+      if (rows.length < 2) return pushToast("Import", "CSV seemed empty or invalid");
+      const headers = rows[0].map((h) => h.trim());
+      const parsed = rows.slice(1).map((r) => {
         const obj = {};
         for (let i = 0; i < headers.length; i++) {
-          obj[headers[i]] = parts[i] || "";
+          obj[headers[i]] = r[i] || "";
         }
         return obj;
       });
-      // Basic mapping
       const mapped = parsed.map((p) => ({
         id: p.id || uid(),
         code: p.code || generateCode({ length: 6 }),
@@ -296,16 +569,28 @@ export default function CouponManager() {
       }));
       setCoupons((prev) => [...mapped, ...prev]);
       pushAudit(null, `Imported ${mapped.length} coupons from CSV`);
+      pushToast("Imported", `Added ${mapped.length} coupons`);
     };
     reader.readAsText(file);
   }
 
-  /* ---------- UI helpers ---------- */
+  /* Select helpers */
   function toggleSelect(id) {
     setSelected((prev) => {
       const n = new Set(prev);
       if (n.has(id)) n.delete(id);
       else n.add(id);
+      return n;
+    });
+  }
+
+  function selectPage(checked) {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      pageData.forEach((c) => {
+        if (checked) n.add(c.id);
+        else n.delete(c.id);
+      });
       return n;
     });
   }
@@ -316,7 +601,7 @@ export default function CouponManager() {
     setFilterType("all");
   }
 
-  /* ---------- Mock analytics ---------- */
+  /* Analytics */
   const analyticsData = useMemo(() => {
     const days = 14;
     const arr = [];
@@ -328,26 +613,25 @@ export default function CouponManager() {
     return arr;
   }, [coupons.length]);
 
-  /* ---------- Render ---------- */
+  /* Sort toggle */
+  function toggleSort(key) {
+    setSortBy((s) => ({ key, dir: s.key === key && s.dir === "asc" ? "desc" : "asc" }));
+  }
+
   return (
-    <div className="min-h-screen p-6 bg-white text-black dark:bg-black dark:text-white transition-colors">
-      <header className="flex items-center justify-between mb-6">
+    <div className="min-h-screen p-6 bg-gray-50 dark:bg-black text-gray-900 dark:text-gray-100">
+      <header className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-semibold">Coupon Management</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">Create, edit and analyze discount coupons</p>
         </div>
-
         <div className="flex items-center gap-3">
           <div className="flex gap-2">
-            <button onClick={openCreate} className={btnPrimary} aria-label="Create coupon">
+            <button onClick={openCreate} className="inline-flex items-center gap-2 bg-black text-white px-4 py-2 rounded-lg shadow hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300 dark:focus:ring-gray-700">
               <Plus size={16} /> Create coupon
             </button>
             <div className="relative inline-flex">
-              <button
-                onClick={() => exportCSV(filtered)}
-                className={btnGhost}
-                title="Export filtered coupons"
-              >
+              <button onClick={() => exportCSV(filtered)} className="inline-flex items-center gap-2 bg-white border px-3 py-2 rounded-lg text-sm hover:bg-gray-100 dark:bg-gray-900 dark:border-gray-800">
                 <Download size={16} /> Export
               </button>
             </div>
@@ -356,48 +640,32 @@ export default function CouponManager() {
       </header>
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: controls & analytics */}
         <div className="col-span-1 space-y-4">
-          <div className="p-4 rounded-2xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
+          <div className="p-4 rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900">
             <div className="flex items-center gap-3">
               <Search size={16} className="text-gray-500" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search by code or description"
-                className="bg-transparent outline-none flex-1 text-sm placeholder-gray-500 dark:placeholder-gray-400"
-              />
-              <button onClick={clearFilters} className="text-sm text-gray-500 dark:text-gray-400">
-                Clear
-              </button>
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by code or description" className="bg-transparent outline-none flex-1 text-sm placeholder-gray-500 dark:placeholder-gray-400" />
+              <button onClick={clearFilters} className="text-sm text-gray-500 dark:text-gray-400">Clear</button>
             </div>
             <div className="mt-3 flex gap-2 flex-wrap">
-              <select value={filterActive} onChange={(e) => setFilterActive(e.target.value)} className={selectCls}>
+              <select value={filterActive} onChange={(e) => setFilterActive(e.target.value)} className="px-3 py-2 rounded-lg border text-sm">
                 <option value="all">All status</option>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
-              <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className={selectCls}>
+              <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="px-3 py-2 rounded-lg border text-sm">
                 <option value="all">All types</option>
                 <option value="percentage">Percentage</option>
                 <option value="fixed">Fixed amount</option>
               </select>
-              <button
-                onClick={() => {
-                  const file = document.createElement("input");
-                  file.type = "file";
-                  file.accept = ".csv";
-                  file.onchange = (e) => importCSV(e.target.files[0]);
-                  file.click();
-                }}
-                className="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm bg-white dark:bg-gray-900"
-              >
-                Import CSV
-              </button>
+              <div>
+                <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={(e) => importCSVFile(e.target.files[0])} />
+                <button onClick={() => fileRef.current?.click()} className="px-3 py-2 rounded-lg border text-sm">Import CSV</button>
+              </div>
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
+          <div className="p-4 rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Activity size={18} />
@@ -420,7 +688,7 @@ export default function CouponManager() {
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
+          <div className="p-4 rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <BarChart2 size={18} />
@@ -439,24 +707,23 @@ export default function CouponManager() {
           </div>
         </div>
 
-        {/* Right: main table */}
         <div className="col-span-2">
-          <div className="p-4 rounded-2xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
+          <div className="p-4 rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
                 <div className="text-sm text-gray-500 dark:text-gray-400">Showing</div>
-                <div className="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700 text-sm">{filtered.length} results</div>
+                <div className="px-3 py-1 rounded-md border text-sm">{filtered.length} results</div>
               </div>
 
               <div className="flex items-center gap-2">
-                <select onChange={(e) => bulkAction(e.target.value)} className={selectCls}>
+                <select onChange={(e) => bulkAction(e.target.value)} className="px-3 py-2 rounded-lg border text-sm">
                   <option>Bulk actions</option>
                   <option value="enable">Enable</option>
                   <option value="disable">Disable</option>
                   <option value="delete">Delete</option>
                 </select>
-                <button onClick={() => exportCSV(Array.from(selected).length ? coupons.filter((c) => selected.has(c.id)) : coupons)} className={btnGhost}>
-                  <Download size={16} /> Export
+                <button onClick={() => exportCSV(Array.from(selected).length ? coupons.filter((c) => selected.has(c.id)) : coupons)} className="px-3 py-2 rounded-lg border text-sm inline-flex items-center gap-2">
+                  <Download size={14} /> Export
                 </button>
               </div>
             </div>
@@ -464,21 +731,13 @@ export default function CouponManager() {
             <div className="overflow-x-auto rounded-md">
               <table className="w-full table-auto border-collapse">
                 <thead>
-                  <tr className="text-left text-sm text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800">
-                    <th className="py-3 pl-1 w-6"><input type="checkbox" aria-label="Select page" checked={pageData.every((c) => selected.has(c.id)) && pageData.length > 0} onChange={(e) => {
-                      if (e.target.checked) {
-                        const next = new Set(selected);
-                        pageData.forEach((c) => next.add(c.id));
-                        setSelected(next);
-                      } else {
-                        const next = new Set(selected);
-                        pageData.forEach((c) => next.delete(c.id));
-                        setSelected(next);
-                      }
-                    }} /></th>
-                    <th className="py-3">Code</th>
-                    <th className="py-3">Type</th>
-                    <th className="py-3">Amount</th>
+                  <tr className="text-left text-sm text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800 sticky top-0 bg-white dark:bg-gray-900">
+                    <th className="py-3 pl-1 w-6">
+                      <input type="checkbox" aria-label="Select page" checked={pageData.length > 0 && pageData.every((c) => selected.has(c.id))} onChange={(e) => selectPage(e.target.checked)} />
+                    </th>
+                    <th className="py-3 cursor-pointer" onClick={() => toggleSort("code")}>Code</th>
+                    <th className="py-3 cursor-pointer" onClick={() => toggleSort("type")}>Type</th>
+                    <th className="py-3 cursor-pointer" onClick={() => toggleSort("amount")}>Amount</th>
                     <th className="py-3">Used</th>
                     <th className="py-3">Status</th>
                     <th className="py-3">Actions</th>
@@ -487,7 +746,9 @@ export default function CouponManager() {
                 <tbody>
                   {pageData.map((c) => (
                     <tr key={c.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                      <td className="py-3 pl-1"><input type="checkbox" aria-label={`Select ${c.code}`} checked={selected.has(c.id)} onChange={() => toggleSelect(c.id)} /></td>
+                      <td className="py-3 pl-1">
+                        <input type="checkbox" aria-label={`Select ${c.code}`} checked={selected.has(c.id)} onChange={() => toggleSelect(c.id)} />
+                      </td>
                       <td className="py-3">
                         <div className="font-medium">{c.code}</div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">{c.metadata?.description || "—"}</div>
@@ -503,22 +764,21 @@ export default function CouponManager() {
                       </td>
                       <td className="py-3">
                         <div className="flex items-center gap-2">
-                          <button onClick={() => { navigator.clipboard.writeText(c.code); pushAudit(c.id, `Copied code ${c.code}`); }} className={actionBtn} title="Copy code">
+                          <IconButton title="Copy code" onClick={() => { navigator.clipboard.writeText(c.code); pushAudit(c.id, `Copied code ${c.code}`); pushToast("Copied", `${c.code} copied to clipboard`); }}>
                             <Copy size={14} />
-                          </button>
+                          </IconButton>
 
-                          <button onClick={() => openEdit(c)} className={actionBtn} title="Edit coupon">
+                          <IconButton title="Edit coupon" onClick={() => openEdit(c)}>
                             <Edit3 size={14} />
-                          </button>
+                          </IconButton>
 
-                          {/* Active toggle presented as a clear button for UX */}
                           <button onClick={() => toggleActive(c.id)} className={`px-3 py-1 rounded-full text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 ${c.active ? "bg-emerald-700 text-white dark:bg-emerald-600" : "bg-gray-100 text-gray-700 dark:bg-gray-800"}`} title={c.active ? "Disable" : "Enable"}>
                             {c.active ? "Enabled" : "Enable"}
                           </button>
 
-                          <button onClick={() => softDelete(c.id)} className={`${actionBtn} text-red-600`} title="Delete coupon">
+                          <IconButton title="Delete coupon" onClick={() => setConfirm({ open: true, action: { type: "single", id: c.id } })} className="text-red-600">
                             <Trash2 size={14} />
-                          </button>
+                          </IconButton>
                         </div>
                       </td>
                     </tr>
@@ -532,18 +792,13 @@ export default function CouponManager() {
                 Page {page} of {totalPages}
               </div>
               <div className="flex items-center gap-2">
-                <button className="px-3 py-1 rounded-md border" onClick={() => setPage((p) => Math.max(1, p - 1))}>
-                  Prev
-                </button>
-                <button className="px-3 py-1 rounded-md border" onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
-                  Next
-                </button>
+                <button className="px-3 py-1 rounded-md border" onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
+                <button className="px-3 py-1 rounded-md border" onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Next</button>
               </div>
             </div>
           </div>
 
-          {/* Audit log */}
-          <div className="mt-4 p-4 rounded-2xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
+          <div className="mt-4 p-4 rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Activity size={16} />
@@ -571,16 +826,34 @@ export default function CouponManager() {
       <AnimatePresence>
         {showModal && (
           <Modal onClose={() => setShowModal(false)}>
-            <CouponForm editing={editing} onCancel={() => setShowModal(false)} onSave={saveCoupon} />
+            <CouponForm editing={editing} onCancel={() => setShowModal(false)} onSave={saveCoupon} pushToast={pushToast} />
           </Modal>
         )}
       </AnimatePresence>
+
+      {/* Confirm dialog */}
+      <ConfirmDialog
+        open={confirm.open}
+        title={confirm.action && confirm.action.type === "single" ? "Delete coupon?" : "Delete selected coupons?"}
+        body={confirm.action && confirm.action.type === "single" ? "This will permanently remove the coupon." : `This will permanently remove ${selected.size} coupons.`}
+        onCancel={() => setConfirm({ open: false, action: null })}
+        onConfirm={() => {
+          if (!confirm.action) return setConfirm({ open: false, action: null });
+          if (confirm.action.type === "single") {
+            softDelete(confirm.action.id);
+            setConfirm({ open: false, action: null });
+          } else if (confirm.action === "delete" || confirm.action.type === "bulk") {
+            confirmDeleteSelected();
+          }
+        }}
+      />
+
+      <Toasts list={toasts} onClose={(id) => setToasts((s) => s.filter((t) => t.id !== id))} />
     </div>
   );
 }
 
-/* ----------------- Modal & Form Components ----------------- */
-
+/* ----------------- Simple Modal used above ----------------- */
 function Modal({ children, onClose }) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center p-6">
@@ -591,136 +864,3 @@ function Modal({ children, onClose }) {
     </motion.div>
   );
 }
-
-function CouponForm({ editing, onCancel, onSave }) {
-  const [code, setCode] = useState(editing?.code || "");
-  const [type, setType] = useState(editing?.type || "percentage");
-  const [amount, setAmount] = useState(editing?.amount || 0);
-  const [min, setMin] = useState(editing?.min_purchase || 0);
-  const [limit, setLimit] = useState(editing?.usage_limit || 0);
-  const [startsAt, setStartsAt] = useState(editing?.starts_at || new Date().toISOString().slice(0, 10));
-  const [endsAt, setEndsAt] = useState(editing?.ends_at || "");
-  const [active, setActive] = useState(editing?.active ?? true);
-  const [appliesTo, setAppliesTo] = useState(editing?.applies_to || "all");
-  const [desc, setDesc] = useState(editing?.metadata?.description || "");
-  const [prefix, setPrefix] = useState("");
-  const [length, setLength] = useState(6);
-  const [pattern, setPattern] = useState("alnum");
-
-  function handleGenerate() {
-    const g = generateCode({ prefix: prefix.trim(), length: Number(length) || 6, pattern });
-    setCode(g);
-  }
-
-  function handleSubmit(e) {
-    e.preventDefault();
-    if (!code) return alert("Please enter a code");
-    const payload = {
-      id: editing?.id,
-      code: code.trim().toUpperCase(),
-      type,
-      amount: Number(amount),
-      min_purchase: Number(min),
-      usage_limit: Number(limit),
-      starts_at: startsAt || null,
-      ends_at: endsAt || null,
-      active,
-      applies_to: appliesTo,
-      metadata: { description: desc },
-    };
-    onSave(payload);
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold">{editing ? "Edit coupon" : "Create coupon"}</h3>
-          <div className="text-sm text-gray-500 dark:text-gray-400">Define coupon details</div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={() => { navigator.clipboard.writeText(code); }} className="px-3 py-1 border rounded-md">Copy</button>
-          <button type="button" onClick={() => { setCode(""); setPrefix(""); setLength(6); setPattern("alnum"); }} className="px-3 py-1 border rounded-md">Reset</button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div>
-          <label className="text-sm">Code</label>
-          <input value={code} onChange={(e) => setCode(e.target.value)} className={inputCls} />
-        </div>
-        <div>
-          <label className="text-sm">Type</label>
-          <select value={type} onChange={(e) => setType(e.target.value)} className={selectCls}>
-            <option value="percentage">Percentage</option>
-            <option value="fixed">Fixed amount</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="text-sm">Amount</label>
-          <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className={inputCls} />
-        </div>
-
-        <div>
-          <label className="text-sm">Minimum purchase</label>
-          <input type="number" value={min} onChange={(e) => setMin(e.target.value)} className={inputCls} />
-        </div>
-
-        <div>
-          <label className="text-sm">Usage limit</label>
-          <input type="number" value={limit} onChange={(e) => setLimit(e.target.value)} className={inputCls} />
-        </div>
-
-        <div>
-          <label className="text-sm">Applies to</label>
-          <select value={appliesTo} onChange={(e) => setAppliesTo(e.target.value)} className={selectCls}>
-            <option value="all">All products</option>
-            <option value="shipping">Shipping</option>
-            <option value="category">Category</option>
-            <option value="product">Specific products</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="text-sm">Starts</label>
-          <input type="date" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} className={inputCls} />
-        </div>
-
-        <div>
-          <label className="text-sm">Ends</label>
-          <input type="date" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} className={inputCls} />
-        </div>
-
-        <div className="col-span-1 md:col-span-2">
-          <label className="text-sm">Description</label>
-          <input value={desc} onChange={(e) => setDesc(e.target.value)} className={inputCls} />
-        </div>
-
-        <div className="col-span-1 md:col-span-2 p-3 rounded-lg border bg-white dark:bg-gray-900">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-sm font-medium">Generator</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">Quickly create a randomized code</div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-            <input placeholder="prefix (eg: SALE)" value={prefix} onChange={(e) => setPrefix(e.target.value)} className={inputCls} />
-            <input type="number" value={length} onChange={(e) => setLength(e.target.value)} className={inputCls} />
-            <select value={pattern} onChange={(e) => setPattern(e.target.value)} className={selectCls}>
-              <option value="alnum">AlphaNumeric</option>
-              <option value="alpha">Alphabetic</option>
-              <option value="num">Numeric</option>
-            </select>
-            <button type="button" onClick={handleGenerate} className="px-3 py-2 rounded-lg border">Generate</button>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-end gap-2">
-        <button type="button" onClick={onCancel} className="px-4 py-2 rounded-md border">Cancel</button>
-        <button type="submit" className="px-4 py-2 rounded-md bg-black text-white dark:bg-white dark:text-black">Save</button>
-      </div>
-    </form>
-  );
-}
-
-/* ----------------- End of file ----------------- */
