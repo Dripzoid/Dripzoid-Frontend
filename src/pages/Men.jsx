@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import ProductCard from "../components/ProductCard";
 import FilterSidebar from "../components/FiltersSidebar";
+import { FiFilter } from "react-icons/fi";
 
 const API_BASE = process.env.REACT_APP_API_BASE || "";
 
@@ -22,11 +23,11 @@ const Men = () => {
   const [loading, setLoading] = useState(false);
 
   const perPageOptions = ["12", "24", "36", "all"];
-  const [perPage, setPerPage] = useState("12");
+  const [perPage, setPerPage] = useState("all"); // ✅ default ALL
   const [page, setPage] = useState(1);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // --- Fetch categories (Men only)
+  /* ---------------- Fetch categories (Men) ---------------- */
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -50,12 +51,10 @@ const Men = () => {
         if (mounted) setCategoryData([]);
       }
     })();
-    return () => {
-      mounted = false;
-    };
+    return () => (mounted = false);
   }, []);
 
-  // --- Fetch available colors
+  /* ---------------- Fetch colors ---------------- */
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -70,12 +69,10 @@ const Men = () => {
         if (mounted) setColorsList(["#f5f5f5", "#e8e1da", "#dbeaf0"]);
       }
     })();
-    return () => {
-      mounted = false;
-    };
+    return () => (mounted = false);
   }, []);
 
-  // --- Fetch products
+  /* ---------------- Fetch products ---------------- */
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     try {
@@ -114,15 +111,14 @@ const Men = () => {
 
       const productsArray = Array.isArray(data) ? data : data?.data || [];
       const serverMeta = data?.meta || {};
+
       const total = Number(serverMeta.total ?? productsArray.length) || 0;
       const serverPage = Number(serverMeta.page ?? page) || 1;
-      const limitUsed =
-        perPage === "all" ? total : Number(serverMeta.limit ?? perPage ?? 12);
-      const serverPages =
-        perPage === "all" ? 1 : Number(serverMeta.pages ?? Math.ceil(total / (limitUsed || 1)));
+      const limitUsed = perPage === "all" ? total : Number(serverMeta.limit ?? 12);
+      const serverPages = perPage === "all" ? 1 : Number(serverMeta.pages ?? 1);
 
-      setMeta({ total, page: serverPage, pages: serverPages, limit: limitUsed });
       setProducts(productsArray);
+      setMeta({ total, page: serverPage, pages: serverPages, limit: limitUsed });
 
       if (page > serverPages && serverPages > 0) setPage(1);
     } catch (err) {
@@ -138,20 +134,20 @@ const Men = () => {
     fetchProducts();
   }, [fetchProducts]);
 
-  // --- Reset all filters
+  /* ---------------- Clear filters ---------------- */
   const clearFilters = () => {
     setSelectedSubcategories([]);
     setExpandedCategories([]);
     setPriceRange([MIN, MAX]);
     setSelectedColors([]);
     setSortOption("");
-    setPerPage("12");
+    setPerPage("all");
     setPage(1);
   };
 
   return (
     <div className="flex min-h-screen bg-white dark:bg-black text-black dark:text-white">
-      {/* Sidebar (desktop) */}
+      {/* Sidebar (desktop only) */}
       <div className="hidden lg:block">
         <FilterSidebar
           isStatic
@@ -174,49 +170,57 @@ const Men = () => {
         />
       </div>
 
-      {/* Main products */}
-      <main className="flex-1 p-4 sm:p-6">
-        <div className="flex items-center justify-between w-full mb-4">
-          <h1 className="text-xl font-bold">Men’s Shop</h1>
+      {/* Main content */}
+      <main className="flex-1 p-3 sm:p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-lg sm:text-xl font-bold">Men’s Shop</h1>
+
+          {/* Controls */}
           <div className="flex items-center gap-3">
-            <label htmlFor="perPage" className="text-sm">
-              Per page:
-            </label>
-            <select
-              id="perPage"
-              value={perPage}
-              onChange={(e) => {
-                setPerPage(e.target.value);
-                setPage(1);
-              }}
-              className="rounded-md pl-3 pr-8 py-1 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm"
-            >
-              {perPageOptions.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt === "all" ? "All" : opt}
-                </option>
-              ))}
-            </select>
+            {/* Per page selector – hidden on mobile */}
+            <div className="hidden sm:flex items-center gap-2">
+              <label htmlFor="perPage" className="text-sm">Per page</label>
+              <select
+                id="perPage"
+                value={perPage}
+                onChange={(e) => {
+                  setPerPage(e.target.value);
+                  setPage(1);
+                }}
+                className="rounded-md pl-3 pr-8 py-1 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm"
+              >
+                {perPageOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt === "all" ? "All" : opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filters button */}
             <button
               onClick={() => setSidebarOpen(true)}
-              className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700"
+              className="flex items-center gap-2 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700"
+              aria-label="Open filters"
             >
-              Apply Filters & Sorting
+              <FiFilter className="text-lg" />
+              <span className="hidden lg:inline text-sm">Filters</span>
             </button>
           </div>
         </div>
 
         {loading ? (
-          <p>Loading...</p>
+          <p className="text-sm">Loading...</p>
         ) : products.length === 0 ? (
-          <p>No products found</p>
+          <p className="text-sm">No products found</p>
         ) : (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
               {products.map((p) => (
-                <ProductCard key={p.id} product={p} />
+                <ProductCard key={p.id || p._id} product={p} />
               ))}
             </div>
+
             {perPage !== "all" && meta.pages > 1 && (
               <div className="mt-6 flex items-center justify-center gap-4">
                 <button
@@ -226,9 +230,7 @@ const Men = () => {
                 >
                   Prev
                 </button>
-                <span>
-                  Page {meta.page} of {meta.pages}
-                </span>
+                <span className="text-sm">Page {meta.page} of {meta.pages}</span>
                 <button
                   onClick={() => setPage((p) => Math.min(meta.pages, p + 1))}
                   disabled={meta.page >= meta.pages}
@@ -242,7 +244,7 @@ const Men = () => {
         )}
       </main>
 
-      {/* Sidebar (mobile) */}
+      {/* Mobile sidebar */}
       <FilterSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
