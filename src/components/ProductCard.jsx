@@ -1,15 +1,13 @@
-// src/components/ProductCard.jsx
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { FiHeart } from "react-icons/fi";
 import { AiOutlineTag, AiFillStar } from "react-icons/ai";
-import { useWishlist } from "../contexts/WishlistContext.jsx"; // ✅ context
+import { useWishlist } from "../contexts/WishlistContext.jsx"; // context
 
 const API_BASE = process.env.REACT_APP_API_BASE;
 const PLACEHOLDER = "https://via.placeholder.com/400";
 
-/** Helper to get auth headers (same shape as your context) */
 function getHeaders(isJson = true) {
   const headers = {};
   const token =
@@ -27,20 +25,12 @@ export default function ProductCard({ product }) {
   const [current, setCurrent] = useState(0);
   const [wlBusy, setWlBusy] = useState(false);
 
-  // Wishlist context (single source of truth)
-  const {
-    wishlist = [],
-    addToWishlist,
-    removeFromWishlist,
-    fetchWishlist,
-  } = useWishlist() || {};
+  const { wishlist = [], addToWishlist, removeFromWishlist, fetchWishlist } = useWishlist() || {};
 
-  // Normalize product id
   const pid = String(
     product?.id ?? product?._id ?? product?.product_id ?? product?.productId ?? ""
   );
 
-  // Check if wishlisted
   const isWishlisted = useMemo(() => {
     if (!pid) return false;
     return (wishlist || []).some(
@@ -51,7 +41,7 @@ export default function ProductCard({ product }) {
     );
   }, [wishlist, pid]);
 
-  // ---- Reviews from server (compute average & count) ----
+  // Reviews
   const [reviewsList, setReviewsList] = useState([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [reviewsError, setReviewsError] = useState(null);
@@ -73,17 +63,19 @@ export default function ProductCard({ product }) {
       setReviewsLoading(true);
       setReviewsError(null);
       try {
-        const res = await fetch(`${API_BASE}/api/reviews/product/${encodeURIComponent(pid)}`, {
-          method: "GET",
-          signal: ac.signal,
-          headers: getHeaders(false), // no auth usually needed; safe to pass no JSON header
-        });
+        const res = await fetch(
+          `${API_BASE}/api/reviews/product/${encodeURIComponent(pid)}`,
+          {
+            method: "GET",
+            signal: ac.signal,
+            headers: getHeaders(false),
+          }
+        );
         if (!res.ok) {
           const txt = await res.text().catch(() => "");
           throw new Error(`${res.status} ${txt || res.statusText}`);
         }
         const rows = await res.json();
-        // rows should be array of reviews per your reviews.js
         setReviewsList(Array.isArray(rows) ? rows : []);
       } catch (err) {
         if (err.name === "AbortError") return;
@@ -99,7 +91,7 @@ export default function ProductCard({ product }) {
     return () => ac.abort();
   }, [pid]);
 
-  // ---- Images & placeholder safe handling ----
+  // Images
   const images = useMemo(() => {
     const src = product?.images ?? product?.image ?? product?.thumbnail ?? "";
     if (Array.isArray(src)) return src.map(String).map((u) => u.trim()).filter(Boolean);
@@ -125,27 +117,27 @@ export default function ProductCard({ product }) {
     setImageErrored(false);
   }, [images, current]);
 
-  const handleImgError = () => {
+  const handleImgError = useCallback(() => {
     if (imageErrored) return;
     setImageErrored(true);
     setImageSrc(PLACEHOLDER);
-  };
+  }, [imageErrored]);
 
-  // ---- Pricing & stock helpers ----
-  const parsePrice = (value) => {
+  // Pricing
+  const parsePrice = useCallback((value) => {
     if (value == null) return 0;
     if (typeof value === "number") return value;
     const cleaned = String(value).replace(/[^0-9.]/g, "");
     const n = parseFloat(cleaned);
     return Number.isFinite(n) ? n : 0;
-  };
+  }, []);
 
   const stock =
     typeof product?.stock === "number"
       ? product.stock
       : typeof product?.stock === "string" && product.stock !== ""
-        ? Number(product.stock)
-        : null;
+      ? Number(product.stock)
+      : null;
 
   const price = parsePrice(product?.price);
   const originalPrice = parsePrice(product?.originalPrice ?? product?.oldPrice);
@@ -154,24 +146,21 @@ export default function ProductCard({ product }) {
     ? Math.round(((originalPrice - price) / originalPrice) * 100)
     : 0;
 
-  const getStockBadge = () => {
+  const getStockBadge = useCallback(() => {
     if (stock === null || stock === undefined) return null;
     if (stock <= 0) return { text: "Out of stock", tone: "bg-red-600 text-white" };
-    if (stock <= 10) return { text: `Only ${stock} left`, tone: "bg-amber-600 text-black" };
-    if (stock <= 20) return { text: "Only a few left", tone: "bg-amber-500 text-black" };
+    if (stock <= 5) return { text: `Only ${stock} left`, tone: "bg-amber-600 text-black" };
+    if (stock <= 20) return { text: "Low stock", tone: "bg-amber-500 text-black" };
     return { text: "In stock", tone: "bg-green-600 text-white" };
-  };
+  }, [stock]);
   const stockBadge = getStockBadge();
 
-  // ---- Navigation ----
-  const handleNavigate = () => {
+  const handleNavigate = useCallback(() => {
     if (!pid) return;
     navigate(`/product/${pid}`);
-  };
+  }, [navigate, pid]);
 
-  // ---- Wishlist toggle (via context only) ----
   const handleWishlistToggle = async (e) => {
-    // prevent card click navigation
     e.stopPropagation();
     if (!pid || wlBusy) return;
     setWlBusy(true);
@@ -196,9 +185,8 @@ export default function ProductCard({ product }) {
 
   if (!product) return null;
 
-  // Use average rating from DB: display filled stars up to rounded average
   const avg = avgRating || 0;
-  const avgRounded = Math.round(avg); // use rounded for star fill
+  const avgRounded = Math.round(avg);
   const reviewsNum = reviewsCount;
 
   return (
@@ -206,7 +194,7 @@ export default function ProductCard({ product }) {
       role="button"
       tabIndex={0}
       onClick={handleNavigate}
-      className="group relative bg-white dark:bg-neutral-900 border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+      className="group relative w-full sm:w-auto bg-white dark:bg-neutral-900 border border-gray-100 dark:border-gray-800 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-shadow duration-200 ease-in-out cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -215,14 +203,9 @@ export default function ProductCard({ product }) {
       }}
       aria-label={`Open details for ${product?.name || "product"}`}
     >
-      {/* Image carousel */}
-      <div className="relative w-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
-        {/* Responsive image sizing:
-            - mobile: h-[220px]
-            - sm: h-56 (224)
-            - md: aspect-square (keeps card grid consistent on large screens)
-         */}
-        <div className="w-full h-[220px] sm:h-56 md:aspect-square md:h-auto overflow-hidden">
+      {/* Image area - MOBILE-FIRST compact sizing */}
+      <div className="relative w-full bg-gray-50 dark:bg-gray-800 overflow-hidden">
+        <div className="w-full h-40 sm:h-56 md:aspect-square md:h-auto overflow-hidden">
           <AnimatePresence mode="wait">
             <motion.img
               key={`${current}-${imageSrc}`}
@@ -235,16 +218,17 @@ export default function ProductCard({ product }) {
               transition={{ duration: 0.28 }}
               loading="lazy"
               onError={handleImgError}
+              decoding="async"
             />
           </AnimatePresence>
         </div>
 
-        {/* Wishlist button (larger on mobile for touch) */}
+        {/* Wishlist button */}
         <button
           type="button"
           onClick={handleWishlistToggle}
           disabled={wlBusy}
-          className="absolute top-3 right-3 bg-white/90 dark:bg-black/80 rounded-full p-2 sm:p-2.5 shadow hover:scale-105 transition disabled:opacity-60"
+          className="absolute top-3 right-3 bg-white/95 dark:bg-black/80 rounded-full p-2 shadow-sm hover:scale-105 transform transition disabled:opacity-60"
           aria-pressed={isWishlisted}
           aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
           title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
@@ -253,9 +237,13 @@ export default function ProductCard({ product }) {
           <FiHeart size={18} className={isWishlisted ? "text-red-500" : "text-gray-500"} />
         </button>
 
-        {/* Dots (compact on mobile) */}
+        {/* Image dots compact */}
         {images.length > 1 && (
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2" onClick={(e) => e.stopPropagation()} aria-hidden>
+          <div
+            className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-2"
+            onClick={(e) => e.stopPropagation()}
+            aria-hidden
+          >
             {images.map((_, idx) => (
               <button
                 key={idx}
@@ -264,7 +252,7 @@ export default function ProductCard({ product }) {
                   e.stopPropagation();
                   setCurrent(idx);
                 }}
-                className={`w-2.5 h-2.5 rounded-full transition ${idx === current ? "bg-white scale-110" : "bg-white/60"}`}
+                className={`w-2.5 h-2.5 rounded-full transition-transform ${idx === current ? "scale-110 bg-white" : "bg-white/60"}`}
                 aria-label={`Show image ${idx + 1}`}
               />
             ))}
@@ -272,50 +260,46 @@ export default function ProductCard({ product }) {
         )}
       </div>
 
-      {/* Info */}
-      <div className="p-3 sm:p-4 flex flex-col gap-2">
-        <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white line-clamp-2">{product?.name}</h3>
-        <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{product?.category}</p>
+      {/* Info - compact on mobile */}
+      <div className="p-2.5 sm:p-4 flex flex-col gap-1">
+        <h3 className="text-xs sm:text-sm font-semibold text-gray-900 dark:text-white line-clamp-2">{product?.name}</h3>
+        <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400 truncate">{product?.category}</p>
 
         <div className="mt-1 flex items-center gap-2 flex-wrap">
-          <span className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">₹{price.toLocaleString()}</span>
+          <span className="text-sm sm:text-base font-bold text-gray-900 dark:text-white">₹{price.toLocaleString()}</span>
 
           {hasDiscount && (
             <>
-              <span className="text-xs sm:text-sm line-through text-gray-500 dark:text-gray-400">₹{originalPrice.toLocaleString()}</span>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-600 text-white">{discountPercent}% OFF</span>
+              <span className="text-[10px] sm:text-xs line-through text-gray-500 dark:text-gray-400">₹{originalPrice.toLocaleString()}</span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-600 text-white">{discountPercent}% OFF</span>
             </>
           )}
 
           <AiOutlineTag className="text-green-500 ml-auto sm:ml-0" aria-hidden />
         </div>
 
-        {/* Rating (from DB via reviews endpoint) */}
+        {/* Ratings */}
         {reviewsNum > 0 ? (
-          <div className="flex items-center text-yellow-500 mt-1 sm:mt-2 gap-2">
-            <div className="flex items-center gap-0.5">
+          <div className="flex items-center mt-1 sm:mt-2 gap-2" aria-label={`Rated ${avg.toFixed(1)} out of 5`}>
+            <div className="flex items-center gap-0.5 text-yellow-500">
               {Array.from({ length: 5 }).map((_, idx) => (
                 <AiFillStar
                   key={idx}
                   className={idx < avgRounded ? "opacity-100 text-yellow-500" : "opacity-30 text-yellow-400"}
-                  style={{ fontSize: idx < 3 ? 14 : 13 }}
+                  style={{ fontSize: idx < 3 ? 12 : 11 }}
                   aria-hidden
                 />
               ))}
             </div>
-            <span className="ml-2 text-xs sm:text-sm font-medium text-gray-800 dark:text-gray-200">
-              {avg.toFixed(1)}
-            </span>
-            <span className="ml-1 text-xs text-gray-600 dark:text-gray-400">
-              ({reviewsNum})
-            </span>
+            <span className="ml-2 text-[11px] sm:text-xs font-medium text-gray-800 dark:text-gray-200">{avg.toFixed(1)}</span>
+            <span className="ml-1 text-[11px] text-gray-600 dark:text-gray-400">({reviewsNum})</span>
           </div>
         ) : (
-          <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">No Ratings &amp; Reviews</div>
+          <div className="text-[11px] sm:text-xs text-gray-600 dark:text-gray-400 mt-1">No Ratings &amp; Reviews</div>
         )}
 
-        {/* Stock & seller row */}
-        <div className="mt-2 flex items-center justify-between text-xs sm:text-sm text-gray-500 dark:text-gray-400">
+        {/* Stock & seller */}
+        <div className="mt-2 flex items-center justify-between text-[11px] sm:text-sm text-gray-500 dark:text-gray-400">
           <span className="truncate">{product?.seller || "Seller"}</span>
           {stockBadge && (
             <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${stockBadge.tone}`}>{stockBadge.text}</div>
