@@ -1,7 +1,9 @@
 // src/components/FilterSidebar.jsx
-import React, { useEffect, useRef, useMemo } from "react";
+import React, { useEffect, useRef, useMemo, useState } from "react";
 import tinycolor from "tinycolor2";
 import { X } from "lucide-react";
+
+console.log("NEW FILTER SIDEBAR LOADED"); // debug line — remove when verified
 
 /* ---------- Color helpers ---------- */
 const normalizeColor = (raw) => {
@@ -12,7 +14,6 @@ const normalizeColor = (raw) => {
   let tc = tinycolor(s);
   if (tc.isValid()) return tc.toHexString().toLowerCase();
 
-  // try cleaned tokens
   const cleaned = s.replace(/[()]/g, "").replace(/\s+/g, " ").trim();
   tc = tinycolor(cleaned);
   if (tc.isValid()) return tc.toHexString().toLowerCase();
@@ -84,10 +85,10 @@ export default function FilterSidebar({
   clearFilters = () => {},
 }) {
   const closeBtnRef = useRef(null);
+  const [showAllColors, setShowAllColors] = useState(false);
 
   useEffect(() => {
     if (!isStatic && isOpen) {
-      // focus close button for accessibility
       setTimeout(() => closeBtnRef.current?.focus(), 60);
     }
   }, [isOpen, isStatic]);
@@ -162,12 +163,12 @@ export default function FilterSidebar({
       prev.includes(categoryName) ? prev.filter((c) => c !== categoryName) : [...prev, categoryName]
     );
 
-  /* ---------- Color display: show only 5-8 main colors ---------- */
-  // Keep original raw label but compute normalized hex for swatch and selection matching
+  /* ---------- Color display: show only 6-8 main colors ---------- */
   const mainColorObjects = useMemo(() => {
     if (!Array.isArray(colorsList)) return [];
     const seen = new Set();
     const out = [];
+    // Prefer to pick distinct visible colors (first pass)
     for (let i = 0; i < colorsList.length && out.length < 8; i++) {
       const raw = colorsList[i];
       const hex = normalizeColor(raw) || null;
@@ -177,8 +178,8 @@ export default function FilterSidebar({
         out.push({ raw, hex });
       }
     }
-    // If we have less than 6 colors and original list is long, try a fallback by scanning the rest to fill up to 6
-    if (out.length < 6 && Array.isArray(colorsList) && colorsList.length > 0) {
+    // ensure at least 6 if possible
+    if (out.length < 6) {
       for (let i = 0; i < colorsList.length && out.length < 6; i++) {
         const raw = colorsList[i];
         const hex = normalizeColor(raw) || null;
@@ -192,18 +193,13 @@ export default function FilterSidebar({
     return out;
   }, [colorsList]);
 
-  const isColorSelected = (rawColor) => {
-    // preserve behavior: selectedColors contains raw values (strings)
-    return Array.isArray(selectedColors) && selectedColors.includes(rawColor);
-  };
+  const isColorSelected = (rawColor) => Array.isArray(selectedColors) && selectedColors.includes(rawColor);
 
   const toggleColor = (rawColor) => {
-    setSelectedColors((prev = []) =>
-      prev.includes(rawColor) ? prev.filter((x) => x !== rawColor) : [...prev, rawColor]
-    );
+    setSelectedColors((prev = []) => (prev.includes(rawColor) ? prev.filter((x) => x !== rawColor) : [...prev, rawColor]));
   };
 
-  /* ---------- Price helpers for slider visual ---------- */
+  /* ---------- Price helpers ---------- */
   const leftPercent = useMemo(() => {
     const min = Number(MIN || 0);
     const max = Number(MAX || 10000);
@@ -230,7 +226,38 @@ export default function FilterSidebar({
 
   /* ---------- Inner panel UI ---------- */
   const Inner = (
-    <div className="p-6 w-full sm:w-80 lg:w-80 h-full overflow-y-auto">
+    <div className="p-5 w-full sm:w-80 lg:w-80 h-full overflow-y-auto">
+      {/* style for range thumbs (WebKit + Firefox) */}
+      <style>{`
+        /* WebKit */
+        input[type="range"].rs {
+          -webkit-appearance: none;
+          appearance: none;
+          height: 28px;
+          background: transparent;
+        }
+        input[type="range"].rs:focus { outline: none; }
+        input[type="range"].rs::-webkit-slider-runnable-track {
+          height: 4px;
+          background: transparent;
+        }
+        input[type="range"].rs::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          width: 18px;
+          height: 18px;
+          border-radius: 999px;
+          background: white;
+          box-shadow: 0 0 0 2px rgba(0,0,0,0.08);
+          margin-top: -7px;
+          cursor: pointer;
+        }
+        /* Firefox */
+        input[type="range"].rs::-moz-range-track { height: 4px; background: transparent; }
+        input[type="range"].rs::-moz-range-thumb {
+          width: 18px; height: 18px; border-radius: 999px; background: white; box-shadow: 0 0 0 2px rgba(0,0,0,0.08); border: none;
+        }
+      `}</style>
+
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold">Filters</h2>
@@ -239,7 +266,7 @@ export default function FilterSidebar({
             ref={closeBtnRef}
             onClick={onClose}
             aria-label="Close filters"
-            className="p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500"
+            className="p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500"
           >
             <X />
           </button>
@@ -258,9 +285,7 @@ export default function FilterSidebar({
                 aria-expanded={expandedCategories.includes(category.name)}
               >
                 <span className="font-medium">{category.name}</span>
-                <span className="text-sm font-bold select-none">
-                  {expandedCategories.includes(category.name) ? "−" : "+"}
-                </span>
+                <span className="text-sm font-bold select-none">{expandedCategories.includes(category.name) ? "−" : "+"}</span>
               </button>
 
               {expandedCategories.includes(category.name) && Array.isArray(category.subcategories) && (
@@ -313,41 +338,31 @@ export default function FilterSidebar({
             />
           </div>
 
-          {/* Two overlayed range inputs (mobile friendly thumbs) */}
-          <div className="absolute inset-0 flex items-center pointer-events-none">
+          {/* overlayed range inputs */}
+          <div className="absolute inset-0 flex items-center">
             <input
+              className="rs"
               type="range"
               min={MIN}
               max={MAX}
               step={100}
               value={priceRange?.[0] ?? MIN}
               onChange={(e) => handlePriceChange(0, e.target.value)}
-              className="pointer-events-auto appearance-none w-full h-2 bg-transparent"
               aria-label="Minimum price"
-              style={{
-                // style thumb via pseudo is not possible here; keep default but ensure visible
-                WebkitAppearance: "none",
-                background: "transparent",
-              }}
             />
             <input
+              className="rs"
               type="range"
               min={MIN}
               max={MAX}
               step={100}
               value={priceRange?.[1] ?? MAX}
               onChange={(e) => handlePriceChange(1, e.target.value)}
-              className="pointer-events-auto appearance-none w-full h-2 bg-transparent"
               aria-label="Maximum price"
-              style={{
-                WebkitAppearance: "none",
-                background: "transparent",
-              }}
             />
           </div>
         </div>
 
-        {/* Numeric inputs for fine control (compact) */}
         <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
           <label className="flex flex-col">
             <span className="text-xs text-gray-500 mb-1">Min</span>
@@ -374,22 +389,22 @@ export default function FilterSidebar({
         </div>
       </div>
 
-      {/* Colors: show a compact set of main colors only */}
+      {/* Colors */}
       <div className="mt-6">
         <h3 className="text-sm font-medium mb-3">Colors</h3>
-        <div className="grid grid-cols-8 gap-2 items-center">
+
+        <div className="grid grid-cols-6 sm:grid-cols-8 gap-2 items-center">
           {mainColorObjects.map(({ raw, hex }, i) => {
-            // hex may be null; fallback to transparent
             const parsed = hex || null;
             const selected = isColorSelected(raw);
-            const textColor = colorIsLight(parsed) ? "text-gray-900" : "text-white";
+            const textClass = colorIsLight(parsed) ? "text-gray-900" : "text-white";
             return (
               <button
                 key={`${String(raw)}-${i}`}
                 onClick={() => toggleColor(raw)}
                 aria-label={`color-${String(raw)}`}
                 title={String(raw)}
-                className={`w-8 h-8 rounded-full flex items-center justify-center transition transform focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 ${
+                className={`w-9 h-9 rounded-full flex items-center justify-center transition transform focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 ${
                   selected ? "scale-105" : "hover:scale-105"
                 }`}
                 style={{
@@ -398,7 +413,7 @@ export default function FilterSidebar({
                 }}
               >
                 {selected ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className={textColor}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className={textClass}>
                     <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 ) : null}
@@ -406,30 +421,39 @@ export default function FilterSidebar({
             );
           })}
 
-          {/* "More" button if there are more colors available */}
           {Array.isArray(colorsList) && colorsList.length > mainColorObjects.length && (
             <button
-              onClick={() => {
-                // show full list: toggle select all of top N as a simple fallback
-                // if user wants a full color modal we can implement separately
-                const remaining = colorsList.slice(mainColorObjects.length, mainColorObjects.length + 8);
-                const rawValues = remaining.map((r) => r);
-                // toggle these on
-                setSelectedColors((prev = []) => {
-                  const next = [...prev];
-                  rawValues.forEach((rv) => {
-                    if (!next.includes(rv)) next.push(rv);
-                  });
-                  return next;
-                });
-              }}
+              onClick={() => setShowAllColors((s) => !s)}
               className="col-span-2 ml-1 px-2 py-1 rounded-md text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-transparent"
+              aria-expanded={showAllColors}
             >
-              + More
+              {showAllColors ? "Hide" : `+ More (${colorsList.length - mainColorObjects.length})`}
             </button>
           )}
         </div>
-        {(!colorsList || colorsList.length === 0) && <div className="text-sm text-gray-500 mt-2">No colors</div>}
+
+        {/* Expanded full color list (collapsible) */}
+        {showAllColors && Array.isArray(colorsList) && (
+          <div className="mt-3 p-2 rounded-md border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 max-h-40 overflow-auto">
+            <div className="flex flex-wrap gap-2">
+              {colorsList.map((raw, i) => {
+                const hex = normalizeColor(raw) || null;
+                const sel = isColorSelected(raw);
+                return (
+                  <button
+                    key={`full-${i}-${String(raw)}`}
+                    onClick={() => toggleColor(raw)}
+                    title={String(raw)}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center transition ${sel ? "ring-2 ring-indigo-500" : "hover:scale-105"}`}
+                    style={{ background: hex || "linear-gradient(45deg,#e2e8f0,#cbd5e1)", border: swatchBorderStyle(hex, sel) }}
+                  >
+                    {sel ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className={colorIsLight(hex) ? "text-gray-900" : "text-white"}><path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg> : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Sort */}
@@ -447,32 +471,33 @@ export default function FilterSidebar({
         </select>
       </div>
 
-      {/* Actions */}
-      <div className="mt-6 flex gap-2 sticky bottom-0 bg-white dark:bg-black py-4">
-        <button
-          onClick={() => {
-            onApply?.();
-            if (!isStatic) onClose?.();
-          }}
-          className="flex-1 px-4 py-2 rounded-md bg-black text-white dark:bg-white dark:text-black font-medium shadow-sm hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500"
-        >
-          Apply filters
-        </button>
-        <button
-          onClick={() => {
-            clearFilters?.();
-            if (!isStatic) onClose?.();
-          }}
-          className="px-4 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-transparent"
-        >
-          Clear
-        </button>
+      {/* Actions (sticky) */}
+      <div className="mt-6 pt-4 sticky bottom-0 bg-white dark:bg-black -mx-5 px-5 py-4 border-t border-gray-100 dark:border-gray-800">
+        <div className="flex gap-3">
+          <button
+            onClick={() => {
+              onApply?.();
+              if (!isStatic) onClose?.();
+            }}
+            className="flex-1 px-4 py-2 rounded-md bg-black text-white dark:bg-white dark:text-black font-medium shadow-sm hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500"
+          >
+            Apply filters
+          </button>
+          <button
+            onClick={() => {
+              clearFilters?.();
+              if (!isStatic) onClose?.();
+            }}
+            className="px-4 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-transparent"
+          >
+            Clear
+          </button>
+        </div>
       </div>
     </div>
   );
 
   /* ---------- Render (static vs sliding) ---------- */
-  // Static sidebar used primarily on desktop (lg and up).
   if (isStatic) {
     return (
       <aside className="hidden lg:block w-80 border-r border-gray-200 dark:border-gray-700">
@@ -481,19 +506,15 @@ export default function FilterSidebar({
     );
   }
 
-  // Sliding panel (mobile-friendly). Full width on small screens, narrower on sm+.
   return (
     <>
-      {/* dim backdrop */}
       <div
         aria-hidden={!isOpen}
         className={`fixed inset-0 bg-black/40 transition-opacity z-40 ${isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
         onClick={onClose}
       />
       <aside
-        className={`fixed right-0 top-0 bottom-0 transform z-50 w-full sm:w-96 bg-white dark:bg-black shadow-lg transition-transform ${
-          isOpen ? "translate-x-0" : "translate-x-full"
-        }`}
+        className={`fixed right-0 top-0 bottom-0 transform z-50 w-full sm:w-96 bg-white dark:bg-black shadow-lg transition-transform ${isOpen ? "translate-x-0" : "translate-x-full"}`}
         role="dialog"
         aria-modal="true"
         id="filters-panel"
