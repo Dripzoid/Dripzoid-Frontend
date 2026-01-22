@@ -1,7 +1,6 @@
 // src/components/ProductDetailsPage.jsx
 import React, { useEffect, useMemo, useRef, useState, useContext } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Avatar } from "@mui/material";
 import {
   Heart,
   ShoppingCart,
@@ -14,10 +13,8 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 
-import ProductCard from "./ProductCard";
 import Reviews from "./Reviews";
 import ProductGallery from "./ProductGallery";
-import ColorDisplay from "./ColorDisplay";
 import SizeSelector from "./SizeSelector";
 import QuantityPicker from "./QuantityPicker";
 import PurchaseBar from "./PurchaseBar";
@@ -76,7 +73,7 @@ export default function ProductDetailsPage() {
   const productId = routeProductId || "";
   const navigate = useNavigate();
 
-  const { addToCart, buyNow: ctxBuyNow, cart = [], fetchCart } = useCart() || {};
+  const { addToCart, cart = [], fetchCart } = useCart() || {};
   const wishlistCtx = useWishlist() || {};
   const { user: ctxUser } = useContext(UserContext) || {};
 
@@ -87,7 +84,6 @@ export default function ProductDetailsPage() {
   const [quantity, setQuantity] = useState(1);
 
   const [isWishlisted, setIsWishlisted] = useState(false);
-  const [wlBusy, setWlBusy] = useState(false);
   const [wlBusyTop, setWlBusyTop] = useState(false);
 
   const [descExpanded, setDescExpanded] = useState(false);
@@ -99,11 +95,9 @@ export default function ProductDetailsPage() {
   const [toastMsg, setToastMsg] = useState(null);
   const toastTimerRef = useRef(null);
 
-  const touchStartXRef = useRef(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
-  // small responsive tracking
   const [isDesktop, setIsDesktop] = useState(typeof window !== "undefined" ? window.innerWidth >= 1024 : true);
   useEffect(() => {
     const onResize = () => setIsDesktop(window.innerWidth >= 1024);
@@ -154,7 +148,6 @@ export default function ProductDetailsPage() {
   const sizeStockMap = useMemo(() => {
     if (!product) return {};
     if (product.size_stock && typeof product.size_stock === "object" && !Array.isArray(product.size_stock)) {
-      // already object
       const out = {};
       Object.keys(product.size_stock).forEach((k) => (out[String(k)] = Number(product.size_stock[k] || 0)));
       return out;
@@ -183,7 +176,7 @@ export default function ProductDetailsPage() {
     return Array.isArray(product?.colors) && product.colors.length > 0;
   }, [product]);
 
-  // color->images mapping & gallery
+  // color->images mapping & gallery (same logic as before)
   const colorImageMap = useMemo(() => {
     const imgs = Array.isArray(product?.images) ? product.images.slice() : [];
     const colors = Array.isArray(product?.colors) ? product.colors.slice() : [];
@@ -197,7 +190,6 @@ export default function ProductDetailsPage() {
       return map;
     }
 
-    // naive distribution: if fewer images than colors, map first images to colors; otherwise chunk evenly
     const nImgs = imgs.length;
     const nColors = colors.length;
     if (nImgs <= nColors) {
@@ -249,6 +241,34 @@ export default function ProductDetailsPage() {
     });
   }, [galleryImages.length, selectedColor]);
 
+  // Ensure first color & first size selected by default when product loads
+  useEffect(() => {
+    if (!product) return;
+
+    // default color
+    if (requiresColor && (selectedColor === "" || selectedColor == null)) {
+      const firstColor = Array.isArray(product.colors) && product.colors.length ? product.colors[0] : "";
+      setSelectedColor(firstColor);
+    }
+
+    // default size
+    if (requiresSize && (selectedSize === "" || selectedSize == null)) {
+      let firstSize = "";
+      if (Array.isArray(product.sizes) && product.sizes.length) firstSize = product.sizes[0];
+      else {
+        const keys = Object.keys(sizeStockMap || {});
+        if (keys.length) firstSize = keys[0];
+      }
+      if (firstSize) {
+        setSelectedSize(firstSize);
+        // set quantity to 1 if available
+        const avail = Number((sizeStockMap && sizeStockMap[String(firstSize)]) || product.stock || 0);
+        setQuantity(avail > 0 ? 1 : 0);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product, requiresColor, requiresSize]);
+
   // selectedVariant (if product.variants exists)
   const selectedVariant = useMemo(() => {
     const variants = Array.isArray(product?.variants) ? product.variants : [];
@@ -279,11 +299,23 @@ export default function ProductDetailsPage() {
     return Number(s || 0);
   }, [selectedVariant, requiresSize, selectedSize, sizeStockMap, product]);
 
+  // keep quantity within availableStock when stock or selectedSize changes
+  useEffect(() => {
+    if (availableStock <= 0) {
+      setQuantity(0);
+      return;
+    }
+    setQuantity((q) => {
+      const curr = Number(q || 0);
+      if (curr <= 0) return 1;
+      return Math.min(curr, availableStock);
+    });
+  }, [availableStock]);
+
   const disablePurchase = useMemo(() => {
     return availableStock <= 0 || (requiresColor && !selectedColor) || (requiresSize && !selectedSize);
   }, [availableStock, requiresColor, requiresSize, selectedColor, selectedSize]);
 
-  // check if product is added to cart (simple heuristic)
   const addedToCart = useMemo(() => {
     try {
       const pid = product?.id ?? product?._id ?? product?.product_id;
@@ -293,7 +325,6 @@ export default function ProductDetailsPage() {
         const itemPid = p?.id ?? p?._id ?? p?.product_id;
         if (!itemPid) return false;
         if (String(itemPid) !== String(pid)) return false;
-        // check options if present
         const sameColor = !selectedColor || !it.selectedColor || colorEquals(it.selectedColor, selectedColor);
         const sameSize = !selectedSize || !it.selectedSize || sizeEquals(it.selectedSize, selectedSize);
         return sameColor && sameSize;
@@ -504,7 +535,6 @@ export default function ProductDetailsPage() {
     return <div className="p-8 text-center text-black dark:text-white">Loading product...</div>;
   }
 
-  // derived UI helpers
   const shortDescLimit = 160;
   const descriptionText = product.description || "";
 
@@ -622,52 +652,55 @@ export default function ProductDetailsPage() {
               )}
             </div>
 
+            {/* COLORS: render as text pills (no circular swatch) */}
             {requiresColor && (
               <div className="mb-4">
                 <div className="font-medium mb-2">Color</div>
-                <div className="flex gap-3 items-center">
+                <div className="flex gap-3 items-center flex-wrap">
                   {(product.colors || []).map((c, idx) => {
-                    const name = typeof c === "string" ? c : (c && (c.label || c.name)) || String(c || "");
-                    const hex = resolveColor(c);
-                    const isSelected = colorEquals(c, selectedColor);
+                    const label = typeof c === "string" ? c : (c && (c.label || c.name)) || String(c || "");
+                    const isSelectedFlag = colorEquals(c, selectedColor);
                     return (
                       <button
-                        key={`${String(name)}-${idx}`}
+                        key={`${String(label)}-${idx}`}
                         onClick={() => setSelectedColor(c)}
-                        aria-label={`color-${name} ${hex ? `(${hex})` : ""}`}
-                        aria-pressed={isSelected}
-                        className={`w-9 h-9 md:w-10 md:h-10 rounded-full focus:outline-none ${isSelected ? "shadow-inner ring-2 ring-offset-1 ring-black dark:ring-white" : "border border-gray-300 dark:border-gray-700"}`}
-                        style={{ backgroundColor: hex }}
-                        title={`${name} ${hex ? `(${hex})` : ""}`}
+                        aria-pressed={isSelectedFlag}
+                        className={`px-3 py-1.5 rounded-full text-sm font-semibold transition ${
+                          isSelectedFlag
+                            ? "bg-black text-white dark:bg-white dark:text-black border-black dark:border-white"
+                            : "bg-white dark:bg-transparent border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+                        }`}
                         type="button"
-                      />
+                      >
+                        {label}
+                      </button>
                     );
                   })}
-                  {selectedColor && (
-                    <ColorDisplay color={selectedColor} resolveColor={resolveColor} getNearestColorLabel={(c) => String(c)} />
-                  )}
                 </div>
               </div>
             )}
 
+            {/* SIZES */}
             {requiresSize && (
               <div className="mb-4">
                 <div className="font-medium mb-2">Size</div>
                 <div className="flex gap-3 flex-wrap">
-                  {(product.sizes || Object.keys(sizeStockMap) || []).map((s) => {
+                  {(Array.isArray(product.sizes) ? product.sizes : Object.keys(sizeStockMap) || []).map((s) => {
                     const label = typeof s === "string" ? s : (s && (s.size || s.name)) || String(s || "");
                     const active = sizeEquals(label, selectedSize);
+                    const avail = Number(sizeStockMap && sizeStockMap[String(label)] || 0);
                     return (
                       <button
                         key={String(label)}
                         onClick={() => {
                           setSelectedSize(label);
-                          const avail = Number(sizeStockMap && sizeStockMap[String(label)] || 0);
-                          setQuantity(avail > 0 ? 1 : 0);
+                          const a = avail || Number(product.stock || 0);
+                          setQuantity(a > 0 ? 1 : 0);
                         }}
                         className={`px-3 py-2 rounded-lg border text-sm ${active ? "bg-black text-white dark:bg-white dark:text-black" : "bg-gray-100 dark:bg-gray-800"}`}
                         aria-pressed={active}
                         type="button"
+                        disabled={avail === 0}
                       >
                         {String(label)}
                       </button>
@@ -677,6 +710,7 @@ export default function ProductDetailsPage() {
               </div>
             )}
 
+            {/* Quantity */}
             <div className="mb-6">
               <div className="font-medium mb-2">Quantity</div>
               <div className="flex items-center gap-3">
@@ -737,19 +771,19 @@ export default function ProductDetailsPage() {
           </div>
         </section>
 
-        {/* Reviews - single placement. Pass isDesktop to allow Reviews to avoid duplicate histogram on mobile */}
+        {/* Reviews */}
         <div className="w-full">
           <Reviews productId={productId} apiBase={API_BASE} currentUser={ctxUser} showToast={showToast} isDesktop={isDesktop} />
         </div>
 
-        {/* Questions & Answers placeholder kept minimal (you can re-add logic you had earlier) */}
+        {/* Q&A placeholder */}
         <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 md:p-6 border border-gray-200/60 dark:border-gray-700/60">
           <h3 className="text-lg font-semibold mb-4 text-black dark:text-white">Questions & Answers</h3>
           <p className="text-sm text-gray-500">Questions and answers for this product (existing Q&A components remain unchanged).</p>
         </section>
       </div>
 
-      {/* PurchaseBar handles mobile sticky purchase CTA */}
+      {/* PurchaseBar */}
       <PurchaseBar
         addedToCart={addedToCart}
         goToCart={goToCart}
