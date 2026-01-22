@@ -23,7 +23,8 @@ const Men = () => {
   const [loading, setLoading] = useState(false);
 
   const perPageOptions = ["12", "24", "36", "all"];
-  const [perPage, setPerPage] = useState("all"); // ✅ default ALL
+  // Default to "all" per your request. Pagination still supported when user selects a numeric value.
+  const [perPage, setPerPage] = useState("all");
   const [page, setPage] = useState(1);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -100,7 +101,11 @@ const Men = () => {
       else if (sortOption === "high-low") params.append("sort", "price_desc");
       else if (sortOption === "newest") params.append("sort", "newest");
 
-      if (perPage !== "all") {
+      // ALWAYS send a limit param.
+      // If perPage === "all" we send limit=all so backend uses its 'all' branch.
+      if (perPage === "all") {
+        params.append("limit", "all");
+      } else {
         params.append("limit", perPage);
         params.append("page", page);
       }
@@ -179,7 +184,9 @@ const Men = () => {
           <div className="flex items-center gap-3">
             {/* Per page selector – hidden on mobile */}
             <div className="hidden sm:flex items-center gap-2">
-              <label htmlFor="perPage" className="text-sm">Per page</label>
+              <label htmlFor="perPage" className="text-sm">
+                Per page
+              </label>
               <select
                 id="perPage"
                 value={perPage}
@@ -230,7 +237,9 @@ const Men = () => {
                 >
                   Prev
                 </button>
-                <span className="text-sm">Page {meta.page} of {meta.pages}</span>
+                <span className="text-sm">
+                  Page {meta.page} of {meta.pages}
+                </span>
                 <button
                   onClick={() => setPage((p) => Math.min(meta.pages, p + 1))}
                   disabled={meta.page >= meta.pages}
