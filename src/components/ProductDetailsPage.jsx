@@ -1,6 +1,7 @@
 // src/components/ProductDetailsPage.jsx
 import React, { useEffect, useMemo, useRef, useState, useContext } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { Avatar } from "@mui/material";
 import {
   Heart,
   ShoppingCart,
@@ -10,14 +11,17 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  ThumbsUp,
+  ThumbsDown,
+  MessageCircle,
+  Send,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
 import Reviews from "./Reviews";
+import ProductCard from "./ProductCard";
+import ColorDisplay from "./ColorDisplay";
 import ProductGallery from "./ProductGallery";
-import SizeSelector from "./SizeSelector";
-import QuantityPicker from "./QuantityPicker";
-import PurchaseBar from "./PurchaseBar";
 import Lightbox from "./Lightbox";
 
 import { useCart } from "../contexts/CartContext.jsx";
@@ -26,6 +30,7 @@ import { UserContext } from "../contexts/UserContext.js";
 
 const API_BASE = process.env.REACT_APP_API_BASE || "";
 
+/* ---------- helpers ---------- */
 function stringToHslColor(str = "", s = 65, l = 45) {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -41,7 +46,6 @@ function sanitizeColorNameForLookup(name = "") {
 }
 
 function resolveColor(input) {
-  // Accepts: hex string (#fff, #ffffff), rgb(...), named color, or an object { hex, name }
   if (!input && input !== 0) return "#ddd";
   if (typeof input === "object") {
     if (input.hex) return input.hex;
@@ -49,11 +53,8 @@ function resolveColor(input) {
     if (input.name) return stringToHslColor(String(input.name));
   }
   const s = String(input).trim();
-  // hex
   if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s)) return s;
-  // rgb()
   if (/^rgb\(/i.test(s)) return s;
-  // common color name -> use as-is; otherwise fallback to HSL generator
   return stringToHslColor(s);
 }
 
@@ -68,6 +69,22 @@ function sizeEquals(a, b) {
   return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
 }
 
+function formatRelativeIST(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
+
+/* ---------- Component ---------- */
 export default function ProductDetailsPage() {
   const { id: routeProductId } = useParams();
   const productId = routeProductId || "";
@@ -75,7 +92,7 @@ export default function ProductDetailsPage() {
 
   const { addToCart, cart = [], fetchCart } = useCart() || {};
   const wishlistCtx = useWishlist() || {};
-  const { user: ctxUser } = useContext(UserContext) || {};
+  const { user: currentUser } = useContext(UserContext) || {};
 
   const [product, setProduct] = useState(null);
   const [selectedImage, setSelectedImage] = useState(0);
@@ -92,7 +109,7 @@ export default function ProductDetailsPage() {
   const [isCheckingDelivery, setIsCheckingDelivery] = useState(false);
   const [deliveryMsg, setDeliveryMsg] = useState(null);
 
-  const [toastMsg, setToastMsg] = useState(null);
+  const [toast, setToast] = useState(null);
   const toastTimerRef = useRef(null);
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -105,51 +122,130 @@ export default function ProductDetailsPage() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  /* ----- Q&A & related state ----- */
+  const [questions, setQuestions] = useState([]);
+  const [questionText, setQuestionText] = useState("");
+  const [isAsking, setIsAsking] = useState(false);
+  const [answerInputs, setAnswerInputs] = useState({});
+  const [answerLoading, setAnswerLoading] = useState({});
+  const [userVotes, setUserVotes] = useState({}); // track local votes
+  const lastAnswerRef = useRef({});
+
+  const [relatedProducts, setRelatedProducts] = useState([]);
+
   function showToast(msg, ttl = 3500) {
-    setToastMsg(msg);
+    setToast(msg);
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    if (msg) toastTimerRef.current = setTimeout(() => setToastMsg(null), ttl);
+    if (msg) toastTimerRef.current = setTimeout(() => setToast(null), ttl);
   }
 
-  // Fetch product details
+  /* ---------- load product + qa + related ---------- */
   useEffect(() => {
-    let alive = true;
-    async function load() {
-      if (!productId) return;
+    if (!productId) return;
+    const ac = new AbortController();
+    let mounted = true;
+
+    async function enrichQAWithUserNames(qdata, signal) {
+      // this shallow enrich is optional; preserve structure from your uploaded file
+      setQuestions(qdata || []);
+      // in your real code you may fetch user map and attach avatars/names
+    }
+
+    async function loadAll() {
       try {
-        const res = await fetch(`${API_BASE}/api/products/${encodeURIComponent(productId)}`);
-        if (!res.ok) {
-          // fallback: try search endpoint
-          const r2 = await fetch(`${API_BASE}/api/products?slug=${encodeURIComponent(productId)}`);
-          if (!r2.ok) {
-            console.warn("Could not load product", productId);
-            return;
+        const [pRes, qRes] = await Promise.all([
+          fetch(`${API_BASE}/api/products/${productId}`, { signal: ac.signal }),
+          fetch(`${API_BASE}/api/qa/${productId}`, { signal: ac.signal }),
+        ]);
+
+        if (!pRes.ok) throw new Error(`Product fetch failed (${pRes.status})`);
+        const pjson = await pRes.json();
+
+        let qjson = [];
+        if (qRes.ok) {
+          try {
+            const qdata = await qRes.json();
+            if (Array.isArray(qdata)) qjson = qdata;
+            else if (Array.isArray(qdata.questions)) qjson = qdata.questions;
+            else if (Array.isArray(qdata.data)) qjson = qdata.data;
+            else qjson = [];
+          } catch {
+            qjson = [];
           }
-          const j2 = await r2.json();
-          if (!alive) return;
-          setProduct(Array.isArray(j2) ? j2[0] : j2);
-          return;
         }
-        const json = await res.json();
-        if (!alive) return;
-        // normalize if wrapper
-        setProduct(json?.data ?? json?.product ?? json);
+
+        if (!mounted) return;
+
+        setProduct(pjson || null);
+        setSelectedImage(0);
+
+        const firstColor = (pjson?.colors && pjson.colors.length && pjson.colors[0]) || "";
+        // choose first size from sizeStock keys if available else product.sizes
+        let firstSize = "";
+        try {
+          if (pjson?.sizeStock && typeof pjson.sizeStock === "object" && Object.keys(pjson.sizeStock).length) {
+            firstSize = Object.keys(pjson.sizeStock)[0];
+          } else if (Array.isArray(pjson?.sizeRows) && pjson.sizeRows.length) {
+            firstSize = pjson.sizeRows[0].size;
+          } else if (Array.isArray(pjson?.sizes) && pjson.sizes.length) {
+            firstSize = pjson.sizes[0];
+          } else if (pjson?.sizes && typeof pjson.sizes === "string") {
+            firstSize = pjson.sizes.split(",").map((s) => s.trim()).filter(Boolean)[0] || "";
+          }
+        } catch {}
+        setSelectedColor(firstColor || "");
+        setSelectedSize(firstSize || "");
+
+        await enrichQAWithUserNames(qjson, ac.signal);
+
+        // related products
+        try {
+          let list = [];
+          const rr = await fetch(`${API_BASE}/api/products/related/${productId}`, { signal: ac.signal });
+          if (rr.ok) list = await rr.json();
+
+          if ((!Array.isArray(list) || list.length === 0) && pjson?.category) {
+            const fallback = await fetch(
+              `${API_BASE}/api/products?category=${encodeURIComponent(pjson.category)}&limit=8`,
+              { signal: ac.signal }
+            );
+            if (fallback.ok) {
+              const fb = await fallback.json();
+              list = fb?.data || fb || [];
+            }
+          }
+          const filtered = Array.isArray(list)
+            ? list.filter((x) => String(x.id || x._id || x.productId) !== String(productId)).slice(0, 8)
+            : [];
+          if (mounted) setRelatedProducts(filtered);
+        } catch (err) {
+          console.warn("related fetch failed", err);
+        }
       } catch (err) {
-        console.warn("product fetch failed", err);
+        console.error("loadAll failed:", err);
       }
     }
-    load();
+
+    loadAll();
     return () => {
-      alive = false;
+      mounted = false;
+      ac.abort();
     };
   }, [productId]);
 
-  // derived: sizeStockMap (if product.size_stock JSON or similar exists)
+  /* ---------- derived helpers ---------- */
   const sizeStockMap = useMemo(() => {
     if (!product) return {};
-    if (product.size_stock && typeof product.size_stock === "object" && !Array.isArray(product.size_stock)) {
+    if (product.sizeStock && typeof product.sizeStock === "object" && !Array.isArray(product.sizeStock)) {
       const out = {};
-      Object.keys(product.size_stock).forEach((k) => (out[String(k)] = Number(product.size_stock[k] || 0)));
+      Object.keys(product.sizeStock).forEach((k) => (out[String(k)] = Number(product.sizeStock[k] || 0)));
+      return out;
+    }
+    if (Array.isArray(product.sizeRows) && product.sizeRows.length) {
+      const out = {};
+      product.sizeRows.forEach((r) => {
+        if (r && (r.size || r.size === 0)) out[String(r.size)] = Number(r.stock || 0);
+      });
       return out;
     }
     if (product.size_stock && typeof product.size_stock === "string") {
@@ -176,7 +272,6 @@ export default function ProductDetailsPage() {
     return Array.isArray(product?.colors) && product.colors.length > 0;
   }, [product]);
 
-  // color->images mapping & gallery (same logic as before)
   const colorImageMap = useMemo(() => {
     const imgs = Array.isArray(product?.images) ? product.images.slice() : [];
     const colors = Array.isArray(product?.colors) ? product.colors.slice() : [];
@@ -233,7 +328,6 @@ export default function ProductDetailsPage() {
     return imgs && imgs.length ? imgs : ["/placeholder.png"];
   }, [colorImageMap, requiresColor, selectedColor, product]);
 
-  // ensure selectedImage index is within bounds when gallery changes
   useEffect(() => {
     setSelectedImage((s) => {
       if (!galleryImages || galleryImages.length === 0) return 0;
@@ -241,50 +335,18 @@ export default function ProductDetailsPage() {
     });
   }, [galleryImages.length, selectedColor]);
 
-  // Ensure first color & first size selected by default when product loads
-  useEffect(() => {
-    if (!product) return;
-
-    // default color
-    if (requiresColor && (selectedColor === "" || selectedColor == null)) {
-      const firstColor = Array.isArray(product.colors) && product.colors.length ? product.colors[0] : "";
-      setSelectedColor(firstColor);
-    }
-
-    // default size
-    if (requiresSize && (selectedSize === "" || selectedSize == null)) {
-      let firstSize = "";
-      if (Array.isArray(product.sizes) && product.sizes.length) firstSize = product.sizes[0];
-      else {
-        const keys = Object.keys(sizeStockMap || {});
-        if (keys.length) firstSize = keys[0];
-      }
-      if (firstSize) {
-        setSelectedSize(firstSize);
-        // set quantity to 1 if available
-        const avail = Number((sizeStockMap && sizeStockMap[String(firstSize)]) || product.stock || 0);
-        setQuantity(avail > 0 ? 1 : 0);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [product, requiresColor, requiresSize]);
-
-  // selectedVariant (if product.variants exists)
+  const variants = Array.isArray(product?.variants) ? product.variants : [];
   const selectedVariant = useMemo(() => {
-    const variants = Array.isArray(product?.variants) ? product.variants : [];
     if (!variants.length) return null;
-    return (
-      variants.find((v) => {
-        const vColor = v.color ?? v.colour ?? v.variantColor ?? v.attributes?.color;
-        const vSize = v.size ?? v.variantSize ?? v.attributes?.size;
-        const okColor = requiresColor ? colorEquals(vColor, selectedColor) : true;
-        const okSize = requiresSize ? sizeEquals(vSize, selectedSize) : true;
-        return okColor && okSize;
-      }) || null
-    );
-  }, [product, selectedColor, selectedSize, requiresColor, requiresSize]);
+    return variants.find((v) => {
+      const vColor = v.color ?? v.colour ?? v.variantColor ?? v.attributes?.color;
+      const vSize = v.size ?? v.variantSize ?? v.attributes?.size;
+      const okColor = requiresColor ? colorEquals(vColor, selectedColor) : true;
+      const okSize = requiresSize ? sizeEquals(vSize, selectedSize) : true;
+      return okColor && okSize;
+    }) || null;
+  }, [variants, selectedColor, selectedSize, requiresColor, requiresSize]);
 
-  // availableStock derived with priority (variant -> per-size map -> product stock)
   const availableStock = useMemo(() => {
     if (selectedVariant && selectedVariant.stock != null) return Number(selectedVariant.stock || 0);
     if (requiresSize && selectedSize) {
@@ -299,7 +361,6 @@ export default function ProductDetailsPage() {
     return Number(s || 0);
   }, [selectedVariant, requiresSize, selectedSize, sizeStockMap, product]);
 
-  // keep quantity within availableStock when stock or selectedSize changes
   useEffect(() => {
     if (availableStock <= 0) {
       setQuantity(0);
@@ -334,21 +395,7 @@ export default function ProductDetailsPage() {
     }
   }, [cart, product, selectedColor, selectedSize]);
 
-  // format currency INR
-  const formatINR = (val) => {
-    try {
-      const n = Number(val || 0);
-      return new Intl.NumberFormat("en-IN", {
-        style: "currency",
-        currency: "INR",
-        maximumFractionDigits: 0,
-      }).format(n);
-    } catch {
-      return `₹${val}`;
-    }
-  };
-
-  // small helpers
+  /* ---------- product actions ---------- */
   function prevImage() {
     setSelectedImage((s) => (s - 1 + galleryImages.length) % galleryImages.length);
   }
@@ -373,7 +420,6 @@ export default function ProductDetailsPage() {
   };
   const closeLightbox = () => setLightboxOpen(false);
 
-  // wishlist toggle (basic)
   async function handleTopWishlistToggle() {
     if (!wishlistCtx || !wishlistCtx.toggle) {
       showToast("Wishlist not available");
@@ -462,27 +508,38 @@ export default function ProductDetailsPage() {
   }
 
   async function handleShare() {
-    const url = typeof window !== "undefined" ? window.location.href : "/";
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: product?.name || "Product", url });
-      } catch (err) {
-        showToast("Share cancelled");
-      }
-      return;
-    }
     try {
-      await navigator.clipboard.writeText(url);
-      showToast("Link copied to clipboard");
-    } catch {
-      showToast("Could not copy link");
+      const shareUrl = window.location.href;
+      const title = product?.name || "Check this product";
+      const text = (product?.description || "").slice(0, 140);
+      if (navigator.share) {
+        try {
+          await navigator.share({ title, text, url: shareUrl });
+          showToast("Shared");
+          return;
+        } catch {}
+      }
+      const encodedUrl = encodeURIComponent(shareUrl);
+      const encodedText = encodeURIComponent(`${title} — ${text}`);
+      const twitter = `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`;
+      window.open(twitter, "_blank", "noopener,noreferrer,width=600,height=400");
+      showToast("Opened share options");
+    } catch (err) {
+      console.error("share failed", err);
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        showToast("Link copied to clipboard");
+      } catch {
+        showToast("Could not share");
+      }
     }
   }
 
-  function formatZipInput(raw) {
-    const cleaned = String(raw || "").replace(/[^\d]/g, "").slice(0, 6);
-    setZipRaw(cleaned);
-    setZipDisplay(cleaned.replace(/(\d{3})(\d{0,3})/, (_, a, b) => (b ? `${a} ${b}` : a)));
+  function formatZipInput(val) {
+    const digits = String(val || "").replace(/\D/g, "").slice(0, 6);
+    setZipRaw(digits);
+    if (digits.length <= 3) setZipDisplay(digits);
+    else setZipDisplay(digits.slice(0, 3) + " " + digits.slice(3));
   }
 
   async function checkDelivery() {
@@ -535,21 +592,160 @@ export default function ProductDetailsPage() {
     return <div className="p-8 text-center text-black dark:text-white">Loading product...</div>;
   }
 
+  const formatINR = (val) => {
+    try {
+      const n = Number(val || 0);
+      return new Intl.NumberFormat("en-IN", {
+        style: "currency",
+        currency: "INR",
+        maximumFractionDigits: 0,
+      }).format(n);
+    } catch {
+      return `₹${val}`;
+    }
+  };
+
+  /* ---------- Q&A helpers: post question / answer / vote ---------- */
+  const postQuestion = async () => {
+    if (!questionText.trim()) return showToast("Type your question first");
+    setIsAsking(true);
+    try {
+      const payload = {
+        productId,
+        text: questionText.trim(),
+        userId: currentUser?.id || currentUser?._id || null,
+      };
+      const res = await fetch(`${API_BASE}/api/qa`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`Ask failed (${res.status})`);
+      const saved = await res.json();
+      const inserted = {
+        id: saved.id || saved._id || Date.now(),
+        productId: saved.productId || payload.productId,
+        text: saved.text || payload.text,
+        userId: saved.userId || payload.userId || null,
+        userName: saved.userName || currentUser?.name || saved.name || "You",
+        avatar: saved.avatar || currentUser?.avatar || null,
+        createdAt: saved.createdAt || new Date().toISOString(),
+        answers: (saved.answers || []).map((a) => ({
+          id: a.id || a._id,
+          text: a.text,
+          userId: a.userId || a.user_id,
+          userName: a.userName || a.name || null,
+          avatar: a.avatar || null,
+          createdAt: a.createdAt || new Date().toISOString(),
+          likes: Number(a.likes || 0),
+          dislikes: Number(a.dislikes || 0),
+        })),
+      };
+      setQuestions((prev) => [inserted, ...(Array.isArray(prev) ? prev : [])]);
+      setQuestionText("");
+      showToast("Question posted");
+    } catch (err) {
+      console.error(err);
+      showToast("Could not post question");
+    } finally {
+      setIsAsking(false);
+    }
+  };
+
+  const handlePostAnswer = async (questionId, text) => {
+    try {
+      setAnswerLoading((s) => ({ ...s, [questionId]: true }));
+      const res = await fetch(`${API_BASE}/api/qa/${encodeURIComponent(questionId)}/answers`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) throw new Error("Failed to post answer");
+      const saved = await res.json();
+      const answerObj = {
+        id: saved.id || saved._id || Date.now(),
+        text: saved.text || text,
+        userId: saved.userId || saved.user_id || currentUser?.id || currentUser?._id || null,
+        userName: saved.userName || saved.name || currentUser?.name || "You",
+        avatar: saved.avatar || saved.avatarUrl || currentUser?.avatar || null,
+        createdAt: saved.createdAt || new Date().toISOString(),
+        likes: Number(saved.likes || saved.like || 0),
+        dislikes: Number(saved.dislikes || saved.dislike || 0),
+      };
+
+      setQuestions((prev) =>
+        (Array.isArray(prev) ? prev : []).map((q) => {
+          if (String(q.id) === String(questionId) || String(q._id) === String(questionId)) {
+            return { ...q, answers: [...(q.answers || []), answerObj] };
+          }
+          return q;
+        })
+      );
+      showToast("Answer posted");
+      setAnswerInputs((s) => ({ ...s, [questionId]: "" }));
+    } catch (err) {
+      console.error("Post answer failed:", err);
+      showToast("Could not post answer");
+      throw err;
+    } finally {
+      setAnswerLoading((s) => ({ ...s, [questionId]: false }));
+    }
+  };
+
+  const handleVote = async (entityId, entityType, voteType) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/votes`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ entityId, entityType, vote: voteType }),
+      });
+      if (!res.ok) throw new Error("Failed to submit vote");
+      const data = await res.json();
+
+      setUserVotes((prev) => ({ ...prev, [String(entityId)]: voteType }));
+
+      if (data && (data.like !== undefined || data.likes !== undefined || data.dislike !== undefined || data.dislikes !== undefined)) {
+        const id = String(data.entityId ?? entityId);
+        const likes = Number(data.like ?? data.likes ?? 0);
+        const dislikes = Number(data.dislike ?? data.dislikes ?? 0);
+        setQuestions((prev) =>
+          (Array.isArray(prev) ? prev : []).map((q) => ({
+            ...q,
+            answers: (q.answers || []).map((a) => {
+              if (String(a.id) === id) return { ...a, likes, dislikes };
+              return a;
+            }),
+          }))
+        );
+      }
+
+      return data;
+    } catch (err) {
+      console.error("Vote failed:", err);
+      showToast("Could not submit vote");
+      throw err;
+    }
+  };
+
+  /* ---------- render ---------- */
   const shortDescLimit = 160;
   const descriptionText = product.description || "";
+  const isLongDescription = descriptionText.length > shortDescLimit;
 
   return (
-    <div className="bg-white dark:bg-black min-h-screen text-black dark:text-white pb-32">
-      <div className="max-w-screen-xl mx-auto p-4 md:p-6 space-y-8">
+    <div className="bg-white dark:bg-black min-h-screen text-black dark:text-white pb-24">
+      <div className="container mx-auto p-4 md:p-6 space-y-8">
+        {/* Gallery + details */}
         <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 md:p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 border border-gray-200/60 dark:border-gray-700/60">
-          {/* Left: gallery */}
           <div>
             <div className="relative">
-              <button
-                onClick={() => openLightbox(selectedImage)}
-                className="w-full block rounded-xl overflow-hidden"
-                aria-label="Open image"
-              >
+              <button onClick={() => openLightbox(selectedImage)} className="w-full block rounded-xl overflow-hidden" aria-label="Open image">
                 <img
                   src={galleryImages[selectedImage]}
                   alt={`${product.name} - image ${selectedImage + 1}`}
@@ -561,20 +757,10 @@ export default function ProductDetailsPage() {
                 {selectedImage + 1}/{galleryImages.length}
               </div>
 
-              <button
-                onClick={prevImage}
-                type="button"
-                className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-black/70 text-black dark:text-white p-2 rounded-full shadow z-30"
-                aria-label="Previous image"
-              >
+              <button onClick={prevImage} type="button" className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-black/70 text-black dark:text-white p-2 rounded-full shadow z-30" aria-label="Previous image">
                 <ChevronLeft />
               </button>
-              <button
-                onClick={nextImage}
-                type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-black/70 text-black dark:text-white p-2 rounded-full shadow z-30"
-                aria-label="Next image"
-              >
+              <button onClick={nextImage} type="button" className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/90 dark:bg-black/70 text-black dark:text-white p-2 rounded-full shadow z-30" aria-label="Next image">
                 <ChevronRight />
               </button>
             </div>
@@ -602,7 +788,6 @@ export default function ProductDetailsPage() {
             </div>
           </div>
 
-          {/* Right: meta */}
           <div>
             <div className="flex items-start justify-between">
               <div className="pr-4">
@@ -610,7 +795,7 @@ export default function ProductDetailsPage() {
 
                 <div className="mb-3">
                   <p className="text-gray-600 dark:text-gray-300 mb-2">
-                    {!descriptionText || descriptionText.length <= shortDescLimit ? (
+                    {!isLongDescription ? (
                       descriptionText
                     ) : descExpanded ? (
                       <>
@@ -652,7 +837,7 @@ export default function ProductDetailsPage() {
               )}
             </div>
 
-            {/* COLORS: render as text pills (no circular swatch) */}
+            {/* Colors as text pills (no circular swatch) */}
             {requiresColor && (
               <div className="mb-4">
                 <div className="font-medium mb-2">Color</div>
@@ -665,11 +850,7 @@ export default function ProductDetailsPage() {
                         key={`${String(label)}-${idx}`}
                         onClick={() => setSelectedColor(c)}
                         aria-pressed={isSelectedFlag}
-                        className={`px-3 py-1.5 rounded-full text-sm font-semibold transition ${
-                          isSelectedFlag
-                            ? "bg-black text-white dark:bg-white dark:text-black border-black dark:border-white"
-                            : "bg-white dark:bg-transparent border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
-                        }`}
+                        className={`px-3 py-1.5 rounded-full text-sm font-semibold transition ${isSelectedFlag ? "bg-black text-white dark:bg-white dark:text-black border-black dark:border-white" : "bg-white dark:bg-transparent border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"}`}
                         type="button"
                       >
                         {label}
@@ -680,7 +861,7 @@ export default function ProductDetailsPage() {
               </div>
             )}
 
-            {/* SIZES */}
+            {/* Sizes */}
             {requiresSize && (
               <div className="mb-4">
                 <div className="font-medium mb-2">Size</div>
@@ -744,6 +925,7 @@ export default function ProductDetailsPage() {
               </div>
             </div>
 
+            {/* Inline action buttons (non-floating) */}
             <div className="flex gap-3 items-center flex-col md:flex-row">
               <motion.button onClick={addedToCart ? goToCart : addToCartHandler} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} disabled={disablePurchase && !addedToCart} className={`w-full md:flex-1 py-3 rounded-full flex items-center justify-center gap-2 transition ${disablePurchase && !addedToCart ? "opacity-50 cursor-not-allowed bg-gray-100 text-black" : "bg-black text-white"}`} aria-label={addedToCart ? "Go to cart" : "Add to cart"} type="button">
                 <ShoppingCart /> <span className="label">{addedToCart ? "Go to Cart" : "Add to Cart"}</span>
@@ -773,27 +955,156 @@ export default function ProductDetailsPage() {
 
         {/* Reviews */}
         <div className="w-full">
-          <Reviews productId={productId} apiBase={API_BASE} currentUser={ctxUser} showToast={showToast} isDesktop={isDesktop} />
+          <Reviews productId={productId} apiBase={API_BASE} currentUser={currentUser} showToast={showToast} isDesktop={isDesktop} />
         </div>
 
-        {/* Q&A placeholder */}
+        {/* Questions & Answers */}
         <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 md:p-6 border border-gray-200/60 dark:border-gray-700/60">
           <h3 className="text-lg font-semibold mb-4 text-black dark:text-white">Questions & Answers</h3>
-          <p className="text-sm text-gray-500">Questions and answers for this product (existing Q&A components remain unchanged).</p>
+
+          <div className="mb-4">
+            <div className="flex gap-3">
+              <input value={questionText} onChange={(e) => setQuestionText(e.target.value)} placeholder="Ask a question." className="flex-1 p-3 border rounded-lg bg-white dark:bg-gray-900 text-black dark:text-white" aria-label="Ask a question" />
+              <button onClick={postQuestion} disabled={isAsking || !questionText.trim()} className={`px-4 py-2 rounded-lg ${isAsking || !questionText.trim() ? "opacity-60 cursor-not-allowed bg-gray-200 dark:bg-gray-800" : "bg-black text-white"}`} type="button">
+                <MessageCircle size={16} /> {isAsking ? "Posting..." : "Ask"}
+              </button>
+            </div>
+          </div>
+
+          {Array.isArray(questions) && questions.length > 0 ? (
+            <ul className="space-y-6">
+              {questions.map((q) => {
+                const qid = q.id || q._id;
+                const displayName = q.userName || q.name || "Anonymous";
+                const avatarUrl = q.avatar || null;
+                const initials =
+                  (displayName || "A")
+                    .split(" ")
+                    .map((p) => p?.[0])
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .join("")
+                    .toUpperCase() || "A";
+
+                return (
+                  <li key={qid} className="space-y-3">
+                    <div className="flex items-start gap-3">
+                      {avatarUrl ? (
+                        <Avatar alt={displayName} src={avatarUrl} sx={{ width: 40, height: 40 }} />
+                      ) : (
+                        <Avatar sx={{ width: 40, height: 40, bgcolor: stringToHslColor(displayName || initials), color: "#fff", fontWeight: 600 }}>
+                          {initials}
+                        </Avatar>
+                      )}
+
+                      <div className="flex-1">
+                        <div>
+                          <p className="font-medium text-black dark:text-white">{displayName}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{q.createdAt ? formatRelativeIST(q.createdAt) : ""}</p>
+                        </div>
+
+                        <div className="mt-2 bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
+                          <p className="text-sm text-gray-900 dark:text-gray-100">{q.text}</p>
+                        </div>
+
+                        {(q.answers || []).length > 0 && (
+                          <div className="ml-12 mt-3 space-y-3">
+                            {q.answers.map((a, idx) => {
+                              const aId = a.id || a._id || idx;
+                              const aName = a.userName || a.name || "Anonymous";
+                              const aAvatar = a.avatar || null;
+                              const initialsA = (aName || "A").split(" ").map((p) => p?.[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "A";
+                              return (
+                                <div key={aId} className="flex items-start gap-3">
+                                  {aAvatar ? (
+                                    <Avatar alt={aName} src={aAvatar} sx={{ width: 36, height: 36 }} />
+                                  ) : (
+                                    <Avatar sx={{ width: 36, height: 36, bgcolor: stringToHslColor(aName || initialsA), color: "#fff", fontWeight: 600, fontSize: 12 }}>
+                                      {initialsA}
+                                    </Avatar>
+                                  )}
+
+                                  <div className="flex-1">
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <p className="text-sm font-medium text-black dark:text-white">{aName}</p>
+                                        <p className="text-xs text-gray-500 mt-0.5">{a.createdAt ? formatRelativeIST(a.createdAt) : ""}{a.optimistic ? " (sending...)" : ""}</p>
+                                      </div>
+                                      <div className="flex items-center gap-2 text-xs text-gray-600">
+                                        <button onClick={() => handleVote(aId, "answer", "like")} className={`flex items-center gap-1 px-2 py-1 rounded ${userVotes[aId] === "like" ? "bg-black/10 dark:bg-white/10" : "hover:bg-gray-100 dark:hover:bg-gray-800"}`} type="button" aria-label="Like answer">
+                                          <ThumbsUp size={14} /> <span>{a.likes || 0}</span>
+                                        </button>
+                                        <button onClick={() => handleVote(aId, "answer", "dislike")} className={`flex items-center gap-1 px-2 py-1 rounded ${userVotes[aId] === "dislike" ? "bg-black/10 dark:bg-white/10" : "hover:bg-gray-100 dark:hover:bg-gray-800"}`} type="button" aria-label="Dislike answer">
+                                          <ThumbsDown size={14} /> <span>{a.dislikes || 0}</span>
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div className="mt-1 bg-gray-50 dark:bg-gray-800/70 rounded-lg p-3">
+                                      <p className="text-sm text-gray-900 dark:text-gray-100">{a.text}</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        <div className="ml-12 mt-2 flex gap-2 items-start">
+                          <input value={answerInputs[qid] || ""} onChange={(e) => setAnswerInputs((prev) => ({ ...prev, [qid]: e.target.value }))} placeholder="Write an answer." className="flex-1 p-2 border rounded-lg bg-white dark:bg-gray-900 text-sm text-black dark:text-white" aria-label={`Answer to question ${qid}`} />
+                          <button onClick={async () => {
+                            const text = (answerInputs[qid] || "").trim();
+                            if (!text) return showToast("Type an answer first");
+                            try {
+                              await handlePostAnswer(qid, text);
+                            } catch {
+                              /* errors handled inside */
+                            }
+                          }} disabled={Boolean(answerLoading[qid]) || !(answerInputs[qid] && answerInputs[qid].trim())} className={`px-3 py-2 rounded-full border ${answerLoading[qid] ? "opacity-60 cursor-not-allowed" : "bg-black text-white"}`} type="button">
+                            {answerLoading[qid] ? <Send size={14} /> : <Send size={14} />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-gray-600 dark:text-gray-300">No questions yet.</p>
+          )}
+        </section>
+
+        {/* Related products (You might be interested in) */}
+        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 md:p-6 border border-gray-200/60 dark:border-gray-700/60">
+          <h2 className="text-xl font-bold mb-4 text-black dark:text-white">You might be interested in</h2>
+
+          <div className="md:hidden">
+            <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory -mx-4 px-4">
+              {(relatedProducts && relatedProducts.length ? relatedProducts : [1, 2, 3, 4]).map((p, i) => (
+                <div key={p?.id || p?._id || i} className="flex-shrink-0 min-w-[60%] sm:min-w-[45%] md:min-w-0 snap-start">
+                  <ProductCard product={
+                    typeof p === "object"
+                      ? { id: p.id || p._id, name: p.name || p.title || `Product ${i + 1}`, price: p.price || 2499, images: p.images || (p.image ? [p.image] : []) }
+                      : { id: i + 1, name: `Product ${p}`, price: 2499, images: [galleryImages[0]] }
+                  } />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="hidden md:grid md:grid-cols-4 gap-4">
+            {(relatedProducts && relatedProducts.length ? relatedProducts : [1, 2, 3, 4]).map((p, i) => (
+              <ProductCard key={p?.id || p?._id || i} product={
+                typeof p === "object"
+                  ? { id: p.id || p._id, name: p.name || p.title || `Product ${i + 1}`, price: p.price || 2499, images: p.images || (p.image ? [p.image] : []) }
+                  : { id: i + 1, name: `Product ${p}`, price: 2499, images: [galleryImages[0]] }
+              } />
+            ))}
+          </div>
         </section>
       </div>
 
-      {/* PurchaseBar */}
-      <PurchaseBar
-        addedToCart={addedToCart}
-        goToCart={goToCart}
-        addToCartHandler={addToCartHandler}
-        buyNowHandler={buyNowHandler}
-        disablePurchase={disablePurchase}
-        handleShare={handleShare}
-      />
-
-      {/* lightbox */}
+      {/* Lightbox */}
       {lightboxOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/80" onClick={closeLightbox} />
@@ -810,10 +1121,10 @@ export default function ProductDetailsPage() {
         </div>
       )}
 
-      {/* mobile toast */}
-      {toastMsg && (
+      {/* toast */}
+      {toast && (
         <div className="fixed left-1/2 -translate-x-1/2 bottom-6 z-50">
-          <div className="px-4 py-2 bg-black text-white rounded-full shadow">{toastMsg}</div>
+          <div className="px-4 py-2 bg-black text-white rounded-full shadow">{toast}</div>
         </div>
       )}
     </div>
