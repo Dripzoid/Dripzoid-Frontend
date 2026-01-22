@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import ProductCard from "../components/ProductCard";
 import FilterSidebar from "../components/FiltersSidebar"; // ✅ reuse sidebar
+import { FiFilter } from "react-icons/fi";
 
 const API_BASE = process.env.REACT_APP_API_BASE || "";
 
@@ -22,7 +23,8 @@ export default function Women() {
   const [loading, setLoading] = useState(false);
 
   const perPageOptions = ["12", "24", "36", "all"];
-  const [perPage, setPerPage] = useState("12");
+  // Default to "all" now
+  const [perPage, setPerPage] = useState("all");
   const [page, setPage] = useState(1);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -92,8 +94,10 @@ export default function Women() {
       else if (sortOption === "high-low") params.append("sort", "price_desc");
       else if (sortOption === "newest") params.append("sort", "newest");
 
-      if (perPage === "all") params.append("limit", "all");
-      else {
+      // ALWAYS send a `limit` param:
+      if (perPage === "all") {
+        params.append("limit", "all");
+      } else {
         params.append("limit", String(perPage));
         params.append("page", String(page));
       }
@@ -134,7 +138,7 @@ export default function Women() {
     setPriceRange([MIN, MAX]);
     setSelectedColors([]);
     setSortOption("");
-    setPerPage("12");
+    setPerPage("all"); // reset to 'all'
     setPage(1);
   };
 
@@ -171,21 +175,28 @@ export default function Women() {
         <div className="flex items-center justify-between w-full mb-4">
           <h1 className="text-xl font-bold">Women’s Shop</h1>
           <div className="flex items-center gap-3">
-            <label htmlFor="perPage" className="text-sm">Per page:</label>
-            <select
-              id="perPage" value={perPage}
-              onChange={(e) => handlePerPageChange(e.target.value)}
-              className="rounded-md pl-3 pr-8 py-1 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm"
-            >
-              {perPageOptions.map((opt) => (
-                <option key={opt} value={opt}>{opt === "all" ? "All" : opt}</option>
-              ))}
-            </select>
+            {/* Per page selector – hidden on mobile */}
+            <div className="hidden sm:flex items-center gap-2">
+              <label htmlFor="perPage" className="text-sm">Per page:</label>
+              <select
+                id="perPage" value={perPage}
+                onChange={(e) => handlePerPageChange(e.target.value)}
+                className="rounded-md pl-3 pr-8 py-1 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm"
+              >
+                {perPageOptions.map((opt) => (
+                  <option key={opt} value={opt}>{opt === "all" ? "All" : opt}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filters button – icon only on small, icon + text on lg */}
             <button
               onClick={() => setSidebarOpen(true)}
-              className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700"
+              className="flex items-center gap-2 px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700"
+              aria-label="Open filters"
             >
-              Apply Filters & Sorting
+              <FiFilter className="text-lg" />
+              <span className="hidden lg:inline text-sm">Filters</span>
             </button>
           </div>
         </div>
@@ -194,7 +205,7 @@ export default function Women() {
          products.length === 0 ? <p>No products found</p> :
          <>
            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-             {products.map((p) => <ProductCard key={p.id} product={p} />)}
+             {products.map((p) => <ProductCard key={p.id || p._id} product={p} />)}
            </div>
            {perPage !== "all" && meta.pages > 1 && (
              <div className="mt-6 flex items-center justify-center gap-4">
