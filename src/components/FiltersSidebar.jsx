@@ -3,8 +3,6 @@ import React, { useEffect, useRef, useMemo, useState } from "react";
 import tinycolor from "tinycolor2";
 import { X } from "lucide-react";
 
-console.log("NEW FILTER SIDEBAR LOADED"); // debug line — remove when verified
-
 /* ---------- Color helpers ---------- */
 const normalizeColor = (raw) => {
   if (raw === null || raw === undefined) return null;
@@ -158,10 +156,58 @@ export default function FilterSidebar({
     });
   };
 
-  const toggleCategory = (categoryName) =>
+  const toggleCategoryExpand = (categoryName) =>
     setExpandedCategories((prev = []) =>
       prev.includes(categoryName) ? prev.filter((c) => c !== categoryName) : [...prev, categoryName]
     );
+
+  /* ---------- Category-level selection (select/deselect all subcategories) ---------- */
+  const getSubcategoriesOf = (categoryName) => {
+    const found = sortedCategories.find((c) => String(c.name).trim().toLowerCase() === String(categoryName).trim().toLowerCase());
+    return Array.isArray(found?.subcategories) ? found.subcategories : [];
+  };
+
+  const isCategoryFullySelected = (categoryName) => {
+    const subs = getSubcategoriesOf(categoryName);
+    if (subs.length === 0) {
+      // fallback: check whether a selection exists for category:categoryName (for backends expecting something)
+      return Array.isArray(selectedSubcategories) && selectedSubcategories.some((s) => selectionEquals(s, categoryName, categoryName));
+    }
+    return subs.every((sub) => isSelected(categoryName, sub));
+  };
+
+  const toggleCategorySelection = (categoryName) => {
+    const subs = getSubcategoriesOf(categoryName);
+    setSelectedSubcategories((prev = []) => {
+      const prevArr = Array.isArray(prev) ? [...prev] : [];
+      const fully = isCategoryFullySelected(categoryName);
+
+      if (fully) {
+        // remove all items with this category
+        return prevArr.filter((s) => {
+          try {
+            const cat = (s.category ?? s.categoryName ?? "").toString().trim().toLowerCase();
+            return cat !== String(categoryName).trim().toLowerCase();
+          } catch {
+            return true;
+          }
+        });
+      }
+
+      // add all subcategories (or a fallback single entry)
+      const toAdd = (subs && subs.length > 0)
+        ? subs.map((sub) => ({ category: String(categoryName).trim(), subcategory: String(sub).trim() }))
+        : [{ category: String(categoryName).trim(), subcategory: String(categoryName).trim() }];
+
+      // avoid duplicates
+      const merged = [...prevArr];
+      toAdd.forEach((t) => {
+        const exists = merged.some((p) => selectionEquals(p, t.category, t.subcategory));
+        if (!exists) merged.push(t);
+      });
+      return merged;
+    });
+  };
 
   /* ---------- Color display: show only 6-8 main colors ---------- */
   const mainColorObjects = useMemo(() => {
@@ -248,7 +294,7 @@ export default function FilterSidebar({
           border-radius: 999px;
           background: white;
           box-shadow: 0 0 0 2px rgba(0,0,0,0.08);
-          margin-top: -7px;
+          margin-top: -9px; /* center thumb on 4px track (thumb height 18 -> center 9) */
           cursor: pointer;
         }
         /* Firefox */
@@ -277,41 +323,65 @@ export default function FilterSidebar({
       <div>
         <h3 className="text-sm font-medium mb-3">Categories</h3>
         <div className="space-y-3">
-          {sortedCategories.map((category) => (
-            <div key={category.name}>
-              <button
-                onClick={() => toggleCategory(category.name)}
-                className="w-full flex items-center justify-between py-2 px-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-900 transition text-sm"
-                aria-expanded={expandedCategories.includes(category.name)}
-              >
-                <span className="font-medium">{category.name}</span>
-                <span className="text-sm font-bold select-none">{expandedCategories.includes(category.name) ? "−" : "+"}</span>
-              </button>
+          {sortedCategories.map((category) => {
+            const catName = category.name;
+            const subs = Array.isArray(category.subcategories) ? category.subcategories : [];
+            const fullySelected = isCategoryFullySelected(catName);
+            return (
+              <div key={catName} className="group">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 w-full">
+                    {/* Category-level select button */}
+                    <button
+                      onClick={() => toggleCategorySelection(catName)}
+                      aria-pressed={fullySelected}
+                      aria-label={fullySelected ? `Deselect ${catName}` : `Select all ${catName}`}
+                      className={`w-7 h-7 rounded-md flex items-center justify-center text-sm border ${
+                        fullySelected ? "bg-black text-white border-black dark:bg-white dark:text-black" : "bg-white dark:bg-transparent border-gray-200 dark:border-gray-700"
+                      }`}
+                      type="button"
+                    >
+                      {fullySelected ? "✓" : ""}
+                    </button>
 
-              {expandedCategories.includes(category.name) && Array.isArray(category.subcategories) && (
-                <div className="mt-2 ml-4 flex flex-wrap gap-2">
-                  {category.subcategories.map((sub) => {
-                    const subLabel = typeof sub === "string" ? sub : String(sub?.name ?? sub).trim();
-                    const active = isSelected(category.name, subLabel);
-                    return (
-                      <button
-                        key={`${category.name}::${subLabel}`}
-                        onClick={() => toggleSubcategory(category.name, subLabel)}
-                        className={`px-3 py-1 rounded-full text-sm border transition ${
-                          active
-                            ? "bg-black text-white border-black dark:bg-white dark:text-black dark:border-white"
-                            : "bg-white dark:bg-transparent text-gray-800 dark:text-gray-200 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900"
-                        }`}
-                        aria-pressed={active}
-                      >
-                        {subLabel}
-                      </button>
-                    );
-                  })}
+                    {/* Category expand button */}
+                    <button
+                      onClick={() => toggleCategoryExpand(catName)}
+                      className="flex-1 text-left py-2 px-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-900 transition text-sm flex items-center justify-between"
+                      aria-expanded={expandedCategories.includes(catName)}
+                      type="button"
+                    >
+                      <span className="font-medium">{catName}</span>
+                      <span className="text-sm font-bold select-none">{expandedCategories.includes(catName) ? "−" : "+"}</span>
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
+
+                {expandedCategories.includes(catName) && subs.length > 0 && (
+                  <div className="mt-2 ml-12 flex flex-wrap gap-2">
+                    {subs.map((sub) => {
+                      const subLabel = typeof sub === "string" ? sub : String(sub?.name ?? sub).trim();
+                      const active = isSelected(catName, subLabel);
+                      return (
+                        <button
+                          key={`${catName}::${subLabel}`}
+                          onClick={() => toggleSubcategory(catName, subLabel)}
+                          className={`px-3 py-1 rounded-full text-sm border transition ${
+                            active
+                              ? "bg-black text-white border-black dark:bg-white dark:text-black dark:border-white"
+                              : "bg-white dark:bg-transparent text-gray-800 dark:text-gray-200 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900"
+                          }`}
+                          aria-pressed={active}
+                        >
+                          {subLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {sortedCategories.length === 0 && <div className="text-sm text-gray-500">No categories available</div>}
         </div>
       </div>
@@ -341,7 +411,7 @@ export default function FilterSidebar({
           {/* overlayed range inputs */}
           <div className="absolute inset-0 flex items-center">
             <input
-              className="rs"
+              className="rs absolute left-0 w-full"
               type="range"
               min={MIN}
               max={MAX}
@@ -351,7 +421,7 @@ export default function FilterSidebar({
               aria-label="Minimum price"
             />
             <input
-              className="rs"
+              className="rs absolute left-0 w-full"
               type="range"
               min={MIN}
               max={MAX}
