@@ -124,6 +124,9 @@ export default function FilterSidebar({
   }, [normalizedCategories]);
 
   /* ---------- Selection helpers ---------- */
+  // special marker for "category-only" (no subcategory)
+  const CATEGORY_ALL_MARKER = "__ALL__";
+
   const selectionEquals = (sel, categoryName, subName) => {
     if (!sel) return false;
     if (typeof sel === "string") {
@@ -136,6 +139,10 @@ export default function FilterSidebar({
     if (typeof sel === "object") {
       const cat = (sel.category ?? sel.categoryName ?? sel.categoryId ?? "").toString().trim().toLowerCase();
       const sub = (sel.subcategory ?? sel.sub ?? sel.subId ?? sel.name ?? "").toString().trim().toLowerCase();
+      // treat "__ALL__" as category-only match for any subName
+      if (String(sub).toLowerCase() === CATEGORY_ALL_MARKER.toLowerCase()) {
+        return cat === categoryName.toString().trim().toLowerCase();
+      }
       return cat === categoryName.toString().trim().toLowerCase() && sub === subName.toString().trim().toLowerCase();
     }
     return false;
@@ -147,12 +154,21 @@ export default function FilterSidebar({
   const toggleSubcategory = (categoryName, subName) => {
     const normalizedCategory = String(categoryName).trim();
     const normalizedSub = String(subName).trim();
+
     setSelectedSubcategories((prev = []) => {
-      const exists = prev.some((s) => selectionEquals(s, normalizedCategory, normalizedSub));
+      // remove category-only marker for this category if present
+      const withoutCategoryOnly = prev.filter((s) => {
+        const cat = (s?.category ?? "").toString().trim().toLowerCase();
+        const sub = (s?.subcategory ?? "").toString().trim().toLowerCase();
+        if (cat === normalizedCategory.toLowerCase() && sub === CATEGORY_ALL_MARKER.toLowerCase()) return false;
+        return true;
+      });
+
+      const exists = withoutCategoryOnly.some((s) => selectionEquals(s, normalizedCategory, normalizedSub));
       if (exists) {
-        return prev.filter((s) => !selectionEquals(s, normalizedCategory, normalizedSub));
+        return withoutCategoryOnly.filter((s) => !selectionEquals(s, normalizedCategory, normalizedSub));
       }
-      return [...prev, { category: normalizedCategory, subcategory: normalizedSub }];
+      return [...withoutCategoryOnly, { category: normalizedCategory, subcategory: normalizedSub }];
     });
   };
 
@@ -161,17 +177,35 @@ export default function FilterSidebar({
       prev.includes(categoryName) ? prev.filter((c) => c !== categoryName) : [...prev, categoryName]
     );
 
-  /* ---------- Category-level selection (select/deselect all subcategories) ---------- */
+  /* ---------- Category-level selection (category-only) ---------- */
   const getSubcategoriesOf = (categoryName) => {
     const found = sortedCategories.find((c) => String(c.name).trim().toLowerCase() === String(categoryName).trim().toLowerCase());
     return Array.isArray(found?.subcategories) ? found.subcategories : [];
   };
 
   const isCategoryFullySelected = (categoryName) => {
+    // category is "fully selected" if:
+    // - category-only marker exists for the category OR
+    // - every known subcategory is selected
     const subs = getSubcategoriesOf(categoryName);
+    const markerExists = Array.isArray(selectedSubcategories) && selectedSubcategories.some((s) => {
+      try {
+        return (s?.category ?? "").toString().trim().toLowerCase() === categoryName.toString().trim().toLowerCase()
+          && (s?.subcategory ?? "").toString().trim() === CATEGORY_ALL_MARKER;
+      } catch {
+        return false;
+      }
+    });
+    if (markerExists) return true;
     if (subs.length === 0) {
-      // fallback: check whether a selection exists for category:categoryName (for backends expecting something)
-      return Array.isArray(selectedSubcategories) && selectedSubcategories.some((s) => selectionEquals(s, categoryName, categoryName));
+      // if no known subs, treat category-only selection presence as "selected"
+      return markerExists || Array.isArray(selectedSubcategories) && selectedSubcategories.some((s) => {
+        try {
+          return (s?.category ?? "").toString().trim().toLowerCase() === categoryName.toString().trim().toLowerCase();
+        } catch {
+          return false;
+        }
+      });
     }
     return subs.every((sub) => isSelected(categoryName, sub));
   };
@@ -183,29 +217,31 @@ export default function FilterSidebar({
       const fully = isCategoryFullySelected(categoryName);
 
       if (fully) {
-        // remove all items with this category
+        // remove any selection for this category (category-only + subcategories)
         return prevArr.filter((s) => {
           try {
             const cat = (s.category ?? s.categoryName ?? "").toString().trim().toLowerCase();
             return cat !== String(categoryName).trim().toLowerCase();
           } catch {
+            // keep if malformed
             return true;
           }
         });
       }
 
-      // add all subcategories (or a fallback single entry)
-      const toAdd = (subs && subs.length > 0)
-        ? subs.map((sub) => ({ category: String(categoryName).trim(), subcategory: String(sub).trim() }))
-        : [{ category: String(categoryName).trim(), subcategory: String(categoryName).trim() }];
-
-      // avoid duplicates
-      const merged = [...prevArr];
-      toAdd.forEach((t) => {
-        const exists = merged.some((p) => selectionEquals(p, t.category, t.subcategory));
-        if (!exists) merged.push(t);
+      // Not fully selected -> add "category-only" marker (this applies filter by category only)
+      // Remove any per-subcategory entries for the category to avoid duplicates
+      const withoutThisCategory = prevArr.filter((s) => {
+        try {
+          const cat = (s.category ?? s.categoryName ?? "").toString().trim().toLowerCase();
+          return cat !== String(categoryName).trim().toLowerCase();
+        } catch {
+          return true;
+        }
       });
-      return merged;
+
+      // Add single category-only object using CATEGORY_ALL_MARKER
+      return [...withoutThisCategory, { category: String(categoryName).trim(), subcategory: CATEGORY_ALL_MARKER }];
     });
   };
 
@@ -331,11 +367,11 @@ export default function FilterSidebar({
               <div key={catName} className="group">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 w-full">
-                    {/* Category-level select button */}
+                    {/* Category-level select button (toggles category-only) */}
                     <button
                       onClick={() => toggleCategorySelection(catName)}
                       aria-pressed={fullySelected}
-                      aria-label={fullySelected ? `Deselect ${catName}` : `Select all ${catName}`}
+                      aria-label={fullySelected ? `Deselect ${catName}` : `Select ${catName}`}
                       className={`w-7 h-7 rounded-md flex items-center justify-center text-sm border ${
                         fullySelected ? "bg-black text-white border-black dark:bg-white dark:text-black" : "bg-white dark:bg-transparent border-gray-200 dark:border-gray-700"
                       }`}
@@ -410,6 +446,7 @@ export default function FilterSidebar({
 
           {/* overlayed range inputs */}
           <div className="absolute inset-0 flex items-center">
+            {/* NOTE: min input is above max input (zIndex) so the min thumb is draggable reliably */}
             <input
               className="rs absolute left-0 w-full"
               type="range"
@@ -419,6 +456,7 @@ export default function FilterSidebar({
               value={priceRange?.[0] ?? MIN}
               onChange={(e) => handlePriceChange(0, e.target.value)}
               aria-label="Minimum price"
+              style={{ zIndex: 3 }}
             />
             <input
               className="rs absolute left-0 w-full"
@@ -429,6 +467,7 @@ export default function FilterSidebar({
               value={priceRange?.[1] ?? MAX}
               onChange={(e) => handlePriceChange(1, e.target.value)}
               aria-label="Maximum price"
+              style={{ zIndex: 2 }}
             />
           </div>
         </div>
