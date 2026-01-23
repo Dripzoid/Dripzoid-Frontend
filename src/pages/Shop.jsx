@@ -1,15 +1,17 @@
 // src/pages/Shop.jsx
 import React, { useState, useEffect } from "react";
+import { SlidersHorizontal } from "lucide-react";
 import ProductCard from "../components/ProductCard";
-import FilterSidebar from "../components/FiltersSidebar"; // ensure file is named FilterSidebar.jsx
+import FilterSidebar from "../components/FiltersSidebar";
 import LogoBorderLoader from "../components/LogoLoader";
+
 const API_BASE = process.env.REACT_APP_API_BASE || "";
 
 const MIN = 0;
 const MAX = 10000;
 
 const Shop = () => {
-  // Filters / UI state (selectedSubcategories: array of { category, subcategory })
+  /* ================= FILTER STATE ================= */
   const [selectedSubcategories, setSelectedSubcategories] = useState([]);
   const [expandedCategories, setExpandedCategories] = useState([]);
   const [priceRange, setPriceRange] = useState([MIN, MAX]);
@@ -17,23 +19,18 @@ const Shop = () => {
   const [colorsList, setColorsList] = useState([]);
   const [sortOption, setSortOption] = useState("");
 
-  // Dynamic categories: normalized to [{ name, subcategories: [ "Shirts", "Pants" ] }]
   const [categoryData, setCategoryData] = useState([]);
 
-  // Products + pagination
+  /* ================= PRODUCT STATE ================= */
   const [products, setProducts] = useState([]);
-  const [meta, setMeta] = useState({ total: 0, page: 1, pages: 1, limit: 0 });
-  // start loading true so loader shows immediately on mount
+  const [meta, setMeta] = useState({ total: 0, page: 1, pages: 1 });
   const [loading, setLoading] = useState(true);
-
-  const perPageOptions = ["12", "24", "36", "all"];
-  const [perPage, setPerPage] = useState("12");
   const [page, setPage] = useState(1);
 
-  // Sidebar open for mobile
+  /* ================= UI STATE ================= */
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // --- Fetch categories on mount (handles either { categories: [...] } or raw array)
+  /* ================= FETCH CATEGORIES ================= */
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -42,27 +39,24 @@ const Shop = () => {
         if (!res.ok) throw new Error("Failed to fetch categories");
         const json = await res.json();
 
-        // Normalize: accept either an array or { categories: [...] } object
-        const raw = Array.isArray(json) ? json : (json.categories || json || []);
-        const mapped = (raw || []).map((c) => {
-          const name = c?.name ?? String(c);
-          const subsRaw = c?.subcategories ?? [];
-          const subs = (Array.isArray(subsRaw) ? subsRaw : []).map((s) =>
-            typeof s === "string" ? s : s?.name ?? String(s)
-          ).filter(Boolean);
-          return { name: String(name), subcategories: subs };
-        });
+        const raw = Array.isArray(json) ? json : json.categories || [];
+        const mapped = raw.map((c) => ({
+          name: c?.name ?? String(c),
+          subcategories: (c?.subcategories || []).map((s) =>
+            typeof s === "string" ? s : s?.name
+          ),
+        }));
 
         if (mounted) setCategoryData(mapped);
       } catch (err) {
-        console.error("Error fetching categories:", err);
+        console.error(err);
         if (mounted) setCategoryData([]);
       }
     })();
-    return () => { mounted = false; };
+    return () => (mounted = false);
   }, []);
 
-  // --- Fetch colors on mount
+  /* ================= FETCH COLORS ================= */
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -70,33 +64,28 @@ const Shop = () => {
         const res = await fetch(`${API_BASE}/api/products/colors`);
         if (!res.ok) throw new Error("Failed to fetch colors");
         const json = await res.json();
-        if (!mounted) return;
-        if (json?.colors && json.colors.length) setColorsList(json.colors);
-        else setColorsList(["#f5f5f5", "#e8e1da", "#dbeaf0", "#f9f0f5"]);
-      } catch (err) {
-        console.warn("Could not load colors from API, using fallback", err);
-        if (mounted) setColorsList(["#f5f5f5", "#e8e1da", "#dbeaf0", "#f9f0f5"]);
+        if (mounted) setColorsList(json?.colors || []);
+      } catch {
+        if (mounted) setColorsList([]);
       }
     })();
-    return () => { mounted = false; };
+    return () => (mounted = false);
   }, []);
 
-  // --- Fetch products
+  /* ================= FETCH PRODUCTS ================= */
   const fetchProducts = async () => {
     setLoading(true);
-
-    // 2s dummy delay to let the loader show (for demo/testing)
-    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     try {
       const params = new URLSearchParams();
 
-      // If user selected category-scoped subcategories, we send them as Category:Subcategory pairs
       if (selectedSubcategories.length > 0) {
-        const mapped = selectedSubcategories.map(
-          (sel) => `${encodeURIComponent(sel.category)}:${encodeURIComponent(sel.subcategory)}`
+        params.append(
+          "subcategory",
+          selectedSubcategories
+            .map((s) => `${s.category}:${s.subcategory}`)
+            .join(",")
         );
-        params.append("subcategory", mapped.join(","));
       }
 
       if (selectedColors.length > 0) {
@@ -107,77 +96,53 @@ const Shop = () => {
       params.append("maxPrice", priceRange[1]);
 
       if (sortOption === "low-high") params.append("sort", "price_asc");
-      else if (sortOption === "high-low") params.append("sort", "price_desc");
-      else if (sortOption === "newest") params.append("sort", "newest");
+      if (sortOption === "high-low") params.append("sort", "price_desc");
+      if (sortOption === "newest") params.append("sort", "newest");
 
-      if (perPage === "all") params.append("limit", "all");
-      else {
-        params.append("limit", String(perPage));
-        params.append("page", String(page));
-      }
+      params.append("page", page);
 
-      const url = `${API_BASE}/api/products?${params.toString()}`;
+      const res = await fetch(`${API_BASE}/api/products?${params.toString()}`);
+      if (!res.ok) throw new Error("Product fetch failed");
 
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Products fetch failed: ${res.status}`);
       const data = await res.json();
+      const list = Array.isArray(data) ? data : data?.data || [];
 
-      let productsArray = [];
-      if (Array.isArray(data)) productsArray = data;
-      else if (data?.data && Array.isArray(data.data)) productsArray = data.data;
-      else productsArray = [];
-
-      const serverMeta = data?.meta || {};
-      const total = Number(serverMeta.total ?? productsArray.length) || 0;
-      const serverPage = Number(serverMeta.page ?? page) || 1;
-      const limitUsed = Number(serverMeta.limit ?? (perPage === "all" ? total : Number(perPage))) || (perPage === "all" ? total : Number(perPage));
-      const serverPages = Number(serverMeta.pages ?? Math.max(1, Math.ceil(total / (limitUsed || 1)))) || 1;
-
-      setMeta({ total, page: serverPage, pages: serverPages, limit: limitUsed });
-      setProducts(productsArray);
-
-      if (page > serverPages && serverPages > 0) setPage(1);
+      setProducts(list);
+      setMeta({
+        total: data?.meta?.total || list.length,
+        page: data?.meta?.page || page,
+        pages: data?.meta?.pages || 1,
+      });
     } catch (err) {
-      console.error("Error fetching products:", err);
+      console.error(err);
       setProducts([]);
-      setMeta({ total: 0, page: 1, pages: 1, limit: 0 });
+      setMeta({ total: 0, page: 1, pages: 1 });
     } finally {
       setLoading(false);
     }
   };
 
-  // Re-fetch when filters change
   useEffect(() => {
     fetchProducts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSubcategories, selectedColors, priceRange, sortOption, perPage, page]);
+    // eslint-disable-next-line
+  }, [selectedSubcategories, selectedColors, priceRange, sortOption, page]);
 
-  // close sidebar on ESC (mobile)
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === "Escape") setSidebarOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  // Sidebar helpers
+  /* ================= HELPERS ================= */
   const clearFilters = () => {
     setSelectedSubcategories([]);
     setExpandedCategories([]);
     setPriceRange([MIN, MAX]);
     setSelectedColors([]);
     setSortOption("");
-    setPerPage("12");
     setPage(1);
   };
 
-  const handlePerPageChange = (val) => { setPerPage(val); setPage(1); };
   const prevPage = () => setPage((p) => Math.max(1, p - 1));
-  const nextPage = () => setPage((p) => Math.min(meta.pages || 1, p + 1));
+  const nextPage = () => setPage((p) => Math.min(meta.pages, p + 1));
 
+  /* ================= RENDER ================= */
   return (
-    <div className="flex min-h-screen bg-white dark:bg-black text-black dark:text-white transition-colors">
+    <div className="flex min-h-screen bg-white dark:bg-black text-black dark:text-white">
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
         <FilterSidebar
@@ -203,59 +168,68 @@ const Shop = () => {
 
       {/* Main */}
       <main className="flex-1 p-4 sm:p-6">
-        <div className="flex items-center justify-between w-full mb-4">
-          <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Shop</p>
-          </div>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-xl font-semibold">Shop</h1>
 
-          <div className="flex items-center gap-3">
-            <label htmlFor="perPage" className="text-sm text-gray-500 dark:text-gray-400 mr-2">Per page:</label>
-            <select id="perPage" value={perPage} onChange={(e) => handlePerPageChange(e.target.value)} className="rounded-md pl-3 pr-8 py-1 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm">
-              {perPageOptions.map((opt) => (<option key={String(opt)} value={String(opt)}>{opt === "all" ? "All" : opt}</option>))}
-            </select>
-
-            {/* Mobile: open sliding sidebar */}
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700"
-              aria-controls="filters-panel"
-              aria-expanded={sidebarOpen}
-            >
-              Apply Filters & Sorting
-            </button>
-          </div>
+          {/* Filter icon */}
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="lg:hidden p-2 rounded-full border border-gray-300 dark:border-gray-700"
+            aria-label="Open filters"
+          >
+            <SlidersHorizontal size={18} />
+          </button>
         </div>
 
         {loading ? (
-          // centered loader while fetching
-          <div className="flex items-center justify-center w-full h-72">
+          <div className="flex items-center justify-center h-72">
             <LogoBorderLoader />
           </div>
         ) : products.length === 0 ? (
           <p>No products found</p>
         ) : (
           <>
-            {/* Responsive grid: mobile/tablet = 2 columns, desktop = 3 columns */}
-            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-              {products.map((p) => <ProductCard key={p.id} product={p} />)}
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+              {products.map((p) => (
+                <ProductCard key={p.id || p._id} product={p} />
+              ))}
             </div>
 
-            {perPage !== "all" && meta.pages > 1 && (
+            {meta.pages > 1 && (
               <div className="mt-6 flex items-center justify-center gap-4">
-                <button onClick={prevPage} disabled={page <= 1} className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700 disabled:opacity-50">Prev</button>
-                <div className="text-sm text-gray-600 dark:text-gray-300">Page <strong>{meta.page}</strong> of <strong>{meta.pages}</strong></div>
-                <button onClick={nextPage} disabled={meta.page >= meta.pages} className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700 disabled:opacity-50">Next</button>
+                <button
+                  onClick={prevPage}
+                  disabled={page <= 1}
+                  className="px-3 py-1 rounded-md border disabled:opacity-50"
+                >
+                  Prev
+                </button>
+                <span className="text-sm">
+                  Page <strong>{meta.page}</strong> of{" "}
+                  <strong>{meta.pages}</strong>
+                </span>
+                <button
+                  onClick={nextPage}
+                  disabled={page >= meta.pages}
+                  className="px-3 py-1 rounded-md border disabled:opacity-50"
+                >
+                  Next
+                </button>
               </div>
             )}
           </>
         )}
       </main>
 
-      {/* Mobile sidebar (sliding panel) */}
+      {/* Mobile Filter Sidebar */}
       <FilterSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
-        onApply={() => { setPage(1); setSidebarOpen(false); }}
+        onApply={() => {
+          setPage(1);
+          setSidebarOpen(false);
+        }}
         categoryData={categoryData}
         colorsList={colorsList}
         MIN={MIN}
