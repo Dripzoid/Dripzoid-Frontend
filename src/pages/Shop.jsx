@@ -1,6 +1,6 @@
 // src/pages/Shop.jsx
 import React, { useState, useEffect } from "react";
-import { SlidersHorizontal } from "lucide-react";
+import { Funnel } from "lucide-react";
 import ProductCard from "../components/ProductCard";
 import FilterSidebar from "../components/FiltersSidebar";
 import LogoBorderLoader from "../components/LogoLoader";
@@ -143,7 +143,7 @@ const Shop = () => {
   /* ================= RENDER ================= */
   return (
     <div className="flex min-h-screen bg-white dark:bg-black text-black dark:text-white">
-      {/* Desktop sidebar */}
+      {/* Desktop sidebar (static) */}
       <div className="hidden lg:block">
         <FilterSidebar
           isStatic
@@ -172,13 +172,18 @@ const Shop = () => {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-xl font-semibold">Shop</h1>
 
-          {/* Filter icon */}
+          {/* Funnel icon visible on all breakpoints.
+              On lg+ we show label next to it for clarity */}
           <button
             onClick={() => setSidebarOpen(true)}
-            className="lg:hidden p-2 rounded-full border border-gray-300 dark:border-gray-700"
+            className="flex items-center gap-2 px-3 py-1 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 hover:shadow-sm"
+            aria-controls="filters-panel"
+            aria-expanded={sidebarOpen}
             aria-label="Open filters"
+            title="Open filters"
           >
-            <SlidersHorizontal size={18} />
+            <Funnel size={18} />
+            <span className="hidden lg:inline text-sm font-medium">Filters</span>
           </button>
         </div>
 
@@ -206,8 +211,7 @@ const Shop = () => {
                   Prev
                 </button>
                 <span className="text-sm">
-                  Page <strong>{meta.page}</strong> of{" "}
-                  <strong>{meta.pages}</strong>
+                  Page <strong>{meta.page}</strong> of <strong>{meta.pages}</strong>
                 </span>
                 <button
                   onClick={nextPage}
@@ -222,7 +226,7 @@ const Shop = () => {
         )}
       </main>
 
-      {/* Mobile Filter Sidebar */}
+      {/* Mobile / sliding Filter Sidebar */}
       <FilterSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
