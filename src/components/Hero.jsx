@@ -39,7 +39,7 @@ export default function Hero({ autoPlayMs = 4500 }) {
 
     async function fetchSlides() {
       try {
-        const res = await fetch(`${API_BASE}/api/public/slides`);
+        const res = await fetch(`${API_BASE}/api/admin/public/slides`);
         if (!res.ok) throw new Error("Failed to fetch slides");
         const data = await res.json();
 
