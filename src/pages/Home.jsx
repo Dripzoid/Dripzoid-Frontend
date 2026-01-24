@@ -132,17 +132,17 @@ export default function HomePage() {
             {
               title: "Fast Shipping",
               subtitle: "Powered by Shiprocket",
-              img: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1769182642/my_project/oyjwg1fdzqvqifdnim5w.jpg",
+              img: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1769225552/my_project/focg52j1sxvgcdswqml3.jpg",
             },
             {
               title: "Secure Payments",
               subtitle: "Trusted Razorpay Gateway",
-              img: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1769182671/my_project/ftllcrf7qndx9bdb2vdb.jpg",
+              img: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1769225506/my_project/qkqygkjqz364i7ym0nm1.jpg",
             },
             {
               title: "Premium Fabrics",
               subtitle: "Crafted by Dripzoid",
-              img: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1769182729/my_project/hdavliwm7zdbxabrtglr.jpg",
+              img: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1768910178/my_project/nwugfdsdrkdtv7obsoq9.png",
             },
           ].map((item) => (
             <div
