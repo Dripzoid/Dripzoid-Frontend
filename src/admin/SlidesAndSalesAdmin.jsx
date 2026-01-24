@@ -61,6 +61,7 @@ export default function SlidesAndSalesAdmin() {
   const [allProducts, setAllProducts] = useState([]); // all products fetched once
   const [productsLoading, setProductsLoading] = useState(false); // only for initial load
   const [productSort, setProductSort] = useState("relevance");
+  // Use Map-like stable object for selected to avoid re-renders when possible
   const [selectedProductIds, setSelectedProductIds] = useState(new Set());
 
   // Pagination
@@ -363,7 +364,7 @@ export default function SlidesAndSalesAdmin() {
 
   // -- SALES
   // Robust helper to fetch products by multiple ids. Tries bulk endpoint first then falls back to individual fetches.
-  async function fetchProductsByIds(ids = []) {
+  const fetchProductsByIds = useCallback(async (ids = []) => {
     if (!ids || ids.length === 0) return [];
     try {
       // try bulk endpoint (comma-separated ids)
@@ -378,14 +379,19 @@ export default function SlidesAndSalesAdmin() {
     const promises = ids.map((id) => apiGet(`/api/products/${id}`).then((j) => j?.data || j?.product || j).catch(() => null));
     const results = await Promise.all(promises);
     return results.filter(Boolean);
-  }
+  }, []);
 
-  async function expandSalesProducts(salesArr) {
-    // Returns a new array with products[] attached where possible
+  const expandSalesProducts = useCallback(async (salesArr) => {
     const out = await Promise.all(
       (Array.isArray(salesArr) ? salesArr : []).map(async (sale) => {
-        const productIds = sale?.productIds || sale?.productIds?.length ? sale.productIds : sale?.products?.map((p) => p?.id) || [];
-        // normalize
+        // prefer explicit productIds returned from backend but also support legacy products array
+        const productIds =
+          Array.isArray(sale.productIds) && sale.productIds.length
+            ? sale.productIds
+            : Array.isArray(sale.products)
+            ? sale.products.map((p) => p?.id).filter(Boolean)
+            : [];
+
         const ids = Array.isArray(productIds) ? productIds.map((x) => (x && typeof x === "object" ? x.id : x)).filter(Boolean) : [];
         if (ids.length === 0) return { ...sale, products: sale?.products || [] };
         const prods = await fetchProductsByIds(ids);
@@ -393,7 +399,7 @@ export default function SlidesAndSalesAdmin() {
       })
     );
     return out;
-  }
+  }, [fetchProductsByIds]);
 
   async function loadSales() {
     setLoadingSales(true);
@@ -411,7 +417,9 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  async function handleCreateSale({ name }) {
+  // ---------- FIXED: use saleName state as single source of truth ----------
+  const handleCreateSale = useCallback(async () => {
+    const name = (saleName || "").trim();
     if (!name || selectedProductIds.size === 0) {
       setNoteWithAutoClear({ type: "error", text: "Please provide a name and select at least one product" }, 6000);
       return;
@@ -450,14 +458,13 @@ export default function SlidesAndSalesAdmin() {
     } finally {
       setCreatingSale(false);
     }
-  }
+  }, [saleName, selectedProductIds, fetchProductsByIds]);
 
-  async function toggleSaleEnabled(saleId) {
+  const toggleSaleEnabled = useCallback(async (saleId) => {
     try {
       const sale = sales.find((s) => s?.id === saleId);
       if (!sale) return;
       const newEnabled = sale?.enabled ? 0 : 1;
-      // call PUT /sales/:id per backend
       await apiPut(`/api/admin/sales/${saleId}`, { enabled: newEnabled });
       setSales((list) => (Array.isArray(list) ? list.map((s) => (s?.id === saleId ? { ...s, enabled: newEnabled } : s)) : list));
       setNoteWithAutoClear({ type: "success", text: "Sale updated" }, 4000);
@@ -465,7 +472,7 @@ export default function SlidesAndSalesAdmin() {
       console.error("toggleSaleEnabled error:", err);
       setNoteWithAutoClear({ type: "error", text: `Failed to update sale — ${err.message || err}` }, 8000);
     }
-  }
+  }, [sales]);
 
   // Sale edit flow
   function openEditSale(sale) {
@@ -584,7 +591,7 @@ export default function SlidesAndSalesAdmin() {
   }
 
   // toggle selection (called by UI list and by ProductSearchBar)
-  function toggleSelectProduct(productOrId) {
+  const toggleSelectProduct = useCallback((productOrId) => {
     const id = productOrId?.id ?? productOrId;
     if (id == null) return;
     setSelectedProductIds((prev) => {
@@ -600,7 +607,7 @@ export default function SlidesAndSalesAdmin() {
       }
       return copy;
     });
-  }
+  }, [ensureProductPresent]);
 
   /* ----------------- UI components (kept similar) ----------------- */
   function CenterToggle() {
@@ -864,10 +871,16 @@ export default function SlidesAndSalesAdmin() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-1 flex flex-col gap-2">
             <label className="text-xs font-semibold uppercase text-neutral-500">Sale name (displayed on home)</label>
-            <input value={saleName} onChange={(e) => setSaleName(e.target.value)} placeholder="Eg: Summer Sale" className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
+            <input
+              value={saleName}
+              onChange={(e) => setSaleName(e.target.value)}
+              placeholder="Eg: Summer Sale"
+              className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none"
+              aria-label="sale-name"
+            />
             <div className="text-xs text-neutral-500 mt-2">Selected products: {selectedProductIds.size}</div>
             <div className="flex gap-2 mt-3">
-              <button onClick={() => handleCreateSale({ name: saleName })} disabled={creatingSale} className={primaryBtnClass()}>
+              <button onClick={handleCreateSale} disabled={creatingSale || !saleName.trim()} className={primaryBtnClass()}>
                 <Plus className="w-4 h-4" />
                 {creatingSale ? "Creating..." : "Create Sale"}
               </button>
