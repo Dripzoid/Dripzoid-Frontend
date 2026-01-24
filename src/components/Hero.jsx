@@ -2,9 +2,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-// -----------------------------------
-// Animation variants (NO SCALE)
-// -----------------------------------
+/* -----------------------------------
+   Animation variants (NO SCALE)
+----------------------------------- */
 const variants = {
   enter: (dir) => ({
     x: dir > 0 ? 80 : -80,
@@ -20,7 +20,10 @@ const variants = {
   }),
 };
 
-export default function Hero({ slides = [], autoPlayMs = 4500 }) {
+const API_BASE = process.env.REACT_APP_API_BASE || "";
+
+export default function Hero({ autoPlayMs = 4500 }) {
+  const [slides, setSlides] = useState([]);
   const [index, setIndex] = useState(0);
   const [dir, setDir] = useState(1);
   const [paused, setPaused] = useState(false);
@@ -28,18 +31,49 @@ export default function Hero({ slides = [], autoPlayMs = 4500 }) {
 
   const total = slides.length;
 
-  // -----------------------------------
-  // Autoplay (stable)
-  // -----------------------------------
+  /* -----------------------------------
+     Fetch slides from API
+  ----------------------------------- */
+  useEffect(() => {
+    let mounted = true;
+
+    async function fetchSlides() {
+      try {
+        const res = await fetch(`${API_BASE}/api/public/slides`);
+        if (!res.ok) throw new Error("Failed to fetch slides");
+        const data = await res.json();
+
+        if (mounted && Array.isArray(data)) {
+          setSlides(
+            data.map((s) => ({
+              id: s.id,
+              src: s.image_url,
+              title: s.name,
+              link: s.link || null,
+            }))
+          );
+        }
+      } catch (err) {
+        console.error("Hero slide fetch error:", err);
+      }
+    }
+
+    fetchSlides();
+    return () => (mounted = false);
+  }, []);
+
+  /* -----------------------------------
+     Autoplay
+  ----------------------------------- */
   useEffect(() => {
     if (paused || total <= 1) return;
     const t = setInterval(() => changeIndex(1), autoPlayMs);
     return () => clearInterval(t);
   }, [paused, autoPlayMs, total]);
 
-  // -----------------------------------
-  // Keyboard navigation
-  // -----------------------------------
+  /* -----------------------------------
+     Keyboard navigation
+  ----------------------------------- */
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "ArrowRight") changeIndex(1);
@@ -47,7 +81,7 @@ export default function Hero({ slides = [], autoPlayMs = 4500 }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [total]);
 
   function changeIndex(delta) {
     if (throttled.current || total <= 1) return;
@@ -62,7 +96,7 @@ export default function Hero({ slides = [], autoPlayMs = 4500 }) {
     else if (info.offset.x > 60 || info.velocity.x > 500) changeIndex(-1);
   }
 
-  if (!slides || total === 0) return null;
+  if (total === 0) return null;
 
   return (
     <section
@@ -98,23 +132,32 @@ export default function Hero({ slides = [], autoPlayMs = 4500 }) {
               draggable="false"
             />
 
-            {/* Subtle gradient for readability (old-style) */}
+            {/* Gradient */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
 
-            {/* Caption (LOCKED TYPOGRAPHY) */}
+            {/* Caption */}
             <div className="absolute left-6 bottom-6 text-white max-w-lg">
               <span className="inline-block text-xs uppercase tracking-wider bg-black/50 px-3 py-1 rounded-full">
-                Seasonal
+                Dripzoid
               </span>
               <h2 className="mt-3 text-2xl md:text-3xl font-bold leading-snug">
                 {slides[index].title}
               </h2>
+
+              {slides[index].link && (
+                <a
+                  href={slides[index].link}
+                  className="inline-block mt-4 text-sm font-medium underline underline-offset-4"
+                >
+                  Shop Now →
+                </a>
+              )}
             </div>
           </motion.div>
         </AnimatePresence>
       </div>
 
-      {/* Prev */}
+      {/* Navigation */}
       {total > 1 && (
         <>
           <button
@@ -125,7 +168,6 @@ export default function Hero({ slides = [], autoPlayMs = 4500 }) {
             ←
           </button>
 
-          {/* Next */}
           <button
             onClick={() => changeIndex(1)}
             aria-label="Next slide"
