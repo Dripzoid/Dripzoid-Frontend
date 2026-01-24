@@ -78,17 +78,17 @@ export default function HomePage() {
             {
               label: "Women",
               to: "/women",
-              img: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1762976383/my_project/d7yqisrdw4pirfsrii75.png",
+              img: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1769234485/my_project/jjohfsp34dtkjqpbwdju.jpg",
             },
             {
               label: "Men",
               to: "/men",
-              img: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1767716739/my_project/gc92vylukwnleaokud4w.png",
+              img: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1769234530/my_project/q9yp4y9u9db6plxswvqm.jpg",
             },
             {
               label: "Kids",
               to: "/kids",
-              img: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1769182611/my_project/qhz3dzaihj4cupelhbdk.jpg",
+              img: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1769234558/my_project/axzwtgc54k9u7jcryawe.jpg",
             },
           ].map((cat) => (
             <Link key={cat.label} to={cat.to} className="group">
