@@ -61,7 +61,6 @@ export default function SlidesAndSalesAdmin() {
   const [allProducts, setAllProducts] = useState([]); // all products fetched once
   const [productsLoading, setProductsLoading] = useState(false); // only for initial load
   const [productSort, setProductSort] = useState("relevance");
-  // Use Map-like stable object for selected to avoid re-renders when possible
   const [selectedProductIds, setSelectedProductIds] = useState(new Set());
 
   // Pagination
@@ -294,7 +293,6 @@ export default function SlidesAndSalesAdmin() {
       const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
       const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
       const res = await fetch(buildUrl("/api/admin/upload") === "/api/admin/upload" ? buildUrl("/api/upload") : buildUrl("/api/upload"), { method: "POST", body: fd, credentials: "include", headers });
-      // The route in your example is router.post("/upload", authAdmin, ...), so final path is /api/upload
       if (!res.ok) {
         const parsed = await parseErrorResponse(res);
         throw new Error(parsed);
@@ -363,19 +361,15 @@ export default function SlidesAndSalesAdmin() {
   }
 
   // -- SALES
-  // Robust helper to fetch products by multiple ids. Tries bulk endpoint first then falls back to individual fetches.
   const fetchProductsByIds = useCallback(async (ids = []) => {
     if (!ids || ids.length === 0) return [];
     try {
-      // try bulk endpoint (comma-separated ids)
       const tryBulk = await apiGet(`/api/products?ids=${ids.join(",")}`).catch(() => null);
       const bulkData = Array.isArray(tryBulk) ? tryBulk : tryBulk?.data ?? tryBulk?.products ?? tryBulk?.items ?? null;
       if (Array.isArray(bulkData) && bulkData.length > 0) return bulkData;
     } catch (e) {
       // swallow and fallback
     }
-
-    // fallback: fetch individually (parallel)
     const promises = ids.map((id) => apiGet(`/api/products/${id}`).then((j) => j?.data || j?.product || j).catch(() => null));
     const results = await Promise.all(promises);
     return results.filter(Boolean);
@@ -384,14 +378,12 @@ export default function SlidesAndSalesAdmin() {
   const expandSalesProducts = useCallback(async (salesArr) => {
     const out = await Promise.all(
       (Array.isArray(salesArr) ? salesArr : []).map(async (sale) => {
-        // prefer explicit productIds returned from backend but also support legacy products array
         const productIds =
           Array.isArray(sale.productIds) && sale.productIds.length
             ? sale.productIds
             : Array.isArray(sale.products)
             ? sale.products.map((p) => p?.id).filter(Boolean)
             : [];
-
         const ids = Array.isArray(productIds) ? productIds.map((x) => (x && typeof x === "object" ? x.id : x)).filter(Boolean) : [];
         if (ids.length === 0) return { ...sale, products: sale?.products || [] };
         const prods = await fetchProductsByIds(ids);
@@ -426,16 +418,13 @@ export default function SlidesAndSalesAdmin() {
     }
     setCreatingSale(true);
     try {
-      // prepare payload: convert set to array of ids
       const productIdsArray = Array.from(selectedProductIds).map((id) => (typeof id === "string" && id.match(/^\d+$/) ? Number(id) : id));
       const payload = { name, productIds: productIdsArray };
       const saved = await apiPost("/api/admin/sales", payload);
 
-      // backend may return sale, or an id; we handle both and ensure products[] are attached for immediate UI
       const newSaleRaw = saved?.sale || (saved?.data && saved.data?.sale) || (saved?.id ? { id: saved.id, name, productIds: productIdsArray, enabled: 1 } : null);
       const createdSale = newSaleRaw || saved;
 
-      // fetch product objects to attach
       const prods = await fetchProductsByIds(productIdsArray);
       const normalizedSale = { ...createdSale, products: prods || [], productIds: productIdsArray };
 
@@ -444,7 +433,6 @@ export default function SlidesAndSalesAdmin() {
       setSaleName("");
       setNoteWithAutoClear({ type: "success", text: "Sale created" }, 5000);
 
-      // try to update allProducts with any new products fetched (avoid duplicates)
       setAllProducts((prev) => {
         const copy = Array.isArray(prev) ? [...prev] : [];
         (prods || []).forEach((p) => {
@@ -507,7 +495,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // PRODUCTS - client-side search & sort (no longer using debouncedQuery from search component)
+  // PRODUCTS - client-side search & sort
   const mapSortToComparator = useCallback((sortKey) => {
     switch (sortKey) {
       case "priceAsc":
@@ -551,13 +539,10 @@ export default function SlidesAndSalesAdmin() {
   async function loadAllProducts() {
     setProductsLoading(true);
     try {
-      // try to fetch a large limit — adjust as your backend supports
       const url = "/api/products?limit=10000";
       const json = await apiGet(url);
-      // json may be { data: [...], meta: {...} } or array
       const data = Array.isArray(json) ? json : json.data ?? json.products ?? json.items ?? [];
       setAllProducts(Array.isArray(data) ? data : []);
-      // reset pagination
       setCurrentPage(1);
     } catch (err) {
       console.error("loadAllProducts error:", err);
@@ -573,13 +558,11 @@ export default function SlidesAndSalesAdmin() {
     try {
       const exists = allProducts.some((p) => String(p?.id) === String(productId));
       if (exists) return;
-      // try to fetch product by id
       const json = await apiGet(`/api/products/${productId}`);
       const product = json?.data || json?.product || (Array.isArray(json) ? json[0] : json) || null;
       if (product && product.id) {
         setAllProducts((prev) => {
           const copy = Array.isArray(prev) ? [...prev] : [];
-          // avoid duplicates
           if (copy.some((p) => String(p?.id) === String(product.id))) return copy;
           return [product, ...copy];
         });
@@ -590,7 +573,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // toggle selection (called by UI list and by ProductSearchBar)
+  // toggle selection
   const toggleSelectProduct = useCallback((productOrId) => {
     const id = productOrId?.id ?? productOrId;
     if (id == null) return;
@@ -599,17 +582,14 @@ export default function SlidesAndSalesAdmin() {
       const willAdd = !copy.has(id);
       if (willAdd) copy.add(id);
       else copy.delete(id);
-
-      // If we added a product that isn't present in the local list, fetch and add it so main list shows it
       if (willAdd) {
-        // ensure but don't block UI: fetch product and add in background
         ensureProductPresent(id).catch((e) => console.error("ensureProductPresent error:", e));
       }
       return copy;
     });
   }, [ensureProductPresent]);
 
-  /* ----------------- UI components (kept similar) ----------------- */
+  /* ----------------- UI components ----------------- */
   function CenterToggle() {
     return (
       <div className="w-full flex justify-center my-6">
@@ -852,7 +832,6 @@ export default function SlidesAndSalesAdmin() {
   function SaleCreator() {
     const totalPages = Math.max(1, Math.ceil((allProducts || []).length / pageSize));
 
-    // filteredProducts now just uses allProducts + sort (no query from search component)
     const filteredProducts = useMemo(() => {
       const copy = Array.isArray(allProducts) ? [...allProducts] : [];
       const comparator = mapSortToComparator(productSort);
@@ -871,6 +850,8 @@ export default function SlidesAndSalesAdmin() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-1 flex flex-col gap-2">
             <label className="text-xs font-semibold uppercase text-neutral-500">Sale name (displayed on home)</label>
+
+            {/* ---- Controlled input for sale name: single source of truth ---- */}
             <input
               value={saleName}
               onChange={(e) => setSaleName(e.target.value)}
@@ -878,6 +859,7 @@ export default function SlidesAndSalesAdmin() {
               className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none"
               aria-label="sale-name"
             />
+
             <div className="text-xs text-neutral-500 mt-2">Selected products: {selectedProductIds.size}</div>
             <div className="flex gap-2 mt-3">
               <button onClick={handleCreateSale} disabled={creatingSale || !saleName.trim()} className={primaryBtnClass()}>
@@ -900,7 +882,6 @@ export default function SlidesAndSalesAdmin() {
           <div className="md:col-span-2">
             <div className="flex gap-2 items-center mb-3">
               <div className="relative flex-1">
-                {/* NEW: ProductSearchBar that toggles selection in the main list */}
                 <ProductSearchBar
                   onToggle={toggleSelectProduct}
                   selectedIds={selectedProductIds}
