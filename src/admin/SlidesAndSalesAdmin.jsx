@@ -1,4 +1,3 @@
-// src/pages/SlidesAndSalesAdmin.jsx
 import React, { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import {
   Plus,
@@ -13,9 +12,6 @@ import {
   X,
   Edit2,
   GripVertical,
-  ChevronDown,
-  ChevronUp,
-  Minus,
 } from "lucide-react";
 import ProductSearchBar from "../components/ProductSearchBar";
 
@@ -27,7 +23,7 @@ export default function SlidesAndSalesAdmin() {
   const API_BASE =
     (typeof process !== "undefined" && (process.env.REACT_APP_API_BASE || process.env.API_BASE)) ||
     (typeof window !== "undefined" && window.__API_BASE__) ||
-    "";
+    "https://api.dripzoid.com";
 
   function buildUrl(path) {
     if (!path) return path;
@@ -53,10 +49,9 @@ export default function SlidesAndSalesAdmin() {
   const [slideEditing, setSlideEditing] = useState(null); // { id, name, link, image_url, file }
 
   // Sales
-  const [sales, setSales] = useState([]); // each sale will be { ...saleRow, products: [...], productCount: n }
+  const [sales, setSales] = useState([]);
   const [loadingSales, setLoadingSales] = useState(false);
   const [creatingSale, setCreatingSale] = useState(false);
-  const [expandedSaleIds, setExpandedSaleIds] = useState(new Set());
 
   // Sale edit modal
   const [saleEditOpen, setSaleEditOpen] = useState(false);
@@ -64,16 +59,16 @@ export default function SlidesAndSalesAdmin() {
 
   // Products (client-side list)
   const [allProducts, setAllProducts] = useState([]); // all products fetched once
-  const [productsLoading, setProductsLoading] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(false); // only for initial load
   const [productSort, setProductSort] = useState("relevance");
   const [selectedProductIds, setSelectedProductIds] = useState(new Set());
-
-  // local saleName for creator
-  const [saleNameInput, setSaleNameInput] = useState("");
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 8;
+
+  // Sale creator fields
+  const [saleName, setSaleName] = useState("");
 
   // UI note
   const [note, setNote] = useState(null);
@@ -96,7 +91,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // fetch helpers (same safeFetchJson / apiGet / apiPost / apiPut / apiDelete logic)
+  // fetch helpers
   function getAuthHeaders(addJson = true) {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     const headers = {};
@@ -177,6 +172,9 @@ export default function SlidesAndSalesAdmin() {
     }
     return safeFetchJson(url, opts);
   }
+  async function apiPatch(path, body) {
+    return safeFetchJson(buildUrl(path), { method: "PATCH", credentials: "include", headers: getAuthHeaders(true), body: JSON.stringify(body) });
+  }
   async function apiPut(path, body, isFormData = false) {
     const url = buildUrl(path);
     const opts = { method: "PUT", credentials: "include" };
@@ -208,9 +206,7 @@ export default function SlidesAndSalesAdmin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ------------------------------------------------------------------------
-     SLIDES (unchanged flows retained)
-  -------------------------------------------------------------------------*/
+  // -- SLIDES
   async function loadSlides() {
     setLoadingSlides(true);
     try {
@@ -296,9 +292,8 @@ export default function SlidesAndSalesAdmin() {
     try {
       const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
       const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-      // your router exposed /api/upload for admin -> cloudinary
-      const uploadPath = "/api/upload";
-      const res = await fetch(buildUrl(uploadPath), { method: "POST", body: fd, credentials: "include", headers });
+      const res = await fetch(buildUrl("/api/admin/upload") === "/api/admin/upload" ? buildUrl("/api/upload") : buildUrl("/api/upload"), { method: "POST", body: fd, credentials: "include", headers });
+      // The route in your example is router.post("/upload", authAdmin, ...), so final path is /api/upload
       if (!res.ok) {
         const parsed = await parseErrorResponse(res);
         throw new Error(parsed);
@@ -323,7 +318,6 @@ export default function SlidesAndSalesAdmin() {
     try {
       const url = await uploadImage(file);
       const saved = await apiPost("/api/admin/slides", { name, link, image_url: url });
-      // Backend might return { id } or { slide } or saved object:
       const newSlide = saved?.slide || (saved?.id ? { id: saved.id, name, link, image_url: url } : { id: Date.now(), name, link, image_url: url });
       setSlides((s) => [...(Array.isArray(s) ? s : []), newSlide]);
       setNoteWithAutoClear({ type: "success", text: "Slide added" }, 4000);
@@ -336,6 +330,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
+  // Slide edit flow
   function openEditSlide(slide) {
     setSlideEditing({ ...slide, file: null }); // keep original image_url; file null until user chooses new
     setSlideEditOpen(true);
@@ -366,35 +361,47 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  /* ------------------------------------------------------------------------
-     SALES - updated flows:
-       - loadSales loads sales list and enriches each with /sales/:id/details
-       - createSale creates sale then calls POST /sales/:id/products to attach selected products
-       - addProductsToSale and removeProductFromSale implemented
-  -------------------------------------------------------------------------*/
+  // -- SALES
+  // Robust helper to fetch products by multiple ids. Tries bulk endpoint first then falls back to individual fetches.
+  async function fetchProductsByIds(ids = []) {
+    if (!ids || ids.length === 0) return [];
+    try {
+      // try bulk endpoint (comma-separated ids)
+      const tryBulk = await apiGet(`/api/products?ids=${ids.join(",")}`).catch(() => null);
+      const bulkData = Array.isArray(tryBulk) ? tryBulk : tryBulk?.data ?? tryBulk?.products ?? tryBulk?.items ?? null;
+      if (Array.isArray(bulkData) && bulkData.length > 0) return bulkData;
+    } catch (e) {
+      // swallow and fallback
+    }
+
+    // fallback: fetch individually (parallel)
+    const promises = ids.map((id) => apiGet(`/api/products/${id}`).then((j) => j?.data || j?.product || j).catch(() => null));
+    const results = await Promise.all(promises);
+    return results.filter(Boolean);
+  }
+
+  async function expandSalesProducts(salesArr) {
+    // Returns a new array with products[] attached where possible
+    const out = await Promise.all(
+      (Array.isArray(salesArr) ? salesArr : []).map(async (sale) => {
+        const productIds = sale?.productIds || sale?.productIds?.length ? sale.productIds : sale?.products?.map((p) => p?.id) || [];
+        // normalize
+        const ids = Array.isArray(productIds) ? productIds.map((x) => (x && typeof x === "object" ? x.id : x)).filter(Boolean) : [];
+        if (ids.length === 0) return { ...sale, products: sale?.products || [] };
+        const prods = await fetchProductsByIds(ids);
+        return { ...sale, products: prods || [] };
+      })
+    );
+    return out;
+  }
 
   async function loadSales() {
     setLoadingSales(true);
     try {
       const data = await apiGet("/api/admin/sales");
       const arr = Array.isArray(data) ? data : data.sales || data.data || [];
-      const rows = Array.isArray(arr) ? arr : [];
-
-      // Enrich each sale with details (product list and count) using /api/admin/sales/:id/details
-      const enriched = await Promise.all(
-        rows.map(async (r) => {
-          try {
-            const details = await apiGet(`/api/admin/sales/${r.id}/details`);
-            // details likely { sale, products: [...] }
-            const products = Array.isArray(details?.products) ? details.products : details?.products || [];
-            return { ...r, products, productCount: products.length };
-          } catch (err) {
-            // If details fail, still return basic row
-            return { ...r, products: [], productCount: r.productIds ? (r.productIds.length || 0) : 0 };
-          }
-        })
-      );
-      setSales(enriched);
+      const withProducts = await expandSalesProducts(Array.isArray(arr) ? arr : []);
+      setSales(withProducts);
     } catch (err) {
       console.error("loadSales error:", err);
       setNoteWithAutoClear({ type: "error", text: `Failed to load sales — ${err.message || err}` }, 8000);
@@ -404,44 +411,39 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // Create sale then attach selected products (POST /api/admin/sales then POST /api/admin/sales/:id/products)
   async function handleCreateSale({ name }) {
-    if (!name || String(name).trim().length === 0) {
-      setNoteWithAutoClear({ type: "error", text: "Please provide a sale name" }, 6000);
+    if (!name || selectedProductIds.size === 0) {
+      setNoteWithAutoClear({ type: "error", text: "Please provide a name and select at least one product" }, 6000);
       return;
     }
-    if (selectedProductIds.size === 0) {
-      setNoteWithAutoClear({ type: "error", text: "Select at least one product to include in sale" }, 6000);
-      return;
-    }
-
     setCreatingSale(true);
     try {
-      // 1) create sale
-      const createResp = await apiPost("/api/admin/sales", { name });
-      // backend may return { id } or { sale }
-      const saleId = createResp?.id ?? createResp?.sale?.id ?? createResp?.saleId ?? createResp?.sale_id;
-      if (!saleId) {
-        // Some backends return full object as response
-        const createdSale = Array.isArray(createResp) ? createResp[0] : createResp?.sale ?? createResp;
-        if (createdSale && createdSale.id) {
-          // use it
-        } else {
-          throw new Error("Sale created but server did not return sale id");
-        }
-      }
+      // prepare payload: convert set to array of ids
+      const productIdsArray = Array.from(selectedProductIds).map((id) => (typeof id === "string" && id.match(/^\d+$/) ? Number(id) : id));
+      const payload = { name, productIds: productIdsArray };
+      const saved = await apiPost("/api/admin/sales", payload);
 
-      const finalSaleId = saleId ?? (createResp?.sale?.id ?? createResp?.id);
+      // backend may return sale, or an id; we handle both and ensure products[] are attached for immediate UI
+      const newSaleRaw = saved?.sale || (saved?.data && saved.data?.sale) || (saved?.id ? { id: saved.id, name, productIds: productIdsArray, enabled: 1 } : null);
+      const createdSale = newSaleRaw || saved;
 
-      // 2) attach products
-      const productIds = Array.from(selectedProductIds).map((x) => (typeof x === "object" ? x.id : x));
-      await apiPost(`/api/admin/sales/${finalSaleId}/products`, { product_ids: productIds });
+      // fetch product objects to attach
+      const prods = await fetchProductsByIds(productIdsArray);
+      const normalizedSale = { ...createdSale, products: prods || [], productIds: productIdsArray };
 
-      // 3) refresh sales list (or add to state optimistically)
-      await loadSales();
+      setSales((s) => [...(Array.isArray(s) ? s : []), normalizedSale]);
       setSelectedProductIds(new Set());
-      setSaleNameInput("");
-      setNoteWithAutoClear({ type: "success", text: "Sale created and products added" }, 5000);
+      setSaleName("");
+      setNoteWithAutoClear({ type: "success", text: "Sale created" }, 5000);
+
+      // try to update allProducts with any new products fetched (avoid duplicates)
+      setAllProducts((prev) => {
+        const copy = Array.isArray(prev) ? [...prev] : [];
+        (prods || []).forEach((p) => {
+          if (!copy.some((x) => String(x?.id) === String(p?.id))) copy.unshift(p);
+        });
+        return copy;
+      });
     } catch (err) {
       console.error("handleCreateSale error:", err);
       setNoteWithAutoClear({ type: "error", text: `Failed to create sale — ${err.message || err}` }, 10000);
@@ -450,44 +452,12 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  // Add selected product ids to an existing sale
-  async function addProductsToSale(saleId, productIds) {
-    if (!saleId || !Array.isArray(productIds) || productIds.length === 0) {
-      setNoteWithAutoClear({ type: "error", text: "Select at least one product to add" }, 4000);
-      return;
-    }
-    try {
-      await apiPost(`/api/admin/sales/${saleId}/products`, { product_ids: productIds });
-      // Refresh sale details for updated count & list
-      const details = await apiGet(`/api/admin/sales/${saleId}/details`);
-      setSales((list) => (Array.isArray(list) ? list.map((s) => (s?.id === saleId ? { ...s, products: details.products || [], productCount: (details.products || []).length } : s)) : list));
-      setNoteWithAutoClear({ type: "success", text: "Products added to sale" }, 4000);
-    } catch (err) {
-      console.error("addProductsToSale error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to add products — ${err.message || err}` }, 8000);
-    }
-  }
-
-  // Remove a product from a sale
-  async function removeProductFromSale(saleId, productId) {
-    if (!window.confirm("Remove this product from the sale?")) return;
-    try {
-      await apiDelete(`/api/admin/sales/${saleId}/products/${productId}`);
-      // refresh sale details
-      const details = await apiGet(`/api/admin/sales/${saleId}/details`);
-      setSales((list) => (Array.isArray(list) ? list.map((s) => (s?.id === saleId ? { ...s, products: details.products || [], productCount: (details.products || []).length } : s)) : list));
-      setNoteWithAutoClear({ type: "success", text: "Product removed from sale" }, 4000);
-    } catch (err) {
-      console.error("removeProductFromSale error:", err);
-      setNoteWithAutoClear({ type: "error", text: `Failed to remove product — ${err.message || err}` }, 8000);
-    }
-  }
-
   async function toggleSaleEnabled(saleId) {
     try {
       const sale = sales.find((s) => s?.id === saleId);
       if (!sale) return;
       const newEnabled = sale?.enabled ? 0 : 1;
+      // call PUT /sales/:id per backend
       await apiPut(`/api/admin/sales/${saleId}`, { enabled: newEnabled });
       setSales((list) => (Array.isArray(list) ? list.map((s) => (s?.id === saleId ? { ...s, enabled: newEnabled } : s)) : list));
       setNoteWithAutoClear({ type: "success", text: "Sale updated" }, 4000);
@@ -497,6 +467,7 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
+  // Sale edit flow
   function openEditSale(sale) {
     setSaleEditing({ id: sale.id, name: sale.name || "", enabled: Number(sale.enabled ?? 0) });
     setSaleEditOpen(true);
@@ -529,11 +500,8 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
-  /* ------------------------------------------------------------------------
-     PRODUCTS: load all once and helper utilities
-  -------------------------------------------------------------------------*/
-
-  function mapSortToComparator(sortKey) {
+  // PRODUCTS - client-side search & sort (no longer using debouncedQuery from search component)
+  const mapSortToComparator = useCallback((sortKey) => {
     switch (sortKey) {
       case "priceAsc":
         return (a, b) => Number((a?.price ?? 0)) - Number((b?.price ?? 0));
@@ -552,8 +520,9 @@ export default function SlidesAndSalesAdmin() {
       default:
         return null; // no sort (relevance/default)
     }
-  }
+  }, []);
 
+  // helper: get primary image
   function getPrimaryImage(item) {
     if (!item) return "";
     if (item.image) return item.image;
@@ -571,13 +540,17 @@ export default function SlidesAndSalesAdmin() {
     return "";
   }
 
+  // Load all products once (initial load)
   async function loadAllProducts() {
     setProductsLoading(true);
     try {
-      // attempt to fetch a large number — adjust limit if backend supports
-      const json = await apiGet("/api/products?limit=10000");
+      // try to fetch a large limit — adjust as your backend supports
+      const url = "/api/products?limit=10000";
+      const json = await apiGet(url);
+      // json may be { data: [...], meta: {...} } or array
       const data = Array.isArray(json) ? json : json.data ?? json.products ?? json.items ?? [];
       setAllProducts(Array.isArray(data) ? data : []);
+      // reset pagination
       setCurrentPage(1);
     } catch (err) {
       console.error("loadAllProducts error:", err);
@@ -588,45 +561,52 @@ export default function SlidesAndSalesAdmin() {
     }
   }
 
+  // If a product id was selected via search but is not in allProducts, fetch it and add to list
   async function ensureProductPresent(productId) {
     try {
       const exists = allProducts.some((p) => String(p?.id) === String(productId));
       if (exists) return;
+      // try to fetch product by id
       const json = await apiGet(`/api/products/${productId}`);
       const product = json?.data || json?.product || (Array.isArray(json) ? json[0] : json) || null;
       if (product && product.id) {
         setAllProducts((prev) => {
           const copy = Array.isArray(prev) ? [...prev] : [];
+          // avoid duplicates
           if (copy.some((p) => String(p?.id) === String(product.id))) return copy;
           return [product, ...copy];
         });
       }
     } catch (err) {
       console.warn("ensureProductPresent failed for", productId, err);
+      setNoteWithAutoClear({ type: "error", text: `Couldn't fetch product ${productId}: ${err.message || err}` }, 6000);
     }
   }
 
+  // toggle selection (called by UI list and by ProductSearchBar)
   function toggleSelectProduct(productOrId) {
     const id = productOrId?.id ?? productOrId;
     if (id == null) return;
     setSelectedProductIds((prev) => {
       const copy = new Set(prev);
       const willAdd = !copy.has(id);
+      if (willAdd) copy.add(id);
+      else copy.delete(id);
+
+      // If we added a product that isn't present in the local list, fetch and add it so main list shows it
       if (willAdd) {
-        copy.add(id);
-        ensureProductPresent(id).catch(() => {});
-      } else {
-        copy.delete(id);
+        // ensure but don't block UI: fetch product and add in background
+        ensureProductPresent(id).catch((e) => console.error("ensureProductPresent error:", e));
       }
       return copy;
     });
   }
 
-  /* ----------------- UI components ----------------- */
+  /* ----------------- UI components (kept similar) ----------------- */
   function CenterToggle() {
     return (
       <div className="w-full flex justify-center my-6">
-        <div className="inline-flex items-center rounded-full p-1 bg-neutral-100/40 dark:bg-neutral-800/40 shadow-inner border border-neutral-200/10 dark:border-neutral-700/20">
+        <div className="inline-flex items-center rounded-full p-1 bg-neutral-100/40 dark:bg-neutral-800/40 shadow-inner border border-neutral-200/20 dark:border-neutral-700/20">
           <button
             onClick={() => setMode("slides")}
             className={`px-6 py-2 rounded-full font-semibold tracking-wide transition-all flex items-center gap-2 ${mode === "slides" ? "bg-black text-white dark:bg-white dark:text-black shadow-lg" : "bg-transparent text-neutral-800 dark:text-neutral-200"}`}
@@ -817,105 +797,45 @@ export default function SlidesAndSalesAdmin() {
           <div className="p-4 rounded border">Loading sales...</div>
         ) : (
           <div className="grid grid-cols-1 gap-4">
-            {sales.map((sale) => {
-              const expanded = expandedSaleIds.has(sale.id);
-              return (
-                <div key={sale?.id} className="p-4 rounded-2xl border bg-white/3 shadow-md flex flex-col gap-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <div className="font-semibold text-lg">{sale?.name || "Unnamed sale"}</div>
-                        <div className="text-xs text-neutral-500">ID: {sale?.id}</div>
-                        <div className="text-sm text-neutral-500 ml-2">• {sale?.productCount ?? (sale?.products?.length || 0)} products</div>
-                      </div>
-                      <div className="text-xs text-neutral-500 mt-1">{sale?.description || ""}</div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => toggleSaleEnabled(sale?.id)} className={`px-3 py-1 rounded-full text-sm ${sale?.enabled ? "bg-green-600 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"}`}>
-                        {sale?.enabled ? "Enabled" : "Disabled"}
-                      </button>
-
-                      <button onClick={() => setExpandedSaleIds((s) => { const copy = new Set(s); if (copy.has(sale.id)) copy.delete(sale.id); else copy.add(sale.id); return copy; })} className={secondaryBtnClass()}>
-                        {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                        {expanded ? "Hide" : "Details"}
-                      </button>
-
-                      <button onClick={() => openEditSale(sale)} className={secondaryBtnClass()}>
-                        <Edit2 className="w-4 h-4" />
-                        Edit
-                      </button>
-
-                      <button onClick={() => handleDeleteSale(sale?.id)} className={secondaryBtnClass()}>
-                        <Trash2 className="w-4 h-4" />
-                        Delete
-                      </button>
-                    </div>
+            {sales.map((sale) => (
+              <div key={sale?.id} className="p-4 rounded-2xl border bg-white/3 shadow-md flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold">{sale?.name || "Unnamed sale"}</div>
+                    <div className="text-xs text-neutral-500">{(sale?.products || sale?.productIds || []).length} products</div>
                   </div>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => toggleSaleEnabled(sale?.id)} className={`px-3 py-1 rounded-full text-sm ${sale?.enabled ? "bg-green-600 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"}`}>
+                      {sale?.enabled ? "Enabled" : "Disabled"}
+                    </button>
+                    <button onClick={() => openEditSale(sale)} className={secondaryBtnClass()}>
+                      <Edit2 className="w-4 h-4" />
+                      Edit
+                    </button>
+                    <button onClick={() => handleDeleteSale(sale?.id)} className={secondaryBtnClass()}>
+                      <Trash2 className="w-4 h-4" />
+                      Delete
+                    </button>
+                  </div>
+                </div>
 
-                  {expanded && (
-                    <div className="mt-2 border-t pt-3">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="text-sm font-medium">Products in this sale ({sale?.productCount || 0})</div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              // add currently selected products to sale
-                              const productIdsToAdd = Array.from(selectedProductIds);
-                              if (productIdsToAdd.length === 0) {
-                                setNoteWithAutoClear({ type: "error", text: "Select products (left) to add to this sale" }, 4000);
-                                return;
-                              }
-                              addProductsToSale(sale.id, productIdsToAdd);
-                            }}
-                            className={primaryBtnClass()}
-                          >
-                            <Plus className="w-4 h-4" />
-                            Add selected
-                          </button>
-
-                          <button onClick={() => { setSelectedProductIds(new Set()); }} className={secondaryBtnClass()}>
-                            <X className="w-4 h-4" />
-                            Clear selection
-                          </button>
-                        </div>
+                <div className="flex gap-2 items-center overflow-x-auto">
+                  {(sale?.products || []).slice(0, 8).map((p) => (
+                    <div key={p?.id} className="flex items-center gap-2 p-2 rounded bg-white/5 border">
+                      <div className="w-10 h-10 rounded overflow-hidden flex-shrink-0 bg-white/5">
+                        {getPrimaryImage(p) ? <img src={getPrimaryImage(p)} alt={p?.name} className="object-cover w-full h-full" /> : <div className="w-full h-full flex items-center justify-center text-xs text-neutral-400">—</div>}
                       </div>
-
-                      <div className="grid gap-2">
-                        {Array.isArray(sale.products) && sale.products.length > 0 ? (
-                          sale.products.map((p) => (
-                            <div key={p.id} className="flex items-center justify-between p-2 rounded-lg bg-white/5 border">
-                              <div className="flex items-center gap-3">
-                                <div className="w-12 h-10 rounded overflow-hidden bg-white/5">
-                                  {p.images ? (
-                                    <img src={(Array.isArray(p.images) ? p.images[0] : p.images)} alt={p.name} className="object-cover w-full h-full" />
-                                  ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-xs text-neutral-400">No image</div>
-                                  )}
-                                </div>
-                                <div>
-                                  <div className="font-medium text-sm">{p.name}</div>
-                                  <div className="text-xs text-neutral-500">ID: {p.id}</div>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div className="text-sm font-semibold">₹{p.price ?? "—"}</div>
-                                <button onClick={() => removeProductFromSale(sale.id, p.id)} className={secondaryBtnClass()}>
-                                  <Minus className="w-4 h-4" />
-                                  Remove
-                                </button>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="text-sm text-neutral-500">No products in this sale.</div>
-                        )}
+                      <div className="text-xs">
+                        <div className="font-medium line-clamp-1">{p?.name}</div>
+                        <div className="text-neutral-500">₹{p?.price ?? "—"}</div>
                       </div>
                     </div>
-                  )}
+                  ))}
                 </div>
-              );
-            })}
+
+                <div className="text-xs text-neutral-500">ID: {sale?.id}</div>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -925,12 +845,13 @@ export default function SlidesAndSalesAdmin() {
   function SaleCreator() {
     const totalPages = Math.max(1, Math.ceil((allProducts || []).length / pageSize));
 
+    // filteredProducts now just uses allProducts + sort (no query from search component)
     const filteredProducts = useMemo(() => {
       const copy = Array.isArray(allProducts) ? [...allProducts] : [];
       const comparator = mapSortToComparator(productSort);
       if (comparator) copy.sort(comparator);
       return copy;
-    }, [allProducts, productSort]);
+    }, [allProducts, productSort, mapSortToComparator]);
 
     const totalProducts = filteredProducts.length;
     const displayedProducts = useMemo(() => {
@@ -943,27 +864,30 @@ export default function SlidesAndSalesAdmin() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-1 flex flex-col gap-2">
             <label className="text-xs font-semibold uppercase text-neutral-500">Sale name (displayed on home)</label>
-            <input value={saleNameInput} onChange={(e) => setSaleNameInput(e.target.value)} placeholder="Eg: Summer Sale" className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
+            <input value={saleName} onChange={(e) => setSaleName(e.target.value)} placeholder="Eg: Summer Sale" className="px-4 py-3 rounded-full border border-neutral-200 bg-white/5 focus:outline-none" />
             <div className="text-xs text-neutral-500 mt-2">Selected products: {selectedProductIds.size}</div>
             <div className="flex gap-2 mt-3">
-              <button onClick={() => handleCreateSale({ name: saleNameInput })} disabled={creatingSale} className={primaryBtnClass()}>
+              <button onClick={() => handleCreateSale({ name: saleName })} disabled={creatingSale} className={primaryBtnClass()}>
                 <Plus className="w-4 h-4" />
                 {creatingSale ? "Creating..." : "Create Sale"}
               </button>
-              <button onClick={() => { setSelectedProductIds(new Set()); setSaleNameInput(""); }} className={secondaryBtnClass()}>
+              <button onClick={() => { setSelectedProductIds(new Set()); setSaleName(""); }} className={secondaryBtnClass()}>
                 <X className="w-4 h-4" />
                 Reset
               </button>
             </div>
 
-            <div className="mt-4 text-xs text-neutral-500">
-              Tip: Use the search box to quickly find and select products to add to a new sale, then click "Create Sale".
-            </div>
+            {selectedProductIds.size > 0 && (
+              <div className="mt-3 text-xs text-neutral-500">
+                Tip: use the search box to add products quickly. Selected products will be added to the sale when you click Create Sale.
+              </div>
+            )}
           </div>
 
           <div className="md:col-span-2">
             <div className="flex gap-2 items-center mb-3">
               <div className="relative flex-1">
+                {/* NEW: ProductSearchBar that toggles selection in the main list */}
                 <ProductSearchBar
                   onToggle={toggleSelectProduct}
                   selectedIds={selectedProductIds}
@@ -1027,18 +951,19 @@ export default function SlidesAndSalesAdmin() {
 
             {/* Pagination controls */}
             <div className="mt-4 flex items-center justify-between">
-              <div className="text-sm text-neutral-500">Page {currentPage} of {Math.max(1, Math.ceil((filteredProducts.length || 0) / pageSize))}</div>
+              <div className="text-sm text-neutral-500">Page {currentPage} of {Math.max(1, Math.ceil((totalProducts || 0) / pageSize))}</div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1} className={secondaryBtnClass(currentPage === 1 ? "opacity-50 pointer-events-none" : "")}>Prev</button>
-                {Array.from({ length: Math.min(7, Math.max(1, Math.ceil((filteredProducts.length || 0) / pageSize))) }).map((_, idx) => {
+                {Array.from({ length: Math.max(1, Math.ceil((totalProducts || 0) / pageSize)) }).map((_, idx) => {
                   const page = idx + 1;
+                  if (page > 7) return null;
                   return (
                     <button key={page} onClick={() => setCurrentPage(page)} className={`px-3 py-1 rounded-full ${page === currentPage ? "bg-black text-white" : "bg-transparent text-neutral-600 border border-neutral-200/10"}`}>
                       {page}
                     </button>
                   );
                 })}
-                <button onClick={() => setCurrentPage((p) => Math.min(Math.max(1, Math.ceil((filteredProducts.length || 0) / pageSize)), p + 1))} disabled={currentPage === Math.ceil((filteredProducts.length || 0) / pageSize)} className={secondaryBtnClass(currentPage === Math.ceil((filteredProducts.length || 0) / pageSize) ? "opacity-50 pointer-events-none" : "")}>Next</button>
+                <button onClick={() => setCurrentPage((p) => Math.min(Math.max(1, Math.ceil((totalProducts || 0) / pageSize)), p + 1))} disabled={currentPage === Math.ceil((totalProducts || 0) / pageSize)} className={secondaryBtnClass(currentPage === Math.ceil((totalProducts || 0) / pageSize) ? "opacity-50 pointer-events-none" : "")}>Next</button>
               </div>
             </div>
           </div>
