@@ -75,15 +75,15 @@ export default function HomePage() {
       <section className="max-w-7xl mx-auto px-6 mb-28">
         <div className="grid grid-cols-3 gap-6 text-center">
           {[
+             {
+              label: "Men",
+              to: "/men",
+              img: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1769234530/my_project/q9yp4y9u9db6plxswvqm.jpg",
+            },
             {
               label: "Women",
               to: "/women",
               img: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1769234485/my_project/jjohfsp34dtkjqpbwdju.jpg",
-            },
-            {
-              label: "Men",
-              to: "/men",
-              img: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1769234530/my_project/q9yp4y9u9db6plxswvqm.jpg",
             },
             {
               label: "Kids",
