@@ -1,12 +1,14 @@
 // src/pages/Home.jsx
-// Version: V2.1 – Premium Fashion Homepage (Cleaned & Branded)
+// Version: V2.2 – Premium Fashion Homepage + FAQ Section
 
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+
 import Hero from "../components/Hero";
 import FeaturedSection from "../components/FeaturedSection";
 import TrendingSection from "../components/TrendingSection";
 import OnSale from "../components/OnSale";
+import FAQSection from "../components/FAQSection"; // ✅ NEW
 
 /* ---------------------------------
    Default Data (fallback)
@@ -75,7 +77,7 @@ export default function HomePage() {
       <section className="max-w-7xl mx-auto px-6 mb-28">
         <div className="grid grid-cols-3 gap-6 text-center">
           {[
-             {
+            {
               label: "Men",
               to: "/men",
               img: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1769234530/my_project/q9yp4y9u9db6plxswvqm.jpg",
@@ -125,7 +127,7 @@ export default function HomePage() {
         <TrendingSection />
       </section>
 
-      {/* TRUST STRIP → PREMIUM CARDS */}
+      {/* TRUST STRIP */}
       <section className="border-t border-slate-200 dark:border-slate-800 py-20">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-3 gap-8">
           {[
@@ -163,6 +165,11 @@ export default function HomePage() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* FAQ SECTION ✅ */}
+      <section className="border-t border-slate-200 dark:border-slate-800">
+        <FAQSection className="mt-24 mb-24" />
       </section>
     </main>
   );
