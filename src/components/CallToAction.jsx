@@ -364,7 +364,7 @@ export default function ExpandedCTA() {
 
             <p className="mt-4 text-xs text-neutral-400">
               By subscribing you join a community of creators and style-seekers. We value privacy — your email is used only
-              for Dripzoid communications (not shared). Read our <a href="/privacy" className="underline">privacy policy</a>.
+              for Dripzoid communications (not shared). Read our <a href="/privacy-policy" className="underline">privacy policy</a>.
             </p>
           </form>
         </motion.div>
