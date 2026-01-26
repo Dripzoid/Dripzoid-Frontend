@@ -30,6 +30,14 @@ import Auth from "./pages/Auth.jsx";
 import AboutUs from "./pages/AboutUs.jsx";
 import Contact from "./pages/Contact.jsx";
 import PrivacyPolicy from "./pages/PrivacyPolicy.jsx";
+import Subscribe from "./pages/Subscribe";
+import Collabs from "./pages/Collabs";
+import SizeGuide from "./pages/SizeGuide";
+import Collections from "./pages/Collections";
+import Shipping from "./pages/Shipping";
+import Jobs from "./pages/Jobs";
+import FAQ from "./pages/FAQ";
+
 
 // 👤 Account Pages
 import DashboardLayout from "./pages/account/DashboardLayout.jsx";
@@ -79,6 +87,14 @@ function App() {
                 <Route path="/about-us" element={<AboutUs />} />
                 <Route path="/contact" element={<Contact />} />
                 <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                <Route path="/subscribe" element={<Subscribe />} />
+                <Route path="/collabs" element={<Collabs />} />
+                <Route path="/size-guide" element={<SizeGuide />} />
+                <Route path="/collections" element={<Collections />} />
+                <Route path="/shipping" element={<Shipping />} />
+                <Route path="/jobs" element={<Jobs />} />
+                <Route path="/faq" element={<FAQ />} />
+
 
                 {/* Auth */}
                 <Route path="/login" element={<AuthWrapper defaultForm="login" />} />
