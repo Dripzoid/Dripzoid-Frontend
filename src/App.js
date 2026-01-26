@@ -30,13 +30,13 @@ import Auth from "./pages/Auth.jsx";
 import AboutUs from "./pages/AboutUs.jsx";
 import Contact from "./pages/Contact.jsx";
 import PrivacyPolicy from "./pages/PrivacyPolicy.jsx";
-import Subscribe from "./pages/Subscribe";
-import Collabs from "./pages/Collabs";
-import SizeGuide from "./pages/SizeGuide";
-import Collections from "./pages/Collections";
-import Shipping from "./pages/Shipping";
-import Jobs from "./pages/Jobs";
-import FAQ from "./pages/FAQ";
+import Subscribe from "./pages/Subscribe.jsx";
+import Collabs from "./pages/Collabs.jsx";
+import SizeGuide from "./pages/SizeGuide.jsx";
+import Collections from "./pages/Collections.jsx";
+import Shipping from "./pages/Shipping.jsx";
+import Jobs from "./pages/Jobs.jsx";
+import FAQ from "./pages/FAQ.jsx";
 
 
 // 👤 Account Pages
