@@ -11,44 +11,55 @@ import {
   Settings,
   Menu as MenuIcon,
   X as XIcon,
-  Phone,
   MessageSquare,
   Gift,
   CheckCircle,
   Star,
-  Clipboard,
   Mail,
   LifeBuoy,
-  Clock,
 } from "lucide-react";
 
 export default function DashboardLayout() {
+  // ---------------------
+  // CONTEXT / NAVIGATION
+  // ---------------------
   const { user, login, logout } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
+
+  // ---------------------
+  // HOOKS: DECLARE UNCONDITIONALLY
+  // ---------------------
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
   const [isDesktop, setIsDesktop] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth >= 1024 : false
   );
-  useEffect(() => {
-    const handleResize = () => setIsDesktop(window.innerWidth >= 1024);
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
 
+  // New UX states (declare before returns)
+  const [recentOrders, setRecentOrders] = useState([]);
+  const [recentLoading, setRecentLoading] = useState(false);
+  const [trackInput, setTrackInput] = useState("");
+  const [newsletterSubscribed, setNewsletterSubscribed] = useState(() => {
+    try {
+      return localStorage.getItem("dashboard.newsletter") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const isMountedRef = useRef(true);
+
+  // ---------------------
+  // ENV / API BASES
+  // ---------------------
   const BASE = process.env.REACT_APP_API_BASE?.replace(/\/$/, "") || "";
   const AUTH_ME = `${BASE}/api/auth/me`;
   const ACCOUNT_BASE = `${BASE}/api/account`;
 
-  const isMountedRef = useRef(true);
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
-
+  // ---------------------
+  // HELPERS
+  // ---------------------
   const fetchWithTimeout = async (url, options = {}, timeoutMs = 10000) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -69,12 +80,33 @@ export default function DashboardLayout() {
     return res.json();
   };
 
-  // --- Auth check ---
+  const closeSidebar = () => setSidebarOpen(false);
+  const openSidebar = () => setSidebarOpen(true);
+
+  // ---------------------
+  // EFFECTS (unconditional)
+  // ---------------------
+
+  // keep mounted flag
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // track resize to update isDesktop
+  useEffect(() => {
+    const handleResize = () => setIsDesktop(window.innerWidth >= 1024);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // authentication check (runs once)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (user) {
-        setCheckingAuth(false);
+        if (!cancelled && isMountedRef.current) setCheckingAuth(false);
         return;
       }
       try {
@@ -85,7 +117,7 @@ export default function DashboardLayout() {
             const userData = await fetchMe(tokenFromUrl);
             if (!cancelled && isMountedRef.current) login(userData, tokenFromUrl);
           } catch {
-            // ignore
+            // ignore token-from-url failure
           } finally {
             const newUrl = location.pathname + location.hash;
             window.history.replaceState({}, document.title, newUrl);
@@ -93,6 +125,7 @@ export default function DashboardLayout() {
           }
           return;
         }
+
         try {
           const data = await fetchMe();
           if (!cancelled && isMountedRef.current && data?.user) {
@@ -107,17 +140,62 @@ export default function DashboardLayout() {
         if (!cancelled && isMountedRef.current) setCheckingAuth(false);
       }
     })();
-    return () => (cancelled = true);
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // redirect if not logged in
+  // redirect if not logged in (runs when checkingAuth/user change)
   useEffect(() => {
     if (!checkingAuth && !user && location.pathname !== "/login") {
       navigate("/login", { replace: true });
     }
   }, [checkingAuth, user, location.pathname, navigate]);
 
+  // fetch recent orders preview (unconditional effect)
+  useEffect(() => {
+    let mounted = true;
+    async function loadRecent() {
+      setRecentLoading(true);
+      try {
+        const res = await fetchWithTimeout(`${ACCOUNT_BASE}/orders?limit=3`, { credentials: "include" }, 7000).catch(() => null);
+        if (!res || !res.ok) {
+          if (mounted) setRecentOrders([]);
+          return;
+        }
+        const json = await res.json().catch(() => null);
+        if (mounted && json) {
+          const arr = Array.isArray(json) ? json : json.orders ?? json.data ?? [];
+          setRecentOrders(Array.isArray(arr) ? arr : []);
+        }
+      } catch (err) {
+        console.warn("Could not load recent orders", err);
+        if (mounted) setRecentOrders([]);
+      } finally {
+        if (mounted) setRecentLoading(false);
+      }
+    }
+    loadRecent();
+    return () => (mounted = false);
+  }, [user?.id]); // safe to depend on user.id
+
+  // close sidebar when route changes (unconditional effect)
+  useEffect(() => {
+    closeSidebar();
+  }, [location.pathname]);
+
+  // escape key handler (unconditional)
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && closeSidebar();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // ---------------------
+  // ACTIONS & SMALL HELPERS
+  // ---------------------
   const handleLogout = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -136,81 +214,21 @@ export default function DashboardLayout() {
     navigate("/login");
   };
 
-  const links = [
-    { to: "/account/profile", label: "Profile Overview", icon: <UserIcon size={18} /> },
-    { to: "/account/orders", label: "My Orders", icon: <ShoppingBag size={18} /> },
-    { to: "/account/wishlist", label: "Wishlist", icon: <Heart size={18} /> },
-    { to: "/account/addresses", label: "Address Book", icon: <MapPin size={18} /> },
-    { to: "/account/settings", label: "Account Settings", icon: <Settings size={18} /> },
-  ];
+  const goToOrders = () => navigate("/account/orders");
+  const goToWishlist = () => navigate("/account/wishlist");
+  const goToAddresses = () => navigate("/account/addresses");
 
-  const closeSidebar = () => setSidebarOpen(false);
-  const openSidebar = () => setSidebarOpen(true);
+  const openWhatsAppSupport = () => {
+    const phone = "+919494038163";
+    const text = encodeURIComponent("Hi Dripzoid Support — I need help with my order.");
+    window.open(`https://wa.me/${phone.replace(/\D/g, "")}?text=${text}`, "_blank");
+  };
 
-  useEffect(() => {
-    closeSidebar();
-  }, [location.pathname]);
-
-  useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && closeSidebar();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  if (checkingAuth) return null;
-
-  const isProfileActive = () =>
-    location.pathname === "/account" ||
-    location.pathname === "/account/" ||
-    location.pathname.startsWith("/account/profile");
-
-  // ------------------- NEW: Additional UI state & helpers -------------------
-  const [recentOrders, setRecentOrders] = useState([]);
-  const [recentLoading, setRecentLoading] = useState(false);
-  const [trackInput, setTrackInput] = useState("");
-  const [newsletterSubscribed, setNewsletterSubscribed] = useState(() => {
-    try {
-      return localStorage.getItem("dashboard.newsletter") === "true";
-    } catch {
-      return false;
-    }
-  });
-  const referralCode = user?.referralCode ?? `DRP-${user?.id ?? "guest"}`;
-
-  useEffect(() => {
-    let mounted = true;
-    async function loadRecent() {
-      setRecentLoading(true);
-      try {
-        // attempt to fetch recent orders for preview; if API absent, no big deal
-        const res = await fetchWithTimeout(`${ACCOUNT_BASE}/orders?limit=3`, { credentials: "include" }, 7000).catch(() => null);
-        if (!res || !res.ok) {
-          setRecentOrders([]);
-          return;
-        }
-        const json = await res.json().catch(() => null);
-        if (mounted && json) {
-          const arr = Array.isArray(json) ? json : json.orders ?? json.data ?? [];
-          setRecentOrders(Array.isArray(arr) ? arr : []);
-        }
-      } catch (err) {
-        console.warn("Could not load recent orders", err);
-        setRecentOrders([]);
-      } finally {
-        if (mounted) setRecentLoading(false);
-      }
-    }
-    loadRecent();
-    return () => (mounted = false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
-
-  const copyReferral = async () => {
+  const copyReferral = async (referralCode) => {
     try {
       await navigator.clipboard.writeText(referralCode);
       alert("Referral code copied to clipboard!");
     } catch {
-      // fallback
       prompt("Copy referral code:", referralCode);
     }
   };
@@ -223,17 +241,11 @@ export default function DashboardLayout() {
     } catch {}
   };
 
-  const goToOrders = () => navigate("/account/orders");
-  const goToWishlist = () => navigate("/account/wishlist");
-  const goToAddresses = () => navigate("/account/addresses");
+  // ---------------------
+  // DERIVED VALUES (not hooks)
+  // ---------------------
+  const referralCode = user?.referralCode ?? `DRP-${user?.id ?? "guest"}`;
 
-  const openWhatsAppSupport = () => {
-    const phone = "+919494038163";
-    const text = encodeURIComponent("Hi Dripzoid Support — I need help with my order.");
-    window.open(`https://wa.me/${phone.replace(/\D/g, "")}?text=${text}`, "_blank");
-  };
-
-  // simple profile completeness heuristic
   const profileCompleteness = (() => {
     if (!user) return 0;
     const checks = [
@@ -243,14 +255,38 @@ export default function DashboardLayout() {
       Array.isArray(user.addresses) && user.addresses.length > 0,
       !!user.referralCode,
     ];
-    const score = Math.round((checks.filter(Boolean).length / checks.length) * 100);
-    return score;
+    return Math.round((checks.filter(Boolean).length / checks.length) * 100);
   })();
 
-  // ------------------- RENDER -------------------
+  const isProfileActive = () =>
+    location.pathname === "/account" ||
+    location.pathname === "/account/" ||
+    location.pathname.startsWith("/account/profile");
+
+  // ---------------------
+  // RENDER: while checkingAuth -> show loading skeleton (no early hook return)
+  // ---------------------
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="animate-pulse space-y-3 w-full max-w-4xl p-6">
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3" />
+          <div className="h-6 bg-gray-200 dark:bg-gray-700 rounded w-2/3" />
+          <div className="grid grid-cols-3 gap-4 mt-6">
+            <div className="h-40 bg-gray-200 dark:bg-gray-800 rounded" />
+            <div className="h-40 bg-gray-200 dark:bg-gray-800 rounded" />
+            <div className="h-40 bg-gray-200 dark:bg-gray-800 rounded" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------------
+  // MAIN RENDER
+  // ---------------------
   return (
-    // keep top padding to offset fixed navbar (navbar assumed h-16)
-    <div className="pt-16 relative flex flex-col lg:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    <div className="pt-16 relative flex flex-col lg:flex-row bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen">
       {/* SIDEBAR */}
       <aside
         className={`fixed lg:static top-16 lg:top-0 left-0 z-40 w-64 bg-white dark:bg-gray-800 shadow-lg flex flex-col
@@ -259,11 +295,7 @@ export default function DashboardLayout() {
           lg:translate-x-0 lg:h-auto lg:flex-shrink-0`}
       >
         {/* Mobile Header inside sidebar */}
-        <div
-          className="flex items-center justify-between px-6 pt-6 pb-4
-                border-b border-gray-200 dark:border-gray-700
-                lg:hidden"
-        >
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-200 dark:border-gray-700 lg:hidden">
           <h2 className="text-xl font-extrabold text-gray-900 dark:text-white">Dashboard</h2>
           <button onClick={closeSidebar} className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
             <XIcon size={20} />
@@ -277,7 +309,13 @@ export default function DashboardLayout() {
 
         {/* Navigation */}
         <nav className="flex flex-col flex-grow overflow-auto">
-          {links.map(({ to, label, icon }) => (
+          {[
+            { to: "/account/profile", label: "Profile Overview", icon: <UserIcon size={18} /> },
+            { to: "/account/orders", label: "My Orders", icon: <ShoppingBag size={18} /> },
+            { to: "/account/wishlist", label: "Wishlist", icon: <Heart size={18} /> },
+            { to: "/account/addresses", label: "Address Book", icon: <MapPin size={18} /> },
+            { to: "/account/settings", label: "Account Settings", icon: <Settings size={18} /> },
+          ].map(({ to, label, icon }) => (
             <NavLink
               key={to}
               to={to}
@@ -285,9 +323,7 @@ export default function DashboardLayout() {
               className={({ isActive }) => {
                 const active = isActive || (to === "/account/profile" && isProfileActive());
                 return `flex items-center gap-3 px-6 py-4 font-semibold transition-colors duration-300 w-full ${
-                  active
-                    ? "bg-black text-white"
-                    : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                  active ? "bg-black text-white" : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
                 }`;
               }}
             >
@@ -385,7 +421,6 @@ export default function DashboardLayout() {
                     <button
                       onClick={() => {
                         if (!trackInput) return alert("Enter a tracking ID to track.");
-                        // if you have a tracking route:
                         navigate(`/track/${encodeURIComponent(trackInput)}`);
                       }}
                       className="px-3 py-2 rounded-md bg-black text-white"
@@ -491,8 +526,8 @@ export default function DashboardLayout() {
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">Share your code and earn rewards when friends make purchases.</p>
                 <div className="flex items-center gap-2">
                   <div className="px-3 py-2 rounded-md bg-white/60 dark:bg-gray-800 font-mono text-sm">{referralCode}</div>
-                  <button onClick={copyReferral} className="px-3 py-2 rounded-md bg-black text-white">Copy</button>
-                  <button onClick={() => navigator.share ? navigator.share({ title: "Join Dripzoid", text: `Use my code ${referralCode} at dripzoid.com`, url: window.location.origin }) : alert("Use copy to share")} className="px-3 py-2 rounded-md border">Share</button>
+                  <button onClick={() => copyReferral(referralCode)} className="px-3 py-2 rounded-md bg-black text-white">Copy</button>
+                  <button onClick={() => (navigator.share ? navigator.share({ title: "Join Dripzoid", text: `Use my code ${referralCode} at dripzoid.com`, url: window.location.origin }) : alert("Use copy to share"))} className="px-3 py-2 rounded-md border">Share</button>
                 </div>
               </div>
 
