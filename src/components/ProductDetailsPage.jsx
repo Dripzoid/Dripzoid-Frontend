@@ -142,9 +142,7 @@ export default function ProductDetailsPage() {
 
     async function loadAll() {
       try {
-        const [pRes] = await Promise.all([
-          fetch(`${API_BASE}/api/products/${productId}`, { signal: ac.signal }),
-        ]);
+        const [pRes] = await Promise.all([fetch(`${API_BASE}/api/products/${productId}`, { signal: ac.signal })]);
 
         if (!pRes.ok) throw new Error(`Product fetch failed (${pRes.status})`);
         const pjson = await pRes.json();
@@ -175,13 +173,18 @@ export default function ProductDetailsPage() {
           const rr = await fetch(`${API_BASE}/api/products/related/${productId}`, { signal: ac.signal });
           if (rr.ok) list = await rr.json();
           if ((!Array.isArray(list) || list.length === 0) && pjson?.category) {
-            const fallback = await fetch(`${API_BASE}/api/products?category=${encodeURIComponent(pjson.category)}&limit=8`, { signal: ac.signal });
+            const fallback = await fetch(
+              `${API_BASE}/api/products?category=${encodeURIComponent(pjson.category)}&limit=8`,
+              { signal: ac.signal }
+            );
             if (fallback.ok) {
               const fb = await fallback.json();
               list = fb?.data || fb || [];
             }
           }
-          const filtered = Array.isArray(list) ? list.filter((x) => String(x.id || x._id || x.productId) !== String(productId)).slice(0, 8) : [];
+          const filtered = Array.isArray(list)
+            ? list.filter((x) => String(x.id || x._id || x.productId) !== String(productId)).slice(0, 8)
+            : [];
           if (mounted) setRelatedProducts(filtered);
         } catch (err) {
           console.warn("related fetch failed", err);
@@ -397,7 +400,7 @@ export default function ProductDetailsPage() {
     setAuthPrompt(null);
   }
   function goToLogin() {
-    // Redirect to external login page
+    // redirect to external login page
     window.location.href = "https://dripzoid.com/login";
   }
 
@@ -886,12 +889,13 @@ export default function ProductDetailsPage() {
         </div>
       )}
 
-      {/* AUTH PROMPT modal (less transparent overlay, "Login required", Login button redirects to dripzoid.com/login) */}
+      {/* AUTH PROMPT modal (overlay reduced opacity so modal reads clearly;
+          header and action text updated to "Login", Login button redirects to dripzoid.com/login) */}
       {authPrompt && (
         <div className="fixed inset-0 z-60 flex items-center justify-center" role="dialog" aria-modal="true" aria-label="Login required">
-          {/* stronger overlay so modal isn't too transparent */}
-          <div className="absolute inset-0 bg-black/90" onClick={closeAuthPrompt} />
-          <div className="bg-white dark:bg-gray-900 p-6 rounded-xl z-70 max-w-md mx-4 shadow-lg ring-1 ring-black/10">
+          {/* slightly lighter overlay so modal is prominent */}
+          <div className="absolute inset-0 bg-black/40" onClick={closeAuthPrompt} />
+          <div className="relative bg-white dark:bg-gray-900 p-6 rounded-xl z-70 max-w-md mx-4 shadow-2xl ring-1 ring-black/5">
             <h4 className="text-lg font-semibold mb-2 text-black dark:text-white">Login required</h4>
             <p className="mb-4 text-sm text-gray-700 dark:text-gray-300">{authPrompt.message || "Please Login"}</p>
             <div className="flex gap-3 justify-end">
