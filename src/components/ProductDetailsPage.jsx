@@ -397,8 +397,8 @@ export default function ProductDetailsPage() {
     setAuthPrompt(null);
   }
   function goToLogin() {
-    closeAuthPrompt();
-    navigate("/login");
+    // Redirect to external login page
+    window.location.href = "https://dripzoid.com/login";
   }
 
   /* ---------- wishlist initial sync ---------- */
@@ -886,16 +886,17 @@ export default function ProductDetailsPage() {
         </div>
       )}
 
-      {/* AUTH PROMPT modal */}
+      {/* AUTH PROMPT modal (less transparent overlay, "Login required", Login button redirects to dripzoid.com/login) */}
       {authPrompt && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60" onClick={closeAuthPrompt} />
-          <div className="bg-white dark:bg-gray-900 p-6 rounded-xl z-70 max-w-md mx-4">
-            <h4 className="text-lg font-semibold mb-2 text-black dark:text-white">Sign in required</h4>
-            <p className="mb-4 text-sm text-gray-700 dark:text-gray-300">{authPrompt.message || "Please sign in to continue."}</p>
+        <div className="fixed inset-0 z-60 flex items-center justify-center" role="dialog" aria-modal="true" aria-label="Login required">
+          {/* stronger overlay so modal isn't too transparent */}
+          <div className="absolute inset-0 bg-black/90" onClick={closeAuthPrompt} />
+          <div className="bg-white dark:bg-gray-900 p-6 rounded-xl z-70 max-w-md mx-4 shadow-lg ring-1 ring-black/10">
+            <h4 className="text-lg font-semibold mb-2 text-black dark:text-white">Login required</h4>
+            <p className="mb-4 text-sm text-gray-700 dark:text-gray-300">{authPrompt.message || "Please Login"}</p>
             <div className="flex gap-3 justify-end">
               <button onClick={closeAuthPrompt} className="px-4 py-2 rounded-lg border">Cancel</button>
-              <button onClick={goToLogin} className="px-4 py-2 rounded-lg bg-black text-white">Sign in</button>
+              <button onClick={goToLogin} className="px-4 py-2 rounded-lg bg-black text-white">Login</button>
             </div>
           </div>
         </div>
