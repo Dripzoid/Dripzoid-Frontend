@@ -388,8 +388,10 @@ export default function ProductDetailsPage() {
 
   /* ---------- AUTH modal state ---------- */
   const [authPrompt, setAuthPrompt] = useState(null);
-  function requireAuth(actionName = "perform this action") {
-    setAuthPrompt({ message: `You need to be logged in to ${actionName}.`, actionName });
+
+  // Unified auth prompt: always show "Please Login"
+  function requireAuth() {
+    setAuthPrompt({ message: "Please Login" });
   }
   function closeAuthPrompt() {
     setAuthPrompt(null);
@@ -399,6 +401,40 @@ export default function ProductDetailsPage() {
     navigate("/login");
   }
 
+  /* ---------- wishlist initial sync ---------- */
+  useEffect(() => {
+    // Attempt to derive whether the product is in wishlist from wishlistCtx.
+    try {
+      if (!product || !wishlistCtx) return;
+
+      // If wishlist context provides helper function isWishlisted(productId / product) use it
+      if (typeof wishlistCtx.isWishlisted === "function") {
+        const pid = product?.id ?? product?._id ?? product?.product_id ?? product;
+        const res = wishlistCtx.isWishlisted(pid);
+        setIsWishlisted(Boolean(res));
+        return;
+      }
+
+      // Else try to use items array (common pattern)
+      if (Array.isArray(wishlistCtx.items)) {
+        const pid = product?.id ?? product?._id ?? product?.product_id;
+        const found = wishlistCtx.items.some((it) => {
+          if (!it) return false;
+          const p = it.product ?? it;
+          const itemPid = p?.id ?? p?._id ?? p?.product_id;
+          if (!itemPid || !pid) return false;
+          return String(itemPid) === String(pid);
+        });
+        setIsWishlisted(Boolean(found));
+        return;
+      }
+
+      // fallback: don't change
+    } catch (err) {
+      // ignore
+    }
+  }, [product, wishlistCtx]);
+
   /* ---------- wishlist toggle (top button) ---------- */
   async function handleTopWishlistToggle() {
     if (!wishlistCtx || !wishlistCtx.toggle) {
@@ -406,12 +442,13 @@ export default function ProductDetailsPage() {
       return;
     }
     if (!currentUser) {
-      requireAuth("add items to your wishlist");
+      requireAuth();
       return;
     }
     setWlBusyTop(true);
     try {
       await wishlistCtx.toggle(product?.id ?? product?._id ?? product?.product_id ?? product);
+      // optimistic flip
       setIsWishlisted((s) => !s);
     } catch (err) {
       console.warn("wishlist toggle failed", err);
@@ -428,7 +465,7 @@ export default function ProductDetailsPage() {
       return;
     }
     if (!currentUser) {
-      requireAuth("add items to cart");
+      requireAuth();
       return;
     }
     if (disablePurchase && !addedToCart) {
@@ -461,7 +498,7 @@ export default function ProductDetailsPage() {
 
   function buyNowHandler() {
     if (!currentUser) {
-      requireAuth("buy items");
+      requireAuth();
       return;
     }
     const needSelectionError = (requiresColor && !selectedColor) || (requiresSize && !selectedSize);
@@ -598,7 +635,7 @@ export default function ProductDetailsPage() {
     }
   };
 
-  /* ---------- UI rendering (fixed description JSX and no duplicate helpers) ---------- */
+  /* ---------- UI rendering (fixed description JSX and unified auth behavior) ---------- */
 
   return (
     <div className="bg-white dark:bg-black min-h-screen text-black dark:text-white pb-24">
