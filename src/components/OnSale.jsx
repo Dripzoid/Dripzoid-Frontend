@@ -162,32 +162,34 @@ export default function OnSale() {
                               draggable="false"
                             />
 
-                            {/* sale title badge (top-left) */}
+                            {/* sale title badge (moved to top-right) */}
                             {(sale.title || sale.name) && (
-                              <span className="absolute left-3 top-3 bg-black/80 text-white text-xs font-semibold px-2 py-1 rounded-md shadow-sm">
+                              <span className="absolute right-3 top-3 bg-black/80 text-white text-xs font-semibold px-2 py-1 rounded-md shadow-sm">
                                 {sale.title || sale.name}
                               </span>
                             )}
 
-                            {/* discount bubble (top-right) */}
-                            {discount != null && (
-                              <div className="absolute right-3 top-3">
-                                <div className="bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-md">
-                                  {discount}% OFF
-                                </div>
-                              </div>
-                            )}
+                            {/* (removed top-right discount overlay) */}
                           </div>
 
                           {/* Product info */}
                           <div className="p-3 flex items-center justify-between">
                             <div className="pr-2 min-w-0">
-                              <h4
-                                id={`product-${sale.id}-${p.id}-title`}
-                                className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate"
-                              >
-                                {p.name}
-                              </h4>
+                              {/* Name row with inline discount badge */}
+                              <div className="flex items-center gap-2">
+                                <h4
+                                  id={`product-${sale.id}-${p.id}-title`}
+                                  className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate"
+                                >
+                                  {p.name}
+                                </h4>
+
+                                {discount != null && (
+                                  <span className="text-xs bg-red-600 text-white font-bold px-2 py-0.5 rounded-full">
+                                    {discount}% OFF
+                                  </span>
+                                )}
+                              </div>
 
                               <div className="mt-1 flex items-baseline gap-2">
                                 <span className="text-base font-semibold text-black dark:text-white">
