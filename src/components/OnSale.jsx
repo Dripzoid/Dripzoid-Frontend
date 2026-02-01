@@ -35,7 +35,7 @@ export default function OnSale() {
     setLoading(true);
 
     axios
-      .get(`${API_BASE}/api/sale?on_sale=true`)
+      .get(`${API_BASE}/api//public/sales`)
       .then((res) => {
         if (!mounted) return;
         const payload = res?.data ?? [];
