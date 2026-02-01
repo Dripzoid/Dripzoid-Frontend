@@ -28,9 +28,12 @@ import { useCart } from "../contexts/CartContext.jsx";
 import { useWishlist } from "../contexts/WishlistContext.jsx";
 import { UserContext } from "../contexts/UserContext.js";
 
+import QandA from "./QandA";
+import RelatedProducts from "./RelatedProducts";
+
 const API_BASE = process.env.REACT_APP_API_BASE || "";
 
-/* ---------- helpers ---------- */
+/* ---------- helpers (same as before) ---------- */
 function stringToHslColor(str = "", s = 65, l = 45) {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -40,11 +43,9 @@ function stringToHslColor(str = "", s = 65, l = 45) {
   const h = Math.abs(hash) % 360;
   return `hsl(${h} ${s}% ${l}%)`;
 }
-
 function sanitizeColorNameForLookup(name = "") {
   return String(name || "").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9\-]/g, "");
 }
-
 function resolveColor(input) {
   if (!input && input !== 0) return "#ddd";
   if (typeof input === "object") {
@@ -57,18 +58,15 @@ function resolveColor(input) {
   if (/^rgb\(/i.test(s)) return s;
   return stringToHslColor(s);
 }
-
 function colorEquals(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
   return sanitizeColorNameForLookup(String(a)) === sanitizeColorNameForLookup(String(b));
 }
-
 function sizeEquals(a, b) {
   if (a === b) return true;
   return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
 }
-
 function formatRelativeIST(iso) {
   try {
     const d = new Date(iso);
@@ -122,15 +120,7 @@ export default function ProductDetailsPage() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  /* ----- Q&A & related state ----- */
-  const [questions, setQuestions] = useState([]);
-  const [questionText, setQuestionText] = useState("");
-  const [isAsking, setIsAsking] = useState(false);
-  const [answerInputs, setAnswerInputs] = useState({});
-  const [answerLoading, setAnswerLoading] = useState({});
-  const [userVotes, setUserVotes] = useState({}); // track local votes
-  const lastAnswerRef = useRef({});
-
+  /* Q&A & related products moved to separate components */
   const [relatedProducts, setRelatedProducts] = useState([]);
 
   function showToast(msg, ttl = 3500) {
@@ -139,48 +129,26 @@ export default function ProductDetailsPage() {
     if (msg) toastTimerRef.current = setTimeout(() => setToast(null), ttl);
   }
 
-  /* ---------- load product + qa + related ---------- */
+  /* ---------- load product + related ---------- */
   useEffect(() => {
     if (!productId) return;
     const ac = new AbortController();
     let mounted = true;
 
-    async function enrichQAWithUserNames(qdata, signal) {
-      // this shallow enrich is optional; preserve structure from your uploaded file
-      setQuestions(qdata || []);
-      // in your real code you may fetch user map and attach avatars/names
-    }
-
     async function loadAll() {
       try {
-        const [pRes, qRes] = await Promise.all([
+        const [pRes] = await Promise.all([
           fetch(`${API_BASE}/api/products/${productId}`, { signal: ac.signal }),
-          fetch(`${API_BASE}/api/qa/${productId}`, { signal: ac.signal }),
         ]);
 
         if (!pRes.ok) throw new Error(`Product fetch failed (${pRes.status})`);
         const pjson = await pRes.json();
-
-        let qjson = [];
-        if (qRes.ok) {
-          try {
-            const qdata = await qRes.json();
-            if (Array.isArray(qdata)) qjson = qdata;
-            else if (Array.isArray(qdata.questions)) qjson = qdata.questions;
-            else if (Array.isArray(qdata.data)) qjson = qdata.data;
-            else qjson = [];
-          } catch {
-            qjson = [];
-          }
-        }
-
         if (!mounted) return;
 
         setProduct(pjson || null);
         setSelectedImage(0);
 
         const firstColor = (pjson?.colors && pjson.colors.length && pjson.colors[0]) || "";
-        // choose first size from sizeStock keys if available else product.sizes
         let firstSize = "";
         try {
           if (pjson?.sizeStock && typeof pjson.sizeStock === "object" && Object.keys(pjson.sizeStock).length) {
@@ -196,33 +164,26 @@ export default function ProductDetailsPage() {
         setSelectedColor(firstColor || "");
         setSelectedSize(firstSize || "");
 
-        await enrichQAWithUserNames(qjson, ac.signal);
-
-        // related products
+        // related products (lightweight fetch)
         try {
           let list = [];
           const rr = await fetch(`${API_BASE}/api/products/related/${productId}`, { signal: ac.signal });
           if (rr.ok) list = await rr.json();
-
           if ((!Array.isArray(list) || list.length === 0) && pjson?.category) {
-            const fallback = await fetch(
-              `${API_BASE}/api/products?category=${encodeURIComponent(pjson.category)}&limit=8`,
-              { signal: ac.signal }
-            );
+            const fallback = await fetch(`${API_BASE}/api/products?category=${encodeURIComponent(pjson.category)}&limit=8`, { signal: ac.signal });
             if (fallback.ok) {
               const fb = await fallback.json();
               list = fb?.data || fb || [];
             }
           }
-          const filtered = Array.isArray(list)
-            ? list.filter((x) => String(x.id || x._id || x.productId) !== String(productId)).slice(0, 8)
-            : [];
+          const filtered = Array.isArray(list) ? list.filter((x) => String(x.id || x._id || x.productId) !== String(productId)).slice(0, 8) : [];
           if (mounted) setRelatedProducts(filtered);
         } catch (err) {
           console.warn("related fetch failed", err);
         }
       } catch (err) {
         console.error("loadAll failed:", err);
+        showToast("Could not load product");
       }
     }
 
@@ -233,7 +194,7 @@ export default function ProductDetailsPage() {
     };
   }, [productId]);
 
-  /* ---------- derived helpers ---------- */
+  /* ---------- derived helpers (same as before) ---------- */
   const sizeStockMap = useMemo(() => {
     if (!product) return {};
     if (product.sizeStock && typeof product.sizeStock === "object" && !Array.isArray(product.sizeStock)) {
@@ -420,14 +381,32 @@ export default function ProductDetailsPage() {
   };
   const closeLightbox = () => setLightboxOpen(false);
 
+  /* ---------- AUTH modal state ---------- */
+  const [authPrompt, setAuthPrompt] = useState(null);
+  function requireAuth(actionName = "perform this action") {
+    setAuthPrompt({ message: `You need to be logged in to ${actionName}.`, actionName });
+  }
+  function closeAuthPrompt() {
+    setAuthPrompt(null);
+  }
+  function goToLogin() {
+    closeAuthPrompt();
+    navigate("/login");
+  }
+
+  /* ---------- wishlist toggle (top button) ---------- */
   async function handleTopWishlistToggle() {
     if (!wishlistCtx || !wishlistCtx.toggle) {
       showToast("Wishlist not available");
       return;
     }
+    if (!currentUser) {
+      requireAuth("add items to your wishlist");
+      return;
+    }
     setWlBusyTop(true);
     try {
-      await wishlistCtx.toggle(product);
+      await wishlistCtx.toggle(product?.id ?? product?._id ?? product?.product_id ?? product);
       setIsWishlisted((s) => !s);
     } catch (err) {
       console.warn("wishlist toggle failed", err);
@@ -437,9 +416,14 @@ export default function ProductDetailsPage() {
     }
   }
 
+  /* ---------- add to cart & buy now require login as requested ---------- */
   async function addToCartHandler() {
     if (!addToCart) {
       showToast("Cart not available");
+      return;
+    }
+    if (!currentUser) {
+      requireAuth("add items to cart");
       return;
     }
     if (disablePurchase && !addedToCart) {
@@ -471,6 +455,10 @@ export default function ProductDetailsPage() {
   }
 
   function buyNowHandler() {
+    if (!currentUser) {
+      requireAuth("buy items");
+      return;
+    }
     const needSelectionError = (requiresColor && !selectedColor) || (requiresSize && !selectedSize);
     if (needSelectionError) {
       showToast("Select size and color");
@@ -605,143 +593,12 @@ export default function ProductDetailsPage() {
     }
   };
 
-  /* ---------- Q&A helpers: post question / answer / vote ---------- */
-  const postQuestion = async () => {
-    if (!questionText.trim()) return showToast("Type your question first");
-    setIsAsking(true);
-    try {
-      const payload = {
-        productId,
-        text: questionText.trim(),
-        userId: currentUser?.id || currentUser?._id || null,
-      };
-      const res = await fetch(`${API_BASE}/api/qa`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(`Ask failed (${res.status})`);
-      const saved = await res.json();
-      const inserted = {
-        id: saved.id || saved._id || Date.now(),
-        productId: saved.productId || payload.productId,
-        text: saved.text || payload.text,
-        userId: saved.userId || payload.userId || null,
-        userName: saved.userName || currentUser?.name || saved.name || "You",
-        avatar: saved.avatar || currentUser?.avatar || null,
-        createdAt: saved.createdAt || new Date().toISOString(),
-        answers: (saved.answers || []).map((a) => ({
-          id: a.id || a._id,
-          text: a.text,
-          userId: a.userId || a.user_id,
-          userName: a.userName || a.name || null,
-          avatar: a.avatar || null,
-          createdAt: a.createdAt || new Date().toISOString(),
-          likes: Number(a.likes || 0),
-          dislikes: Number(a.dislikes || 0),
-        })),
-      };
-      setQuestions((prev) => [inserted, ...(Array.isArray(prev) ? prev : [])]);
-      setQuestionText("");
-      showToast("Question posted");
-    } catch (err) {
-      console.error(err);
-      showToast("Could not post question");
-    } finally {
-      setIsAsking(false);
-    }
-  };
-
-  const handlePostAnswer = async (questionId, text) => {
-    try {
-      setAnswerLoading((s) => ({ ...s, [questionId]: true }));
-      const res = await fetch(`${API_BASE}/api/qa/${encodeURIComponent(questionId)}/answers`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-        body: JSON.stringify({ text }),
-      });
-      if (!res.ok) throw new Error("Failed to post answer");
-      const saved = await res.json();
-      const answerObj = {
-        id: saved.id || saved._id || Date.now(),
-        text: saved.text || text,
-        userId: saved.userId || saved.user_id || currentUser?.id || currentUser?._id || null,
-        userName: saved.userName || saved.name || currentUser?.name || "You",
-        avatar: saved.avatar || saved.avatarUrl || currentUser?.avatar || null,
-        createdAt: saved.createdAt || new Date().toISOString(),
-        likes: Number(saved.likes || saved.like || 0),
-        dislikes: Number(saved.dislikes || saved.dislike || 0),
-      };
-
-      setQuestions((prev) =>
-        (Array.isArray(prev) ? prev : []).map((q) => {
-          if (String(q.id) === String(questionId) || String(q._id) === String(questionId)) {
-            return { ...q, answers: [...(q.answers || []), answerObj] };
-          }
-          return q;
-        })
-      );
-      showToast("Answer posted");
-      setAnswerInputs((s) => ({ ...s, [questionId]: "" }));
-    } catch (err) {
-      console.error("Post answer failed:", err);
-      showToast("Could not post answer");
-      throw err;
-    } finally {
-      setAnswerLoading((s) => ({ ...s, [questionId]: false }));
-    }
-  };
-
-  const handleVote = async (entityId, entityType, voteType) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/votes`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-        body: JSON.stringify({ entityId, entityType, vote: voteType }),
-      });
-      if (!res.ok) throw new Error("Failed to submit vote");
-      const data = await res.json();
-
-      setUserVotes((prev) => ({ ...prev, [String(entityId)]: voteType }));
-
-      if (data && (data.like !== undefined || data.likes !== undefined || data.dislike !== undefined || data.dislikes !== undefined)) {
-        const id = String(data.entityId ?? entityId);
-        const likes = Number(data.like ?? data.likes ?? 0);
-        const dislikes = Number(data.dislike ?? data.dislikes ?? 0);
-        setQuestions((prev) =>
-          (Array.isArray(prev) ? prev : []).map((q) => ({
-            ...q,
-            answers: (q.answers || []).map((a) => {
-              if (String(a.id) === id) return { ...a, likes, dislikes };
-              return a;
-            }),
-          }))
-        );
-      }
-
-      return data;
-    } catch (err) {
-      console.error("Vote failed:", err);
-      showToast("Could not submit vote");
-      throw err;
-    }
-  };
-
-  /* ---------- render ---------- */
-  const shortDescLimit = 160;
-  const descriptionText = product.description || "";
-  const isLongDescription = descriptionText.length > shortDescLimit;
+  /* ---------- UI rendering (unchanged layout with modal) ---------- */
 
   return (
     <div className="bg-white dark:bg-black min-h-screen text-black dark:text-white pb-24">
       <div className="container mx-auto p-4 md:p-6 space-y-8">
-        {/* Gallery + details */}
+        {/* Gallery + details (same markup as before) */}
         <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 md:p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 border border-gray-200/60 dark:border-gray-700/60">
           <div>
             <div className="relative">
@@ -795,23 +652,9 @@ export default function ProductDetailsPage() {
 
                 <div className="mb-3">
                   <p className="text-gray-600 dark:text-gray-300 mb-2">
-                    {!isLongDescription ? (
-                      descriptionText
-                    ) : descExpanded ? (
-                      <>
-                        {descriptionText}
-                        <button onClick={() => setDescExpanded(false)} className="ml-2 text-sm font-medium underline underline-offset-2" aria-expanded="true" type="button">
-                          Read less
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        {descriptionText.slice(0, shortDescLimit).trim()}.
-                        <button onClick={() => setDescExpanded(true)} className="ml-2 text-sm font-medium underline underline-offset-2" aria-expanded="false" type="button">
-                          Read more
-                        </button>
-                      </>
-                    )}
+                    {! (product.description || "").length ? "No description available." : (! (product.description || "").length > 0 ? "" : null)}
+                    {! (product.description || "").length ? null : (! (product.description || "").length > 160 ? null : null)}
+                    {!product.description ? null : (product.description.length <= 160 ? product.description : descExpanded ? (<>{product.description} <button onClick={() => setDescExpanded(false)} className="ml-2 text-sm font-medium underline underline-offset-2" aria-expanded="true" type="button">Read less</button>) : (<>{product.description.slice(0,160).trim()}. <button onClick={() => setDescExpanded(true)} className="ml-2 text-sm font-medium underline underline-offset-2" aria-expanded="false" type="button">Read more</button>) )}
                   </p>
                 </div>
 
@@ -819,7 +662,22 @@ export default function ProductDetailsPage() {
               </div>
 
               <div className="flex flex-col items-end gap-3">
-                <button onClick={handleTopWishlistToggle} disabled={wlBusyTop} aria-pressed={isWishlisted} aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white dark:bg-gray-800 border hover:shadow focus:outline-none">
+                <button onClick={async () => {
+                  if (!currentUser) {
+                    requireAuth("add items to your wishlist");
+                    return;
+                  }
+                  try {
+                    setWlBusyTop(true);
+                    await wishlistCtx.toggle(product?.id ?? product?._id ?? product?.product_id ?? product);
+                    setIsWishlisted((s) => !s);
+                  } catch (err) {
+                    console.warn("wishlist toggle failed", err);
+                    showToast("Could not update wishlist");
+                  } finally {
+                    setWlBusyTop(false);
+                  }
+                }} disabled={wlBusyTop} aria-pressed={isWishlisted} aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white dark:bg-gray-800 border hover:shadow focus:outline-none">
                   <Heart className={`${isWishlisted ? "text-black dark:text-white" : "text-gray-600"} w-5 h-5`} />
                 </button>
               </div>
@@ -837,7 +695,7 @@ export default function ProductDetailsPage() {
               )}
             </div>
 
-            {/* Colors as text pills (no circular swatch) */}
+            {/* Colors */}
             {requiresColor && (
               <div className="mb-4">
                 <div className="font-medium mb-2">Color</div>
@@ -925,7 +783,7 @@ export default function ProductDetailsPage() {
               </div>
             </div>
 
-            {/* Inline action buttons (non-floating) */}
+            {/* Actions */}
             <div className="flex gap-3 items-center flex-col md:flex-row">
               <motion.button onClick={addedToCart ? goToCart : addToCartHandler} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} disabled={disablePurchase && !addedToCart} className={`w-full md:flex-1 py-3 rounded-full flex items-center justify-center gap-2 transition ${disablePurchase && !addedToCart ? "opacity-50 cursor-not-allowed bg-gray-100 text-black" : "bg-black text-white"}`} aria-label={addedToCart ? "Go to cart" : "Add to cart"} type="button">
                 <ShoppingCart /> <span className="label">{addedToCart ? "Go to Cart" : "Add to Cart"}</span>
@@ -958,150 +816,11 @@ export default function ProductDetailsPage() {
           <Reviews productId={productId} apiBase={API_BASE} currentUser={currentUser} showToast={showToast} isDesktop={isDesktop} />
         </div>
 
-        {/* Questions & Answers */}
-        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 md:p-6 border border-gray-200/60 dark:border-gray-700/60">
-          <h3 className="text-lg font-semibold mb-4 text-black dark:text-white">Questions & Answers</h3>
+        {/* Q&A (separate component) */}
+        <QandA productId={productId} showToast={showToast} />
 
-          <div className="mb-4">
-            <div className="flex gap-3">
-              <input value={questionText} onChange={(e) => setQuestionText(e.target.value)} placeholder="Ask a question." className="flex-1 p-3 border rounded-lg bg-white dark:bg-gray-900 text-black dark:text-white" aria-label="Ask a question" />
-              <button onClick={postQuestion} disabled={isAsking || !questionText.trim()} className={`px-4 py-2 rounded-lg ${isAsking || !questionText.trim() ? "opacity-60 cursor-not-allowed bg-gray-200 dark:bg-gray-800" : "bg-black text-white"}`} type="button">
-                <MessageCircle size={16} /> {isAsking ? "Posting..." : "Ask"}
-              </button>
-            </div>
-          </div>
-
-          {Array.isArray(questions) && questions.length > 0 ? (
-            <ul className="space-y-6">
-              {questions.map((q) => {
-                const qid = q.id || q._id;
-                const displayName = q.userName || q.name || "Anonymous";
-                const avatarUrl = q.avatar || null;
-                const initials =
-                  (displayName || "A")
-                    .split(" ")
-                    .map((p) => p?.[0])
-                    .filter(Boolean)
-                    .slice(0, 2)
-                    .join("")
-                    .toUpperCase() || "A";
-
-                return (
-                  <li key={qid} className="space-y-3">
-                    <div className="flex items-start gap-3">
-                      {avatarUrl ? (
-                        <Avatar alt={displayName} src={avatarUrl} sx={{ width: 40, height: 40 }} />
-                      ) : (
-                        <Avatar sx={{ width: 40, height: 40, bgcolor: stringToHslColor(displayName || initials), color: "#fff", fontWeight: 600 }}>
-                          {initials}
-                        </Avatar>
-                      )}
-
-                      <div className="flex-1">
-                        <div>
-                          <p className="font-medium text-black dark:text-white">{displayName}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{q.createdAt ? formatRelativeIST(q.createdAt) : ""}</p>
-                        </div>
-
-                        <div className="mt-2 bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
-                          <p className="text-sm text-gray-900 dark:text-gray-100">{q.text}</p>
-                        </div>
-
-                        {(q.answers || []).length > 0 && (
-                          <div className="ml-12 mt-3 space-y-3">
-                            {q.answers.map((a, idx) => {
-                              const aId = a.id || a._id || idx;
-                              const aName = a.userName || a.name || "Anonymous";
-                              const aAvatar = a.avatar || null;
-                              const initialsA = (aName || "A").split(" ").map((p) => p?.[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "A";
-                              return (
-                                <div key={aId} className="flex items-start gap-3">
-                                  {aAvatar ? (
-                                    <Avatar alt={aName} src={aAvatar} sx={{ width: 36, height: 36 }} />
-                                  ) : (
-                                    <Avatar sx={{ width: 36, height: 36, bgcolor: stringToHslColor(aName || initialsA), color: "#fff", fontWeight: 600, fontSize: 12 }}>
-                                      {initialsA}
-                                    </Avatar>
-                                  )}
-
-                                  <div className="flex-1">
-                                    <div className="flex items-center justify-between">
-                                      <div>
-                                        <p className="text-sm font-medium text-black dark:text-white">{aName}</p>
-                                        <p className="text-xs text-gray-500 mt-0.5">{a.createdAt ? formatRelativeIST(a.createdAt) : ""}{a.optimistic ? " (sending...)" : ""}</p>
-                                      </div>
-                                      <div className="flex items-center gap-2 text-xs text-gray-600">
-                                        <button onClick={() => handleVote(aId, "answer", "like")} className={`flex items-center gap-1 px-2 py-1 rounded ${userVotes[aId] === "like" ? "bg-black/10 dark:bg-white/10" : "hover:bg-gray-100 dark:hover:bg-gray-800"}`} type="button" aria-label="Like answer">
-                                          <ThumbsUp size={14} /> <span>{a.likes || 0}</span>
-                                        </button>
-                                        <button onClick={() => handleVote(aId, "answer", "dislike")} className={`flex items-center gap-1 px-2 py-1 rounded ${userVotes[aId] === "dislike" ? "bg-black/10 dark:bg-white/10" : "hover:bg-gray-100 dark:hover:bg-gray-800"}`} type="button" aria-label="Dislike answer">
-                                          <ThumbsDown size={14} /> <span>{a.dislikes || 0}</span>
-                                        </button>
-                                      </div>
-                                    </div>
-                                    <div className="mt-1 bg-gray-50 dark:bg-gray-800/70 rounded-lg p-3">
-                                      <p className="text-sm text-gray-900 dark:text-gray-100">{a.text}</p>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        <div className="ml-12 mt-2 flex gap-2 items-start">
-                          <input value={answerInputs[qid] || ""} onChange={(e) => setAnswerInputs((prev) => ({ ...prev, [qid]: e.target.value }))} placeholder="Write an answer." className="flex-1 p-2 border rounded-lg bg-white dark:bg-gray-900 text-sm text-black dark:text-white" aria-label={`Answer to question ${qid}`} />
-                          <button onClick={async () => {
-                            const text = (answerInputs[qid] || "").trim();
-                            if (!text) return showToast("Type an answer first");
-                            try {
-                              await handlePostAnswer(qid, text);
-                            } catch {
-                              /* errors handled inside */
-                            }
-                          }} disabled={Boolean(answerLoading[qid]) || !(answerInputs[qid] && answerInputs[qid].trim())} className={`px-3 py-2 rounded-full border ${answerLoading[qid] ? "opacity-60 cursor-not-allowed" : "bg-black text-white"}`} type="button">
-                            {answerLoading[qid] ? <Send size={14} /> : <Send size={14} />}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="text-sm text-gray-600 dark:text-gray-300">No questions yet.</p>
-          )}
-        </section>
-
-        {/* Related products (You might be interested in) */}
-        <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 md:p-6 border border-gray-200/60 dark:border-gray-700/60">
-          <h2 className="text-xl font-bold mb-4 text-black dark:text-white">You might be interested in</h2>
-
-          <div className="md:hidden">
-            <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory -mx-4 px-4">
-              {(relatedProducts && relatedProducts.length ? relatedProducts : [1, 2, 3, 4]).map((p, i) => (
-                <div key={p?.id || p?._id || i} className="flex-shrink-0 min-w-[60%] sm:min-w-[45%] md:min-w-0 snap-start">
-                  <ProductCard product={
-                    typeof p === "object"
-                      ? { id: p.id || p._id, name: p.name || p.title || `Product ${i + 1}`, price: p.price || 2499, images: p.images || (p.image ? [p.image] : []) }
-                      : { id: i + 1, name: `Product ${p}`, price: 2499, images: [galleryImages[0]] }
-                  } />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="hidden md:grid md:grid-cols-4 gap-4">
-            {(relatedProducts && relatedProducts.length ? relatedProducts : [1, 2, 3, 4]).map((p, i) => (
-              <ProductCard key={p?.id || p?._id || i} product={
-                typeof p === "object"
-                  ? { id: p.id || p._id, name: p.name || p.title || `Product ${i + 1}`, price: p.price || 2499, images: p.images || (p.image ? [p.image] : []) }
-                  : { id: i + 1, name: `Product ${p}`, price: 2499, images: [galleryImages[0]] }
-              } />
-            ))}
-          </div>
-        </section>
+        {/* Related products */}
+        <RelatedProducts relatedProducts={relatedProducts} galleryImages={galleryImages} />
       </div>
 
       {/* Lightbox */}
@@ -1127,6 +846,26 @@ export default function ProductDetailsPage() {
           <div className="px-4 py-2 bg-black text-white rounded-full shadow">{toast}</div>
         </div>
       )}
+
+      {/* AUTH PROMPT modal */}
+      {authPrompt && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={closeAuthPrompt} />
+          <div className="bg-white dark:bg-gray-900 p-6 rounded-xl z-70 max-w-md mx-4">
+            <h4 className="text-lg font-semibold mb-2 text-black dark:text-white">Sign in required</h4>
+            <p className="mb-4 text-sm text-gray-700 dark:text-gray-300">{authPrompt.message || "Please sign in to continue."}</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={closeAuthPrompt} className="px-4 py-2 rounded-lg border">Cancel</button>
+              <button onClick={goToLogin} className="px-4 py-2 rounded-lg bg-black text-white">Sign in</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+/* helper from above used in QandA - keep local here */
+function sanitizeColorNameForLookup(name = "") {
+  return String(name || "").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9\-]/g, "");
 }
