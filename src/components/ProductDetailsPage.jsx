@@ -43,9 +43,11 @@ function stringToHslColor(str = "", s = 65, l = 45) {
   const h = Math.abs(hash) % 360;
   return `hsl(${h} ${s}% ${l}%)`;
 }
+
 function sanitizeColorNameForLookup(name = "") {
   return String(name || "").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9\-]/g, "");
 }
+
 function resolveColor(input) {
   if (!input && input !== 0) return "#ddd";
   if (typeof input === "object") {
@@ -58,15 +60,18 @@ function resolveColor(input) {
   if (/^rgb\(/i.test(s)) return s;
   return stringToHslColor(s);
 }
+
 function colorEquals(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
   return sanitizeColorNameForLookup(String(a)) === sanitizeColorNameForLookup(String(b));
 }
+
 function sizeEquals(a, b) {
   if (a === b) return true;
   return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
 }
+
 function formatRelativeIST(iso) {
   try {
     const d = new Date(iso);
@@ -593,12 +598,12 @@ export default function ProductDetailsPage() {
     }
   };
 
-  /* ---------- UI rendering (unchanged layout with modal) ---------- */
+  /* ---------- UI rendering (fixed description JSX and no duplicate helpers) ---------- */
 
   return (
     <div className="bg-white dark:bg-black min-h-screen text-black dark:text-white pb-24">
       <div className="container mx-auto p-4 md:p-6 space-y-8">
-        {/* Gallery + details (same markup as before) */}
+        {/* Gallery + details */}
         <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 md:p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 border border-gray-200/60 dark:border-gray-700/60">
           <div>
             <div className="relative">
@@ -652,9 +657,21 @@ export default function ProductDetailsPage() {
 
                 <div className="mb-3">
                   <p className="text-gray-600 dark:text-gray-300 mb-2">
-                    {! (product.description || "").length ? "No description available." : (! (product.description || "").length > 0 ? "" : null)}
-                    {! (product.description || "").length ? null : (! (product.description || "").length > 160 ? null : null)}
-                    {!product.description ? null : (product.description.length <= 160 ? product.description : descExpanded ? (<>{product.description} <button onClick={() => setDescExpanded(false)} className="ml-2 text-sm font-medium underline underline-offset-2" aria-expanded="true" type="button">Read less</button>) : (<>{product.description.slice(0,160).trim()}. <button onClick={() => setDescExpanded(true)} className="ml-2 text-sm font-medium underline underline-offset-2" aria-expanded="false" type="button">Read more</button>) )}
+                    {(!product.description || product.description.trim().length === 0) ? (
+                      "No description available."
+                    ) : product.description.length <= 160 ? (
+                      product.description
+                    ) : descExpanded ? (
+                      <>
+                        {product.description}
+                        <button onClick={() => setDescExpanded(false)} className="ml-2 text-sm font-medium underline underline-offset-2" aria-expanded="true" type="button">Read less</button>
+                      </>
+                    ) : (
+                      <>
+                        {product.description.slice(0, 160).trim()}.
+                        <button onClick={() => setDescExpanded(true)} className="ml-2 text-sm font-medium underline underline-offset-2" aria-expanded="false" type="button">Read more</button>
+                      </>
+                    )}
                   </p>
                 </div>
 
@@ -662,22 +679,7 @@ export default function ProductDetailsPage() {
               </div>
 
               <div className="flex flex-col items-end gap-3">
-                <button onClick={async () => {
-                  if (!currentUser) {
-                    requireAuth("add items to your wishlist");
-                    return;
-                  }
-                  try {
-                    setWlBusyTop(true);
-                    await wishlistCtx.toggle(product?.id ?? product?._id ?? product?.product_id ?? product);
-                    setIsWishlisted((s) => !s);
-                  } catch (err) {
-                    console.warn("wishlist toggle failed", err);
-                    showToast("Could not update wishlist");
-                  } finally {
-                    setWlBusyTop(false);
-                  }
-                }} disabled={wlBusyTop} aria-pressed={isWishlisted} aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white dark:bg-gray-800 border hover:shadow focus:outline-none">
+                <button onClick={handleTopWishlistToggle} disabled={wlBusyTop} aria-pressed={isWishlisted} aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white dark:bg-gray-800 border hover:shadow focus:outline-none">
                   <Heart className={`${isWishlisted ? "text-black dark:text-white" : "text-gray-600"} w-5 h-5`} />
                 </button>
               </div>
@@ -863,9 +865,4 @@ export default function ProductDetailsPage() {
       )}
     </div>
   );
-}
-
-/* helper from above used in QandA - keep local here */
-function sanitizeColorNameForLookup(name = "") {
-  return String(name || "").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9\-]/g, "");
 }
