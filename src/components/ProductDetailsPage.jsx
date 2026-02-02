@@ -103,7 +103,7 @@ export default function ProductDetailsPage() {
   const [selectedSize, setSelectedSize] = useState("");
   const [quantity, setQuantity] = useState(1);
 
-  const [isWishlisted, setIsWishlisted] = useState(false);
+  // NOTE: removed local isWishlisted state - derive from wishlist context
   const [wlBusyTop, setWlBusyTop] = useState(false);
 
   const [descExpanded, setDescExpanded] = useState(false);
@@ -404,43 +404,36 @@ export default function ProductDetailsPage() {
     window.location.href = "https://dripzoid.com/login";
   }
 
-  /* ---------- wishlist initial sync ---------- */
-  useEffect(() => {
-    // Attempt to derive whether the product is in wishlist from wishlistCtx.
+  /* ---------- derive isWishlisted from wishlist context (single source of truth) ---------- */
+  const isWishlisted = useMemo(() => {
     try {
-      if (!product || !wishlistCtx) return;
-
-      // If wishlist context provides helper function isWishlisted(productId / product) use it
-      if (typeof wishlistCtx.isWishlisted === "function") {
+      if (!product) return false;
+      // If context exposes helper, prefer it
+      if (typeof wishlistCtx?.isWishlisted === "function") {
         const pid = product?.id ?? product?._id ?? product?.product_id ?? product;
-        const res = wishlistCtx.isWishlisted(pid);
-        setIsWishlisted(Boolean(res));
-        return;
+        return Boolean(wishlistCtx.isWishlisted(pid));
       }
-
-      // Else try to use items array (common pattern)
-      if (Array.isArray(wishlistCtx.items)) {
+      // Else use items array
+      if (Array.isArray(wishlistCtx?.items)) {
         const pid = product?.id ?? product?._id ?? product?.product_id;
-        const found = wishlistCtx.items.some((it) => {
+        if (!pid) return false;
+        return wishlistCtx.items.some((it) => {
           if (!it) return false;
           const p = it.product ?? it;
           const itemPid = p?.id ?? p?._id ?? p?.product_id;
-          if (!itemPid || !pid) return false;
+          if (!itemPid) return false;
           return String(itemPid) === String(pid);
         });
-        setIsWishlisted(Boolean(found));
-        return;
       }
-
-      // fallback: don't change
-    } catch (err) {
-      // ignore
+      return false;
+    } catch {
+      return false;
     }
-  }, [product, wishlistCtx]);
+  }, [wishlistCtx, product]);
 
   /* ---------- wishlist toggle (top button) ---------- */
   async function handleTopWishlistToggle() {
-    if (!wishlistCtx || !wishlistCtx.toggle) {
+    if (!wishlistCtx || typeof wishlistCtx.toggle !== "function") {
       showToast("Wishlist not available");
       return;
     }
@@ -451,8 +444,7 @@ export default function ProductDetailsPage() {
     setWlBusyTop(true);
     try {
       await wishlistCtx.toggle(product?.id ?? product?._id ?? product?.product_id ?? product);
-      // optimistic flip
-      setIsWishlisted((s) => !s);
+      // do not flip local state; UI reads directly from wishlistCtx items
     } catch (err) {
       console.warn("wishlist toggle failed", err);
       showToast("Could not update wishlist");
@@ -719,8 +711,22 @@ export default function ProductDetailsPage() {
               </div>
 
               <div className="flex flex-col items-end gap-3">
-                <button onClick={handleTopWishlistToggle} disabled={wlBusyTop} aria-pressed={isWishlisted} aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"} className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white dark:bg-gray-800 border hover:shadow focus:outline-none">
-                  <Heart className={`${isWishlisted ? "text-black dark:text-white" : "text-gray-600"} w-5 h-5`} />
+                <button
+                  onClick={handleTopWishlistToggle}
+                  disabled={wlBusyTop}
+                  aria-pressed={isWishlisted}
+                  aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
+                  title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
+                  className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white dark:bg-gray-800 border hover:shadow focus:outline-none"
+                >
+                  {/* use currentColor so lucide icon stroke inherits text color */}
+                  <Heart
+                    className={`w-5 h-5 transition-colors ${
+                      isWishlisted
+                        ? "text-red-500 dark:text-red-400"
+                        : "text-gray-600 dark:text-gray-300"
+                    }`}
+                  />
                 </button>
               </div>
             </div>
