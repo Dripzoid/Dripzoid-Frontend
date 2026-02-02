@@ -103,7 +103,7 @@ export default function ProductDetailsPage() {
   const [selectedSize, setSelectedSize] = useState("");
   const [quantity, setQuantity] = useState(1);
 
-  // NOTE: removed local isWishlisted state - derive from wishlist context
+  // NOTE: single source of truth for wishlist state comes from wishlistCtx
   const [wlBusyTop, setWlBusyTop] = useState(false);
 
   const [descExpanded, setDescExpanded] = useState(false);
@@ -443,8 +443,10 @@ export default function ProductDetailsPage() {
     }
     setWlBusyTop(true);
     try {
+      // toggle will add or remove depending on state in wishlist context
       await wishlistCtx.toggle(product?.id ?? product?._id ?? product?.product_id ?? product);
-      // do not flip local state; UI reads directly from wishlistCtx items
+      // Do not flip local state: isWishlisted is derived from wishlistCtx (single source of truth).
+      // Ensure wishlistCtx updates after toggle so isWishlisted memo re-evaluates.
     } catch (err) {
       console.warn("wishlist toggle failed", err);
       showToast("Could not update wishlist");
@@ -711,21 +713,30 @@ export default function ProductDetailsPage() {
               </div>
 
               <div className="flex flex-col items-end gap-3">
+                {/*
+                  Important change: render the heart icon so its color and fill reflect the
+                  derived wishlist state (isWishlisted). We keep wishlistCtx as the single
+                  source of truth; the UI reads isWishlisted from it.
+                  We use SVG `fill="currentColor"` when wishlisted so the heart appears filled.
+                */}
                 <button
                   onClick={handleTopWishlistToggle}
                   disabled={wlBusyTop}
                   aria-pressed={isWishlisted}
                   aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
                   title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
-                  className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white dark:bg-gray-800 border hover:shadow focus:outline-none"
+                  className={`inline-flex items-center justify-center w-10 h-10 rounded-full border hover:shadow focus:outline-none transition ${
+                    isWishlisted ? "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-700" : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700"
+                  }`}
                 >
-                  {/* use currentColor so lucide icon stroke inherits text color */}
+                  {/* lucide-react icons use stroke="currentColor" by default — adding fill when selected */}
                   <Heart
-                    className={`w-5 h-5 transition-colors ${
-                      isWishlisted
-                        ? "text-red-500 dark:text-red-400"
-                        : "text-gray-600 dark:text-gray-300"
-                    }`}
+                    className="w-5 h-5"
+                    // When wishlisted, fill with currentColor so it appears solid; otherwise no fill (outline)
+                    fill={isWishlisted ? "currentColor" : "none"}
+                    // Keep stroke as currentColor so outline color matches
+                    stroke={isWishlisted ? "currentColor" : undefined}
+                    strokeWidth={1.5}
                   />
                 </button>
               </div>
