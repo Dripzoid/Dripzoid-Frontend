@@ -3,7 +3,6 @@ import React, { useEffect, useMemo, useRef, useState, useContext } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Avatar } from "@mui/material";
 import {
-  Heart,
   ShoppingCart,
   CreditCard,
   Share2,
@@ -87,6 +86,52 @@ function formatRelativeIST(iso) {
   }
 }
 
+/* ---------- Small inline Wishlist icon (outline & filled) ---------- */
+/* Using an inline SVG ensures color changes via Tailwind text-* classes (currentColor). */
+function WishlistIcon({ filled = false, className = "", title = "Wishlist" }) {
+  // Path data adapted for a heart shape (standard 24x24)
+  const pathD =
+    "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 6 4 4 6.5 4 8 4 9.5 5 12 7.5 14.5 5 16 4 17.5 4 20 4 22 6 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z";
+
+  if (filled) {
+    return (
+      <svg
+        aria-hidden="true"
+        role="img"
+        viewBox="0 0 24 24"
+        className={className}
+        xmlns="http://www.w3.org/2000/svg"
+        focusable="false"
+      >
+        <title>{title}</title>
+        <path d={pathD} fill="currentColor" />
+      </svg>
+    );
+  }
+
+  // outline
+  return (
+    <svg
+      aria-hidden="true"
+      role="img"
+      viewBox="0 0 24 24"
+      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+      focusable="false"
+    >
+      <title>{title}</title>
+      <path
+        d={pathD}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 /* ---------- Component ---------- */
 export default function ProductDetailsPage() {
   const { id: routeProductId } = useParams();
@@ -103,7 +148,7 @@ export default function ProductDetailsPage() {
   const [selectedSize, setSelectedSize] = useState("");
   const [quantity, setQuantity] = useState(1);
 
-  // NOTE: single source of truth for wishlist state comes from wishlistCtx
+  // single source of truth for wishlist state comes from wishlistCtx
   const [wlBusyTop, setWlBusyTop] = useState(false);
 
   const [descExpanded, setDescExpanded] = useState(false);
@@ -713,12 +758,7 @@ export default function ProductDetailsPage() {
               </div>
 
               <div className="flex flex-col items-end gap-3">
-                {/*
-                  Important change: render the heart icon so its color and fill reflect the
-                  derived wishlist state (isWishlisted). We keep wishlistCtx as the single
-                  source of truth; the UI reads isWishlisted from it.
-                  We use SVG `fill="currentColor"` when wishlisted so the heart appears filled.
-                */}
+                {/* Wishlist button */}
                 <button
                   onClick={handleTopWishlistToggle}
                   disabled={wlBusyTop}
@@ -726,18 +766,12 @@ export default function ProductDetailsPage() {
                   aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
                   title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
                   className={`inline-flex items-center justify-center w-10 h-10 rounded-full border hover:shadow focus:outline-none transition ${
-                    isWishlisted ? "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-700" : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700"
+                    isWishlisted
+                      ? "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-700"
+                      : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700"
                   }`}
                 >
-                  {/* lucide-react icons use stroke="currentColor" by default — adding fill when selected */}
-                  <Heart
-                    className="w-5 h-5"
-                    // When wishlisted, fill with currentColor so it appears solid; otherwise no fill (outline)
-                    fill={isWishlisted ? "currentColor" : "none"}
-                    // Keep stroke as currentColor so outline color matches
-                    stroke={isWishlisted ? "currentColor" : undefined}
-                    strokeWidth={1.5}
-                  />
+                  <WishlistIcon filled={isWishlisted} className="w-5 h-5" title={isWishlisted ? "Wishlisted" : "Add to wishlist"} />
                 </button>
               </div>
             </div>
@@ -906,11 +940,9 @@ export default function ProductDetailsPage() {
         </div>
       )}
 
-      {/* AUTH PROMPT modal (overlay reduced opacity so modal reads clearly;
-          header and action text updated to "Login", Login button redirects to dripzoid.com/login) */}
+      {/* AUTH PROMPT modal */}
       {authPrompt && (
         <div className="fixed inset-0 z-60 flex items-center justify-center" role="dialog" aria-modal="true" aria-label="Login required">
-          {/* slightly lighter overlay so modal is prominent */}
           <div className="absolute inset-0 bg-black/40" onClick={closeAuthPrompt} />
           <div className="relative bg-white dark:bg-gray-900 p-6 rounded-xl z-70 max-w-md mx-4 shadow-2xl ring-1 ring-black/5">
             <h4 className="text-lg font-semibold mb-2 text-black dark:text-white">Login required</h4>
