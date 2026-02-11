@@ -450,17 +450,17 @@ export default function ProductDetailsPage() {
   }
 
   /* ---------- derive isWishlisted from wishlist context (single source of truth) ---------- */
+  // NOTE: include wishlistCtx.items in dependencies so this recomputes when wishlist updates.
   const isWishlisted = useMemo(() => {
     try {
       if (!product) return false;
       // If context exposes helper, prefer it
+      const pid = product?.id ?? product?._id ?? product?.product_id ?? product;
       if (typeof wishlistCtx?.isWishlisted === "function") {
-        const pid = product?.id ?? product?._id ?? product?.product_id ?? product;
         return Boolean(wishlistCtx.isWishlisted(pid));
       }
       // Else use items array
       if (Array.isArray(wishlistCtx?.items)) {
-        const pid = product?.id ?? product?._id ?? product?.product_id;
         if (!pid) return false;
         return wishlistCtx.items.some((it) => {
           if (!it) return false;
@@ -474,7 +474,7 @@ export default function ProductDetailsPage() {
     } catch {
       return false;
     }
-  }, [wishlistCtx, product]);
+  }, [wishlistCtx, wishlistCtx?.items, product]);
 
   /* ---------- wishlist toggle (top button) ---------- */
   async function handleTopWishlistToggle() {
@@ -492,6 +492,10 @@ export default function ProductDetailsPage() {
       await wishlistCtx.toggle(product?.id ?? product?._id ?? product?.product_id ?? product);
       // Do not flip local state: isWishlisted is derived from wishlistCtx (single source of truth).
       // Ensure wishlistCtx updates after toggle so isWishlisted memo re-evaluates.
+      if (typeof wishlistCtx?.fetch === "function") {
+        // optional refresh if your context exposes a fetch helper
+        try { wishlistCtx.fetch(); } catch {}
+      }
     } catch (err) {
       console.warn("wishlist toggle failed", err);
       showToast("Could not update wishlist");
@@ -767,11 +771,16 @@ export default function ProductDetailsPage() {
                   title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
                   className={`inline-flex items-center justify-center w-10 h-10 rounded-full border hover:shadow focus:outline-none transition ${
                     isWishlisted
-                      ? "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-700"
-                      : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700"
+                      ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700"
+                      : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
                   }`}
                 >
-                  <WishlistIcon filled={isWishlisted} className="w-5 h-5" title={isWishlisted ? "Wishlisted" : "Add to wishlist"} />
+                  {/* ensure svg color explicitly set so it updates even if parent context mutates */}
+                  <WishlistIcon
+                    filled={isWishlisted}
+                    className={`w-5 h-5 ${isWishlisted ? "text-red-600 dark:text-red-400" : "text-gray-600 dark:text-gray-300"}`}
+                    title={isWishlisted ? "Wishlisted" : "Add to wishlist"}
+                  />
                 </button>
               </div>
             </div>
