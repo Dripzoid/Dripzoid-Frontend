@@ -11,9 +11,12 @@ export default function AdminCertificates() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
 
-  // NEW: store returned Cloudinary URLs after successful generation
+  // store returned Cloudinary URLs after successful generation (or when already generated)
   const [generatedCert, setGeneratedCert] = useState(null);
   const [generating, setGenerating] = useState(false);
+
+  // QR data URL used in preview node before uploading
+  const [previewQr, setPreviewQr] = useState(null);
 
   const [form, setForm] = useState({
     internName: "",
@@ -24,7 +27,7 @@ export default function AdminCertificates() {
   });
 
   const previewRef = useRef(null); // hidden DOM node to render the certificate for capture
-  const token = localStorage.getItem("token");
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
   async function fetchApplications() {
     try {
@@ -35,7 +38,7 @@ export default function AdminCertificates() {
       const data = await res.json();
       setApps(data || []);
     } catch (err) {
-      console.error(err);
+      console.error("Failed to fetch applications:", err);
     } finally {
       setLoading(false);
     }
@@ -45,16 +48,41 @@ export default function AdminCertificates() {
     fetchApplications();
   }, []);
 
-  function openGenerator(app) {
+  // When opening modal, check if a certificate already exists for this application
+  async function openGenerator(app) {
     setSelected(app);
     setGeneratedCert(null);
+    setPreviewQr(null);
+
     setForm({
       internName: app.name,
-      role: app.job_title || "QA Tester Intern", // fallback if job_title available
+      role: app.job_title || "QA Tester Intern",
       startDate: "",
       endDate: "",
       issueDate: new Date().toISOString().slice(0, 10),
     });
+
+    // Try to fetch existing certificate for this application
+    try {
+      const res = await fetch(`${API_BASE}/api/certificates/application/${app.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        // Expect json: { certificate_url, qr_url, certificate_id }
+        setGeneratedCert({
+          url: json.certificate_url,
+          qr: json.qr_url,
+          id: json.certificate_id,
+        });
+        // set preview QR to show in offscreen preview (so Preview will match stored cert)
+        if (json.qr_url) setPreviewQr(json.qr_url);
+      } else {
+        // no cert yet (404) — ignore
+      }
+    } catch (err) {
+      console.error("Failed to fetch certificate for application:", err);
+    }
   }
 
   async function updateStatus(id, status) {
@@ -88,7 +116,7 @@ export default function AdminCertificates() {
   // helper: fetch a URL and force-download it client-side
   async function downloadUrlAsFile(url, filename = "certificate.pdf") {
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { credentials: "omit" });
       if (!res.ok) throw new Error("Failed to fetch file for download");
       const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
@@ -116,17 +144,19 @@ export default function AdminCertificates() {
       const certId = `CERT-${new Date().getFullYear()}-${Date.now()}`;
 
       // 2) generate QR dataURL that points to verification endpoint
-      // Use your public verify page — swap domain if required
       const verifyUrl = `https://dripzoid.com/verify/${certId}`;
       const qrDataUrl = await QRCode.toDataURL(verifyUrl);
 
-      // 3) ensure previewRef is rendered (we render it below)
+      // set preview QR so the offscreen preview includes the QR when we capture
+      setPreviewQr(qrDataUrl);
+
+      // wait for DOM to update with the QR in preview
       await new Promise((r) => setTimeout(r, 150));
 
       const node = previewRef.current;
       if (!node) throw new Error("Preview node not ready");
 
-      // 4) render canvas
+      // 3) render canvas (capture the preview node which now contains the QR)
       const canvas = await html2canvas(node, {
         scale: 2,
         useCORS: true,
@@ -134,7 +164,7 @@ export default function AdminCertificates() {
         backgroundColor: null,
       });
 
-      // 5) convert canvas to PDF
+      // 4) convert canvas to PDF
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF({
         orientation: "landscape",
@@ -146,10 +176,10 @@ export default function AdminCertificates() {
       const pdfBlob = pdf.output("blob");
       const pdfFile = new File([pdfBlob], `${certId}.pdf`, { type: "application/pdf" });
 
-      // 6) Convert QR dataURL to File
+      // 5) Convert QR dataURL to File (we already have data URL)
       const qrFile = dataURLtoFile(qrDataUrl, `${certId}-qr.png`);
 
-      // 7) Upload to backend: POST /api/certificates (multipart/form-data)
+      // 6) Upload to backend: POST /api/certificates (multipart/form-data)
       const body = new FormData();
       body.append("application_id", selected.id);
       body.append("certificate_id", certId);
@@ -164,7 +194,7 @@ export default function AdminCertificates() {
       const res = await fetch(`${API_BASE}/api/certificates`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`, // don't set Content-Type — browser will set for FormData
+          Authorization: `Bearer ${token}`, // DO NOT set Content-Type
         },
         body,
       });
@@ -172,18 +202,23 @@ export default function AdminCertificates() {
       const data = await res.json();
       if (!res.ok) {
         console.error("Upload failed:", data);
-        return alert(data.message || "Failed to create certificate");
+        throw new Error(data.message || "Failed to create certificate");
       }
 
       // Save returned Cloudinary URLs in state so UI can Preview/Download
+      // Expect backend to return: { certificate_url, qr_url, certificate_id }
       setGeneratedCert({
         url: data.certificate_url,
         qr: data.qr_url,
-        id: certId,
+        id: data.certificate_id || certId,
       });
 
-      // 8) Optionally update application status to Approved
-      await updateStatus(selected.id, "Approved");
+      // Optionally update application status to Approved
+      try {
+        await updateStatus(selected.id, "Approved");
+      } catch (e) {
+        console.warn("Status update failed but certificate was created", e);
+      }
 
       // refresh list (status updated)
       await fetchApplications();
@@ -265,9 +300,7 @@ export default function AdminCertificates() {
                   className="border rounded-lg px-4 py-2"
                   placeholder="Intern Name"
                   value={form.internName}
-                  onChange={(e) =>
-                    setForm({ ...form, internName: e.target.value })
-                  }
+                  onChange={(e) => setForm({ ...form, internName: e.target.value })}
                 />
                 <input
                   className="border rounded-lg px-4 py-2"
@@ -279,25 +312,19 @@ export default function AdminCertificates() {
                   type="date"
                   className="border rounded-lg px-4 py-2"
                   value={form.startDate}
-                  onChange={(e) =>
-                    setForm({ ...form, startDate: e.target.value })
-                  }
+                  onChange={(e) => setForm({ ...form, startDate: e.target.value })}
                 />
                 <input
                   type="date"
                   className="border rounded-lg px-4 py-2"
                   value={form.endDate}
-                  onChange={(e) =>
-                    setForm({ ...form, endDate: e.target.value })
-                  }
+                  onChange={(e) => setForm({ ...form, endDate: e.target.value })}
                 />
                 <input
                   type="date"
                   className="border rounded-lg px-4 py-2 col-span-2"
                   value={form.issueDate}
-                  onChange={(e) =>
-                    setForm({ ...form, issueDate: e.target.value })
-                  }
+                  onChange={(e) => setForm({ ...form, issueDate: e.target.value })}
                 />
               </div>
 
@@ -305,9 +332,7 @@ export default function AdminCertificates() {
               <div className="border rounded-xl p-6 text-center">
                 <p className="text-lg font-semibold">Preview: {form.internName}</p>
                 <p>{form.role}</p>
-                <p>
-                  {form.startDate} → {form.endDate}
-                </p>
+                <p>{form.startDate} → {form.endDate}</p>
               </div>
 
               {generatedCert && (
@@ -321,6 +346,7 @@ export default function AdminCertificates() {
                   onClick={() => {
                     setSelected(null);
                     setGeneratedCert(null);
+                    setPreviewQr(null);
                     setGenerating(false);
                   }}
                   className="px-4 py-2 border rounded-lg"
@@ -350,12 +376,7 @@ export default function AdminCertificates() {
                     </a>
 
                     <button
-                      onClick={() =>
-                        downloadUrlAsFile(
-                          generatedCert.url,
-                          `${generatedCert.id || "certificate"}.pdf`
-                        )
-                      }
+                      onClick={() => downloadUrlAsFile(generatedCert.url, `${generatedCert.id || "certificate"}.pdf`)}
                       className="px-6 py-2 bg-green-600 text-white rounded-lg"
                     >
                       Download PDF
@@ -369,7 +390,7 @@ export default function AdminCertificates() {
           {/* Hidden offscreen node used for html2canvas capture */}
           <div style={{ position: "fixed", left: -9999, top: -9999, width: "1600px", height: "1200px", overflow: "hidden" }}>
             <div ref={previewRef} style={{ width: "1600px", height: "1200px" }}>
-              {/* Paste your certificate HTML here but replace placeholders with form values */}
+              {/* Certificate HTML (rendered for capture). Use previewQr for QR image. */}
               <div style={{ fontFamily: "Inter, Georgia, serif", padding: 60, boxSizing: "border-box", width: "100%", height: "100%", background: "white" }}>
                 <div style={{ textAlign: "center" }}>
                   <img src="https://res.cloudinary.com/dvid0uzwo/image/upload/v1770982044/my_project/uoxelupwgfbxxmdojmew.png" alt="logo" style={{ width: 400 }} />
@@ -411,7 +432,14 @@ export default function AdminCertificates() {
 
                   <div style={{ textAlign: "center" }}>
                     <div style={{ width: 120, height: 120, background: "#fff", padding: 6 }}>
-                      <img src={form.issueDate ? `data:image/png;base64,${btoa("QRPLACEHOLDER")}` : ""} alt="qr" style={{ width: "100%", height: "100%" }} />
+                      {/* previewQr may be a dataURL (generated) or a remote url returned by backend */}
+                      {previewQr ? (
+                        <img src={previewQr} alt="qr" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                      ) : (
+                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb", fontSize: 12 }}>
+                          QR
+                        </div>
+                      )}
                     </div>
                     <div style={{ fontSize: 12, color: "#4b5563", marginTop: 6 }}>Scan to verify certificate</div>
                   </div>
