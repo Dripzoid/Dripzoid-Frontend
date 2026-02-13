@@ -2,6 +2,8 @@
 import React, { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 
+const API_BASE = import.meta.env.VITE_API_BASE || "";
+
 export default function ApplyPage() {
   const { jobId } = useParams();
 
@@ -31,7 +33,6 @@ export default function ApplyPage() {
     setSubmitting(true);
 
     try {
-      // Prepare form data for file upload
       const formData = new FormData();
       formData.append("jobId", jobId);
       formData.append("name", form.name);
@@ -41,16 +42,21 @@ export default function ApplyPage() {
       formData.append("cover", form.cover);
       if (form.resume) formData.append("resume", form.resume);
 
-      // TODO: Replace with your backend API
-      await fetch("/api/apply", {
+      const res = await fetch(`${API_BASE}/api/jobs/apply`, {
         method: "POST",
         body: formData,
       });
 
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Application failed");
+      }
+
       setSuccess(true);
     } catch (err) {
       console.error("Application error:", err);
-      alert("Something went wrong. Try again.");
+      alert(err.message || "Something went wrong. Try again.");
     } finally {
       setSubmitting(false);
     }
