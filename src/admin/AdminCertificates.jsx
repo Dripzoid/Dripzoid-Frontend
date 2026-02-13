@@ -36,7 +36,7 @@ export default function AdminCertificates() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      setApps(data || []);
+      setApps(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to fetch applications:", err);
     } finally {
@@ -69,7 +69,7 @@ export default function AdminCertificates() {
       });
       if (res.ok) {
         const json = await res.json();
-        // Expect json: { certificate_url, qr_url, certificate_id }
+        // Expect json: { certificate_url, qr_url, certificate_id, ... }
         setGeneratedCert({
           url: json.certificate_url,
           qr: json.qr_url,
@@ -77,8 +77,6 @@ export default function AdminCertificates() {
         });
         // set preview QR to show in offscreen preview (so Preview will match stored cert)
         if (json.qr_url) setPreviewQr(json.qr_url);
-      } else {
-        // no cert yet (404) — ignore
       }
     } catch (err) {
       console.error("Failed to fetch certificate for application:", err);
@@ -158,14 +156,14 @@ export default function AdminCertificates() {
 
       // 3) render canvas (capture the preview node which now contains the QR)
       const canvas = await html2canvas(node, {
-        scale: 1.2,
+        scale: 1.5,
         useCORS: true,
         allowTaint: true,
         backgroundColor: null,
       });
 
       // 4) convert canvas to PDF
-      const imgData = canvas.toDataURL("image/jpeg", 0.7); // 🔥 70% quality
+      const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF({
         orientation: "landscape",
         unit: "pt",
@@ -237,7 +235,7 @@ export default function AdminCertificates() {
       <h1 className="text-3xl font-bold mb-8">Certificate Dashboard</h1>
 
       {/* Applications Table */}
-      <div className="overflow-x-auto border rounded-2xl">
+      <div className="overflow-x-auto border rounded-2xl mb-8">
         <table className="w-full text-sm">
           <thead className="bg-neutral-100 dark:bg-neutral-900">
             <tr>
@@ -292,7 +290,7 @@ export default function AdminCertificates() {
       {selected && (
         <>
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-6 z-50">
-            <div className="bg-white dark:bg-neutral-900 rounded-2xl w-full max-w-3xl p-8 space-y-6">
+            <div className="bg-white dark:bg-neutral-900 rounded-2xl w-full max-w-4xl p-6 space-y-6">
               <h2 className="text-xl font-bold">Generate Certificate</h2>
 
               <div className="grid grid-cols-2 gap-4">
@@ -328,7 +326,7 @@ export default function AdminCertificates() {
                 />
               </div>
 
-              {/* Live Preview Placeholder */}
+              {/* Live Preview placeholder */}
               <div className="border rounded-xl p-6 text-center">
                 <p className="text-lg font-semibold">Preview: {form.internName}</p>
                 <p>{form.role}</p>
@@ -390,60 +388,134 @@ export default function AdminCertificates() {
           {/* Hidden offscreen node used for html2canvas capture */}
           <div style={{ position: "fixed", left: -9999, top: -9999, width: "1600px", height: "1200px", overflow: "hidden" }}>
             <div ref={previewRef} style={{ width: "1600px", height: "1200px" }}>
-              {/* Certificate HTML (rendered for capture). Use previewQr for QR image. */}
-              <div style={{ fontFamily: "Inter, Georgia, serif", padding: 60, boxSizing: "border-box", width: "100%", height: "100%", background: "white" }}>
-                <div style={{ textAlign: "center" }}>
-                  <img src="https://res.cloudinary.com/dvid0uzwo/image/upload/v1770982044/my_project/uoxelupwgfbxxmdojmew.png" alt="logo" style={{ width: 400 }} />
-                </div>
+              {/* Put the full template HTML/CSS here (converted to JSX). */}
+              <div>
+                {/* Inline <style> to ensure html2canvas picks up layout exactly */}
+                <style>{`
+                  :root{
+                    --bg:#f3f4f6;
+                    --panel-bg:rgba(255,255,255,0.85);
+                    --accent:#0f172a;
+                    --muted:#4b5563;
+                    --padding:40px;
+                  }
+                  *{box-sizing:border-box}
+                  body,html{margin:0;padding:0}
+                  .certificate {
+                    width: 1600px;
+                    height: 1200px;
+                    position:relative;
+                    border-radius:0;
+                    overflow:hidden;
+                    background-color:#fff;
+                    display:flex;
+                    align-items:stretch;
+                    font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+                  }
+                  .certificate__bg{
+                    position:absolute;inset:0;
+                    background-repeat:no-repeat;
+                    background-position:center;
+                    background-size:cover;
+                    z-index:1;
+                  }
+                  .certificate__panel{
+                    position:relative;z-index:2;display:flex;flex-direction:column;flex:1;padding:var(--padding);
+                    background: transparent;
+                    gap:16px;
+                  }
+                  .certificate__header{display:flex;align-items:center;justify-content:center;gap:20px}
+                  .brand__logo{width:350px;height:auto;object-fit:contain;border-radius:8px}
+                  .certificate__body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:10px 40px}
+                  .eyebrow{font-size:13px;text-transform:uppercase;letter-spacing:2px;color:var(--muted)}
+                  .headline{font-family:'Playfair Display', serif;font-size:36px;margin:8px 0;color:var(--accent)}
+                  .recipient{display:inline-block;margin:18px 0;padding:8px 22px;font-size:34px;font-weight:800;border-bottom:3px solid rgba(0,0,0,0.08);font-family:'Playfair Display', serif}
+                  .description{max-width:78%;color:var(--muted);line-height:1.5;font-size:18px}
+                  .meta{display:flex;gap:28px;margin-top:18px;flex-wrap:wrap;justify-content:center}
+                  .meta__item{font-size:14px;color:var(--muted)}
+                  .meta__label{display:block;font-weight:600;color:var(--accent);font-size:13px}
+                  .certificate__footer{display:flex;align-items:flex-end;justify-content:space-between;padding-top:6px}
+                  .sign__img{width:190px;height:auto;object-fit:contain}
+                  .qr{width:110px;height:110px;border:6px solid #fff;padding:6px;border-radius:6px;background:#fff;box-shadow:0 6px 18px rgba(2,6,23,0.08)}
+                `}</style>
 
-                <h1 style={{ fontFamily: "Playfair Display, serif", textAlign: "center", marginTop: 20, fontSize: 36 }}>Internship Completion Certificate</h1>
+                <article className="certificate" role="document" aria-label="Internship Completion Certificate">
+                  {/* background */}
+                  <div
+                    className="certificate__bg"
+                    style={{
+                      backgroundImage:
+                        "url('https://res.cloudinary.com/dvid0uzwo/image/upload/v1770982024/my_project/euvrfnqjwxbahchozdyn.png')",
+                    }}
+                    aria-hidden="true"
+                  />
 
-                <div style={{ textAlign: "center", marginTop: 30 }}>
-                  <div style={{ display: "inline-block", borderBottom: "3px solid rgba(0,0,0,0.08)", padding: "8px 22px", fontSize: 34, fontWeight: 800, fontFamily: "Playfair Display, serif" }}>
-                    {form.internName}
-                  </div>
+                  <section className="certificate__panel">
+                    <header className="certificate__header" aria-hidden="false">
+                      <div className="brand">
+                        <img
+                          className="brand__logo"
+                          src="https://res.cloudinary.com/dvid0uzwo/image/upload/v1770982044/my_project/uoxelupwgfbxxmdojmew.png"
+                          alt="Dripzoid logo"
+                        />
+                      </div>
+                    </header>
 
-                  <p style={{ marginTop: 20, color: "#4b5563", maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
-                    This certifies that the above named individual has successfully completed the <strong>{form.role}</strong> internship program, demonstrating strong commitment to software testing, bug reporting, and quality assurance practices.
-                  </p>
+                    <main className="certificate__body">
+                      <div className="eyebrow">Internship Completion Certificate</div>
+                      <h2 className="headline">
+                        <span className="role">{form.role}</span> Internship
+                      </h2>
 
-                  <div style={{ display: "flex", justifyContent: "center", gap: 40, marginTop: 28 }}>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 13, color: "#0f172a", fontWeight: 600 }}>Start Date</div>
-                      <div style={{ color: "#4b5563" }}>{form.startDate}</div>
-                    </div>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 13, color: "#0f172a", fontWeight: 600 }}>End Date</div>
-                      <div style={{ color: "#4b5563" }}>{form.endDate}</div>
-                    </div>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 13, color: "#0f172a", fontWeight: 600 }}>Issue Date</div>
-                      <div style={{ color: "#4b5563" }}>{form.issueDate}</div>
-                    </div>
-                  </div>
-                </div>
+                      <div className="recipient" role="text" aria-label="Recipient name">
+                        {form.internName}
+                      </div>
 
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 60 }}>
-                  <div style={{ textAlign: "left" }}>
-                    <img src="https://res.cloudinary.com/dvid0uzwo/image/upload/v1770984343/my_project/nothmuye0kigv7dm8gnd.png" alt="signature" style={{ width: 160 }} />
-                    <div style={{ fontWeight: 700 }}>K. Yuvateja Sainadh</div>
-                    <div>Co-Founder & Developer</div>
-                  </div>
+                      <p className="description">
+                        This certifies that the above named individual has successfully completed the{" "}
+                        <strong>{form.role}</strong> internship program, demonstrating strong commitment to software testing, bug reporting, and quality assurance practices.
+                      </p>
 
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ width: 120, height: 120, background: "#fff", padding: 6 }}>
-                      {/* previewQr may be a dataURL (generated) or a remote url returned by backend */}
-                      {previewQr ? (
-                        <img src={previewQr} alt="qr" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                      ) : (
-                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb", fontSize: 12 }}>
-                          QR
+                      <div className="meta" aria-hidden="false">
+                        <div className="meta__item">
+                          <span className="meta__label">Start Date</span>
+                          {form.startDate || "-"}
                         </div>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 12, color: "#4b5563", marginTop: 6 }}>Scan to verify certificate</div>
-                  </div>
-                </div>
+                        <div className="meta__item">
+                          <span className="meta__label">End Date</span>
+                          {form.endDate || "-"}
+                        </div>
+                        <div className="meta__item">
+                          <span className="meta__label">Issue Date</span>
+                          {form.issueDate || "-"}
+                        </div>
+                      </div>
+                    </main>
+
+                    <footer className="certificate__footer" aria-hidden="false">
+                      <div className="sign">
+                        <img
+                          className="sign__img"
+                          src="https://res.cloudinary.com/dvid0uzwo/image/upload/v1770984343/my_project/nothmuye0kigv7dm8gnd.png"
+                          alt="Signature of Co-Founder"
+                        />
+                        <div style={{ fontWeight: 700 }}>K. Yuvateja Sainadh</div>
+                        <div>Co-Founder &amp; Developer</div>
+                      </div>
+
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                        <div className="qr" role="img" aria-label="QR code for verification">
+                          {previewQr ? (
+                            <img src={previewQr} alt="qr" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block", borderRadius: 4 }} />
+                          ) : (
+                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb" }}>QR</div>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 12, color: "#4b5563" }}>Scan to verify certificate</div>
+                      </div>
+                    </footer>
+                  </section>
+                </article>
               </div>
             </div>
           </div>
