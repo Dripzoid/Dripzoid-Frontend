@@ -37,6 +37,7 @@ import Collections from "./pages/Collections.jsx";
 import Shipping from "./pages/Shipping.jsx";
 import Jobs from "./pages/Jobs.jsx";
 import JobDetailPage from "./pages/JobDetailPage.jsx";
+import ApplyPage from "./pages/ApplyPage.jsx";
 import FAQ from "./pages/FAQ.jsx";
 
 
@@ -95,6 +96,7 @@ function App() {
                 <Route path="/shipping" element={<Shipping />} />
                 <Route path="/jobs" element={<Jobs />} />
                 <Route path="/jobs/:slug" element={<JobDetailPage />} />
+                <Route path="/apply/:jobId" element={<ApplyPage />} />
                 <Route path="/faq" element={<FAQ />} />
 
 
