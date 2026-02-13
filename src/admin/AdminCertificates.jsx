@@ -158,14 +158,14 @@ export default function AdminCertificates() {
 
       // 3) render canvas (capture the preview node which now contains the QR)
       const canvas = await html2canvas(node, {
-        scale: 2,
+        scale: 1.2,
         useCORS: true,
         allowTaint: true,
         backgroundColor: null,
       });
 
       // 4) convert canvas to PDF
-      const imgData = canvas.toDataURL("image/png");
+      const imgData = canvas.toDataURL("image/jpeg", 0.7); // 🔥 70% quality
       const pdf = new jsPDF({
         orientation: "landscape",
         unit: "pt",
