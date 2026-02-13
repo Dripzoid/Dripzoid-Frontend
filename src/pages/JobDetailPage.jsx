@@ -1,39 +1,37 @@
-// src/pages/JobDetailPage.jsx
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 
-// Temporary static data (later replace with API call)
-const JOBS = [
-  {
-    id: "job_001",
-    slug: "qa-tester-intern",
-    title: "QA Tester Intern",
-    type: "Internship",
-    location: "Remote",
-    department: "Quality Assurance",
-    duration: "2 Weeks",
-    stipend: "Unpaid",
-    status: "Open",
-    description:
-      "Join Dripzoid as a QA Tester Intern and help ensure the quality and stability of our web and mobile platforms.",
-    responsibilities: [
-      "Test new features and report bugs",
-      "Write clear and detailed bug reports",
-      "Perform regression and UI testing",
-      "Collaborate with developers to resolve issues",
-    ],
-    requirements: [
-      "Basic understanding of software testing",
-      "Attention to detail",
-      "Good communication skills",
-      "Interest in product quality and UX",
-    ],
-  },
-];
+const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 export default function JobDetailPage() {
   const { slug } = useParams();
-  const job = JOBS.find((j) => j.slug === slug);
+  const [job, setJob] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchJob() {
+      try {
+        const res = await fetch(`${API_BASE}/api/jobs/${slug}`);
+        if (!res.ok) throw new Error("Job not found");
+        const data = await res.json();
+        setJob(data);
+      } catch (err) {
+        console.error(err);
+        setJob(null);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchJob();
+  }, [slug]);
+
+  if (loading) {
+    return (
+      <main className="min-h-screen flex items-center justify-center">
+        <p className="text-neutral-500">Loading job details...</p>
+      </main>
+    );
+  }
 
   if (!job) {
     return (
@@ -70,39 +68,19 @@ export default function JobDetailPage() {
           </p>
         </div>
 
-        {/* Responsibilities */}
-        <div className="mb-10">
-          <h2 className="text-2xl font-semibold mb-3">Responsibilities</h2>
-          <ul className="list-disc pl-6 space-y-2">
-            {job.responsibilities.map((item, idx) => (
-              <li key={idx}>{item}</li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Requirements */}
-        <div className="mb-10">
-          <h2 className="text-2xl font-semibold mb-3">Requirements</h2>
-          <ul className="list-disc pl-6 space-y-2">
-            {job.requirements.map((item, idx) => (
-              <li key={idx}>{item}</li>
-            ))}
-          </ul>
-        </div>
-
         {/* Details */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
           <div className="p-4 rounded-xl border bg-neutral-50 dark:bg-neutral-900">
             <p className="text-sm text-neutral-500">Duration</p>
-            <p className="font-semibold">{job.duration}</p>
+            <p className="font-semibold">{job.duration || "N/A"}</p>
           </div>
           <div className="p-4 rounded-xl border bg-neutral-50 dark:bg-neutral-900">
             <p className="text-sm text-neutral-500">Stipend</p>
-            <p className="font-semibold">{job.stipend}</p>
+            <p className="font-semibold">{job.stipend || "—"}</p>
           </div>
           <div className="p-4 rounded-xl border bg-neutral-50 dark:bg-neutral-900">
             <p className="text-sm text-neutral-500">Location</p>
-            <p className="font-semibold">{job.location}</p>
+            <p className="font-semibold">{job.location || "Remote"}</p>
           </div>
         </div>
 
