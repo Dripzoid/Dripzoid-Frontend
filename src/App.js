@@ -36,6 +36,7 @@ import SizeGuide from "./pages/SizeGuide.jsx";
 import Collections from "./pages/Collections.jsx";
 import Shipping from "./pages/Shipping.jsx";
 import Jobs from "./pages/Jobs.jsx";
+import JobDetailPage from "./pages/JobDetailPage.jsx";
 import FAQ from "./pages/FAQ.jsx";
 
 
@@ -93,6 +94,7 @@ function App() {
                 <Route path="/collections" element={<Collections />} />
                 <Route path="/shipping" element={<Shipping />} />
                 <Route path="/jobs" element={<Jobs />} />
+                <Route path="/jobs/:slug" element={<JobDetailPage />} />
                 <Route path="/faq" element={<FAQ />} />
 
 
