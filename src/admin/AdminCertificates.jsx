@@ -203,6 +203,23 @@ export default function AdminCertificates() {
     return document.fonts ? document.fonts.ready : Promise.resolve();
   }
 
+  async function updateStatus(id, status) {
+  try {
+    await fetch(`${API_BASE}/api/jobs/applications/${id}/status`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ status }),
+    });
+    await fetchApplications();
+  } catch (err) {
+    console.error("Failed to update status:", err);
+    alert("Failed to update status");
+  }
+}
+
   // -------------------------
   // Build populated HTML (string) from RAW_TEMPLATE + provided values
   // -------------------------
