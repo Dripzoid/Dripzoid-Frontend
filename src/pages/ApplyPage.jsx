@@ -2,7 +2,8 @@
 import React, { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "";
+const API_BASE = process.env.REACT_APP_API_BASE || "";
+
 
 export default function ApplyPage() {
   const { jobId } = useParams();
