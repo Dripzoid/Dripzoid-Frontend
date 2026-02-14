@@ -352,7 +352,7 @@ export default function AdminCertificates() {
       // 6) capture via html2canvas
       const node = captureRef.current.querySelector("article.certificate") || captureRef.current;
       const canvas = await html2canvas(node, {
-        scale: 2,
+        scale: 1.2,
         useCORS: true,
         allowTaint: true,
         backgroundColor: "#ffffff",
@@ -360,7 +360,7 @@ export default function AdminCertificates() {
       });
 
       // 7) generate PDF
-      const imgData = canvas.toDataURL("image/png");
+      const imgData = canvas.toDataURL("image/jpeg",0.7);
       const pdf = new jsPDF({
         orientation: "landscape",
         unit: "pt",
