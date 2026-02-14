@@ -10,16 +10,10 @@ const API_BASE = process.env.REACT_APP_API_BASE || "";
 /**
  * AdminCertificates
  *
- * - Uses the provided raw HTML certificate template (keeps background + fonts).
- * - Injects placeholders into the template safely (escaped).
- * - Renders a live iframe preview inside the modal (user-visible).
- * - Renders the same populated HTML into a hidden DOM node (captureNode) for html2canvas.
- * - Generates a client-side PDF and exposes Preview (open in new tab) & Download — no backend upload.
- * - Tailwind-based black & white theme in modal controls. Lucide icons used for buttons.
- *
- * Notes:
- * - html2canvas can be picky with remote images and fonts — ensure your Cloudinary images allow CORS.
- * - If fonts don't match exactly when rendered to canvas, consider self-hosting fonts or embedding them into the template.
+ * - Local PDF generation (no backend upload).
+ * - Hidden capture size reduced to 1200x900 for smaller PDFs.
+ * - JPEG output with quality to compress PDF under ~10MB.
+ * - Description now includes duration (15 days, 1 week, 2 weeks, 1 month, etc.)
  */
 
 export default function AdminCertificates() {
@@ -27,11 +21,9 @@ export default function AdminCertificates() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
 
-  // Instead of remote upload, we store generated PDF blob + url in state
+  // generate locally
   const [generatedCert, setGeneratedCert] = useState(null);
   const [generating, setGenerating] = useState(false);
-
-  // QR preview (data URL) used in HTML preview & capture
   const [previewQr, setPreviewQr] = useState(null);
 
   const [form, setForm] = useState({
@@ -42,7 +34,7 @@ export default function AdminCertificates() {
     issueDate: new Date().toISOString().slice(0, 10),
   });
 
-  const captureRef = useRef(null); // hidden populated HTML node for capture
+  const captureRef = useRef(null); // hidden populated HTML node for capture (1200x900)
   const iframeRef = useRef(null); // visible preview iframe
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
@@ -66,7 +58,7 @@ export default function AdminCertificates() {
     }
   }
 
-  // basic HTML-escape helper to avoid accidental injection
+  // escape helper
   function escapeHtml(str = "") {
     return String(str)
       .replace(/&/g, "&amp;")
@@ -76,7 +68,9 @@ export default function AdminCertificates() {
       .replace(/'/g, "&#039;");
   }
 
-  // Raw template (exact HTML you provided). Placeholders replaced by buildPopulatedHtml().
+  // ----------------------------
+  // RAW HTML template (updated to include {{DURATION}} placeholder)
+  // ----------------------------
   const RAW_TEMPLATE = `<!doctype html>
 <html lang="en">
 <head>
@@ -90,13 +84,12 @@ export default function AdminCertificates() {
       --accent:#0f172a;
       --muted:#4b5563;
       --padding:40px;
-      --max-width:1600px;
-      --max-height:1200px;
+      --max-width:1200px;
+      --max-height:900px;
     }
     *{box-sizing:border-box}
     html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
     body{background:var(--bg);display:flex;align-items:center;justify-content:center;padding:0}
-    /* Make certificate fill its parent canvas while capping to a sensible max */
     .certificate {
       width: 100%;
       height: 100%;
@@ -118,26 +111,23 @@ export default function AdminCertificates() {
     }
     .certificate__panel{
       position:relative;z-index:2;display:flex;flex-direction:column;flex:1;
-      /* use responsive padding so content scales with available canvas */
-      padding: clamp(20px, 3.5vw, var(--padding));
+      padding: clamp(16px, 3vw, var(--padding));
       background: transparent;
-      gap:16px;
+      gap:12px;
     }
-    header.certificate__header{display:flex;align-items:center;justify-content:center;gap:20px}
-    /* center the logo and make it scale down on smaller canvases */
-    .brand__logo{width:min(42%, 420px);max-width:420px;height:auto;object-fit:contain;border-radius:8px;margin:0 auto;display:block}
-    main.certificate__body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:10px 40px}
-    .eyebrow{font-size:clamp(11px,1.1vw,13px);text-transform:uppercase;letter-spacing:2px;color:var(--muted)}
-    .headline{font-family:'Playfair Display', serif;font-size:clamp(28px,3.4vw,40px);margin:8px 0;color:var(--accent)}
-    .recipient{display:inline-block;margin:18px 0;padding:clamp(6px,0.9vw,8px) clamp(12px,1.8vw,22px);font-size:clamp(22px,3.2vw,34px);font-weight:800;border-bottom:3px solid rgba(0,0,0,0.08);font-family:'Playfair Display', serif}
-    .description{max-width:78%;color:var(--muted);line-height:1.5;font-size:clamp(14px,1.4vw,18px)}
-    .meta{display:flex;gap:clamp(12px,2.3vw,28px);margin-top:18px;flex-wrap:wrap;justify-content:center}
-    .meta__item{font-size:clamp(12px,1.1vw,14px);color:var(--muted)}
-    .meta__label{display:block;font-weight:600;color:var(--accent);font-size:clamp(11px,0.9vw,13px)}
+    header.certificate__header{display:flex;align-items:center;justify-content:center;gap:12px}
+    .brand__logo{width:min(36%,360px);max-width:360px;height:auto;object-fit:contain;border-radius:8px;margin:0 auto;display:block}
+    main.certificate__body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8px 24px}
+    .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--muted)}
+    .headline{font-family:'Playfair Display', serif;font-size:28px;margin:8px 0;color:var(--accent)}
+    .recipient{display:inline-block;margin:12px 0;padding:6px 18px;font-size:22px;font-weight:800;border-bottom:3px solid rgba(0,0,0,0.08);font-family:'Playfair Display', serif}
+    .description{max-width:84%;color:var(--muted);line-height:1.5;font-size:14px}
+    .meta{display:flex;gap:16px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+    .meta__item{font-size:12px;color:var(--muted)}
+    .meta__label{display:block;font-weight:600;color:var(--accent);font-size:11px}
     footer.certificate__footer{display:flex;align-items:flex-end;justify-content:space-between;padding-top:6px}
-    .sign__img{width:min(22%, 190px);height:auto;object-fit:contain}
-    .qr{width:min(10%,110px);height:min(10%,110px);border:6px solid #fff;padding:6px;border-radius:6px;background:#fff;box-shadow:0 6px 18px rgba(2,6,23,0.08)}
-    /* ensure print looks correct */
+    .sign__img{width:min(22%,140px);height:auto;object-fit:contain}
+    .qr{width:90px;height:90px;border:5px solid #fff;padding:6px;border-radius:6px;background:#fff;box-shadow:0 6px 18px rgba(2,6,23,0.08)}
     @media print{
       body{background:#fff}
       .certificate{box-shadow:none;border-radius:0}
@@ -159,7 +149,13 @@ export default function AdminCertificates() {
         <div class="eyebrow">Internship Completion Certificate</div>
         <h2 class="headline"><span class="role">{{Role}}</span> Internship</h2>
         <div class="recipient" role="text" aria-label="Recipient name">{{Intern_Name}}</div>
-        <p class="description">This certifies that the above named individual has successfully completed the <strong>{{Role}}</strong> internship program, demonstrating strong commitment to software testing, bug reporting, and quality assurance practices.</p>
+       <p class="description">
+  This certifies that the above named individual has successfully completed the 
+  <strong>{{Role}}</strong> internship program for a duration of 
+  <strong>{{DURATION}}</strong>, demonstrating dedication, analytical thinking, and strong proficiency in software testing, bug reporting, and quality assurance methodologies. 
+  Throughout the internship, the intern actively contributed to test case design, defect identification, and product quality improvement, reflecting a commitment to excellence, continuous learning, and professional growth in real-world development environments.
+</p>
+
         <div class="meta" aria-hidden="false">
           <div class="meta__item"><span class="meta__label">Start Date</span>{{Start_Date}}</div>
           <div class="meta__item"><span class="meta__label">End Date</span>{{End_Date}}</div>
@@ -186,8 +182,7 @@ export default function AdminCertificates() {
 </body>
 </html>`;
 
-
-  // defaults (cloudinary urls you already use)
+  // defaults for images
   const DEFAULTS = {
     LOGO_URL:
       "https://res.cloudinary.com/dvid0uzwo/image/upload/v1770982044/my_project/uoxelupwgfbxxmdojmew.png",
@@ -197,49 +192,66 @@ export default function AdminCertificates() {
       "https://res.cloudinary.com/dvid0uzwo/image/upload/v1770984343/my_project/nothmuye0kigv7dm8gnd.png",
   };
 
+  // format date to DD-MMM-YYYY (e.g., 02-Feb-2026)
   function formatDateToDDMMMYYYY(dateStr) {
-  if (!dateStr) return "-";
-  // try to parse ISO or common formats
-  const d = new Date(dateStr);
-  if (isNaN(d)) {
-    // If it's not a valid Date, try replacing slashes (e.g. dd/mm/yyyy) or return as-is escaped
-    return escapeHtml(dateStr);
+    if (!dateStr) return "-";
+    const d = new Date(dateStr);
+    if (isNaN(d)) return escapeHtml(dateStr);
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const dd = String(d.getDate()).padStart(2, "0");
+    const m = months[d.getMonth()];
+    const yyyy = d.getFullYear();
+    return `${dd}-${m}-${yyyy}`;
   }
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const dd = String(d.getDate()).padStart(2, "0");
-  const m = months[d.getMonth()];
-  const yyyy = d.getFullYear();
-  return `${dd}-${m}-${yyyy}`;
-}
 
-function buildPopulatedHtml(values = {}) {
-  // defaults for your assets
-  const defaults = {
-    LOGO_URL: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1770982044/my_project/uoxelupwgfbxxmdojmew.png",
-    BG_URL: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1770982024/my_project/euvrfnqjwxbahchozdyn.png",
-    SIGN_URL: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1770984343/my_project/nothmuye0kigv7dm8gnd.png",
-  };
+  // compute human-friendly duration between two dates
+  function computeDurationText(startStr, endStr) {
+    if (!startStr || !endStr) return "-";
+    const s = new Date(startStr);
+    const e = new Date(endStr);
+    if (isNaN(s) || isNaN(e) || e < s) return "-";
+    const msDay = 24 * 60 * 60 * 1000;
+    // inclusive days: e - s + 1 day
+    const diffDays = Math.round((e - s) / msDay) + 1;
+    if (diffDays <= 1) return diffDays === 1 ? "1 day" : `${diffDays} days`;
+    if (diffDays < 7) return `${diffDays} days`;
+    if (diffDays === 7) return `1 week`;
+    if (diffDays % 7 === 0 && diffDays / 7 < 5) {
+      const w = diffDays / 7;
+      return `${w} ${w === 1 ? "week" : "weeks"}`;
+    }
+    // months approximation (30 days per month)
+    if (diffDays >= 28 && diffDays < 60) return `1 month`;
+    if (diffDays >= 60 && diffDays < 365) {
+      const months = Math.round(diffDays / 30);
+      return `${months} ${months === 1 ? "month" : "months"}`;
+    }
+    // fallback to days
+    return `${diffDays} days`;
+  }
 
-  // format dates to DD-MMM-YYYY
-  const start = formatDateToDDMMMYYYY(values.startDate || "");
-  const end = formatDateToDDMMMYYYY(values.endDate || "");
-  const issue = formatDateToDDMMMYYYY(values.issueDate || "");
+  // build populated HTML (replaces placeholders)
+  function buildPopulatedHtml(values = {}) {
+    const startFormatted = formatDateToDDMMMYYYY(values.startDate || "");
+    const endFormatted = formatDateToDDMMMYYYY(values.endDate || "");
+    const issueFormatted = formatDateToDDMMMYYYY(values.issueDate || "");
+    const durationText = computeDurationText(values.startDate, values.endDate);
 
-  const filled = RAW_TEMPLATE
-    .replace(/{{Intern_Name}}/g, escapeHtml(values.internName || ""))
-    .replace(/{{Role}}/g, escapeHtml(values.role || ""))
-    .replace(/{{Start_Date}}/g, escapeHtml(start))
-    .replace(/{{End_Date}}/g, escapeHtml(end))
-    .replace(/{{Issue_Date}}/g, escapeHtml(issue))
-    .replace(/{{LOGO_URL}}/g, escapeHtml(values.logo || defaults.LOGO_URL))
-    .replace(/{{BG_URL}}/g, escapeHtml(values.bg || defaults.BG_URL))
-    .replace(/{{SIGN_URL}}/g, escapeHtml(values.sign || defaults.SIGN_URL))
-    .replace(/{{QR_CODE_URL}}/g, escapeHtml(values.qr || ""));
-  return filled;
-}
+    const filled = RAW_TEMPLATE
+      .replace(/{{Intern_Name}}/g, escapeHtml(values.internName || ""))
+      .replace(/{{Role}}/g, escapeHtml(values.role || ""))
+      .replace(/{{Start_Date}}/g, escapeHtml(startFormatted))
+      .replace(/{{End_Date}}/g, escapeHtml(endFormatted))
+      .replace(/{{Issue_Date}}/g, escapeHtml(issueFormatted))
+      .replace(/{{DURATION}}/g, escapeHtml(durationText))
+      .replace(/{{LOGO_URL}}/g, escapeHtml(values.logo || DEFAULTS.LOGO_URL))
+      .replace(/{{BG_URL}}/g, escapeHtml(values.bg || DEFAULTS.BG_URL))
+      .replace(/{{SIGN_URL}}/g, escapeHtml(values.sign || DEFAULTS.SIGN_URL))
+      .replace(/{{QR_CODE_URL}}/g, escapeHtml(values.qr || ""));
+    return filled;
+  }
 
-
-  // small helper: wait for images inside element to complete (or timeout)
+  // wait for images inside container
   function waitForImagesToLoad(container, timeout = 3000) {
     const imgs = Array.from(container.querySelectorAll("img"));
     if (imgs.length === 0) return Promise.resolve();
@@ -270,7 +282,7 @@ function buildPopulatedHtml(values = {}) {
     });
   }
 
-  // dataURL -> File
+  // dataURL -> File util (kept for QR if needed)
   function dataURLtoFile(dataurl, filename) {
     const arr = dataurl.split(",");
     const mime = arr[0].match(/:(.*?);/)[1];
@@ -281,7 +293,7 @@ function buildPopulatedHtml(values = {}) {
     return new File([u8arr], filename, { type: mime });
   }
 
-  // Generate PDF client-side, do NOT upload anywhere.
+  // Generate PDF client-side (no backend)
   async function handleGenerateCertificateLocal() {
     if (!selected) return;
     if (!form.internName) return alert("Please fill intern name");
@@ -292,12 +304,12 @@ function buildPopulatedHtml(values = {}) {
     try {
       const certId = `CERT-${new Date().getFullYear()}-${Date.now()}`;
 
-      // QR points to your public verification page (you can adjust)
+      // generate QR pointing to your public verification (optional)
       const verifyUrl = `${window.location.origin}/api/certificates/public/view/${certId}`;
       const qrDataUrl = await QRCode.toDataURL(verifyUrl);
       setPreviewQr(qrDataUrl);
 
-      // build populated HTML (same HTML used for visible iframe & capture)
+      // build populated HTML (same for iframe & capture)
       const html = buildPopulatedHtml({
         internName: form.internName,
         role: form.role,
@@ -314,34 +326,38 @@ function buildPopulatedHtml(values = {}) {
       // ensure fonts loaded
       if (document.fonts) await document.fonts.ready;
 
-      // wait for images inside capture to load
+      // wait for images inside capture to load (background, logo, signature, qr)
       await waitForImagesToLoad(captureRef.current, 4000);
 
+      // select node to capture (article.certificate)
       const node = captureRef.current.querySelector("article.certificate") || captureRef.current;
 
-      // capture with html2canvas
+      // html2canvas capture: reduced scale for smaller output (but still good quality)
       const canvas = await html2canvas(node, {
-        scale: 2,
+        scale: 1.4, // moderate scale
         useCORS: true,
         allowTaint: true,
         backgroundColor: "#ffffff",
         logging: false,
       });
 
-      // create PDF
-      const imgData = canvas.toDataURL("image/png");
+      // convert to JPEG (compressed)
+      const imgData = canvas.toDataURL("image/jpeg", 0.85); // quality 85%
       const pdf = new jsPDF({
         orientation: "landscape",
         unit: "pt",
         format: [canvas.width, canvas.height],
       });
-      pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
+
+      // Add JPEG image to pdf
+      pdf.addImage(imgData, "JPEG", 0, 0, canvas.width, canvas.height);
+
       const pdfBlob = pdf.output("blob");
 
-      // blob URL for preview
+      // create blob URL for preview & download
       const blobUrl = URL.createObjectURL(pdfBlob);
 
-      // save to state (client-side only)
+      // store in state
       setGeneratedCert({
         id: certId,
         blob: pdfBlob,
@@ -350,15 +366,11 @@ function buildPopulatedHtml(values = {}) {
         htmlString: html,
       });
 
-      // optionally mark application approved locally (you can call backend later)
-      // await updateStatus(selected.id, "Approved"); // we are not calling backend per your request
-
-      // update iframe preview to show the final HTML (so admin can inspect)
+      // update visible iframe to final HTML
       if (iframeRef.current) {
         iframeRef.current.srcdoc = html;
       }
 
-      // done
       alert("Certificate generated locally. Use Preview / Download buttons.");
     } catch (err) {
       console.error("Local certificate generation error:", err);
@@ -376,15 +388,13 @@ function buildPopulatedHtml(values = {}) {
   function handleDownloadGeneratedPdf() {
     if (!generatedCert?.blob) return alert("No generated certificate to download");
     const a = document.createElement("a");
-    const url = generatedCert.url;
-    a.href = url;
+    a.href = generatedCert.url;
     a.download = `${generatedCert.id || "certificate"}.pdf`;
     document.body.appendChild(a);
     a.click();
     a.remove();
   }
 
-  // small helper to reset generated certificate
   function resetGenerated() {
     if (generatedCert?.url) {
       try {
@@ -422,12 +432,7 @@ function buildPopulatedHtml(values = {}) {
                 <td>{app.status}</td>
                 <td>
                   {app.resume_url && (
-                    <a
-                      href={`${API_BASE}${app.resume_url}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-indigo-600 underline"
-                    >
+                    <a href={`${API_BASE}${app.resume_url}`} target="_blank" rel="noreferrer" className="text-indigo-600 underline">
                       View
                     </a>
                   )}
@@ -436,10 +441,9 @@ function buildPopulatedHtml(values = {}) {
                   <button
                     onClick={() => {
                       setSelected(app);
-                      setGeneratedCert(null);
-                      setPreviewQr(null);
+                      resetGenerated();
                       setForm((f) => ({ ...f, internName: app.name, role: app.job_title || f.role }));
-                      // set iframe preview quickly
+                      // update iframe immediately to show populated HTML
                       if (iframeRef.current) {
                         iframeRef.current.srcdoc = buildPopulatedHtml({
                           internName: app.name,
@@ -494,17 +498,12 @@ function buildPopulatedHtml(values = {}) {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={resetGenerated}
-                    title="Reset"
-                    className="inline-flex items-center gap-2 px-3 py-1 rounded bg-white/5 hover:bg-white/10 text-sm"
-                  >
+                  <button onClick={resetGenerated} title="Reset" className="inline-flex items-center gap-2 px-3 py-1 rounded bg-white/5 hover:bg-white/10 text-sm">
                     <RotateCcw size={16} /> Reset
                   </button>
 
                   <button
                     onClick={() => {
-                      // close
                       setSelected(null);
                       resetGenerated();
                     }}
@@ -580,7 +579,7 @@ function buildPopulatedHtml(values = {}) {
                   </div>
                 </div>
 
-                {/* middle: visible preview (iframe) */}
+                {/* middle/right: visible preview (iframe) */}
                 <div className="md:col-span-2">
                   <div className="border rounded-lg overflow-hidden h-[420px]">
                     <iframe
@@ -606,8 +605,8 @@ function buildPopulatedHtml(values = {}) {
             </div>
           </div>
 
-          {/* Hidden capture node for html2canvas */}
-          <div style={{ position: "fixed", left: -99999, top: -99999, width: 1600, height: 1200, overflow: "hidden", zIndex: -9999 }}>
+          {/* Hidden capture node for html2canvas (reduced to 1200 x 900 to compress size) */}
+          <div style={{ position: "fixed", left: -99999, top: -99999, width: 1200, height: 900, overflow: "hidden", zIndex: -9999 }}>
             <div ref={captureRef} />
           </div>
         </>
