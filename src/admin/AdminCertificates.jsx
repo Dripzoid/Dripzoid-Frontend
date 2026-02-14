@@ -140,13 +140,13 @@ export default function AdminCertificates() {
       if (!node) throw new Error("Preview node not ready");
 
       const canvas = await html2canvas(node, {
-        scale: 1.5,
+        scale: 1.2,
         useCORS: true,
         allowTaint: true,
         backgroundColor: null,
       });
 
-      const imgData = canvas.toDataURL("image/png");
+      const imgData = canvas.toDataURL("image/jpeg",0.7);
       const pdf = new jsPDF({
         orientation: "landscape",
         unit: "pt",
