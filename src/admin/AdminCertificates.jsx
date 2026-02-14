@@ -71,7 +71,7 @@ export default function AdminCertificates() {
   // ----------------------------
   // RAW HTML template (updated to include {{DURATION}} placeholder)
   // ----------------------------
-  const RAW_TEMPLATE = `<!doctype html>
+const RAW_TEMPLATE = `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -84,8 +84,8 @@ export default function AdminCertificates() {
       --accent:#0f172a;
       --muted:#4b5563;
       --padding:40px;
-      --max-width:1200px;
-      --max-height:900px;
+      --max-width:800px;
+      --max-height:600px;
     }
     *{box-sizing:border-box}
     html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
@@ -103,11 +103,13 @@ export default function AdminCertificates() {
       display:flex;
       align-items:stretch;
     }
+    /* background image layer - now set to 80% opacity (0.8) */
     .certificate__bg{
       position:absolute;inset:0;
       background-repeat:no-repeat;
       background-position:center;
       background-size:cover;
+      opacity: 0.8;
     }
     .certificate__panel{
       position:relative;z-index:2;display:flex;flex-direction:column;flex:1;
@@ -116,7 +118,8 @@ export default function AdminCertificates() {
       gap:12px;
     }
     header.certificate__header{display:flex;align-items:center;justify-content:center;gap:12px}
-    .brand__logo{width:min(36%,360px);max-width:360px;height:auto;object-fit:contain;border-radius:8px;margin:0 auto;display:block}
+    /* increased logo size: larger max width and percentage */
+    .brand__logo{width:min(50%,480px);max-width:480px;height:auto;object-fit:contain;border-radius:8px;margin:0 auto;display:block}
     main.certificate__body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8px 24px}
     .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--muted)}
     .headline{font-family:'Playfair Display', serif;font-size:28px;margin:8px 0;color:var(--accent)}
@@ -180,7 +183,8 @@ export default function AdminCertificates() {
     </section>
   </article>
 </body>
-</html>`;
+</html>`; 
+
 
   // defaults for images
   const DEFAULTS = {
