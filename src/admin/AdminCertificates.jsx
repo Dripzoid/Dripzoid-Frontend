@@ -83,13 +83,14 @@ const RAW_TEMPLATE = `<!doctype html>
       --bg:#ffffff;
       --accent:#0f172a;
       --muted:#4b5563;
-      --padding:40px;
+      --padding:32px;
       --max-width:800px;
       --max-height:600px;
     }
     *{box-sizing:border-box}
     html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
     body{background:var(--bg);display:flex;align-items:center;justify-content:center;padding:0}
+
     .certificate {
       width: 100%;
       height: 100%;
@@ -97,40 +98,157 @@ const RAW_TEMPLATE = `<!doctype html>
       max-height: var(--max-height);
       aspect-ratio: 4 / 3;
       position:relative;
-      border-radius:0;
       overflow:hidden;
       background-color: #fff;
       display:flex;
       align-items:stretch;
     }
-    /* background image layer - now set to 80% opacity (0.8) */
+
     .certificate__bg{
       position:absolute;inset:0;
       background-repeat:no-repeat;
       background-position:center;
       background-size:cover;
-      opacity: 0.8;
+      opacity:0.8;
     }
+
     .certificate__panel{
-      position:relative;z-index:2;display:flex;flex-direction:column;flex:1;
-      padding: clamp(16px, 3vw, var(--padding));
-      background: transparent;
-      gap:12px;
+      position:relative;z-index:2;
+      display:flex;flex-direction:column;flex:1;
+      padding: clamp(12px, 2.5vw, var(--padding));
+      gap:8px;
     }
-    header.certificate__header{display:flex;align-items:center;justify-content:center;gap:12px}
-    /* increased logo size: larger max width and percentage */
-    .brand__logo{width:min(50%,480px);max-width:480px;height:auto;object-fit:contain;border-radius:8px;margin:0 auto;display:block}
-    main.certificate__body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8px 24px}
-    .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--muted)}
-    .headline{font-family:'Playfair Display', serif;font-size:28px;margin:8px 0;color:var(--accent)}
-    .recipient{display:inline-block;margin:12px 0;padding:6px 18px;font-size:22px;font-weight:800;border-bottom:3px solid rgba(0,0,0,0.08);font-family:'Playfair Display', serif}
-    .description{max-width:84%;color:var(--muted);line-height:1.5;font-size:14px}
-    .meta{display:flex;gap:16px;margin-top:14px;flex-wrap:wrap;justify-content:center}
-    .meta__item{font-size:12px;color:var(--muted)}
-    .meta__label{display:block;font-weight:600;color:var(--accent);font-size:11px}
-    footer.certificate__footer{display:flex;align-items:flex-end;justify-content:space-between;padding-top:6px}
-    .sign__img{width:min(22%,140px);height:auto;object-fit:contain}
-    .qr{width:90px;height:90px;border:5px solid #fff;padding:6px;border-radius:6px;background:#fff;box-shadow:0 6px 18px rgba(2,6,23,0.08)}
+
+    header.certificate__header{
+      display:flex;align-items:center;justify-content:center;
+    }
+
+    .brand__logo{
+      width:min(50%,320px);
+      max-width:320px;
+      height:auto;
+      object-fit:contain;
+      display:block;
+      margin:0 auto;
+    }
+
+    main.certificate__body{
+      flex:1;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      padding:4px 16px;
+    }
+
+    .eyebrow{
+      font-size:10px;
+      text-transform:uppercase;
+      letter-spacing:2px;
+      color:var(--muted);
+    }
+
+    .headline{
+      font-family:'Playfair Display', serif;
+      font-size:22px;
+      margin:6px 0;
+      color:var(--accent);
+    }
+
+    .recipient{
+      display:inline-block;
+      margin:8px 0;
+      padding:4px 12px;
+      font-size:20px;
+      font-weight:800;
+      border-bottom:2px solid rgba(0,0,0,0.08);
+      font-family:'Playfair Display', serif;
+    }
+
+    .description{
+      max-width:90%;
+      color:var(--muted);
+      line-height:1.4;
+      font-size:12px;
+    }
+
+    .meta{
+      display:flex;
+      gap:12px;
+      margin-top:8px;
+      flex-wrap:wrap;
+      justify-content:center;
+    }
+
+    .meta__item{
+      font-size:11px;
+      color:var(--muted);
+    }
+
+    .meta__label{
+      display:block;
+      font-weight:600;
+      color:var(--accent);
+      font-size:10px;
+    }
+
+    /* Adjusted footer for smaller canvas */
+    footer.certificate__footer{
+      display:flex;
+      align-items:flex-end;
+      justify-content:space-between;
+      margin-top:auto;
+      padding-top:6px;
+    }
+
+    .sign{
+      display:flex;
+      flex-direction:column;
+      align-items:flex-start;
+      gap:2px;
+    }
+
+    .sign__img{
+      width:120px;
+      height:auto;
+      object-fit:contain;
+    }
+
+    .sign__title{
+      font-size:12px;
+      font-weight:700;
+      color:var(--accent);
+    }
+
+    .sign__role{
+      font-size:10px;
+      color:var(--muted);
+    }
+
+    .qr-wrap{
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      gap:4px;
+    }
+
+    .qr{
+      width:80px;
+      height:80px;
+      border:4px solid #fff;
+      padding:4px;
+      border-radius:6px;
+      background:#fff;
+      box-shadow:0 4px 12px rgba(2,6,23,0.08);
+    }
+
+    .verify{
+      font-size:9px;
+      color:var(--muted);
+      text-align:center;
+    }
+
     @media print{
       body{background:#fff}
       .certificate{box-shadow:none;border-radius:0}
@@ -142,39 +260,40 @@ const RAW_TEMPLATE = `<!doctype html>
 <body>
   <article class="certificate" role="document" aria-label="Certificate of Completion">
     <div class="certificate__bg" style="background-image:url('{{BG_URL}}')" aria-hidden="true"></div>
+
     <section class="certificate__panel">
-      <header class="certificate__header" aria-hidden="false">
-        <div class="brand">
-          <img class="brand__logo" src="{{LOGO_URL}}" alt="Dripzoid logo" />
-        </div>
+      <header class="certificate__header">
+        <img class="brand__logo" src="{{LOGO_URL}}" alt="Dripzoid logo" />
       </header>
+
       <main class="certificate__body">
         <div class="eyebrow">Internship Completion Certificate</div>
         <h2 class="headline"><span class="role">{{Role}}</span> Internship</h2>
-        <div class="recipient" role="text" aria-label="Recipient name">{{Intern_Name}}</div>
-       <p class="description">
-  This certifies that the above named individual has successfully completed the 
-  <strong>{{Role}}</strong> internship program for a duration of 
-  <strong>{{DURATION}}</strong>, demonstrating dedication, analytical thinking, and strong proficiency in software testing, bug reporting, and quality assurance methodologies. 
-  Throughout the internship, the intern actively contributed to test case design, defect identification, and product quality improvement, reflecting a commitment to excellence, continuous learning, and professional growth in real-world development environments.
-</p>
 
-        <div class="meta" aria-hidden="false">
+        <div class="recipient">{{Intern_Name}}</div>
+
+        <p class="description">
+          This certifies that the above named individual has successfully completed the 
+          <strong>{{Role}}</strong> internship for a duration of <strong>{{DURATION}}</strong>, 
+          demonstrating dedication to software testing, defect reporting, and quality assurance practices.
+        </p>
+
+        <div class="meta">
           <div class="meta__item"><span class="meta__label">Start Date</span>{{Start_Date}}</div>
           <div class="meta__item"><span class="meta__label">End Date</span>{{End_Date}}</div>
           <div class="meta__item"><span class="meta__label">Issue Date</span>{{Issue_Date}}</div>
         </div>
       </main>
-      <footer class="certificate__footer" aria-hidden="false">
+
+      <footer class="certificate__footer">
         <div class="sign">
-          <img class="sign__img" src="{{SIGN_URL}}" alt="Signature of Co-Founder" />
-          <div>
-            <div class="sign__title">K. Yuvateja Sainadh</div>
-            <div class="sign__role">Co-Founder &amp; Developer</div>
-          </div>
+          <img class="sign__img" src="{{SIGN_URL}}" alt="Signature" />
+          <div class="sign__title">K. Yuvateja Sainadh</div>
+          <div class="sign__role">Co-Founder &amp; Developer</div>
         </div>
+
         <div class="qr-wrap">
-          <div class="qr" role="img" aria-label="QR code for verification">
+          <div class="qr">
             <img src="{{QR_CODE_URL}}" alt="QR code" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:4px"/>
           </div>
           <div class="verify">Scan to verify certificate</div>
@@ -183,7 +302,8 @@ const RAW_TEMPLATE = `<!doctype html>
     </section>
   </article>
 </body>
-</html>`; 
+</html>`;
+
 
 
   // defaults for images
