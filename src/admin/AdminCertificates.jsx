@@ -91,13 +91,18 @@ export default function AdminCertificates() {
       --muted:#4b5563;
       --padding:40px;
       --max-width:1600px;
+      --max-height:1200px;
     }
     *{box-sizing:border-box}
     html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
     body{background:var(--bg);display:flex;align-items:center;justify-content:center;padding:0}
+    /* Make certificate fill its parent canvas while capping to a sensible max */
     .certificate {
-      width: 1600px;
-      height: 1200px;
+      width: 100%;
+      height: 100%;
+      max-width: var(--max-width);
+      max-height: var(--max-height);
+      aspect-ratio: 4 / 3;
       position:relative;
       border-radius:0;
       overflow:hidden;
@@ -112,23 +117,33 @@ export default function AdminCertificates() {
       background-size:cover;
     }
     .certificate__panel{
-      position:relative;z-index:2;display:flex;flex-direction:column;flex:1;padding:var(--padding);
+      position:relative;z-index:2;display:flex;flex-direction:column;flex:1;
+      /* use responsive padding so content scales with available canvas */
+      padding: clamp(20px, 3.5vw, var(--padding));
       background: transparent;
       gap:16px;
     }
     header.certificate__header{display:flex;align-items:center;justify-content:center;gap:20px}
-    .brand__logo{width:350px;height:auto;object-fit:contain;border-radius:8px}
+    /* center the logo and make it scale down on smaller canvases */
+    .brand__logo{width:min(42%, 420px);max-width:420px;height:auto;object-fit:contain;border-radius:8px;margin:0 auto;display:block}
     main.certificate__body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:10px 40px}
-    .eyebrow{font-size:13px;text-transform:uppercase;letter-spacing:2px;color:var(--muted)}
-    .headline{font-family:'Playfair Display', serif;font-size:40px;margin:8px 0;color:var(--accent)}
-    .recipient{display:inline-block;margin:18px 0;padding:8px 22px;font-size:34px;font-weight:800;border-bottom:3px solid rgba(0,0,0,0.08);font-family:'Playfair Display', serif}
-    .description{max-width:78%;color:var(--muted);line-height:1.5;font-size:18px}
-    .meta{display:flex;gap:28px;margin-top:18px;flex-wrap:wrap;justify-content:center}
-    .meta__item{font-size:14px;color:var(--muted)}
-    .meta__label{display:block;font-weight:600;color:var(--accent);font-size:13px}
+    .eyebrow{font-size:clamp(11px,1.1vw,13px);text-transform:uppercase;letter-spacing:2px;color:var(--muted)}
+    .headline{font-family:'Playfair Display', serif;font-size:clamp(28px,3.4vw,40px);margin:8px 0;color:var(--accent)}
+    .recipient{display:inline-block;margin:18px 0;padding:clamp(6px,0.9vw,8px) clamp(12px,1.8vw,22px);font-size:clamp(22px,3.2vw,34px);font-weight:800;border-bottom:3px solid rgba(0,0,0,0.08);font-family:'Playfair Display', serif}
+    .description{max-width:78%;color:var(--muted);line-height:1.5;font-size:clamp(14px,1.4vw,18px)}
+    .meta{display:flex;gap:clamp(12px,2.3vw,28px);margin-top:18px;flex-wrap:wrap;justify-content:center}
+    .meta__item{font-size:clamp(12px,1.1vw,14px);color:var(--muted)}
+    .meta__label{display:block;font-weight:600;color:var(--accent);font-size:clamp(11px,0.9vw,13px)}
     footer.certificate__footer{display:flex;align-items:flex-end;justify-content:space-between;padding-top:6px}
-    .sign__img{width:190px;height:auto;object-fit:contain}
-    .qr{width:110px;height:110px;border:6px solid #fff;padding:6px;border-radius:6px;background:#fff;box-shadow:0 6px 18px rgba(2,6,23,0.08)}
+    .sign__img{width:min(22%, 190px);height:auto;object-fit:contain}
+    .qr{width:min(10%,110px);height:min(10%,110px);border:6px solid #fff;padding:6px;border-radius:6px;background:#fff;box-shadow:0 6px 18px rgba(2,6,23,0.08)}
+    /* ensure print looks correct */
+    @media print{
+      body{background:#fff}
+      .certificate{box-shadow:none;border-radius:0}
+      .certificate__panel{padding:20mm}
+      .qr{border:2px solid #000}
+    }
   </style>
 </head>
 <body>
@@ -171,6 +186,7 @@ export default function AdminCertificates() {
 </body>
 </html>`;
 
+
   // defaults (cloudinary urls you already use)
   const DEFAULTS = {
     LOGO_URL:
@@ -181,18 +197,47 @@ export default function AdminCertificates() {
       "https://res.cloudinary.com/dvid0uzwo/image/upload/v1770984343/my_project/nothmuye0kigv7dm8gnd.png",
   };
 
-  function buildPopulatedHtml(values = {}) {
-    const html = RAW_TEMPLATE.replace(/{{Intern_Name}}/g, escapeHtml(values.internName || ""))
-      .replace(/{{Role}}/g, escapeHtml(values.role || ""))
-      .replace(/{{Start_Date}}/g, escapeHtml(values.startDate || "-"))
-      .replace(/{{End_Date}}/g, escapeHtml(values.endDate || "-"))
-      .replace(/{{Issue_Date}}/g, escapeHtml(values.issueDate || "-"))
-      .replace(/{{LOGO_URL}}/g, escapeHtml(values.logo || DEFAULTS.LOGO_URL))
-      .replace(/{{BG_URL}}/g, escapeHtml(values.bg || DEFAULTS.BG_URL))
-      .replace(/{{SIGN_URL}}/g, escapeHtml(values.sign || DEFAULTS.SIGN_URL))
-      .replace(/{{QR_CODE_URL}}/g, escapeHtml(values.qr || ""));
-    return html;
+  function formatDateToDDMMMYYYY(dateStr) {
+  if (!dateStr) return "-";
+  // try to parse ISO or common formats
+  const d = new Date(dateStr);
+  if (isNaN(d)) {
+    // If it's not a valid Date, try replacing slashes (e.g. dd/mm/yyyy) or return as-is escaped
+    return escapeHtml(dateStr);
   }
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const dd = String(d.getDate()).padStart(2, "0");
+  const m = months[d.getMonth()];
+  const yyyy = d.getFullYear();
+  return `${dd}-${m}-${yyyy}`;
+}
+
+function buildPopulatedHtml(values = {}) {
+  // defaults for your assets
+  const defaults = {
+    LOGO_URL: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1770982044/my_project/uoxelupwgfbxxmdojmew.png",
+    BG_URL: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1770982024/my_project/euvrfnqjwxbahchozdyn.png",
+    SIGN_URL: "https://res.cloudinary.com/dvid0uzwo/image/upload/v1770984343/my_project/nothmuye0kigv7dm8gnd.png",
+  };
+
+  // format dates to DD-MMM-YYYY
+  const start = formatDateToDDMMMYYYY(values.startDate || "");
+  const end = formatDateToDDMMMYYYY(values.endDate || "");
+  const issue = formatDateToDDMMMYYYY(values.issueDate || "");
+
+  const filled = RAW_TEMPLATE
+    .replace(/{{Intern_Name}}/g, escapeHtml(values.internName || ""))
+    .replace(/{{Role}}/g, escapeHtml(values.role || ""))
+    .replace(/{{Start_Date}}/g, escapeHtml(start))
+    .replace(/{{End_Date}}/g, escapeHtml(end))
+    .replace(/{{Issue_Date}}/g, escapeHtml(issue))
+    .replace(/{{LOGO_URL}}/g, escapeHtml(values.logo || defaults.LOGO_URL))
+    .replace(/{{BG_URL}}/g, escapeHtml(values.bg || defaults.BG_URL))
+    .replace(/{{SIGN_URL}}/g, escapeHtml(values.sign || defaults.SIGN_URL))
+    .replace(/{{QR_CODE_URL}}/g, escapeHtml(values.qr || ""));
+  return filled;
+}
+
 
   // small helper: wait for images inside element to complete (or timeout)
   function waitForImagesToLoad(container, timeout = 3000) {
