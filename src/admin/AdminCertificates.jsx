@@ -3,20 +3,18 @@ import React, { useEffect, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import QRCode from "qrcode";
-import { Eye, Download, X, RotateCcw, Printer } from "lucide-react";
+import { Eye, Download, X, RotateCcw, Printer, Mail } from "lucide-react";
 
 const API_BASE = process.env.REACT_APP_API_BASE || "";
 
 /**
  * AdminCertificates
  *
- * Workflow:
- * 1) Build populated HTML (hidden node).
- * 2) Capture node to canvas (1200x900).
- * 3) Export compressed JPEG from canvas.
- * 4) Build PDF locally from that JPEG.
- * 5) Upload JPEG (certificate) + QR to backend POST /api/certificates (backend will upload to Cloudinary as IMAGE).
- * 6) Show preview (image from backend), PDF download & print (local PDF).
+ * - Hidden capture canvas: 800x600
+ * - Uploads compressed JPEG to backend (backend uploads to Cloudinary)
+ * - Generates local PDF (from JPEG) for preview/download/print
+ * - If application.certificate_generated === 1, fetch certificate and show Preview instead of Generate
+ * - Adds "Send Email" button to trigger MSG91 email route: POST /api/email/send-certificate
  */
 
 export default function AdminCertificates() {
@@ -24,8 +22,11 @@ export default function AdminCertificates() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
 
-  const [generatedCert, setGeneratedCert] = useState(null); // { id, imageUrl (backend), pdfUrl (local blob), pdfBlob }
+  // generatedCert: holds either fetched backend cert or locally generated
+  // shape: { id, imageUrl, certificate_download_url, downloadPdfUrl (local blob url), pdfBlob, htmlString }
+  const [generatedCert, setGeneratedCert] = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
   const [previewQr, setPreviewQr] = useState(null);
 
   const [form, setForm] = useState({
@@ -36,10 +37,7 @@ export default function AdminCertificates() {
     issueDate: new Date().toISOString().slice(0, 10),
   });
 
-  // Hidden capture node (we'll inject populated HTML here)
   const captureRef = useRef(null);
-  // Visible iframe preview for admin to inspect HTML
-  const iframeRef = useRef(null);
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
   useEffect(() => {
@@ -91,7 +89,6 @@ export default function AdminCertificates() {
     const e = new Date(endStr);
     if (isNaN(s) || isNaN(e) || e < s) return "-";
     const msDay = 24 * 60 * 60 * 1000;
-    // inclusive days
     const diffDays = Math.round((e - s) / msDay) + 1;
     if (diffDays <= 1) return diffDays === 1 ? "1 day" : `${diffDays} days`;
     if (diffDays < 7) return `${diffDays} days`;
@@ -149,8 +146,7 @@ export default function AdminCertificates() {
   }
 
   // -----------------------
-  // RAW HTML template
-  // (updated smaller canvas, reduced copy; placeholders replaced later)
+  // RAW HTML template (canvas inside has CSS set to 800x600)
   // -----------------------
   const RAW_TEMPLATE = `<!doctype html>
 <html lang="en">
@@ -161,44 +157,16 @@ export default function AdminCertificates() {
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#ffffff;
-  --accent:#0f172a;
-  --muted:#4b5563;
-  --padding:20px;
-  --canvas-w:800px;
-  --canvas-h:600px;
+  --bg:#ffffff;--accent:#0f172a;--muted:#4b5563;--padding:20px;--canvas-w:800px;--canvas-h:600px;
 }
-*{box-sizing:border-box}
-html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto,Arial}
+*{box-sizing:border-box}html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto,Arial}
 body{background:var(--bg);display:flex;align-items:center;justify-content:center;padding:0}
-.certificate{
-  /* fixed canvas size 800x600 as requested */
-  width: var(--canvas-w);
-  height: var(--canvas-h);
-  min-width: var(--canvas-w);
-  min-height: var(--canvas-h);
-  aspect-ratio: 4/3;
-  position:relative;
-  overflow:hidden;
-  background:#fff;
-  display:flex;
-  align-items:stretch;
-  border: 1px solid rgba(0,0,0,0.04);
-}
-.certificate__bg{
-  position:absolute;inset:0;background-repeat:no-repeat;background-position:center;background-size:cover;opacity:0.8;
-}
-.certificate__panel{
-  position:relative;z-index:2;display:flex;flex-direction:column;flex:1;padding:var(--padding);gap:10px;
-}
+.certificate{width:var(--canvas-w);height:var(--canvas-h);aspect-ratio:4/3;position:relative;overflow:hidden;background:#fff;display:flex;align-items:stretch;border:1px solid rgba(0,0,0,0.04)}
+.certificate__bg{position:absolute;inset:0;background-repeat:no-repeat;background-position:center;background-size:cover;opacity:0.8}
+.certificate__panel{position:relative;z-index:2;display:flex;flex-direction:column;flex:1;padding:var(--padding);gap:10px}
 header.certificate__header{display:flex;align-items:center;justify-content:center}
-.brand__logo{
-  /* logo scaled for 800x600 canvas */
-  width:320px; max-width:72%; height:auto; object-fit:contain; display:block; margin:0 auto;
-}
-main.certificate__body{
-  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:6px 12px;
-}
+.brand__logo{width:320px;max-width:72%;height:auto;object-fit:contain;margin:0 auto}
+main.certificate__body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:6px 12px}
 .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--muted)}
 .headline{font-family:'Playfair Display',serif;font-size:18px;margin:6px 0;color:var(--accent)}
 .recipient{display:inline-block;margin:8px 0;padding:4px 10px;font-size:16px;font-weight:800;border-bottom:2px solid rgba(0,0,0,0.08);font-family:'Playfair Display',serif}
@@ -206,64 +174,44 @@ main.certificate__body{
 .meta{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;justify-content:center}
 .meta__item{font-size:11px;color:var(--muted)}
 .meta__label{display:block;font-weight:600;color:var(--accent);font-size:10px}
-
-/* footer layout tuned for 800x600 */
-footer.certificate__footer{
-  display:flex;align-items:flex-end;justify-content:space-between;margin-top:auto;padding-top:8px;
-  gap:12px;
-}
+footer.certificate__footer{display:flex;align-items:flex-end;justify-content:space-between;margin-top:auto;padding-top:8px;gap:12px}
 .sign{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
 .sign__img{width:110px;height:auto;object-fit:contain}
 .sign__title{font-size:12px;font-weight:700;color:var(--accent)}
 .sign__role{font-size:10px;color:var(--muted)}
-
 .qr-wrap{display:flex;flex-direction:column;align-items:center;gap:6px}
 .qr{width:72px;height:72px;border:4px solid #fff;padding:4px;border-radius:6px;background:#fff;box-shadow:0 4px 10px rgba(2,6,23,0.06)}
 .verify{font-size:9px;color:var(--muted);text-align:center}
-
-/* small adjustments for printing */
-@media print{
-  body{background:#fff}
-  .certificate{box-shadow:none;border-radius:0}
-  .certificate__panel{padding:18mm}
-  .qr{border:2px solid #000}
-}
+@media print{body{background:#fff}.certificate{box-shadow:none;border-radius:0}.certificate__panel{padding:18mm}.qr{border:2px solid #000}}
 </style>
 </head>
 <body>
 <article class="certificate" role="document" aria-label="Certificate of Completion">
   <div class="certificate__bg" style="background-image:url('{{BG_URL}}')" aria-hidden="true"></div>
-
   <section class="certificate__panel">
     <header class="certificate__header">
       <img class="brand__logo" src="{{LOGO_URL}}" alt="Dripzoid logo" />
     </header>
-
     <main class="certificate__body">
       <div class="eyebrow">Internship Completion Certificate</div>
       <h2 class="headline"><span class="role">{{Role}}</span> Internship</h2>
-
       <div class="recipient">{{Intern_Name}}</div>
-
       <p class="description">
         This certifies that the above named individual has successfully completed the
         <strong>{{Role}}</strong> internship for <strong>{{DURATION}}</strong>, demonstrating dedication to software testing, defect reporting, and quality assurance practices.
       </p>
-
       <div class="meta">
         <div class="meta__item"><span class="meta__label">Start Date</span>{{Start_Date}}</div>
         <div class="meta__item"><span class="meta__label">End Date</span>{{End_Date}}</div>
         <div class="meta__item"><span class="meta__label">Issue Date</span>{{Issue_Date}}</div>
       </div>
     </main>
-
     <footer class="certificate__footer">
       <div class="sign">
         <img class="sign__img" src="{{SIGN_URL}}" alt="Signature" />
         <div class="sign__title">K. Yuvateja Sainadh</div>
         <div class="sign__role">Co-Founder &amp; Developer</div>
       </div>
-
       <div class="qr-wrap">
         <div class="qr">
           <img src="{{QR_CODE_URL}}" alt="QR code" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:4px"/>
@@ -276,8 +224,6 @@ footer.certificate__footer{
 </body>
 </html>`;
 
-
-  // defaults for images (keep your Cloudinary assets)
   const DEFAULTS = {
     LOGO_URL:
       "https://res.cloudinary.com/dvid0uzwo/image/upload/v1770982044/my_project/uoxelupwgfbxxmdojmew.png",
@@ -287,7 +233,6 @@ footer.certificate__footer{
       "https://res.cloudinary.com/dvid0uzwo/image/upload/v1770984343/my_project/nothmuye0kigv7dm8gnd.png",
   };
 
-  // build populated HTML
   function buildPopulatedHtml(values = {}) {
     const startFormatted = formatDateToDDMMMYYYY(values.startDate || "");
     const endFormatted = formatDateToDDMMMYYYY(values.endDate || "");
@@ -309,6 +254,36 @@ footer.certificate__footer{
   }
 
   // -----------------------
+  // Fetch existing certificate for application (ADMIN)
+  // -----------------------
+  async function fetchCertificateForApplication(applicationId) {
+    try {
+      const res = await fetch(`${API_BASE}/api/certificates/application/${applicationId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || `Failed to fetch certificate (${res.status})`);
+      }
+      const data = await res.json();
+      // set generatedCert from backend
+      setGeneratedCert({
+        id: data.id,
+        imageUrl: data.certificate_url || null,
+        certificate_download_url: data.certificate_download_url || null,
+        // no local pdf yet
+        downloadPdfUrl: null,
+        pdfBlob: null,
+        htmlString: null,
+      });
+    } catch (err) {
+      console.error("Fetch certificate error:", err);
+      alert("Failed to fetch certificate: " + (err.message || err));
+      setGeneratedCert(null);
+    }
+  }
+
+  // -----------------------
   // Main: generate, upload image, keep local pdf
   // -----------------------
   async function handleGenerateAndUpload() {
@@ -321,7 +296,7 @@ footer.certificate__footer{
     try {
       const certId = `CERT-${new Date().getFullYear()}-${Date.now()}`;
 
-      // Use API verification base for QR:
+      // QR pointing to verification page (api.dripzoid.com)
       const verifyUrl = `https://api.dripzoid.com/api/certificates/public/view/${certId}`;
       const qrDataUrl = await QRCode.toDataURL(verifyUrl);
       setPreviewQr(qrDataUrl);
@@ -336,46 +311,40 @@ footer.certificate__footer{
         qr: qrDataUrl,
       });
 
-      // Inject into hidden capture node (ensure it has the capture size)
+      // Inject into hidden capture node
       if (!captureRef.current) throw new Error("Capture node missing");
-      // Ensure capture wrapper has explicit pixel dimensions for consistent results
-      captureRef.current.style.width = "1200px";
-      captureRef.current.style.height = "900px";
+      captureRef.current.style.width = "800px";
+      captureRef.current.style.height = "600px";
       captureRef.current.innerHTML = html;
 
-      // Wait for fonts & images
+      // ensure fonts and images
       if (document.fonts) await document.fonts.ready;
       await waitForImagesToLoad(captureRef.current, 5000);
 
-      // Pick article.certificate node
       const node = captureRef.current.querySelector("article.certificate") || captureRef.current;
 
-      // Capture canvas (moderate scale — balances quality & size)
       const canvas = await html2canvas(node, {
-        scale: 1.25, // moderate
+        scale: 1.4,
         useCORS: true,
         allowTaint: true,
         backgroundColor: "#ffffff",
-        logging: false,
       });
 
-      // JPEG (compressed) from canvas
-      const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.8); // quality 80%
+      const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.85);
       const certImageFile = dataURLtoFile(jpegDataUrl, `${certId}.jpg`);
       const qrFile = dataURLtoFile(qrDataUrl, `${certId}-qr.png`);
 
-      // Build PDF locally from same JPEG (for admin preview / download / print)
+      // Build local PDF for admin preview/download/print
       const pdf = new jsPDF({
         orientation: "landscape",
         unit: "pt",
         format: [canvas.width, canvas.height],
       });
-      // use JPEG to keep PDF smaller
       pdf.addImage(jpegDataUrl, "JPEG", 0, 0, canvas.width, canvas.height);
       const pdfBlob = pdf.output("blob");
       const pdfUrl = URL.createObjectURL(pdfBlob);
 
-      // Upload certificate image & qr to backend (backend will upload to Cloudinary as image)
+      // Upload to backend
       const uploadForm = new FormData();
       uploadForm.append("application_id", selected.id);
       uploadForm.append("certificate_id", certId);
@@ -384,54 +353,49 @@ footer.certificate__footer{
       uploadForm.append("start_date", form.startDate || "");
       uploadForm.append("end_date", form.endDate || "");
       uploadForm.append("issue_date", form.issueDate || "");
-      uploadForm.append("certificate", certImageFile); // image file
+      uploadForm.append("certificate", certImageFile);
       uploadForm.append("qr", qrFile);
 
       const res = await fetch(`${API_BASE}/api/certificates`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`, // do not set Content-Type; browser will set multipart boundary
+          Authorization: `Bearer ${token}`,
         },
         body: uploadForm,
       });
 
-      const result = await res.json();
+      const result = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         console.error("Upload failed:", result);
-        // still allow admin to download/preview local PDF
+        // still set local pdf for admin to download
         setGeneratedCert({
           id: certId,
           imageUrl: null,
-          pdfUrl,
+          certificate_download_url: null,
+          downloadPdfUrl: pdfUrl,
           pdfBlob,
           htmlString: html,
         });
         throw new Error(result.message || "Upload to server failed");
       }
 
-      // backend should return certificate_url (Cloudinary image) and maybe certificate_download_url
-      const backendImageUrl = result.certificate_url || result.certificate_url || null;
+      const backendImageUrl = result.certificate_url || null;
       const backendDownloadUrl = result.certificate_download_url || null;
 
-      // set state with both backend image url and local pdf
       setGeneratedCert({
         id: certId,
         imageUrl: backendImageUrl,
-        downloadImageUrl: backendImageUrl,
+        certificate_download_url: backendDownloadUrl || null,
         downloadPdfUrl: pdfUrl,
         pdfBlob,
-        certificate_download_url: backendDownloadUrl || null,
         htmlString: html,
       });
 
-      // update iframe to final HTML so admin can inspect
-      if (iframeRef.current) iframeRef.current.srcdoc = html;
+      // Refresh application list to reflect certificate_generated flag
+      await fetchApplications();
 
-      // optional: update application status via backend (uncomment if desired)
-      // await fetch(`${API_BASE}/api/jobs/applications/${selected.id}/status`, { method: "PUT", headers: { "Content-Type":"application/json", Authorization:`Bearer ${token}` }, body: JSON.stringify({ status: "Approved" }) });
-
-      alert("Certificate uploaded and PDF generated. Use Preview / Download / Print.");
+      alert("Certificate uploaded and PDF generated. Use Preview / Download / Print / Send Email.");
     } catch (err) {
       console.error("Generation/upload error:", err);
       alert("Certificate generation or upload failed: " + (err.message || err));
@@ -440,8 +404,49 @@ footer.certificate__footer{
     }
   }
 
+  // -----------------------
+  // Send certificate email (admin action)
+  // -----------------------
+  async function handleSendEmail() {
+    if (!selected) return alert("No application selected");
+    if (!generatedCert?.imageUrl && !generatedCert?.downloadPdfUrl) {
+      return alert("No certificate available to send");
+    }
+
+    setSendingEmail(true);
+    try {
+      const payload = {
+        to: selected.email,
+        internName: form.internName || selected.name,
+        role: form.role,
+        certificateImageUrl: generatedCert.imageUrl || null,
+        certificateDownloadUrl: generatedCert.certificate_download_url || generatedCert.downloadPdfUrl || null,
+      };
+
+      const res = await fetch(`${API_BASE}/api/email/send-certificate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message || `Email failed (${res.status})`);
+      }
+
+      alert("Certificate email sent successfully.");
+    } catch (err) {
+      console.error("Send email error:", err);
+      alert("Failed to send email: " + (err.message || err));
+    } finally {
+      setSendingEmail(false);
+    }
+  }
+
   function handleOpenImagePreview() {
-    // open backend image if available, otherwise open local pdf
     if (generatedCert?.imageUrl) {
       window.open(generatedCert.imageUrl, "_blank");
     } else if (generatedCert?.downloadPdfUrl) {
@@ -452,45 +457,39 @@ footer.certificate__footer{
   }
 
   function handleDownloadPdf() {
-    if (!generatedCert?.pdfBlob && !generatedCert?.downloadPdfUrl) {
-      return alert("No PDF available");
-    }
-    // prefer local blob
-    if (generatedCert.pdfBlob) {
-      const a = document.createElement("a");
-      a.href = generatedCert.downloadPdfUrl;
-      a.download = `${generatedCert.id || "certificate"}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      return;
-    }
-    // fallback
-    const a = document.createElement("a");
-    a.href = generatedCert.downloadPdfUrl;
-    a.download = `${generatedCert.id || "certificate"}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+  if (!generatedCert?.id) {
+    return alert("Certificate ID not available");
   }
 
-  function handlePrint() {
-    // open pdf url and trigger print
-    const url = generatedCert?.downloadPdfUrl;
-    if (!url) return alert("No PDF to print");
-    const w = window.open(url, "_blank");
-    if (!w) return alert("Popup blocked. Allow popups to print.");
-    // try to auto trigger print after load
-    w.onload = () => {
-      setTimeout(() => {
-        try {
-          w.print();
-        } catch (e) {
-          console.warn("Print failed to auto-trigger", e);
-        }
-      }, 600);
-    };
-  }
+  const downloadUrl = `https://api.dripzoid.com/api/certificates/${generatedCert.id}/download-pdf`;
+
+  const a = document.createElement("a");
+  a.href = downloadUrl;
+  a.download = `${generatedCert.id}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+
+ function handlePrint() {
+  if (!generatedCert?.id) return alert("Certificate ID not available");
+
+  const url = `https://api.dripzoid.com/api/certificates/${generatedCert.id}/download-pdf`;
+  const w = window.open(url, "_blank");
+  if (!w) return alert("Popup blocked. Allow popups to print.");
+
+  w.onload = () => {
+    setTimeout(() => {
+      try {
+        w.print();
+      } catch (e) {
+        console.warn("Print failed", e);
+      }
+    }, 600);
+  };
+}
+}
 
   function resetGenerated() {
     if (generatedCert?.downloadPdfUrl) {
@@ -500,6 +499,25 @@ footer.certificate__footer{
     }
     setGeneratedCert(null);
     setPreviewQr(null);
+  }
+
+  // -----------------------
+  // UI handlers: open modal for app
+  // - if certificate_generated === 1 -> fetch certificate
+  // - else -> open modal ready to generate
+  // -----------------------
+  async function openForApp(app) {
+    setSelected(app);
+    resetGenerated();
+    setForm((f) => ({ ...f, internName: app.name, role: app.job_title || f.role }));
+
+    if (app.certificate_generated === 1) {
+      // fetch existing certificate for preview
+      await fetchCertificateForApplication(app.id);
+    } else {
+      // nothing uploaded yet — admin can generate & upload
+      setGeneratedCert(null);
+    }
   }
 
   if (loading) return <div className="p-10">Loading applications...</div>;
@@ -535,26 +553,21 @@ footer.certificate__footer{
                   )}
                 </td>
                 <td className="space-x-2">
-                  <button
-                    onClick={() => {
-                      setSelected(app);
-                      resetGenerated();
-                      setForm((f) => ({ ...f, internName: app.name, role: app.job_title || f.role }));
-                      if (iframeRef.current) {
-                        iframeRef.current.srcdoc = buildPopulatedHtml({
-                          internName: app.name,
-                          role: app.job_title || form.role,
-                          startDate: form.startDate,
-                          endDate: form.endDate,
-                          issueDate: form.issueDate,
-                          qr: previewQr || "",
-                        });
-                      }
-                    }}
-                    className="px-3 py-1 rounded bg-black text-white text-xs inline-flex items-center gap-2"
-                  >
-                    <Eye size={14} /> Generate
-                  </button>
+                  {app.certificate_generated === 1 ? (
+                    <button
+                      onClick={() => openForApp(app)}
+                      className="px-3 py-1 rounded bg-green-600 text-white text-xs inline-flex items-center gap-2"
+                    >
+                      <Eye size={14} /> Preview Certificate
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => openForApp(app)}
+                      className="px-3 py-1 rounded bg-black text-white text-xs inline-flex items-center gap-2"
+                    >
+                      <Eye size={14} /> Generate
+                    </button>
+                  )}
 
                   <button
                     onClick={async () => {
@@ -589,7 +602,7 @@ footer.certificate__footer{
               {/* header */}
               <div className="flex items-center justify-between bg-black text-white px-6 py-4">
                 <div>
-                  <h2 className="text-lg font-semibold">Generate Certificate — {selected.name}</h2>
+                  <h2 className="text-lg font-semibold">Certificate — {selected.name}</h2>
                   <div className="text-xs opacity-80">{selected.email} • Job: {selected.job_id}</div>
                 </div>
 
@@ -649,18 +662,11 @@ footer.certificate__footer{
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <button
-                      onClick={handleGenerateAndUpload}
-                      disabled={generating}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white rounded"
-                    >
-                      {generating ? "Generating..." : <><Eye size={16} /> Generate & Upload</>}
-                    </button>
-
-                    {generatedCert && (
+                    {selected.certificate_generated === 1 ? (
+                      // if already generated, allow email / download / preview
                       <>
-                        <button onClick={handleOpenImagePreview} className="inline-flex items-center gap-2 px-3 py-2 border rounded">
-                          <Eye size={14} /> Preview
+                        <button onClick={handleOpenImagePreview} className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white rounded">
+                          <Eye size={16} /> Preview
                         </button>
 
                         <button onClick={handleDownloadPdf} className="inline-flex items-center gap-2 px-3 py-2 bg-white border rounded">
@@ -670,43 +676,60 @@ footer.certificate__footer{
                         <button onClick={handlePrint} className="inline-flex items-center gap-2 px-3 py-2 border rounded">
                           <Printer size={14} /> Print
                         </button>
+
+                        <button onClick={handleSendEmail} disabled={sendingEmail} className="inline-flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded">
+                          <Mail size={14} /> {sendingEmail ? "Sending..." : "Send Email"}
+                        </button>
+                      </>
+                    ) : (
+                      // not generated yet: allow generate & upload
+                      <>
+                        <button
+                          onClick={handleGenerateAndUpload}
+                          disabled={generating}
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white rounded"
+                        >
+                          {generating ? "Generating..." : <><Eye size={16} /> Generate & Upload</>}
+                        </button>
+
+                        {/* after generation, generatedCert will populate and show the controls below */}
                       </>
                     )}
                   </div>
 
                   <div className="text-xs text-slate-500">
-                    Note: This will upload the certificate image to the server (Cloudinary) and also generate a compact PDF locally for preview/download/print.
+                    Note: This will upload the certificate image to the server (Cloudinary) and also generate a compact PDF locally for preview/download/print. Use "Send Email" to send the certificate to the intern.
                   </div>
                 </div>
 
-                {/* middle/right: visible preview (iframe) */}
+                {/* right: preview area (image or message) */}
                 <div className="md:col-span-2">
-                  <div className="border rounded-lg overflow-hidden h-[420px]">
-                    <iframe
-                      ref={iframeRef}
-                      title="Certificate Preview"
-                      className="w-full h-full"
-                      srcDoc={buildPopulatedHtml({
-                        internName: form.internName,
-                        role: form.role,
-                        startDate: form.startDate,
-                        endDate: form.endDate,
-                        issueDate: form.issueDate,
-                        qr: previewQr || "",
-                      })}
-                    />
+                  <div className="border rounded-lg overflow-hidden h-[420px] flex items-center justify-center bg-slate-50">
+                    {generatedCert?.imageUrl ? (
+                      <img src={generatedCert.imageUrl} alt="Certificate preview" style={{ maxWidth: "100%", maxHeight: "100%" }} />
+                    ) : generatedCert?.downloadPdfUrl ? (
+                      <div className="p-6 text-center">
+                        <div className="mb-4">PDF ready for download / print</div>
+                        <button onClick={handleDownloadPdf} className="px-4 py-2 bg-white border rounded">Download PDF</button>
+                      </div>
+                    ) : (
+                      <div className="p-6 text-center text-slate-500">
+                        <div className="text-sm mb-2">No preview available yet.</div>
+                        <div className="text-xs">Generate & Upload to produce certificate image and local PDF.</div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-3 text-sm text-slate-500">
-                    The iframe above shows the exact HTML template. After Generate & Upload completes you'll be able to preview the uploaded image and download/print the generated PDF.
+                    The preview area shows the uploaded certificate image (Cloudinary) or the locally generated PDF. Use the buttons to download, print or email.
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Hidden capture node (1200x900) */}
-          <div style={{ position: "fixed", left: -99999, top: -99999, width: 1200, height: 900, overflow: "hidden", zIndex: -9999 }}>
+          {/* Hidden capture node (800x600) */}
+          <div style={{ position: "fixed", left: -99999, top: -99999, width: 800, height: 600, overflow: "hidden", zIndex: -9999 }}>
             <div ref={captureRef} />
           </div>
         </>
