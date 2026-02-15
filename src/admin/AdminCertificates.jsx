@@ -160,31 +160,74 @@ export default function AdminCertificates() {
 <title>QA Tester — Certificate (4:3)</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#ffffff;--accent:#0f172a;--muted:#4b5563;--padding:28px;--max-width:1200px;--max-height:900px}
-*{box-sizing:border-box}html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto,Arial}
+:root{
+  --bg:#ffffff;
+  --accent:#0f172a;
+  --muted:#4b5563;
+  --padding:20px;
+  --canvas-w:800px;
+  --canvas-h:600px;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto,Arial}
 body{background:var(--bg);display:flex;align-items:center;justify-content:center;padding:0}
-.certificate{width:100%;height:100%;max-width:1200px;max-height:900px;aspect-ratio:4/3;position:relative;overflow:hidden;background:#fff;display:flex;align-items:stretch}
-.certificate__bg{position:absolute;inset:0;background-repeat:no-repeat;background-position:center;background-size:cover;opacity:0.8}
-.certificate__panel{position:relative;z-index:2;display:flex;flex-direction:column;flex:1;padding:clamp(12px,2.5vw,var(--padding));gap:8px}
+.certificate{
+  /* fixed canvas size 800x600 as requested */
+  width: var(--canvas-w);
+  height: var(--canvas-h);
+  min-width: var(--canvas-w);
+  min-height: var(--canvas-h);
+  aspect-ratio: 4/3;
+  position:relative;
+  overflow:hidden;
+  background:#fff;
+  display:flex;
+  align-items:stretch;
+  border: 1px solid rgba(0,0,0,0.04);
+}
+.certificate__bg{
+  position:absolute;inset:0;background-repeat:no-repeat;background-position:center;background-size:cover;opacity:0.8;
+}
+.certificate__panel{
+  position:relative;z-index:2;display:flex;flex-direction:column;flex:1;padding:var(--padding);gap:10px;
+}
 header.certificate__header{display:flex;align-items:center;justify-content:center}
-.brand__logo{width:min(60%,420px);max-width:420px;height:auto;object-fit:contain;display:block;margin:0 auto}
-main.certificate__body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:6px 14px}
+.brand__logo{
+  /* logo scaled for 800x600 canvas */
+  width:320px; max-width:72%; height:auto; object-fit:contain; display:block; margin:0 auto;
+}
+main.certificate__body{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:6px 12px;
+}
 .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--muted)}
-.headline{font-family:'Playfair Display',serif;font-size:20px;margin:6px 0;color:var(--accent)}
-.recipient{display:inline-block;margin:8px 0;padding:4px 10px;font-size:18px;font-weight:800;border-bottom:2px solid rgba(0,0,0,0.08);font-family:'Playfair Display',serif}
-.description{max-width:92%;color:var(--muted);line-height:1.4;font-size:12px}
-.meta{display:flex;gap:12px;margin-top:8px;flex-wrap:wrap;justify-content:center}
+.headline{font-family:'Playfair Display',serif;font-size:18px;margin:6px 0;color:var(--accent)}
+.recipient{display:inline-block;margin:8px 0;padding:4px 10px;font-size:16px;font-weight:800;border-bottom:2px solid rgba(0,0,0,0.08);font-family:'Playfair Display',serif}
+.description{max-width:92%;color:var(--muted);line-height:1.4;font-size:12px;margin-top:6px}
+.meta{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;justify-content:center}
 .meta__item{font-size:11px;color:var(--muted)}
 .meta__label{display:block;font-weight:600;color:var(--accent);font-size:10px}
-footer.certificate__footer{display:flex;align-items:flex-end;justify-content:space-between;margin-top:auto;padding-top:6px}
-.sign{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
-.sign__img{width:120px;height:auto;object-fit:contain}
+
+/* footer layout tuned for 800x600 */
+footer.certificate__footer{
+  display:flex;align-items:flex-end;justify-content:space-between;margin-top:auto;padding-top:8px;
+  gap:12px;
+}
+.sign{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.sign__img{width:110px;height:auto;object-fit:contain}
 .sign__title{font-size:12px;font-weight:700;color:var(--accent)}
 .sign__role{font-size:10px;color:var(--muted)}
-.qr-wrap{display:flex;flex-direction:column;align-items:center;gap:4px}
-.qr{width:80px;height:80px;border:4px solid #fff;padding:4px;border-radius:6px;background:#fff;box-shadow:0 4px 12px rgba(2,6,23,0.08)}
+
+.qr-wrap{display:flex;flex-direction:column;align-items:center;gap:6px}
+.qr{width:72px;height:72px;border:4px solid #fff;padding:4px;border-radius:6px;background:#fff;box-shadow:0 4px 10px rgba(2,6,23,0.06)}
 .verify{font-size:9px;color:var(--muted);text-align:center}
-@media print{body{background:#fff}.certificate{box-shadow:none;border-radius:0}.certificate__panel{padding:20mm}.qr{border:2px solid #000}}
+
+/* small adjustments for printing */
+@media print{
+  body{background:#fff}
+  .certificate{box-shadow:none;border-radius:0}
+  .certificate__panel{padding:18mm}
+  .qr{border:2px solid #000}
+}
 </style>
 </head>
 <body>
@@ -232,6 +275,7 @@ footer.certificate__footer{display:flex;align-items:flex-end;justify-content:spa
 </article>
 </body>
 </html>`;
+
 
   // defaults for images (keep your Cloudinary assets)
   const DEFAULTS = {
