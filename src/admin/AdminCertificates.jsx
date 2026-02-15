@@ -424,44 +424,48 @@ footer.certificate__footer{display:flex;align-items:flex-end;justify-content:spa
   // -----------------------
   // Send certificate email (admin action)
   // -----------------------
-  async function handleSendEmail() {
-    if (!selected) return alert("No application selected");
-    if (!generatedCert?.imageUrl && !generatedCert?.downloadPdfUrl) {
-      return alert("No certificate available to send");
-    }
-
-    setSendingEmail(true);
-    try {
-      const payload = {
-        to: selected.email,
-        internName: form.internName || selected.name,
-        role: form.role,
-        certificateImageUrl: generatedCert.imageUrl || null,
-        certificateDownloadUrl: generatedCert.certificate_download_url || generatedCert.downloadPdfUrl || null,
-      };
-
-      const res = await fetch(`${API_BASE}/api/email/send-certificate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.message || `Email failed (${res.status})`);
-      }
-
-      alert("Certificate email sent successfully.");
-    } catch (err) {
-      console.error("Send email error:", err);
-      alert("Failed to send email: " + (err.message || err));
-    } finally {
-      setSendingEmail(false);
-    }
+ async function handleSendEmail() {
+  if (!selected) return alert("No application selected");
+  if (!generatedCert?.id) {
+    return alert("Certificate ID not available");
   }
+
+  setSendingEmail(true);
+  try {
+    // Always construct public PDF URL
+    const publicDownloadUrl = `https://api.dripzoid.com/api/certificates/${generatedCert.id}/download-pdf`;
+
+    const payload = {
+      to: selected.email,
+      internName: form.internName || selected.name,
+      role: form.role,
+      certificateImageUrl: generatedCert.imageUrl || null,
+      certificateDownloadUrl: publicDownloadUrl, // 🔥 always valid
+    };
+
+    const res = await fetch(`${API_BASE}/api/email/send-certificate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || `Email failed (${res.status})`);
+    }
+
+    alert("Certificate email sent successfully.");
+  } catch (err) {
+    console.error("Send email error:", err);
+    alert("Failed to send email: " + (err.message || err));
+  } finally {
+    setSendingEmail(false);
+  }
+}
+
 
   function handleOpenImagePreview() {
     if (generatedCert?.imageUrl) {
