@@ -37,6 +37,9 @@ export default function AdminCertificates() {
     issueDate: new Date().toISOString().slice(0, 10),
   });
 
+  // live preview html that updates as form changes
+  const [previewHtml, setPreviewHtml] = useState("");
+
   const captureRef = useRef(null);
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
@@ -253,6 +256,20 @@ footer.certificate__footer{display:flex;align-items:flex-end;justify-content:spa
     return filled;
   }
 
+  // update live preview HTML whenever form or preview QR changes
+  useEffect(() => {
+    if (!selected) return;
+    const html = buildPopulatedHtml({
+      internName: form.internName || selected.name || "",
+      role: form.role,
+      startDate: form.startDate,
+      endDate: form.endDate,
+      issueDate: form.issueDate,
+      qr: previewQr || "",
+    });
+    setPreviewHtml(html);
+  }, [form, previewQr, selected]);
+
   // -----------------------
   // Fetch existing certificate for application (ADMIN)
   // -----------------------
@@ -457,38 +474,37 @@ footer.certificate__footer{display:flex;align-items:flex-end;justify-content:spa
   }
 
   function handleDownloadPdf() {
-  if (!generatedCert?.id) {
-    return alert("Certificate ID not available");
+    if (!generatedCert?.id) {
+      return alert("Certificate ID not available");
+    }
+
+    const downloadUrl = `https://api.dripzoid.com/api/certificates/${generatedCert.id}/download-pdf`;
+
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = `${generatedCert.id}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   }
 
-  const downloadUrl = `https://api.dripzoid.com/api/certificates/${generatedCert.id}/download-pdf`;
+  function handlePrint() {
+    if (!generatedCert?.id) return alert("Certificate ID not available");
 
-  const a = document.createElement("a");
-  a.href = downloadUrl;
-  a.download = `${generatedCert.id}.pdf`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
+    const url = `https://api.dripzoid.com/api/certificates/${generatedCert.id}/download-pdf`;
+    const w = window.open(url, "_blank");
+    if (!w) return alert("Popup blocked. Allow popups to print.");
 
-
- function handlePrint() {
-  if (!generatedCert?.id) return alert("Certificate ID not available");
-
-  const url = `https://api.dripzoid.com/api/certificates/${generatedCert.id}/download-pdf`;
-  const w = window.open(url, "_blank");
-  if (!w) return alert("Popup blocked. Allow popups to print.");
-
-  w.onload = () => {
-    setTimeout(() => {
-      try {
-        w.print();
-      } catch (e) {
-        console.warn("Print failed", e);
-      }
-    }, 600);
-  };
-}
+    w.onload = () => {
+      setTimeout(() => {
+        try {
+          w.print();
+        } catch (e) {
+          console.warn("Print failed", e);
+        }
+      }, 600);
+    };
+  }
 
   function resetGenerated() {
     if (generatedCert?.downloadPdfUrl) {
@@ -623,7 +639,7 @@ footer.certificate__footer{display:flex;align-items:flex-end;justify-content:spa
               </div>
 
               <div className="bg-white dark:bg-slate-800 p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* left: form & controls */}
+                {/* left: form */}
                 <div className="md:col-span-1 space-y-4">
                   <div className="grid grid-cols-1 gap-2">
                     <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Intern Name</label>
@@ -660,9 +676,26 @@ footer.certificate__footer{display:flex;align-items:flex-end;justify-content:spa
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  <div className="text-xs text-slate-500">
+                    Note: This will upload the certificate image to the server (Cloudinary) and also generate a compact PDF locally for preview/download/print. Use "Send Email" to send the certificate to the intern.
+                  </div>
+                </div>
+
+                {/* right: preview area (iframe live preview) */}
+                <div className="md:col-span-2 flex flex-col items-center gap-3">
+                  <div className="border rounded-lg overflow-hidden h-[420px] w-full flex items-center justify-center bg-slate-50">
+                    {/* Live preview iframe centered and full-size */}
+                    <iframe
+                      title="certificate-preview"
+                      srcDoc={generatedCert?.htmlString || previewHtml}
+                      style={{ width: "100%", height: "100%", border: "0", display: "block" }}
+                      sandbox="allow-same-origin allow-popups allow-forms"
+                    />
+                  </div>
+
+                  <div className="w-full flex items-center justify-center gap-3">
+                    {/* Action buttons moved here (below iframe) */}
                     {selected.certificate_generated === 1 ? (
-                      // if already generated, allow email / download / preview
                       <>
                         <button onClick={handleOpenImagePreview} className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white rounded">
                           <Eye size={16} /> Preview
@@ -681,7 +714,6 @@ footer.certificate__footer{display:flex;align-items:flex-end;justify-content:spa
                         </button>
                       </>
                     ) : (
-                      // not generated yet: allow generate & upload
                       <>
                         <button
                           onClick={handleGenerateAndUpload}
@@ -691,36 +723,23 @@ footer.certificate__footer{display:flex;align-items:flex-end;justify-content:spa
                           {generating ? "Generating..." : <><Eye size={16} /> Generate & Upload</>}
                         </button>
 
-                        {/* after generation, generatedCert will populate and show the controls below */}
+                        {/* If we've generated a local PDF but didn't upload, show download/print too */}
+                        {generatedCert?.downloadPdfUrl && (
+                          <>
+                            <button onClick={() => window.open(generatedCert.downloadPdfUrl, "_blank")} className="inline-flex items-center gap-2 px-3 py-2 bg-white border rounded">
+                              <Download size={14} /> Download PDF
+                            </button>
+                            <button onClick={() => window.open(generatedCert.downloadPdfUrl, "_blank")} className="inline-flex items-center gap-2 px-3 py-2 border rounded">
+                              <Printer size={14} /> Print
+                            </button>
+                          </>
+                        )}
                       </>
                     )}
                   </div>
 
-                  <div className="text-xs text-slate-500">
-                    Note: This will upload the certificate image to the server (Cloudinary) and also generate a compact PDF locally for preview/download/print. Use "Send Email" to send the certificate to the intern.
-                  </div>
-                </div>
-
-                {/* right: preview area (image or message) */}
-                <div className="md:col-span-2">
-                  <div className="border rounded-lg overflow-hidden h-[420px] flex items-center justify-center bg-slate-50">
-                    {generatedCert?.imageUrl ? (
-                      <img src={generatedCert.imageUrl} alt="Certificate preview" style={{ maxWidth: "100%", maxHeight: "100%" }} />
-                    ) : generatedCert?.downloadPdfUrl ? (
-                      <div className="p-6 text-center">
-                        <div className="mb-4">PDF ready for download / print</div>
-                        <button onClick={handleDownloadPdf} className="px-4 py-2 bg-white border rounded">Download PDF</button>
-                      </div>
-                    ) : (
-                      <div className="p-6 text-center text-slate-500">
-                        <div className="text-sm mb-2">No preview available yet.</div>
-                        <div className="text-xs">Generate & Upload to produce certificate image and local PDF.</div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-3 text-sm text-slate-500">
-                    The preview area shows the uploaded certificate image (Cloudinary) or the locally generated PDF. Use the buttons to download, print or email.
+                  <div className="mt-1 w-full text-sm text-slate-500 text-center">
+                    The preview area shows a live certificate preview (updates as you edit). After generating, the uploaded certificate image will replace the live preview.
                   </div>
                 </div>
               </div>
