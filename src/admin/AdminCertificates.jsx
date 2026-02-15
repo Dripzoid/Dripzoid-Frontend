@@ -489,7 +489,6 @@ footer.certificate__footer{display:flex;align-items:flex-end;justify-content:spa
     }, 600);
   };
 }
-}
 
   function resetGenerated() {
     if (generatedCert?.downloadPdfUrl) {
