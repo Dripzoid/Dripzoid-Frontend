@@ -26,7 +26,7 @@ import { UserContext } from "../contexts/UserContext";
  */
 
 const API_BASE = process.env.REACT_APP_API_BASE || "";
-const RAZORPAY_KEY = "rzp_live_RfHNYKXeosg3XW";
+const RAZORPAY_KEY = process.env.REACT_APP_RAZORPAY_KEY_ID || "";
 
 export default function CheckoutPage() {
   // include clearCart from context
