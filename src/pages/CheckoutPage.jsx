@@ -636,7 +636,7 @@ export default function CheckoutPage() {
         key: RAZORPAY_KEY,
         amount: (amount * 100) || Math.round(grandTotal * 100),
         currency,
-        name: "Your Store",
+        name: "DRIPZOID",
         description: "Order Payment",
         order_id: rOrderId,
         prefill: { name: shippingNormalized.customerName || user?.name || "", email: user?.email || "", contact: shippingNormalized.phone || "" },
