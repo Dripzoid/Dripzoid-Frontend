@@ -18,7 +18,7 @@ import GlobalSearchBar from "./GlobalSearch.jsx";
 export default function Navbar() {
   const { user } = useContext(UserContext);
   const { cart = [] } = useCart();
-  const { wishlist = [] } = useWishlist();
+  const { items: wishlist = [] } = useWishlist();
 
   const [theme, setTheme] = useState(
     () => localStorage.getItem("theme") || "light"
