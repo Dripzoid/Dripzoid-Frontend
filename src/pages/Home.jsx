@@ -7,7 +7,6 @@ import { Link } from "react-router-dom";
 import Hero from "../components/Hero";
 import FeaturedSection from "../components/FeaturedSection";
 import TrendingSection from "../components/TrendingSection";
-import OnSale from "../components/OnSale";
 import FAQSection from "../components/FAQSection"; // ✅ NEW
 
 /* ---------------------------------
@@ -109,13 +108,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ON SALE */}
-      <section className="max-w-7xl mx-auto px-6 mb-32">
-        <h2 className="text-3xl font-semibold mb-6">
-          {activeSale ? activeSale.title : "On Sale"}
-        </h2>
-        <OnSale sales={sales} />
-      </section>
 
       {/* FEATURED */}
       <section className="max-w-7xl mx-auto px-6 mb-32">
