@@ -66,7 +66,7 @@ a:
 },
 ];
 
-// 🔥 PREMIUM SLIDE
+// SLIDER
 const slideVariants = {
   enter: (dir) => ({
     x: dir > 0 ? "100%" : "-100%",
@@ -99,15 +99,12 @@ export default function FAQSection() {
     );
   }, [query]);
 
-  const go = useCallback(
-    (dir) => {
-      if (filtered.length <= 1) return;
-      setDirection(dir);
-      setIndex((prev) => (prev + dir + filtered.length) % filtered.length);
-      setExpandedId(null);
-    },
-    [filtered.length]
-  );
+  const go = useCallback((dir) => {
+    if (filtered.length <= 1) return;
+    setDirection(dir);
+    setIndex((prev) => (prev + dir + filtered.length) % filtered.length);
+    setExpandedId(null);
+  }, [filtered.length]);
 
   useEffect(() => {
     const key = (e) => {
@@ -122,7 +119,7 @@ export default function FAQSection() {
   if (!current) return null;
 
   return (
-    <section className="py-20 px-4 bg-gradient-to-b from-black via-neutral-900 to-black text-white">
+    <section className="py-20 px-4 bg-gradient-to-b from-white via-neutral-50 to-white dark:from-black dark:via-neutral-900 dark:to-black text-neutral-900 dark:text-white transition-colors duration-300">
       <div className="max-w-5xl mx-auto">
 
         {/* HEADER */}
@@ -131,29 +128,35 @@ export default function FAQSection() {
             <h2 className="text-3xl font-bold tracking-tight">
               FAQ — Need help?
             </h2>
-            <p className="text-neutral-400 text-sm mt-2 max-w-md">
+            <p className="text-neutral-600 dark:text-neutral-400 text-sm mt-2 max-w-md">
               Find quick answers about shipping, returns, and more.
             </p>
           </div>
 
           {/* SEARCH */}
           <div className="flex items-center gap-3">
-            <div className="flex items-center bg-white/10 backdrop-blur-xl border border-white/10 rounded-full px-4 py-2 w-72">
-              <Search className="w-4 h-4 text-neutral-400" />
+            <div className="flex items-center bg-neutral-100 dark:bg-white/10 backdrop-blur-xl border border-neutral-200 dark:border-white/10 rounded-full px-4 py-2 w-72 transition">
+              <Search className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search..."
-                className="bg-transparent outline-none text-sm ml-2 w-full placeholder:text-neutral-500"
+                className="bg-transparent outline-none text-sm ml-2 w-full placeholder:text-neutral-400 dark:placeholder:text-neutral-500"
               />
             </div>
 
             {/* NAV */}
             <div className="flex gap-2">
-              <button onClick={() => go(-1)} className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition">
+              <button
+                onClick={() => go(-1)}
+                className="p-2 rounded-full bg-neutral-200 dark:bg-white/10 hover:bg-neutral-300 dark:hover:bg-white/20 transition"
+              >
                 <ArrowLeft size={16} />
               </button>
-              <button onClick={() => go(1)} className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition">
+              <button
+                onClick={() => go(1)}
+                className="p-2 rounded-full bg-neutral-200 dark:bg-white/10 hover:bg-neutral-300 dark:hover:bg-white/20 transition"
+              >
                 <ArrowRight size={16} />
               </button>
             </div>
@@ -181,24 +184,23 @@ export default function FAQSection() {
               className="w-full"
             >
               {/* CARD */}
-              <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl max-w-3xl mx-auto min-h-[220px] transition hover:shadow-white/10">
+              <div className="relative bg-white/80 dark:bg-white/5 backdrop-blur-xl border border-neutral-200 dark:border-white/10 rounded-2xl p-8 shadow-xl dark:shadow-2xl max-w-3xl mx-auto min-h-[220px] transition">
 
                 <h3 className="text-xl font-semibold">
                   {current.q}
                 </h3>
 
-                <p className="text-neutral-400 mt-3 text-sm leading-relaxed">
+                <p className="text-neutral-600 dark:text-neutral-400 mt-3 text-sm leading-relaxed">
                   {current.a}
                 </p>
 
-                {/* EXPAND */}
                 <button
                   onClick={() =>
                     setExpandedId((prev) =>
                       prev === current.id ? null : current.id
                     )
                   }
-                  className="mt-5 flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition"
+                  className="mt-5 flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:opacity-80 transition"
                 >
                   {expandedId === current.id ? (
                     <>
@@ -223,8 +225,8 @@ export default function FAQSection() {
               key={i}
               className={`h-2 rounded-full transition-all ${
                 i === index
-                  ? "w-6 bg-white"
-                  : "w-2 bg-neutral-600"
+                  ? "w-6 bg-neutral-900 dark:bg-white"
+                  : "w-2 bg-neutral-300 dark:bg-neutral-600"
               }`}
             />
           ))}
