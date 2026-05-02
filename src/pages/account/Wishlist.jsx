@@ -48,7 +48,7 @@ const fmtCurrency = (n) => `₹${Number(n || 0).toLocaleString()}`;
 
 export default function Wishlist() {
   const navigate = useNavigate();
-  const { wishlist = [], fetchWishlist, removeFromWishlist } = useWishlist();
+  const { items: wishlist = [], fetchWishlist, removeFromWishlist } = useWishlist();
 
   // UI state
   const [selected, setSelected] = useState(new Set());
