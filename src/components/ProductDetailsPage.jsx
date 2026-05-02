@@ -451,30 +451,25 @@ export default function ProductDetailsPage() {
 
   /* ---------- derive isWishlisted from wishlist context (single source of truth) ---------- */
   // NOTE: include wishlistCtx.items in dependencies so this recomputes when wishlist updates.
-  const isWishlisted = useMemo(() => {
-    try {
-      if (!product) return false;
-      // If context exposes helper, prefer it
-      const pid = product?.id ?? product?._id ?? product?.product_id ?? product;
-      if (typeof wishlistCtx?.isWishlisted === "function") {
-        return Boolean(wishlistCtx.isWishlisted(pid));
-      }
-      // Else use items array
-      if (Array.isArray(wishlistCtx?.items)) {
-        if (!pid) return false;
-        return wishlistCtx.items.some((it) => {
-          if (!it) return false;
-          const p = it.product ?? it;
-          const itemPid = p?.id ?? p?._id ?? p?.product_id;
-          if (!itemPid) return false;
-          return String(itemPid) === String(pid);
-        });
-      }
-      return false;
-    } catch {
-      return false;
-    }
-  }, [wishlistCtx, wishlistCtx?.items, product]);
+ const isWishlisted = (() => {
+  try {
+    if (!product || !Array.isArray(wishlistCtx?.items)) return false;
+
+    const pid = product?.id ?? product?._id ?? product?.product_id;
+
+    return wishlistCtx.items.some((it) => {
+      const itemPid =
+        it?.product_id ??
+        it?.id ??
+        it?.product?.id ??
+        it?._id;
+
+      return String(itemPid) === String(pid);
+    });
+  } catch {
+    return false;
+  }
+})();
 
   /* ---------- wishlist toggle (top button) ---------- */
   async function handleTopWishlistToggle() {
@@ -492,10 +487,9 @@ export default function ProductDetailsPage() {
       await wishlistCtx.toggle(product?.id ?? product?._id ?? product?.product_id ?? product);
       // Do not flip local state: isWishlisted is derived from wishlistCtx (single source of truth).
       // Ensure wishlistCtx updates after toggle so isWishlisted memo re-evaluates.
-      if (typeof wishlistCtx?.fetch === "function") {
-        // optional refresh if your context exposes a fetch helper
-        try { wishlistCtx.fetch(); } catch {}
-      }
+if (typeof wishlistCtx?.fetchWishlist === "function") {
+  await wishlistCtx.fetchWishlist();
+}
     } catch (err) {
       console.warn("wishlist toggle failed", err);
       showToast("Could not update wishlist");
