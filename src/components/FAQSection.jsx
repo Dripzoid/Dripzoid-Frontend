@@ -4,28 +4,73 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, ArrowRight, Search, ChevronDown, ChevronUp } from "lucide-react";
 
 const FAQS = [
-  {
-    id: "shipping-time",
-    q: "How long does shipping take?",
-    a: "Standard shipping within India typically takes 3–7 business days...",
-  },
-  {
-    id: "returns-policy",
-    q: "What is your returns & exchange policy?",
-    a: "You can return unworn items within 14 days...",
-  },
-  {
-    id: "size-guide",
-    q: "How do I choose the right size?",
-    a: "Our product pages include a detailed size chart...",
-  },
-  // keep rest same
+{
+id: "shipping-time",
+q: "How long does shipping take?",
+a:
+"Standard shipping within India typically takes 3–7 business days. Express shipping options (1–3 business days) are available at checkout for an additional fee. International delivery times vary by destination and customs processing — expect 7–21 business days depending on the country.",
+},
+{
+id: "returns-policy",
+q: "What is your returns & exchange policy?",
+a:
+"You can return unworn items within 14 days of delivery for an exchange or store credit. Sale/clearance items may be final sale — check the product page for exceptions. Items must be in original condition with tags. Start a return via 'My Orders' or contact support at support@dripzoid.com.",
+},
+{
+id: "size-guide",
+q: "How do I choose the right size?",
+a:
+"Our product pages include a detailed size chart and model measurements. If you're between sizes, we recommend sizing up for a relaxed fit or down for a slimmer fit depending on the product description. Use the live chat for personalised advice.",
+},
+{
+id: "materials-care",
+q: "What materials do you use & how do I care for my clothes?",
+a:
+"We use premium cotton blends, denim, and technical fabrics depending on the style. Care instructions are on each product page and the garment label. Most items are machine-wash cold and hang-dry — avoid high heat to preserve prints and fabric integrity.",
+},
+{
+id: "payment-options",
+q: "Which payment methods do you accept?",
+a:
+"We accept major debit/credit cards, UPI, netbanking, and popular wallets. For international orders we accept international cards and selected payment gateways. All payments are processed securely via PCI-compliant partners.",
+},
+{
+id: "track-order",
+q: "How can I track my order?",
+a:
+"After your order ships we send an email and SMS with tracking details. You can also view tracking from 'My Orders' in your account. If tracking hasn't updated, contact support and we'll investigate.",
+},
+{
+id: "discounts-promo",
+q: "Do you have discount codes or student offers?",
+a:
+"We run seasonal sales, early-access drops, and occasional promo codes via email and social channels. Subscribe to our newsletter for exclusive offers. Student discounts may be available during select campaigns — check the banner or contact support.",
+},
+{
+id: "out-of-stock",
+q: "What happens if an item is out of stock?",
+a:
+"If an item is out of stock you can request a restock alert on the product page. For limited drops, restocks are not always guaranteed — check product pages for availability and sign up for alerts.",
+},
+{
+id: "gift-cards",
+q: "Do you offer gift cards?",
+a:
+"Yes — digital gift cards are available in a range of amounts. They can be redeemed at checkout and do not expire. Gift cards cannot be exchanged for cash.",
+},
+{
+id: "wholesale",
+q: "Do you offer wholesale or bulk orders?",
+a:
+"We offer wholesale partnerships for retailers and bulk order discounts for brands/events. Email business@dripzoid.com with your enquiry and our team will follow up.",
+},
 ];
 
-// smoother animation
+
+// ✅ FIXED SLIDE VARIANTS (REAL SLIDER)
 const slideVariants = {
   enter: (direction) => ({
-    x: direction > 0 ? 120 : -120,
+    x: direction > 0 ? "100%" : "-100%",
     opacity: 0,
   }),
   center: {
@@ -33,7 +78,7 @@ const slideVariants = {
     opacity: 1,
   },
   exit: (direction) => ({
-    x: direction > 0 ? -120 : 120,
+    x: direction > 0 ? "-100%" : "100%",
     opacity: 0,
   }),
 };
@@ -79,7 +124,6 @@ export default function FAQSection({ className = "" }) {
   }, [go]);
 
   const current = filtered[index];
-
   if (!current) return null;
 
   return (
@@ -113,40 +157,42 @@ export default function FAQSection({ className = "" }) {
           </div>
         </div>
 
-        {/* CAROUSEL */}
-        <div className="overflow-hidden relative">
+        {/* 🚀 CAROUSEL FIX */}
+        <div className="relative overflow-hidden">
 
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div
               key={current.id}
+              custom={direction}
               variants={slideVariants}
               initial="enter"
               animate="center"
               exit="exit"
-              custom={direction}
-              transition={{ duration: 0.35 }}
-              className="w-full"
+              transition={{ duration: 0.4, ease: "easeInOut" }}
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.2}
+              onDragEnd={(e, info) => {
+                if (info.offset.x < -100) go(1);
+                else if (info.offset.x > 100) go(-1);
+              }}
+              style={{ willChange: "transform" }}
+              className="absolute w-full"
             >
-              <motion.div
-                layout
-                className="bg-white border rounded-xl p-6 shadow max-w-3xl mx-auto min-h-[220px]"
-              >
+              {/* ❌ NO layout HERE */}
+              <div className="bg-white border rounded-xl p-6 shadow max-w-3xl mx-auto min-h-[220px]">
+
                 <h3 className="text-lg font-semibold">
                   {current.q}
                 </h3>
 
-                {/* FIX: remove clamp when expanded */}
-                <p
-                  className={`mt-2 text-sm text-gray-600 ${
-                    expandedId === current.id ? "" : "line-clamp-3"
-                  }`}
-                >
+                <p className="mt-2 text-sm text-gray-600">
                   {current.a}
                 </p>
 
                 <button
                   onClick={() =>
-                    setExpandedId((prev) =>
+                    setExpandedId(prev =>
                       prev === current.id ? null : current.id
                     )
                   }
@@ -163,21 +209,7 @@ export default function FAQSection({ className = "" }) {
                   )}
                 </button>
 
-                {/* EXPAND FIX: use layout instead of height animation */}
-                <AnimatePresence>
-                  {expandedId === current.id && (
-                    <motion.div
-                      layout
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="mt-3 text-sm text-gray-700"
-                    >
-                      <p>{current.a}</p>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
+              </div>
             </motion.div>
           </AnimatePresence>
         </div>
