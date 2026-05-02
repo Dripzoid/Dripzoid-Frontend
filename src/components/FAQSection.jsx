@@ -66,98 +66,101 @@ a:
 },
 ];
 
-
-// ✅ FIXED SLIDE VARIANTS (REAL SLIDER)
+// 🔥 PREMIUM SLIDE
 const slideVariants = {
-  enter: (direction) => ({
-    x: direction > 0 ? "100%" : "-100%",
+  enter: (dir) => ({
+    x: dir > 0 ? "100%" : "-100%",
     opacity: 0,
+    scale: 0.96,
   }),
   center: {
     x: 0,
     opacity: 1,
+    scale: 1,
   },
-  exit: (direction) => ({
-    x: direction > 0 ? "-100%" : "100%",
+  exit: (dir) => ({
+    x: dir > 0 ? "-100%" : "100%",
     opacity: 0,
+    scale: 0.96,
   }),
 };
 
-export default function FAQSection({ className = "" }) {
+export default function FAQSection() {
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const [direction, setDirection] = useState(0);
   const [expandedId, setExpandedId] = useState(null);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = query.toLowerCase();
     if (!q) return FAQS;
     return FAQS.filter((f) =>
-      (f.q + " " + f.a).toLowerCase().includes(q)
+      (f.q + f.a).toLowerCase().includes(q)
     );
   }, [query]);
-
-  useEffect(() => {
-    if (index >= filtered.length) {
-      setIndex(Math.max(0, filtered.length - 1));
-    }
-  }, [filtered.length]);
 
   const go = useCallback(
     (dir) => {
       if (filtered.length <= 1) return;
-      const next = (index + dir + filtered.length) % filtered.length;
       setDirection(dir);
-      setIndex(next);
+      setIndex((prev) => (prev + dir + filtered.length) % filtered.length);
       setExpandedId(null);
     },
-    [index, filtered.length]
+    [filtered.length]
   );
 
   useEffect(() => {
-    const onKey = (e) => {
+    const key = (e) => {
       if (e.key === "ArrowLeft") go(-1);
       if (e.key === "ArrowRight") go(1);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
   }, [go]);
 
   const current = filtered[index];
   if (!current) return null;
 
   return (
-    <section className={`py-12 px-4 ${className}`}>
+    <section className="py-20 px-4 bg-gradient-to-b from-black via-neutral-900 to-black text-white">
       <div className="max-w-5xl mx-auto">
 
         {/* HEADER */}
-        <div className="mb-6 flex justify-between items-center">
-          <h2 className="text-2xl font-bold">FAQ</h2>
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-6 mb-10">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">
+              FAQ — Need help?
+            </h2>
+            <p className="text-neutral-400 text-sm mt-2 max-w-md">
+              Find quick answers about shipping, returns, and more.
+            </p>
+          </div>
 
-          <div className="flex gap-2">
-            <button onClick={() => go(-1)} className="p-2 border rounded">
-              <ArrowLeft size={16} />
-            </button>
-            <button onClick={() => go(1)} className="p-2 border rounded">
-              <ArrowRight size={16} />
-            </button>
+          {/* SEARCH */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center bg-white/10 backdrop-blur-xl border border-white/10 rounded-full px-4 py-2 w-72">
+              <Search className="w-4 h-4 text-neutral-400" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search..."
+                className="bg-transparent outline-none text-sm ml-2 w-full placeholder:text-neutral-500"
+              />
+            </div>
+
+            {/* NAV */}
+            <div className="flex gap-2">
+              <button onClick={() => go(-1)} className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition">
+                <ArrowLeft size={16} />
+              </button>
+              <button onClick={() => go(1)} className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition">
+                <ArrowRight size={16} />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* SEARCH */}
-        <div className="mb-6">
-          <div className="flex items-center border rounded px-3 py-2">
-            <Search size={16} />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="ml-2 outline-none w-full"
-              placeholder="Search..."
-            />
-          </div>
-        </div>
-
-        {/* 🚀 CAROUSEL FIX */}
+        {/* CAROUSEL */}
         <div className="relative overflow-hidden">
 
           <AnimatePresence mode="wait" custom={direction}>
@@ -168,39 +171,38 @@ export default function FAQSection({ className = "" }) {
               initial="enter"
               animate="center"
               exit="exit"
-              transition={{ duration: 0.4, ease: "easeInOut" }}
+              transition={{ type: "spring", stiffness: 260, damping: 30 }}
               drag="x"
               dragConstraints={{ left: 0, right: 0 }}
-              dragElastic={0.2}
               onDragEnd={(e, info) => {
-                if (info.offset.x < -100) go(1);
-                else if (info.offset.x > 100) go(-1);
+                if (info.offset.x < -80) go(1);
+                if (info.offset.x > 80) go(-1);
               }}
-              style={{ willChange: "transform" }}
-              className="absolute w-full"
+              className="w-full"
             >
-              {/* ❌ NO layout HERE */}
-              <div className="bg-white border rounded-xl p-6 shadow max-w-3xl mx-auto min-h-[220px]">
+              {/* CARD */}
+              <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl max-w-3xl mx-auto min-h-[220px] transition hover:shadow-white/10">
 
-                <h3 className="text-lg font-semibold">
+                <h3 className="text-xl font-semibold">
                   {current.q}
                 </h3>
 
-                <p className="mt-2 text-sm text-gray-600">
+                <p className="text-neutral-400 mt-3 text-sm leading-relaxed">
                   {current.a}
                 </p>
 
+                {/* EXPAND */}
                 <button
                   onClick={() =>
-                    setExpandedId(prev =>
+                    setExpandedId((prev) =>
                       prev === current.id ? null : current.id
                     )
                   }
-                  className="mt-4 flex items-center gap-2 text-sm"
+                  className="mt-5 flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition"
                 >
                   {expandedId === current.id ? (
                     <>
-                      <ChevronUp size={16} /> Hide
+                      <ChevronUp size={16} /> Hide answer
                     </>
                   ) : (
                     <>
@@ -215,17 +217,14 @@ export default function FAQSection({ className = "" }) {
         </div>
 
         {/* DOTS */}
-        <div className="mt-4 flex justify-center gap-2">
-          {filtered.map((f, i) => (
-            <button
-              key={f.id}
-              onClick={() => {
-                setDirection(i > index ? 1 : -1);
-                setIndex(i);
-                setExpandedId(null);
-              }}
-              className={`w-2 h-2 rounded-full ${
-                i === index ? "bg-black" : "bg-gray-300"
+        <div className="flex justify-center gap-2 mt-6">
+          {filtered.map((_, i) => (
+            <div
+              key={i}
+              className={`h-2 rounded-full transition-all ${
+                i === index
+                  ? "w-6 bg-white"
+                  : "w-2 bg-neutral-600"
               }`}
             />
           ))}
