@@ -29,7 +29,6 @@ function isMobile() {
 
 
 // Embedded CTA (Below Hero)
-import { useEffect, useState } from "react";
 
 function PlayStoreSection() {
   const [show, setShow] = useState(false);
@@ -113,7 +112,6 @@ function PlayStoreSection() {
   );
 }
 
-export default PlayStoreSection;
 /* ---------------------------------
    Default Data
 ---------------------------------- */
