@@ -63,7 +63,7 @@ function PlayStoreSection() {
           {/* Official Play Store Icon */}
           <div className="w-14 h-14 rounded-2xl bg-white dark:bg-black flex items-center justify-center shadow-md">
             <img
-              src="/playstore.svg"
+              src="/playstore.png"
               alt="Google Play"
               className="w-9 h-9 object-contain"
             />
