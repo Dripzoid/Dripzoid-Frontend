@@ -61,9 +61,9 @@ function PlayStoreSection() {
         <div className="flex items-center gap-4 relative z-10">
           
           {/* Play Store Icon */}
-          <div className="w-14 h-14 rounded-2xl bg-white dark:bg-black flex items-center justify-center shadow-md">
+          <div>
             <img
-              src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg"
+              src="https://commons.wikimedia.org/wiki/File:Google_Play_2016_icon.svg"
               alt="Play Store"
               className="w-10 h-10 object-contain"
             />
