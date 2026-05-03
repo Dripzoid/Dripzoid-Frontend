@@ -43,7 +43,8 @@ function PlayStoreSection() {
 
   return (
     <section className="max-w-7xl mx-auto px-6 mb-20">
-      <div className="
+      <div
+        className="
         relative overflow-hidden
         rounded-3xl p-6 md:p-8
         flex flex-col md:flex-row items-center justify-between gap-6
@@ -52,20 +53,19 @@ function PlayStoreSection() {
         bg-white/70 dark:bg-slate-900/70
         backdrop-blur-xl
         border-slate-200 dark:border-slate-800
-      ">
-
+      "
+      >
         {/* Glow Effect */}
         <div className="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br from-indigo-500/20 to-pink-500/20 blur-3xl rounded-full"></div>
 
         {/* LEFT */}
         <div className="flex items-center gap-4 relative z-10">
-          
-          {/* Play Store Icon */}
-          <div>
+          {/* Official Play Store Icon */}
+          <div className="w-14 h-14 rounded-2xl bg-white dark:bg-black flex items-center justify-center shadow-md">
             <img
-              src="https://commons.wikimedia.org/wiki/File:Google_Play_2016_icon.svg"
-              alt="Play Store"
-              className="w-10 h-10 object-contain"
+              src="https://upload.wikimedia.org/wikipedia/commons/d/d0/Google_Play_2016_icon.svg"
+              alt="Google Play"
+              className="w-9 h-9 object-contain"
             />
           </div>
 
@@ -77,6 +77,11 @@ function PlayStoreSection() {
             <p className="text-sm text-slate-600 dark:text-slate-400">
               Faster shopping • Exclusive drops • Seamless checkout
             </p>
+
+            {/* Optional trust booster */}
+            <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">
+              ⭐ 4.5 Rating • Fast Install
+            </p>
           </div>
         </div>
 
@@ -86,7 +91,7 @@ function PlayStoreSection() {
           target="_blank"
           rel="noopener noreferrer"
           className="
-            flex items-center gap-3
+            flex items-center gap-2
             px-5 py-3 rounded-xl
             font-semibold text-sm
 
@@ -97,8 +102,8 @@ function PlayStoreSection() {
             transition-all duration-200 shadow-lg
           "
         >
-          {/* Official Play Icon */}
-          <svg width="20" height="20" viewBox="0 0 512 512">
+          {/* Play Icon */}
+          <svg width="18" height="18" viewBox="0 0 512 512">
             <path fill="#34A853" d="M325.3 234.3L104.6 13.6c-7.7 7.7-12.6 18.4-12.6 30.3v424.3c0 11.9 4.9 22.6 12.6 30.3l220.7-220.7z"/>
             <path fill="#FBBC05" d="M349.3 258.3l68.6-39.7c18.3-10.6 18.3-37.2 0-47.8l-68.6-39.7-24 24 24 24z"/>
             <path fill="#EA4335" d="M104.6 498.4c7.7 7.7 18.4 12.6 30.3 12.6 6.8 0 13.3-1.6 19.1-4.6l220.7-127.4-24-24-246.1 143.4z"/>
