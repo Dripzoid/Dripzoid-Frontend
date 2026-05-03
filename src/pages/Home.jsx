@@ -29,6 +29,8 @@ function isMobile() {
 
 
 // Embedded CTA (Below Hero)
+import { useEffect, useState } from "react";
+
 function PlayStoreSection() {
   const [show, setShow] = useState(false);
 
@@ -42,25 +44,39 @@ function PlayStoreSection() {
 
   return (
     <section className="max-w-7xl mx-auto px-6 mb-20">
-      <div className="rounded-3xl bg-gradient-to-r from-black to-slate-900 text-white p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl border border-white/10">
+      <div className="
+        relative overflow-hidden
+        rounded-3xl p-6 md:p-8
+        flex flex-col md:flex-row items-center justify-between gap-6
+        shadow-xl border
+
+        bg-white/70 dark:bg-slate-900/70
+        backdrop-blur-xl
+        border-slate-200 dark:border-slate-800
+      ">
+
+        {/* Glow Effect */}
+        <div className="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br from-indigo-500/20 to-pink-500/20 blur-3xl rounded-full"></div>
 
         {/* LEFT */}
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-white flex items-center justify-center">
-            <svg width="26" height="26" viewBox="0 0 512 512">
-              <path fill="#34A853" d="M325.3 234.3L104.6 13.6c-7.7 7.7-12.6 18.4-12.6 30.3v424.3c0 11.9 4.9 22.6 12.6 30.3l220.7-220.7z"/>
-              <path fill="#FBBC05" d="M349.3 258.3l68.6-39.7c18.3-10.6 18.3-37.2 0-47.8l-68.6-39.7-24 24 24 24z"/>
-              <path fill="#EA4335" d="M104.6 498.4c7.7 7.7 18.4 12.6 30.3 12.6 6.8 0 13.3-1.6 19.1-4.6l220.7-127.4-24-24-246.1 143.4z"/>
-              <path fill="#4285F4" d="M104.6 13.6l246.1 143.4 24-24L154 5.6C148.2 2.6 141.7 1 134.9 1c-11.9 0-22.6 4.9-30.3 12.6z"/>
-            </svg>
+        <div className="flex items-center gap-4 relative z-10">
+          
+          {/* Play Store Icon */}
+          <div className="w-14 h-14 rounded-2xl bg-white dark:bg-black flex items-center justify-center shadow-md">
+            <img
+              src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg"
+              alt="Play Store"
+              className="w-10 h-10 object-contain"
+            />
           </div>
 
           <div>
-            <h3 className="text-lg md:text-xl font-semibold">
-              Shop Faster on Dripzoid App 🚀
+            <h3 className="text-lg md:text-xl font-semibold text-black dark:text-white">
+              Get the Dripzoid App 🚀
             </h3>
-            <p className="text-sm text-white/70">
-              Smoother experience • Exclusive deals • Faster checkout
+
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Faster shopping • Exclusive drops • Seamless checkout
             </p>
           </div>
         </div>
@@ -70,9 +86,26 @@ function PlayStoreSection() {
           href="https://play.google.com/store/apps/details?id=com.dripzoid.twa&pcampaignid=web_share"
           target="_blank"
           rel="noopener noreferrer"
-          className="bg-white text-black font-semibold px-6 py-3 rounded-xl hover:scale-105 transition flex items-center gap-2 shadow-lg"
+          className="
+            flex items-center gap-3
+            px-5 py-3 rounded-xl
+            font-semibold text-sm
+
+            bg-black text-white
+            dark:bg-white dark:text-black
+
+            hover:scale-105 active:scale-95
+            transition-all duration-200 shadow-lg
+          "
         >
-          <Smartphone size={18} />
+          {/* Official Play Icon */}
+          <svg width="20" height="20" viewBox="0 0 512 512">
+            <path fill="#34A853" d="M325.3 234.3L104.6 13.6c-7.7 7.7-12.6 18.4-12.6 30.3v424.3c0 11.9 4.9 22.6 12.6 30.3l220.7-220.7z"/>
+            <path fill="#FBBC05" d="M349.3 258.3l68.6-39.7c18.3-10.6 18.3-37.2 0-47.8l-68.6-39.7-24 24 24 24z"/>
+            <path fill="#EA4335" d="M104.6 498.4c7.7 7.7 18.4 12.6 30.3 12.6 6.8 0 13.3-1.6 19.1-4.6l220.7-127.4-24-24-246.1 143.4z"/>
+            <path fill="#4285F4" d="M104.6 13.6l246.1 143.4 24-24L154 5.6C148.2 2.6 141.7 1 134.9 1c-11.9 0-22.6 4.9-30.3 12.6z"/>
+          </svg>
+
           Download App
         </a>
       </div>
@@ -80,6 +113,7 @@ function PlayStoreSection() {
   );
 }
 
+export default PlayStoreSection;
 /* ---------------------------------
    Default Data
 ---------------------------------- */
