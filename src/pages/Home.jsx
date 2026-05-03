@@ -27,34 +27,27 @@ function isMobile() {
   return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
-/* ---------------------------------
-   Play Store CTA Component
----------------------------------- */
-function PlayStoreCTA() {
-  const [visible, setVisible] = useState(false);
+
+// Embedded CTA (Below Hero)
+function PlayStoreSection() {
+  const [show, setShow] = useState(false);
 
   useEffect(() => {
-    const alreadyShown = localStorage.getItem("dripzoid_app_cta");
-
-    if (!isInTWA() && isMobile() && !alreadyShown) {
-      setTimeout(() => {
-        setVisible(true);
-        localStorage.setItem("dripzoid_app_cta", "shown");
-      }, 4000); // delay for better UX
+    if (!isInTWA() && isMobile()) {
+      setShow(true);
     }
   }, []);
 
-  if (!visible) return null;
+  if (!show) return null;
 
   return (
-    <div className="fixed bottom-5 left-4 right-4 z-50 animate-slideUp">
-      <div className="backdrop-blur-xl bg-gradient-to-r from-black/80 to-slate-900/80 text-white rounded-2xl shadow-2xl px-5 py-4 flex items-center justify-between border border-white/10">
+    <section className="max-w-7xl mx-auto px-6 mb-20">
+      <div className="rounded-3xl bg-gradient-to-r from-black to-slate-900 text-white p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl border border-white/10">
 
         {/* LEFT */}
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-white flex items-center justify-center">
-            {/* Play Store Triangle */}
-            <svg width="22" height="22" viewBox="0 0 512 512">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-white flex items-center justify-center">
+            <svg width="26" height="26" viewBox="0 0 512 512">
               <path fill="#34A853" d="M325.3 234.3L104.6 13.6c-7.7 7.7-12.6 18.4-12.6 30.3v424.3c0 11.9 4.9 22.6 12.6 30.3l220.7-220.7z"/>
               <path fill="#FBBC05" d="M349.3 258.3l68.6-39.7c18.3-10.6 18.3-37.2 0-47.8l-68.6-39.7-24 24 24 24z"/>
               <path fill="#EA4335" d="M104.6 498.4c7.7 7.7 18.4 12.6 30.3 12.6 6.8 0 13.3-1.6 19.1-4.6l220.7-127.4-24-24-246.1 143.4z"/>
@@ -63,55 +56,27 @@ function PlayStoreCTA() {
           </div>
 
           <div>
-            <p className="text-sm font-semibold">
-              Experience Dripzoid App 🚀
-            </p>
-            <p className="text-xs text-white/70">
-              Faster • Smoother • Exclusive Drops
+            <h3 className="text-lg md:text-xl font-semibold">
+              Shop Faster on Dripzoid App 🚀
+            </h3>
+            <p className="text-sm text-white/70">
+              Smoother experience • Exclusive deals • Faster checkout
             </p>
           </div>
         </div>
 
         {/* RIGHT */}
-        <div className="flex items-center gap-2">
-          <a
-            href="https://play.google.com/store/apps/details?id=com.dripzoid.app"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="bg-white text-black text-sm font-semibold px-4 py-2 rounded-lg hover:scale-105 transition flex items-center gap-1"
-          >
-            <Smartphone size={16} />
-            Install
-          </a>
-
-          <button
-            onClick={() => setVisible(false)}
-            className="p-2 rounded-lg hover:bg-white/10"
-          >
-            <X size={18} />
-          </button>
-        </div>
+        <a
+          href="https://play.google.com/store/apps/details?id=com.dripzoid.twa&pcampaignid=web_share"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="bg-white text-black font-semibold px-6 py-3 rounded-xl hover:scale-105 transition flex items-center gap-2 shadow-lg"
+        >
+          <Smartphone size={18} />
+          Download App
+        </a>
       </div>
-
-      {/* Animation */}
-      <style>
-        {`
-          @keyframes slideUp {
-            from {
-              transform: translateY(40px);
-              opacity: 0;
-            }
-            to {
-              transform: translateY(0);
-              opacity: 1;
-            }
-          }
-          .animate-slideUp {
-            animation: slideUp 0.5s ease forwards;
-          }
-        `}
-      </style>
-    </div>
+    </section>
   );
 }
 
@@ -176,9 +141,12 @@ export default function HomePage() {
       <div className="h-16" />
 
       {/* HERO */}
-      <section className="mb-24">
-        <Hero slides={slides} heroPromo={activeSale} />
-      </section>
+     <section className="mb-10">
+  <Hero slides={slides} heroPromo={activeSale} />
+</section>
+
+{/* ✅ Embedded Play Store CTA */}
+<PlayStoreSection />
 
       {/* CATEGORY */}
       <section className="max-w-7xl mx-auto px-6 mb-28">
@@ -234,8 +202,6 @@ export default function HomePage() {
         <FAQSection className="mt-24 mb-24" />
       </section>
 
-      {/* ✅ PLAY STORE CTA */}
-      <PlayStoreCTA />
     </main>
   );
 }
