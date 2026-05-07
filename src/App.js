@@ -83,7 +83,7 @@ function App() {
   async function checkMaintenance() {
     try {
       const res = await axios.get(
-        `${process.env.REACT_APP_API_URL}/api/maintenance`
+        `${process.env.REACT_APP_API_BASE}/api/maintenance`
       );
 
       setMaintenance(res.data.enabled);
