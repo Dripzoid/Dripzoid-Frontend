@@ -39,6 +39,7 @@ import Jobs from "./pages/Jobs.jsx";
 import JobDetailPage from "./pages/JobDetailPage.jsx";
 import ApplyPage from "./pages/ApplyPage.jsx";
 import FAQ from "./pages/FAQ.jsx";
+import DripzoidMaintenancePage from "./pages/Maintenance.jsx";
 
 
 // 👤 Account Pages
@@ -99,6 +100,7 @@ function App() {
                 <Route path="/jobs/:slug" element={<JobDetailPage />} />
                 <Route path="/apply/:jobId" element={<ApplyPage />} />
                 <Route path="/faq" element={<FAQ />} />
+                <Route path="/maintenance" element={<DripzoidMaintenancePage />} />
 
 
                 {/* Auth */}
