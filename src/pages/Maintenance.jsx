@@ -41,14 +41,14 @@ export default function DripzoidMaintenancePage() {
 
             {/* Light Mode Logo */}
             <img
-              src="//logo-light.png"
+              src="/logo-light.png"
               alt="Dripzoid"
               className="h-24 md:h-36 lg:h-44 block dark:hidden object-contain animate-pulse"
             />
 
             {/* Dark Mode Logo */}
             <img
-              src="logo-dark.png"
+              src="/logo-dark.png"
               alt="Dripzoid"
               className="h-24 md:h-36 lg:h-44 hidden dark:block object-contain animate-pulse"
             />
