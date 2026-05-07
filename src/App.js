@@ -1,4 +1,4 @@
-import React, { useContext } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import "./App.css";
 import {
   BrowserRouter as Router,
@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import { UserProvider, UserContext } from "./contexts/UserContext.js";
 import { CartProvider } from "./contexts/CartContext.jsx";
+import axios from "axios";
 
 // 🧱 Layouts & Shared Components
 import Navbar from "./components/Navbar.jsx";
@@ -65,18 +66,60 @@ import SlidesAndSalesManagement from "./admin/SlidesAndSalesAdmin.jsx";
 import AdminCertificates from "./admin/AdminCertificates.jsx";
 
 function App() {
+  const [maintenance, setMaintenance] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    checkMaintenance();
+
+    // Optional auto refresh every 30 sec
+    const interval = setInterval(() => {
+      checkMaintenance();
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  async function checkMaintenance() {
+    try {
+      const res = await axios.get(
+        `${process.env.REACT_APP_API_URL}/api/maintenance`
+      );
+
+      setMaintenance(res.data.enabled);
+    } catch (err) {
+      console.error("Maintenance check failed:", err);
+
+      // Fail safe → app still works
+      setMaintenance(false);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Loading state
+  if (loading) {
+    return null;
+  }
+
+  // Maintenance mode
+  if (maintenance) {
+    return <DripzoidMaintenancePage />;
+  }
+
   return (
     <UserProvider>
       <CartProvider>
         <Router>
           <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white flex flex-col">
-            
-            {/* ✅ Navbar (Top) */}
+
+            {/* Navbar */}
             <Navbar />
 
-            {/* ✅ Main Content (padding added for mobile footer) */}
+            {/* Main Content */}
             <main className="flex-grow pb-[72px] md:pb-0">
               <Routes>
+
                 {/* Public Routes */}
                 <Route path="/" element={<Home />} />
                 <Route path="/shop" element={<Shop />} />
@@ -100,14 +143,12 @@ function App() {
                 <Route path="/jobs/:slug" element={<JobDetailPage />} />
                 <Route path="/apply/:jobId" element={<ApplyPage />} />
                 <Route path="/faq" element={<FAQ />} />
-                <Route path="/maintenance" element={<DripzoidMaintenancePage />} />
-
 
                 {/* Auth */}
                 <Route path="/login" element={<AuthWrapper defaultForm="login" />} />
                 <Route path="/register" element={<AuthWrapper defaultForm="register" />} />
 
-                {/* Dashboard (Account) Routes */}
+                {/* Dashboard */}
                 <Route path="/account" element={<DashboardLayout />}>
                   <Route index element={<ProfileOverview />} />
                   <Route path="profile" element={<ProfileOverview />} />
@@ -118,7 +159,7 @@ function App() {
                   <Route path="settings" element={<AccountSettings />} />
                 </Route>
 
-                {/* Admin Routes */}
+                {/* Admin */}
                 <Route path="/admin" element={<AdminLayout />}>
                   <Route index element={<Navigate to="dashboard" replace />} />
                   <Route path="dashboard" element={<Dashboard />} />
@@ -136,16 +177,17 @@ function App() {
                     element={<div className="p-6">Ads Management Coming Soon...</div>}
                   />
                 </Route>
+
               </Routes>
             </main>
 
-            {/* ✅ Desktop Footer */}
+            {/* Footer */}
             <Footer />
 
-            {/* ✅ Mobile Footer (Bottom, Mobile Only) */}
+            {/* Mobile Footer */}
             <MobileFooter />
 
-            {/* ✅ Cart Sidebar */}
+            {/* Cart Sidebar */}
             <CartSidebar />
           </div>
         </Router>
