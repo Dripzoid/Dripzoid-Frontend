@@ -54,18 +54,7 @@ export default function DripzoidMaintenancePage() {
             />
           </div>
 
-          {/* Status Badge */}
-          <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.03] mb-8 backdrop-blur-xl shadow-lg">
-
-            <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-black dark:bg-white opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-black dark:bg-white"></span>
-            </span>
-
-            <span className="text-sm md:text-base font-semibold tracking-wide text-black dark:text-white">
-              Platform Enhancement In Progress
-            </span>
-          </div>
+          
 
           {/* Heading */}
           <h1 className="text-5xl md:text-7xl font-black tracking-tight text-black dark:text-white mb-6 leading-tight">
@@ -82,6 +71,19 @@ export default function DripzoidMaintenancePage() {
             <br />
             We’ll be back soon.
           </p>
+
+          {/* Status Badge */}
+          <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.03] mb-8 backdrop-blur-xl shadow-lg">
+
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-black dark:bg-white opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-black dark:bg-white"></span>
+            </span>
+
+            <span className="text-sm md:text-base font-semibold tracking-wide text-black dark:text-white">
+              Platform Enhancement In Progress
+            </span>
+          </div>
 
           {/* Social Card */}
           <div className="relative rounded-[36px] overflow-hidden border border-black/10 dark:border-white/10 bg-gradient-to-br from-black to-neutral-900 dark:from-white dark:to-neutral-200 p-10 md:p-12 shadow-2xl">
