@@ -66,46 +66,57 @@ import SlidesAndSalesManagement from "./admin/SlidesAndSalesAdmin.jsx";
 import AdminCertificates from "./admin/AdminCertificates.jsx";
 
 function App() {
-  const [maintenance, setMaintenance] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [maintenance, setMaintenance] =
+  useState(false);
 
-  useEffect(() => {
-    checkMaintenance();
+const [loading, setLoading] =
+  useState(true);
 
-    // Optional auto refresh every 30 sec
-    const interval = setInterval(() => {
-      checkMaintenance();
-    }, 30000);
+useEffect(() => {
+  checkMaintenance();
+}, []);
 
-    return () => clearInterval(interval);
-  }, []);
+async function checkMaintenance() {
+  try {
+    await axios.get(
+      `${process.env.REACT_APP_API_BASE}/api/maintenance`
+    );
 
-  async function checkMaintenance() {
-    try {
-      const res = await axios.get(
-        `${process.env.REACT_APP_API_BASE}/api/maintenance`
-      );
+    // If request succeeds
+    setMaintenance(false);
 
-      setMaintenance(res.data.enabled);
-    } catch (err) {
-      console.error("Maintenance check failed:", err);
+  } catch (err) {
+    console.error(
+      "Maintenance check failed:",
+      err
+    );
 
-      // Fail safe → app still works
+    // Maintenance enabled only when backend returns 503
+    if (
+      err?.response?.status ===
+      503
+    ) {
+      setMaintenance(true);
+    } else {
       setMaintenance(false);
-    } finally {
-      setLoading(false);
     }
-  }
 
-  // Loading state
-  if (loading) {
-    return null;
+  } finally {
+    setLoading(false);
   }
+}
 
-  // Maintenance mode
-  if (maintenance) {
-    return <DripzoidMaintenancePage />;
-  }
+// Loading state
+if (loading) {
+  return null;
+}
+
+// Maintenance mode
+if (maintenance) {
+  return (
+    <DripzoidMaintenancePage />
+  );
+}
 
   return (
     <UserProvider>
