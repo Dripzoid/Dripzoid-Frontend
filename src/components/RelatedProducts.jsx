@@ -11,6 +11,7 @@ import ProductCard from "./ProductCard";
 export default function RelatedProducts({
   relatedProducts = [],
   galleryImages = [],
+  loading = false,
 }) {
   /* =========================================
      NORMALIZE RESPONSE
@@ -18,34 +19,34 @@ export default function RelatedProducts({
 
   const items = React.useMemo(() => {
 
-  /* =========================
-     ARRAY DIRECTLY
-  ========================= */
+    /* =========================
+       ARRAY RESPONSE
+    ========================= */
 
-  if (
-    Array.isArray(
-      relatedProducts
-    )
-  ) {
-    return relatedProducts;
-  }
+    if (
+      Array.isArray(
+        relatedProducts
+      )
+    ) {
+      return relatedProducts;
+    }
 
-  /* =========================
-     API RESPONSE OBJECT
-  ========================= */
+    /* =========================
+       API OBJECT RESPONSE
+    ========================= */
 
-  if (
-    relatedProducts &&
-    Array.isArray(
-      relatedProducts.products
-    )
-  ) {
-    return relatedProducts.products;
-  }
+    if (
+      relatedProducts &&
+      Array.isArray(
+        relatedProducts.products
+      )
+    ) {
+      return relatedProducts.products;
+    }
 
-  return [];
+    return [];
 
-}, [relatedProducts]);
+  }, [relatedProducts]);
 
   /* =========================================
      FALLBACK IMAGE
@@ -60,12 +61,10 @@ export default function RelatedProducts({
       : "/placeholder.png";
 
   /* =========================================
-     EMPTY STATE
+     LOADING STATE
   ========================================= */
 
-  if (
-    !items.length
-  ) {
+  if (loading) {
     return (
       <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 md:p-6 border border-gray-200/60 dark:border-gray-700/60">
 
@@ -73,7 +72,7 @@ export default function RelatedProducts({
           You might be interested in
         </h2>
 
-        {/* MOBILE SKELETON */}
+        {/* MOBILE */}
 
         <div className="md:hidden">
           <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory -mx-4 px-4">
@@ -88,7 +87,7 @@ export default function RelatedProducts({
           </div>
         </div>
 
-        {/* DESKTOP SKELETON */}
+        {/* DESKTOP */}
 
         <div className="hidden md:grid md:grid-cols-4 gap-4">
 
@@ -99,6 +98,29 @@ export default function RelatedProducts({
               />
             )
           )}
+        </div>
+      </section>
+    );
+  }
+
+  /* =========================================
+     EMPTY STATE
+  ========================================= */
+
+  if (!items.length) {
+    return (
+      <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 border border-gray-200/60 dark:border-gray-700/60">
+
+        <h2 className="text-xl font-bold mb-4 text-black dark:text-white">
+          You might be interested in
+        </h2>
+
+        <div className="text-center py-10">
+
+          <p className="text-gray-500 dark:text-gray-400">
+            No related products found
+          </p>
+
         </div>
       </section>
     );
@@ -121,7 +143,10 @@ export default function RelatedProducts({
         <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory -mx-4 px-4">
 
           {items.map(
-            (product, index) => (
+            (
+              product,
+              index
+            ) => (
               <div
                 key={
                   product?.id ||
@@ -204,10 +229,12 @@ function toCardShape(
       : [fallbackImage];
 
   /* =========================================
-     NEW BACKEND SUPPORT
+     PRESERVE BACKEND DATA
   ========================================= */
 
   return {
+    ...product,
+
     id:
       product.id ||
       product._id ||
@@ -250,6 +277,10 @@ function toCardShape(
       product.stock ??
       0,
 
+    totalStock:
+      product.totalStock ??
+      0,
+
     featured:
       Boolean(
         product.featured
@@ -270,6 +301,13 @@ function toCardShape(
     sizeStock:
       product.sizeStock ||
       {},
+
+    sizeRows:
+      Array.isArray(
+        product.sizeRows
+      )
+        ? product.sizeRows
+        : [],
 
     sizes:
       Array.isArray(
