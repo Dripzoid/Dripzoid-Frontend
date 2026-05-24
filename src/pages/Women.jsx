@@ -78,7 +78,7 @@ export default function Women() {
     (async () => {
       try {
         const res = await fetch(
-          `${API_BASE}/api/products/categories?gender=women`
+          `${API_BASE}/api/products/categories?category=women`
         );
 
         if (!res.ok) {
@@ -142,7 +142,7 @@ export default function Women() {
       const params =
         new URLSearchParams();
 
-      params.append("gender", "women");
+      params.append("category", "women");
 
       /* =========================
          SUBCATEGORY FILTER
@@ -342,14 +342,21 @@ export default function Women() {
   ========================================= */
 
   const SkeletonCard = () => (
-    <div className="animate-pulse">
-      <div className="bg-gray-200 dark:bg-gray-800 aspect-[3/4] rounded-xl mb-3"></div>
+  <div className="animate-pulse">
 
-      <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded mb-2"></div>
+    {/* IMAGE */}
 
-      <div className="h-4 w-2/3 bg-gray-200 dark:bg-gray-800 rounded"></div>
-    </div>
-  );
+    <div className="bg-gray-200 dark:bg-gray-800 aspect-[3/3.5] rounded-xl mb-4"></div>
+
+    {/* TITLE */}
+
+    <div className="h-5 bg-gray-200 dark:bg-gray-800 rounded mb-3"></div>
+
+    {/* PRICE */}
+
+    <div className="h-4 w-1/2 bg-gray-200 dark:bg-gray-800 rounded"></div>
+  </div>
+);
 
   /* =========================================
      UI
