@@ -215,11 +215,11 @@ export default function ProductDetailsPage() {
         // related products (lightweight fetch)
         try {
           let list = [];
-          const rr = await fetch(`${API_BASE}/api/products/related/${productId}`, { signal: ac.signal });
+          const rr = await fetch(`${API_BASE}/api/products/${productId}/related`, { signal: ac.signal });
           if (rr.ok) list = await rr.json();
           if ((!Array.isArray(list) || list.length === 0) && pjson?.category) {
             const fallback = await fetch(
-              `${API_BASE}/api/products?category=${encodeURIComponent(pjson.category)}&limit=8`,
+              `${API_BASE}/api/products?slug=${encodeURIComponent(pjson.categorySlug)}&limit=8`,
               { signal: ac.signal }
             );
             if (fallback.ok) {
