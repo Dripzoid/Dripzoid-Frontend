@@ -80,7 +80,7 @@ export default function RelatedProducts({
 
         {/* DESKTOP */}
 
-        <div className="hidden md:grid md:grid-cols-4 gap-4">
+        <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
           {[1, 2, 3, 4].map(
             (i) => (
               <SkeletonCard
@@ -153,22 +153,26 @@ export default function RelatedProducts({
 
       {/* DESKTOP */}
 
-      <div className="hidden md:grid md:grid-cols-4 gap-4">
+      <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
         {items.map(
           (
             product,
             index
           ) => (
-            <ProductCard
+            <div
               key={
                 product?.id ||
                 index
               }
-              product={toCardShape(
-                product,
-                fallbackImage
-              )}
-            />
+              className="w-full min-w-0"
+            >
+              <ProductCard
+                product={toCardShape(
+                  product,
+                  fallbackImage
+                )}
+              />
+            </div>
           )
         )}
       </div>
