@@ -618,225 +618,180 @@ export default function ProductCard({
      UI
   ========================================= */
 
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={
-        handleNavigate
-      }
-      className="group relative w-full bg-white dark:bg-neutral-900 border border-gray-100 dark:border-gray-800 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer"
-    >
-      {/* IMAGE */}
+ return (
+  <div
+    role="button"
+    tabIndex={0}
+    onClick={handleNavigate}
+    className="group relative flex flex-col w-full min-w-0 min-h-[340px] bg-white dark:bg-neutral-900 border border-gray-100 dark:border-gray-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer"
+  >
+    {/* IMAGE */}
 
-      <div className="relative w-full bg-gray-50 dark:bg-gray-800 overflow-hidden">
+    <div className="relative w-full aspect-square bg-gray-50 dark:bg-gray-800 overflow-hidden flex-shrink-0">
 
-        <div className="w-full h-40 sm:h-56 md:aspect-square md:h-auto overflow-hidden">
+      {imageSrc ? (
+        <img
+          src={imageSrc}
+          alt={normalized.name}
+          className="w-full h-full object-cover"
+          loading="lazy"
+          decoding="async"
+          onError={handleImgError}
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">
+          No Image
+        </div>
+      )}
 
-          {imageSrc ? (
-            <img
-              src={imageSrc}
-              alt={
-                normalized.name
-              }
-              className="w-full h-full object-cover"
-              loading="lazy"
-              decoding="async"
-              onError={
-                handleImgError
-              }
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">
-              No Image
-            </div>
+      {/* WISHLIST */}
+
+      <button
+        type="button"
+        onClick={handleWishlistToggle}
+        disabled={wlBusy}
+        className="absolute top-3 right-3 bg-white/95 dark:bg-black/80 rounded-full p-2 shadow-sm z-10"
+      >
+        <FiHeart
+          size={18}
+          className={
+            isWishlisted
+              ? "text-red-500"
+              : "text-gray-500"
+          }
+        />
+      </button>
+
+      {/* IMAGE DOTS */}
+
+      {images.length > 1 && (
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-2 z-10">
+
+          {images.map(
+            (_, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCurrent(idx);
+                }}
+                className={`w-2 h-2 rounded-full ${
+                  idx === current
+                    ? "bg-white"
+                    : "bg-white/60"
+                }`}
+              />
+            )
           )}
 
         </div>
+      )}
+    </div>
 
-        {/* WISHLIST */}
+    {/* INFO */}
 
-        <button
-          type="button"
-          onClick={
-            handleWishlistToggle
-          }
-          disabled={wlBusy}
-          className="absolute top-3 right-3 bg-white/95 dark:bg-black/80 rounded-full p-2 shadow-sm"
-        >
-          <FiHeart
-            size={18}
-            className={
-              isWishlisted
-                ? "text-red-500"
-                : "text-gray-500"
-            }
-          />
-        </button>
+    <div className="flex flex-col flex-1 min-w-0 p-4">
 
-        {/* IMAGE DOTS */}
+      {/* TITLE */}
 
-        {images.length >
-          1 && (
-          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-2">
+      <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white line-clamp-2 min-h-[42px]">
+        {normalized.name}
+      </h3>
 
-            {images.map(
-              (
-                _,
-                idx
-              ) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={(
-                    e
-                  ) => {
-                    e.stopPropagation();
+      {/* CATEGORY */}
 
-                    setCurrent(
-                      idx
-                    );
-                  }}
-                  className={`w-2.5 h-2.5 rounded-full ${
-                    idx ===
-                    current
-                      ? "bg-white"
-                      : "bg-white/60"
-                  }`}
-                />
-              )
-            )}
+      <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1">
+        {normalized.subcategory || normalized.category}
+      </p>
 
-          </div>
+      {/* PRICE */}
+
+      <div className="mt-3 flex items-center gap-2 flex-wrap">
+
+        <span className="text-base font-bold text-gray-900 dark:text-white">
+          ₹{normalized.price.toLocaleString()}
+        </span>
+
+        {hasDiscount && (
+          <>
+            <span className="text-xs line-through text-gray-500 dark:text-gray-400">
+              ₹{normalized.originalPrice.toLocaleString()}
+            </span>
+
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-600 text-white">
+              {discountPercent}% OFF
+            </span>
+          </>
         )}
+
+        <AiOutlineTag className="text-green-500 ml-auto" />
+
       </div>
 
-      {/* INFO */}
+      {/* RATINGS */}
 
-      <div className="p-3 sm:p-4 flex flex-col gap-1">
+      <div className="mt-3">
 
-        <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white line-clamp-2">
-          {
-            normalized.name
-          }
-        </h3>
-
-        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-          {
-            normalized.subcategory ||
-            normalized.category
-          }
-        </p>
-
-        {/* PRICE */}
-
-        <div className="mt-1 flex items-center gap-2 flex-wrap">
-
-          <span className="text-base font-bold text-gray-900 dark:text-white">
-            ₹
-            {normalized.price.toLocaleString()}
-          </span>
-
-          {hasDiscount && (
-            <>
-              <span className="text-xs line-through text-gray-500 dark:text-gray-400">
-                ₹
-                {normalized.originalPrice.toLocaleString()}
-              </span>
-
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-600 text-white">
-                {
-                  discountPercent
-                }
-                % OFF
-              </span>
-            </>
-          )}
-
-          <AiOutlineTag className="text-green-500 ml-auto" />
-
-        </div>
-
-        {/* RATINGS */}
-
-        {reviewsCount >
-        0 ? (
-          <div className="flex items-center mt-2 gap-2">
+        {reviewsCount > 0 ? (
+          <div className="flex items-center gap-2">
 
             <div className="flex items-center gap-0.5 text-yellow-500">
 
               {Array.from({
                 length: 5,
-              }).map(
-                (
-                  _,
-                  idx
-                ) => (
-                  <AiFillStar
-                    key={
-                      idx
-                    }
-                    className={
-                      idx <
-                      Math.round(
-                        avgRating
-                      )
-                        ? "opacity-100"
-                        : "opacity-30"
-                    }
-                    style={{
-                      fontSize: 12,
-                    }}
-                  />
-                )
-              )}
+              }).map((_, idx) => (
+                <AiFillStar
+                  key={idx}
+                  className={
+                    idx <
+                    Math.round(avgRating)
+                      ? "opacity-100"
+                      : "opacity-30"
+                  }
+                  style={{
+                    fontSize: 12,
+                  }}
+                />
+              ))}
 
             </div>
 
             <span className="text-xs font-medium text-gray-800 dark:text-gray-200">
-              {avgRating.toFixed(
-                1
-              )}
+              {avgRating.toFixed(1)}
             </span>
 
             <span className="text-xs text-gray-500 dark:text-gray-400">
-              (
-              {
-                reviewsCount
-              }
-              )
+              ({reviewsCount})
             </span>
 
           </div>
         ) : (
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            No Ratings &
-            Reviews
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            No Ratings & Reviews
           </div>
         )}
 
-        {/* FOOTER */}
-
-        <div className="mt-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-
-          <span className="truncate">
-            {
-              normalized.seller
-            }
-          </span>
-
-          {stockBadge && (
-            <div
-              className={`px-2 py-0.5 rounded-full text-xs font-medium ${stockBadge.tone}`}
-            >
-              {
-                stockBadge.text
-              }
-            </div>
-          )}
-
-        </div>
       </div>
+
+      {/* FOOTER */}
+
+      <div className="mt-auto pt-4 flex items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+
+        <span className="truncate">
+          {normalized.seller}
+        </span>
+
+        {stockBadge && (
+          <div
+            className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${stockBadge.tone}`}
+          >
+            {stockBadge.text}
+          </div>
+        )}
+
+      </div>
+
     </div>
-  );
-}
+  </div>
+);
