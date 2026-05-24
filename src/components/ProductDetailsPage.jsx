@@ -212,149 +212,140 @@ export default function ProductDetailsPage() {
         setSelectedColor(firstColor || "");
         setSelectedSize(firstSize || "");
 
-        // related products (lightweight fetch)
-  /* =========================================
+// related products (lightweight fetch)
+
+/* =========================================
    RELATED PRODUCTS
 ========================================= */
 
-try {
+let list = [];
 
-  let list = [];
+/* =========================
+   FETCH RELATED API
+========================= */
 
-  /* =========================
-     FETCH RELATED API
-  ========================= */
-
-  const rr = await fetch(
-    `${API_BASE}/api/products/${productId}/related`,
-    {
-      signal: ac.signal,
-    }
-  );
-
-  if (rr.ok) {
-
-    const relatedJson =
-      await rr.json();
-
-    /* =========================
-       NEW BACKEND RESPONSE
-    ========================= */
-
-    if (
-      relatedJson?.success &&
-      Array.isArray(
-        relatedJson.products
-      )
-    ) {
-      list =
-        relatedJson.products;
-    }
-
-    /* =========================
-       OLD BACKEND SUPPORT
-    ========================= */
-
-    else if (
-      Array.isArray(
-        relatedJson
-      )
-    ) {
-      list =
-        relatedJson;
-    }
+const rr = await fetch(
+  `${API_BASE}/api/products/${productId}/related`,
+  {
+    signal: ac.signal,
   }
+);
+
+if (rr.ok) {
+
+  const relatedJson =
+    await rr.json();
 
   /* =========================
-     FALLBACK FETCH
+     NEW BACKEND RESPONSE
   ========================= */
 
   if (
-    (!Array.isArray(list) ||
-      list.length === 0) &&
-    pjson?.category
+    relatedJson?.success &&
+    Array.isArray(
+      relatedJson.products
+    )
   ) {
+    list =
+      relatedJson.products;
+  }
 
-    const fallback =
-      await fetch(
-        `${API_BASE}/api/products?category=${encodeURIComponent(
-          pjson.category
-        )}&limit=8`,
-        {
-          signal:
-            ac.signal,
-        }
-      );
+  /* =========================
+     OLD BACKEND SUPPORT
+  ========================= */
 
-    if (fallback.ok) {
+  else if (
+    Array.isArray(
+      relatedJson
+    )
+  ) {
+    list =
+      relatedJson;
+  }
+}
 
-      const fb =
-        await fallback.json();
+/* =========================
+   FALLBACK FETCH
+========================= */
 
-      /* =====================
-         NEW RESPONSE
-      ===================== */
+if (
+  (!Array.isArray(list) ||
+    list.length === 0) &&
+  pjson?.category
+) {
 
-      if (
-        fb?.success &&
-        Array.isArray(
-          fb.products
-        )
-      ) {
-        list =
-          fb.products;
+  const fallback =
+    await fetch(
+      `${API_BASE}/api/products?category=${encodeURIComponent(
+        pjson.category
+      )}&limit=8`,
+      {
+        signal:
+          ac.signal,
       }
+    );
 
-      /* =====================
-         OLD RESPONSE
-      ===================== */
+  if (fallback.ok) {
 
-      else if (
-        Array.isArray(
-          fb
-        )
-      ) {
-        list = fb;
-      }
+    const fb =
+      await fallback.json();
+
+    /* =====================
+       NEW RESPONSE
+    ===================== */
+
+    if (
+      fb?.success &&
+      Array.isArray(
+        fb.products
+      )
+    ) {
+      list =
+        fb.products;
+    }
+
+    /* =====================
+       OLD RESPONSE
+    ===================== */
+
+    else if (
+      Array.isArray(
+        fb
+      )
+    ) {
+      list = fb;
     }
   }
+}
 
-  /* =========================
-     REMOVE CURRENT PRODUCT
-  ========================= */
+/* =========================
+   REMOVE CURRENT PRODUCT
+========================= */
 
-  const filtered =
-    Array.isArray(list)
-      ? list
-          .filter(
-            (x) =>
-              String(
-                x?.id ||
-                  x?._id ||
-                  x?.productId
-              ) !==
-              String(
-                productId
-              )
-          )
-          .slice(0, 8)
-      : [];
+const filtered =
+  Array.isArray(list)
+    ? list
+        .filter(
+          (x) =>
+            String(
+              x?.id ||
+                x?._id ||
+                x?.productId
+            ) !==
+            String(
+              productId
+            )
+        )
+        .slice(0, 8)
+    : [];
 
-  /* =========================
-     UPDATE STATE
-  ========================= */
+/* =========================
+   UPDATE STATE
+========================= */
 
-  if (mounted) {
-    setRelatedProducts(
-      filtered
-    );
-  }
-
-} catch (err) {
-
-  console.warn(
-    "related fetch failed",
-    err
+if (mounted) {
+  setRelatedProducts(
+    filtered
   );
 }
 
