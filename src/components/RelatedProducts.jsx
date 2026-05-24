@@ -17,17 +17,9 @@ export default function RelatedProducts({
   ========================================= */
 
   const items = React.useMemo(() => {
-    /* =========================
-       ARRAY RESPONSE
-    ========================= */
-
     if (Array.isArray(relatedProducts)) {
       return relatedProducts;
     }
-
-    /* =========================
-       API OBJECT RESPONSE
-    ========================= */
 
     if (
       relatedProducts &&
@@ -51,7 +43,7 @@ export default function RelatedProducts({
     ) &&
     galleryImages.length
       ? galleryImages[0]
-      : "https://via.placeholder.com/600x800?text=Dripzoid";
+      : "";
 
   /* =========================================
      LOADING STATE
@@ -64,23 +56,8 @@ export default function RelatedProducts({
           You might be interested in
         </h2>
 
-        {/* MOBILE */}
+        <div className="grid grid-flow-col auto-cols-[70%] sm:auto-cols-[45%] md:grid-flow-row md:auto-cols-auto md:grid-cols-2 lg:grid-cols-4 gap-4 overflow-x-auto md:overflow-visible pb-2">
 
-        <div className="md:hidden">
-          <div className="flex gap-4 overflow-x-auto pb-2">
-            {[1, 2, 3, 4].map(
-              (i) => (
-                <SkeletonCard
-                  key={i}
-                />
-              )
-            )}
-          </div>
-        </div>
-
-        {/* DESKTOP */}
-
-        <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
           {[1, 2, 3, 4].map(
             (i) => (
               <SkeletonCard
@@ -88,6 +65,7 @@ export default function RelatedProducts({
               />
             )
           )}
+
         </div>
       </section>
     );
@@ -119,41 +97,13 @@ export default function RelatedProducts({
 
   return (
     <section className="rounded-2xl shadow-xl bg-white dark:bg-gray-900 p-4 md:p-6 border border-gray-200 dark:border-gray-700">
+
       <h2 className="text-xl font-bold mb-5 text-black dark:text-white">
         You might be interested in
       </h2>
 
-      {/* MOBILE */}
+      <div className="grid grid-flow-col auto-cols-[70%] sm:auto-cols-[45%] md:grid-flow-row md:auto-cols-auto md:grid-cols-2 lg:grid-cols-4 gap-4 overflow-x-auto md:overflow-visible pb-2">
 
-      <div className="md:hidden">
-        <div className="flex gap-4 overflow-x-auto pb-2">
-          {items.map(
-            (
-              product,
-              index
-            ) => (
-              <div
-                key={
-                  product?.id ||
-                  index
-                }
-                className="flex-shrink-0 w-[70%] sm:w-[48%]"
-              >
-                <ProductCard
-                  product={toCardShape(
-                    product,
-                    fallbackImage
-                  )}
-                />
-              </div>
-            )
-          )}
-        </div>
-      </div>
-
-      {/* DESKTOP */}
-
-      <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
         {items.map(
           (
             product,
@@ -164,7 +114,7 @@ export default function RelatedProducts({
                 product?.id ||
                 index
               }
-              className="w-full min-w-0"
+              className="min-w-0"
             >
               <ProductCard
                 product={toCardShape(
@@ -175,6 +125,7 @@ export default function RelatedProducts({
             </div>
           )
         )}
+
       </div>
     </section>
   );
@@ -189,18 +140,11 @@ function toCardShape(
   fallbackImage
 ) {
   if (!product) {
-    return {
-      id: null,
-      name: "Product",
-      price: 0,
-      images: [
-        fallbackImage,
-      ],
-    };
+    return null;
   }
 
   /* =========================================
-     IMAGE NORMALIZATION
+     IMAGES
   ========================================= */
 
   let images = [];
@@ -235,6 +179,10 @@ function toCardShape(
           parsed.filter(
             Boolean
           );
+      } else {
+        images = [
+          product.images,
+        ];
       }
     } catch {
       images = [
@@ -251,17 +199,22 @@ function toCardShape(
     ];
   }
 
-  if (!images.length) {
+  if (
+    !images.length &&
+    fallbackImage
+  ) {
     images = [
       fallbackImage,
     ];
   }
 
   /* =========================================
-     RETURN
+     RETURN NORMALIZED
   ========================================= */
 
   return {
+    ...product,
+
     id:
       product.id ||
       product._id ||
@@ -299,6 +252,12 @@ function toCardShape(
       product.stock ?? 0
     ),
 
+    totalStock:
+      Number(
+        product.totalStock ??
+          0
+      ),
+
     sold: Number(
       product.sold ?? 0
     ),
@@ -311,12 +270,6 @@ function toCardShape(
     rating: Number(
       product.rating ?? 0
     ),
-
-    totalStock:
-      Number(
-        product.totalStock ??
-          0
-      ),
 
     images,
 
@@ -346,7 +299,8 @@ function toCardShape(
 
 function SkeletonCard() {
   return (
-    <div className="animate-pulse flex-shrink-0 w-[70%] sm:w-[48%] md:w-auto">
+    <div className="animate-pulse min-w-0">
+
       {/* IMAGE */}
 
       <div className="bg-gray-200 dark:bg-gray-800 aspect-square rounded-2xl mb-4"></div>
@@ -358,6 +312,7 @@ function SkeletonCard() {
       {/* PRICE */}
 
       <div className="h-4 w-1/2 bg-gray-200 dark:bg-gray-800 rounded"></div>
+
     </div>
   );
 }
