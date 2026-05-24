@@ -200,8 +200,7 @@ export default function ProfileOverview() {
       </div>
 
       {/* ✅ Admin Dashboard Button */}
-      {/* ✅ Admin Dashboard Button */}
-      {user?.is_admin && (
+      {user?.isAdmin && (
         <div className="mt-8 flex justify-center">
           <motion.button
             onClick={() => navigate("/admin/dashboard")}
