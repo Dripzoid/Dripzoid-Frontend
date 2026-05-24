@@ -13,9 +13,9 @@ function buildUrl(path) {
 const normalizeUser = (user) => {
   if (!user) return null;
   const isAdmin =
-    user.is_admin === true ||
-    user.is_admin === "true" ||
-    Number(user.is_admin) === 1;
+    user.isAdmin === true ||
+    user.isAdmin === "true" ||
+    Number(user.isAdmin) === 1;
 
   // Ensure we always have a friendly name: prefer name, then displayName, then local-part of email
   const nameFromBackend = user.name || user.displayName || user.display_name || null;
@@ -24,7 +24,7 @@ const normalizeUser = (user) => {
     displayName = String(user.email).split("@")[0];
   }
 
-  return { ...user, is_admin: Boolean(isAdmin), name: displayName };
+  return { ...user, isAdmin: Boolean(isAdmin), name: displayName };
 };
 
 export function UserProvider({ children }) {
