@@ -193,7 +193,9 @@ export default function ProductDetailsPage() {
         const pjson = await pRes.json();
         if (!mounted) return;
 
-        setProduct(pjson || null);
+        setProduct(
+          pjson?.product || pjson || null
+        );
         setSelectedImage(0);
 
         const firstColor = (pjson?.colors && pjson.colors.length && pjson.colors[0]) || "";
