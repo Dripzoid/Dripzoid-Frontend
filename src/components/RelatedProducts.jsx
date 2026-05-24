@@ -16,13 +16,36 @@ export default function RelatedProducts({
      NORMALIZE RESPONSE
   ========================================= */
 
-  const items =
+  const items = React.useMemo(() => {
+
+  /* =========================
+     ARRAY DIRECTLY
+  ========================= */
+
+  if (
     Array.isArray(
       relatedProducts
     )
-      ? relatedProducts
-      : relatedProducts?.products ||
-        [];
+  ) {
+    return relatedProducts;
+  }
+
+  /* =========================
+     API RESPONSE OBJECT
+  ========================= */
+
+  if (
+    relatedProducts &&
+    Array.isArray(
+      relatedProducts.products
+    )
+  ) {
+    return relatedProducts.products;
+  }
+
+  return [];
+
+}, [relatedProducts]);
 
   /* =========================================
      FALLBACK IMAGE
