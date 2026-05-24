@@ -1,7 +1,6 @@
 // src/components/RelatedProducts.jsx
 
 import React from "react";
-
 import ProductCard from "./ProductCard";
 
 /* =====================================================
@@ -18,16 +17,11 @@ export default function RelatedProducts({
   ========================================= */
 
   const items = React.useMemo(() => {
-
     /* =========================
        ARRAY RESPONSE
     ========================= */
 
-    if (
-      Array.isArray(
-        relatedProducts
-      )
-    ) {
+    if (Array.isArray(relatedProducts)) {
       return relatedProducts;
     }
 
@@ -45,7 +39,6 @@ export default function RelatedProducts({
     }
 
     return [];
-
   }, [relatedProducts]);
 
   /* =========================================
@@ -58,7 +51,7 @@ export default function RelatedProducts({
     ) &&
     galleryImages.length
       ? galleryImages[0]
-      : "/placeholder.png";
+      : "https://via.placeholder.com/600x800?text=Dripzoid";
 
   /* =========================================
      LOADING STATE
@@ -66,8 +59,7 @@ export default function RelatedProducts({
 
   if (loading) {
     return (
-      <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 md:p-6 border border-gray-200/60 dark:border-gray-700/60">
-
+      <section className="rounded-2xl shadow-xl bg-white dark:bg-gray-900 p-4 md:p-6 border border-gray-200 dark:border-gray-700">
         <h2 className="text-xl font-bold mb-5 text-black dark:text-white">
           You might be interested in
         </h2>
@@ -75,8 +67,7 @@ export default function RelatedProducts({
         {/* MOBILE */}
 
         <div className="md:hidden">
-          <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory -mx-4 px-4">
-
+          <div className="flex gap-4 overflow-x-auto pb-2">
             {[1, 2, 3, 4].map(
               (i) => (
                 <SkeletonCard
@@ -90,7 +81,6 @@ export default function RelatedProducts({
         {/* DESKTOP */}
 
         <div className="hidden md:grid md:grid-cols-4 gap-4">
-
           {[1, 2, 3, 4].map(
             (i) => (
               <SkeletonCard
@@ -109,18 +99,15 @@ export default function RelatedProducts({
 
   if (!items.length) {
     return (
-      <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-6 border border-gray-200/60 dark:border-gray-700/60">
-
+      <section className="rounded-2xl shadow-xl bg-white dark:bg-gray-900 p-6 border border-gray-200 dark:border-gray-700">
         <h2 className="text-xl font-bold mb-4 text-black dark:text-white">
           You might be interested in
         </h2>
 
         <div className="text-center py-10">
-
           <p className="text-gray-500 dark:text-gray-400">
             No related products found
           </p>
-
         </div>
       </section>
     );
@@ -131,8 +118,7 @@ export default function RelatedProducts({
   ========================================= */
 
   return (
-    <section className="rounded-2xl shadow-xl bg-white/98 dark:bg-gray-900/98 p-4 md:p-6 border border-gray-200/60 dark:border-gray-700/60">
-
+    <section className="rounded-2xl shadow-xl bg-white dark:bg-gray-900 p-4 md:p-6 border border-gray-200 dark:border-gray-700">
       <h2 className="text-xl font-bold mb-5 text-black dark:text-white">
         You might be interested in
       </h2>
@@ -140,8 +126,7 @@ export default function RelatedProducts({
       {/* MOBILE */}
 
       <div className="md:hidden">
-        <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory -mx-4 px-4">
-
+        <div className="flex gap-4 overflow-x-auto pb-2">
           {items.map(
             (
               product,
@@ -152,9 +137,14 @@ export default function RelatedProducts({
                   product?.id ||
                   index
                 }
-                className="flex-shrink-0 min-w-[60%] sm:min-w-[45%] snap-start"
+                className="flex-shrink-0 w-[70%] sm:w-[48%]"
               >
-                TEST CARD
+                <ProductCard
+                  product={toCardShape(
+                    product,
+                    fallbackImage
+                  )}
+                />
               </div>
             )
           )}
@@ -164,7 +154,6 @@ export default function RelatedProducts({
       {/* DESKTOP */}
 
       <div className="hidden md:grid md:grid-cols-4 gap-4">
-
         {items.map(
           (
             product,
@@ -198,11 +187,8 @@ function toCardShape(
   if (!product) {
     return {
       id: null,
-
       name: "Product",
-
       price: 0,
-
       images: [
         fallbackImage,
       ],
@@ -213,28 +199,70 @@ function toCardShape(
      IMAGE NORMALIZATION
   ========================================= */
 
-  const images =
+  let images = [];
+
+  if (
     Array.isArray(
       product.images
-    ) &&
-    product.images.length
-      ? product.images
-      : product.image
-      ? [product.image]
-      : [fallbackImage];
+    )
+  ) {
+    images =
+      product.images.filter(
+        Boolean
+      );
+  }
+
+  else if (
+    typeof product.images ===
+    "string"
+  ) {
+    try {
+      const parsed =
+        JSON.parse(
+          product.images
+        );
+
+      if (
+        Array.isArray(
+          parsed
+        )
+      ) {
+        images =
+          parsed.filter(
+            Boolean
+          );
+      }
+    } catch {
+      images = [
+        product.images,
+      ];
+    }
+  }
+
+  else if (
+    product.image
+  ) {
+    images = [
+      product.image,
+    ];
+  }
+
+  if (!images.length) {
+    images = [
+      fallbackImage,
+    ];
+  }
 
   /* =========================================
-     PRESERVE BACKEND DATA
+     RETURN
   ========================================= */
 
   return {
-    ...product,
-
     id:
       product.id ||
       product._id ||
       product.productId ||
-      null,
+      "",
 
     slug:
       product.slug ||
@@ -245,21 +273,6 @@ function toCardShape(
       product.title ||
       "Product",
 
-    price:
-      Number(
-        product.price ??
-          product.cost ??
-          0
-      ),
-
-    originalPrice:
-      Number(
-        product.originalPrice ??
-          0
-      ),
-
-    images,
-
     category:
       product.category ||
       "",
@@ -268,34 +281,47 @@ function toCardShape(
       product.subcategory ||
       "",
 
-    stock:
-      product.stock ??
-      0,
+    price: Number(
+      product.price ?? 0
+    ),
 
-    totalStock:
-      product.totalStock ??
-      0,
+    originalPrice:
+      Number(
+        product.originalPrice ??
+          0
+      ),
+
+    stock: Number(
+      product.stock ?? 0
+    ),
+
+    sold: Number(
+      product.sold ?? 0
+    ),
 
     featured:
       Boolean(
         product.featured
       ),
 
-    sold:
+    rating: Number(
+      product.rating ?? 0
+    ),
+
+    totalStock:
       Number(
-        product.sold ??
+        product.totalStock ??
           0
       ),
 
-    rating:
-      Number(
-        product.rating ??
-          0
-      ),
+    images,
 
-    sizeStock:
-      product.sizeStock ||
-      {},
+    sizes:
+      Array.isArray(
+        product.sizes
+      )
+        ? product.sizes
+        : [],
 
     sizeRows:
       Array.isArray(
@@ -304,12 +330,9 @@ function toCardShape(
         ? product.sizeRows
         : [],
 
-    sizes:
-      Array.isArray(
-        product.sizes
-      )
-        ? product.sizes
-        : [],
+    sizeStock:
+      product.sizeStock ||
+      {},
   };
 }
 
@@ -319,11 +342,10 @@ function toCardShape(
 
 function SkeletonCard() {
   return (
-    <div className="animate-pulse flex-shrink-0 min-w-[60%] sm:min-w-[45%] md:min-w-0">
-
+    <div className="animate-pulse flex-shrink-0 w-[70%] sm:w-[48%] md:w-auto">
       {/* IMAGE */}
 
-      <div className="bg-gray-200 dark:bg-gray-800 aspect-[3/3.5] rounded-xl mb-4"></div>
+      <div className="bg-gray-200 dark:bg-gray-800 aspect-square rounded-2xl mb-4"></div>
 
       {/* TITLE */}
 
