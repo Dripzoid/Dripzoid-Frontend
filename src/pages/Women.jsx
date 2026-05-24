@@ -33,7 +33,7 @@ export default function Women() {
     let mounted = true;
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/products/categories?category=Women`);
+        const res = await fetch(`${API_BASE}/api/products/categories?gender=women`);
         if (!res.ok) throw new Error("Failed to fetch categories");
         const json = await res.json();
         const raw = Array.isArray(json) ? json : (json.categories || json || []);
