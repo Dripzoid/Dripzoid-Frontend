@@ -101,39 +101,71 @@ export default function Dashboard() {
 
 const handleUploadFile = async (e) => {
   const file = e.target.files?.[0];
+
   if (!file) return;
 
-  // Validate file type
+  /* =========================
+     VALIDATE FILE
+  ========================= */
+
   if (!file.name.endsWith(".sql")) {
     alert("Please select a valid .sql file");
+
     e.target.value = null;
+
     return;
   }
 
+  /* =========================
+     FORM DATA
+  ========================= */
+
   const formData = new FormData();
+
   formData.append("sqlfile", file);
 
   try {
     console.log("Uploading database...");
 
-    // Use formPost to correctly handle FormData
+    /* =========================
+       SEND WITH JWT AUTH
+    ========================= */
+
     const res = await api.formPost(
       "/api/admin/import-db",
       formData,
-      false, // no JWT auth needed
-      { "x-upload-token": process.env.REACT_APP_UPLOAD_SECRET } // pass header
+      true // ✅ send JWT automatically
     );
 
-    if (res?.message === "DB replaced successfully") {
-      alert("Database uploaded and replaced successfully!");
+    if (
+      res?.message ===
+      "Database restored successfully"
+    ) {
+      alert(
+        "Database restored successfully!"
+      );
     } else {
-      alert(res?.message || "Failed to replace database");
+      alert(
+        res?.message ||
+          "Failed to restore database"
+      );
     }
   } catch (err) {
-    console.error("Upload failed:", err);
-    alert("Failed to upload database. Check console for details.");
+    console.error(
+      "Upload failed:",
+      err
+    );
+
+    alert(
+      err?.message ||
+        "Failed to upload database"
+    );
   } finally {
-    e.target.value = null; // reset file input
+    /* =========================
+       RESET INPUT
+    ========================= */
+
+    e.target.value = null;
   }
 };
 
