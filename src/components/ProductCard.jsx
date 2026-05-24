@@ -1,309 +1,807 @@
-import React, { useState, useMemo, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate } from "react-router-dom";
-import { FiHeart } from "react-icons/fi";
-import { AiOutlineTag, AiFillStar } from "react-icons/ai";
-import { useWishlist } from "../contexts/WishlistContext.jsx"; // context
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  useCallback,
+} from "react";
 
-const API_BASE = process.env.REACT_APP_API_BASE;
-const PLACEHOLDER = "https://via.placeholder.com/400";
+import {
+  motion,
+  AnimatePresence,
+} from "framer-motion";
 
-function getHeaders(isJson = true) {
+import {
+  useNavigate,
+} from "react-router-dom";
+
+import {
+  FiHeart,
+} from "react-icons/fi";
+
+import {
+  AiOutlineTag,
+  AiFillStar,
+} from "react-icons/ai";
+
+import {
+  useWishlist,
+} from "../contexts/WishlistContext.jsx";
+
+/* =====================================================
+   CONFIG
+===================================================== */
+
+const API_BASE =
+  process.env.REACT_APP_API_BASE;
+
+const PLACEHOLDER =
+  "https://via.placeholder.com/400";
+
+/* =====================================================
+   HELPERS
+===================================================== */
+
+function getHeaders(
+  isJson = true
+) {
   const headers = {};
+
   const token =
-    localStorage.getItem("token") ||
-    localStorage.getItem("authToken") ||
-    localStorage.getItem("jwt") ||
-    localStorage.getItem("userToken");
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  if (isJson) headers["Content-Type"] = "application/json";
+    localStorage.getItem(
+      "token"
+    ) ||
+    localStorage.getItem(
+      "authToken"
+    ) ||
+    localStorage.getItem(
+      "jwt"
+    ) ||
+    localStorage.getItem(
+      "userToken"
+    );
+
+  if (token) {
+    headers[
+      "Authorization"
+    ] = `Bearer ${token}`;
+  }
+
+  if (isJson) {
+    headers[
+      "Content-Type"
+    ] =
+      "application/json";
+  }
+
   return headers;
 }
 
-export default function ProductCard({ product }) {
-  const navigate = useNavigate();
-  const [current, setCurrent] = useState(0);
-  const [wlBusy, setWlBusy] = useState(false);
+/* =====================================================
+   PRODUCT CARD
+===================================================== */
 
-  const { wishlist = [], addToWishlist, removeFromWishlist, fetchWishlist } = useWishlist() || {};
+export default function ProductCard({
+  product,
+}) {
+  const navigate =
+    useNavigate();
+
+  const [
+    current,
+    setCurrent,
+  ] = useState(0);
+
+  const [
+    wlBusy,
+    setWlBusy,
+  ] = useState(false);
+
+  const {
+    wishlist = [],
+    addToWishlist,
+    removeFromWishlist,
+    fetchWishlist,
+  } =
+    useWishlist() || {};
+
+  /* =========================================
+     NORMALIZE PRODUCT
+  ========================================= */
+
+  const normalized =
+    useMemo(() => {
+      if (!product) {
+        return {};
+      }
+
+      return {
+        ...product,
+
+        id:
+          product?.id ||
+          product?._id ||
+          product?.productId ||
+          product?.product_id ||
+          "",
+
+        name:
+          product?.name ||
+          "Product",
+
+        category:
+          product?.category ||
+          product?.categoryData
+            ?.category ||
+          "",
+
+        price:
+          Number(
+            product?.price ||
+              0
+          ),
+
+        originalPrice:
+          Number(
+            product?.originalPrice ||
+              product?.oldPrice ||
+              0
+          ),
+
+        stock:
+          Number(
+            product?.stock ||
+              0
+          ),
+
+        seller:
+          product?.seller ||
+          "Dripzoid",
+
+        images:
+          Array.isArray(
+            product?.images
+          )
+            ? product.images
+            : typeof product?.images ===
+              "string"
+            ? product.images
+                .split(",")
+                .map((v) =>
+                  v.trim()
+                )
+                .filter(
+                  Boolean
+                )
+            : product?.image
+            ? [product.image]
+            : [],
+      };
+    }, [product]);
 
   const pid = String(
-    product?.id ?? product?._id ?? product?.product_id ?? product?.productId ?? ""
+    normalized?.id || ""
   );
 
-  const isWishlisted = useMemo(() => {
-    if (!pid) return false;
-    return (wishlist || []).some(
-      (w) =>
-        String(
-          w.product_id ?? w.id ?? w.productId ?? (w.product && w.product.id) ?? ""
-        ) === pid
-    );
-  }, [wishlist, pid]);
+  /* =========================================
+     WISHLIST
+  ========================================= */
 
-  // Reviews
-  const [reviewsList, setReviewsList] = useState([]);
-  const [reviewsLoading, setReviewsLoading] = useState(false);
-  const [reviewsError, setReviewsError] = useState(null);
-  const avgRating = useMemo(() => {
-    if (!reviewsList || reviewsList.length === 0) return 0;
-    const sum = reviewsList.reduce((acc, r) => acc + Number(r.rating || 0), 0);
-    return sum / reviewsList.length;
-  }, [reviewsList]);
-  const reviewsCount = reviewsList.length;
+  const isWishlisted =
+    useMemo(() => {
+      if (!pid) {
+        return false;
+      }
+
+      return (
+        wishlist || []
+      ).some(
+        (w) =>
+          String(
+            w.product_id ||
+              w.id ||
+              w.productId ||
+              w?.product
+                ?.id ||
+              ""
+          ) === pid
+      );
+    }, [wishlist, pid]);
+
+  /* =========================================
+     REVIEWS
+  ========================================= */
+
+  const [
+    reviewsList,
+    setReviewsList,
+  ] = useState([]);
+
+  const [
+    reviewsLoading,
+    setReviewsLoading,
+  ] = useState(false);
 
   useEffect(() => {
     if (!pid) {
-      setReviewsList([]);
+      setReviewsList(
+        []
+      );
+
       return;
     }
 
-    const ac = new AbortController();
-    const fetchReviews = async () => {
-      setReviewsLoading(true);
-      setReviewsError(null);
-      try {
-        const res = await fetch(
-          `${API_BASE}/api/reviews/product/${encodeURIComponent(pid)}`,
-          {
-            method: "GET",
-            signal: ac.signal,
-            headers: getHeaders(false),
-          }
+    const ac =
+      new AbortController();
+
+    const fetchReviews =
+      async () => {
+        setReviewsLoading(
+          true
         );
-        if (!res.ok) {
-          const txt = await res.text().catch(() => "");
-          throw new Error(`${res.status} ${txt || res.statusText}`);
+
+        try {
+          const res =
+            await fetch(
+              `${API_BASE}/api/reviews/product/${encodeURIComponent(
+                pid
+              )}`,
+              {
+                method:
+                  "GET",
+
+                signal:
+                  ac.signal,
+
+                headers:
+                  getHeaders(
+                    false
+                  ),
+              }
+            );
+
+          if (
+            !res.ok
+          ) {
+            throw new Error(
+              "Failed to fetch reviews"
+            );
+          }
+
+          const rows =
+            await res.json();
+
+          /* =====================
+             NEW BACKEND
+          ===================== */
+
+          if (
+            rows?.success &&
+            Array.isArray(
+              rows.reviews
+            )
+          ) {
+            setReviewsList(
+              rows.reviews
+            );
+          }
+
+          /* =====================
+             OLD BACKEND
+          ===================== */
+
+          else if (
+            Array.isArray(
+              rows
+            )
+          ) {
+            setReviewsList(
+              rows
+            );
+          }
+
+          else {
+            setReviewsList(
+              []
+            );
+          }
+        } catch (err) {
+          if (
+            err.name ===
+            "AbortError"
+          ) {
+            return;
+          }
+
+          console.warn(
+            "Reviews fetch failed:",
+            err
+          );
+
+          setReviewsList(
+            []
+          );
+        } finally {
+          setReviewsLoading(
+            false
+          );
         }
-        const rows = await res.json();
-        setReviewsList(Array.isArray(rows) ? rows : []);
+      };
+
+    fetchReviews();
+
+    return () =>
+      ac.abort();
+  }, [pid]);
+
+  /* =========================================
+     RATINGS
+  ========================================= */
+
+  const avgRating =
+    useMemo(() => {
+      if (
+        !reviewsList ||
+        !reviewsList.length
+      ) {
+        return 0;
+      }
+
+      const sum =
+        reviewsList.reduce(
+          (
+            acc,
+            review
+          ) =>
+            acc +
+            Number(
+              review.rating ||
+                0
+            ),
+
+          0
+        );
+
+      return (
+        sum /
+        reviewsList.length
+      );
+    }, [reviewsList]);
+
+  const reviewsCount =
+    reviewsList.length;
+
+  /* =========================================
+     IMAGES
+  ========================================= */
+
+  const images =
+    normalized.images
+      ?.length
+      ? normalized.images
+      : [PLACEHOLDER];
+
+  useEffect(() => {
+    setCurrent(
+      (idx) =>
+        images.length &&
+        idx >=
+          images.length
+          ? 0
+          : idx
+    );
+  }, [images]);
+
+  const [
+    imageSrc,
+    setImageSrc,
+  ] = useState(
+    images[0]
+  );
+
+  useEffect(() => {
+    setImageSrc(
+      images[current] ||
+        PLACEHOLDER
+    );
+  }, [images, current]);
+
+  const handleImgError =
+    useCallback(() => {
+      setImageSrc(
+        PLACEHOLDER
+      );
+    }, []);
+
+  /* =========================================
+     PRICING
+  ========================================= */
+
+  const hasDiscount =
+    normalized.originalPrice >
+      normalized.price &&
+    normalized
+      .originalPrice > 0;
+
+  const discountPercent =
+    hasDiscount
+      ? Math.round(
+          ((normalized.originalPrice -
+            normalized.price) /
+            normalized.originalPrice) *
+            100
+        )
+      : 0;
+
+  /* =========================================
+     STOCK
+  ========================================= */
+
+  const getStockBadge =
+    useCallback(() => {
+      const stock =
+        normalized.stock;
+
+      if (
+        stock ===
+          null ||
+        stock ===
+          undefined
+      ) {
+        return null;
+      }
+
+      if (stock <= 0) {
+        return {
+          text: "Out of stock",
+
+          tone:
+            "bg-red-600 text-white",
+        };
+      }
+
+      if (stock <= 5) {
+        return {
+          text: `Only ${stock} left`,
+
+          tone:
+            "bg-amber-500 text-black",
+        };
+      }
+
+      return {
+        text: "In stock",
+
+        tone:
+          "bg-green-600 text-white",
+      };
+    }, [normalized]);
+
+  const stockBadge =
+    getStockBadge();
+
+  /* =========================================
+     NAVIGATION
+  ========================================= */
+
+  const handleNavigate =
+    useCallback(() => {
+      if (!pid) {
+        return;
+      }
+
+      navigate(
+        `/product/${pid}`
+      );
+    }, [
+      navigate,
+      pid,
+    ]);
+
+  /* =========================================
+     WISHLIST TOGGLE
+  ========================================= */
+
+  const handleWishlistToggle =
+    async (e) => {
+      e.stopPropagation();
+
+      if (
+        !pid ||
+        wlBusy
+      ) {
+        return;
+      }
+
+      setWlBusy(true);
+
+      try {
+        if (
+          isWishlisted
+        ) {
+          if (
+            typeof removeFromWishlist ===
+            "function"
+          ) {
+            await removeFromWishlist(
+              pid
+            );
+
+            if (
+              typeof fetchWishlist ===
+              "function"
+            ) {
+              await fetchWishlist();
+            }
+          }
+        } else {
+          if (
+            typeof addToWishlist ===
+            "function"
+          ) {
+            await addToWishlist(
+              pid
+            );
+
+            if (
+              typeof fetchWishlist ===
+              "function"
+            ) {
+              await fetchWishlist();
+            }
+          }
+        }
       } catch (err) {
-        if (err.name === "AbortError") return;
-        console.warn("Failed to fetch product reviews:", err);
-        setReviewsError(err.message || "Failed to load reviews");
-        setReviewsList([]);
+        console.warn(
+          "Wishlist toggle failed:",
+          err
+        );
       } finally {
-        setReviewsLoading(false);
+        setWlBusy(false);
       }
     };
 
-    fetchReviews();
-    return () => ac.abort();
-  }, [pid]);
+  /* =========================================
+     EMPTY
+  ========================================= */
 
-  // Images
-  const images = useMemo(() => {
-    const src = product?.images ?? product?.image ?? product?.thumbnail ?? "";
-    if (Array.isArray(src)) return src.map(String).map((u) => u.trim()).filter(Boolean);
-    if (typeof src === "string") {
-      const trimmed = src.trim();
-      if (!trimmed) return [];
-      const parts = trimmed.includes(",") ? trimmed.split(",") : [trimmed];
-      return parts.map((u) => u.trim()).filter(Boolean);
-    }
-    return [];
-  }, [product]);
+  if (!product) {
+    return null;
+  }
 
-  useEffect(() => {
-    setCurrent((idx) => (images.length && idx >= images.length ? 0 : idx));
-  }, [images.length]);
-
-  const [imageSrc, setImageSrc] = useState(() => images[0] || PLACEHOLDER);
-  const [imageErrored, setImageErrored] = useState(false);
-
-  useEffect(() => {
-    const next = images[current] || PLACEHOLDER;
-    setImageSrc(next);
-    setImageErrored(false);
-  }, [images, current]);
-
-  const handleImgError = useCallback(() => {
-    if (imageErrored) return;
-    setImageErrored(true);
-    setImageSrc(PLACEHOLDER);
-  }, [imageErrored]);
-
-  // Pricing
-  const parsePrice = useCallback((value) => {
-    if (value == null) return 0;
-    if (typeof value === "number") return value;
-    const cleaned = String(value).replace(/[^0-9.]/g, "");
-    const n = parseFloat(cleaned);
-    return Number.isFinite(n) ? n : 0;
-  }, []);
-
-  const stock =
-    typeof product?.stock === "number"
-      ? product.stock
-      : typeof product?.stock === "string" && product.stock !== ""
-      ? Number(product.stock)
-      : null;
-
-  const price = parsePrice(product?.price);
-  const originalPrice = parsePrice(product?.originalPrice ?? product?.oldPrice);
-  const hasDiscount = originalPrice > price && originalPrice > 0;
-  const discountPercent = hasDiscount
-    ? Math.round(((originalPrice - price) / originalPrice) * 100)
-    : 0;
-
-  const getStockBadge = useCallback(() => {
-    if (stock === null || stock === undefined) return null;
-    if (stock <= 0) return { text: "Out of stock", tone: "bg-red-600 text-white" };
-    if (stock <= 5) return { text: `Only ${stock} left`, tone: "bg-amber-600 text-black" };
-    if (stock <= 20) return { text: "Low stock", tone: "bg-amber-500 text-black" };
-    return { text: "In stock", tone: "bg-green-600 text-white" };
-  }, [stock]);
-  const stockBadge = getStockBadge();
-
-  const handleNavigate = useCallback(() => {
-    if (!pid) return;
-    navigate(`/product/${pid}`);
-  }, [navigate, pid]);
-
-  const handleWishlistToggle = async (e) => {
-    e.stopPropagation();
-    if (!pid || wlBusy) return;
-    setWlBusy(true);
-    try {
-      if (isWishlisted) {
-        if (typeof removeFromWishlist === "function") {
-          await removeFromWishlist(pid);
-          if (typeof fetchWishlist === "function") await fetchWishlist();
-        }
-      } else {
-        if (typeof addToWishlist === "function") {
-          await addToWishlist(pid);
-          if (typeof fetchWishlist === "function") await fetchWishlist();
-        }
-      }
-    } catch (err) {
-      console.warn("Wishlist toggle failed:", err);
-    } finally {
-      setWlBusy(false);
-    }
-  };
-
-  if (!product) return null;
-
-  const avg = avgRating || 0;
-  const avgRounded = Math.round(avg);
-  const reviewsNum = reviewsCount;
+  /* =========================================
+     UI
+  ========================================= */
 
   return (
     <div
       role="button"
       tabIndex={0}
-      onClick={handleNavigate}
-      className="group relative w-full sm:w-auto bg-white dark:bg-neutral-900 border border-gray-100 dark:border-gray-800 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-shadow duration-200 ease-in-out cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          handleNavigate();
-        }
-      }}
-      aria-label={`Open details for ${product?.name || "product"}`}
+      onClick={
+        handleNavigate
+      }
+      className="group relative w-full bg-white dark:bg-neutral-900 border border-gray-100 dark:border-gray-800 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer"
     >
-      {/* Image area - MOBILE-FIRST compact sizing */}
+      {/* IMAGE */}
+
       <div className="relative w-full bg-gray-50 dark:bg-gray-800 overflow-hidden">
+
         <div className="w-full h-40 sm:h-56 md:aspect-square md:h-auto overflow-hidden">
+
           <AnimatePresence mode="wait">
+
             <motion.img
               key={`${current}-${imageSrc}`}
               src={imageSrc}
-              alt={product?.name || "product image"}
+              alt={
+                normalized.name
+              }
               className="w-full h-full object-cover"
-              initial={{ opacity: 0, scale: 1.02 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.98 }}
-              transition={{ duration: 0.28 }}
+              initial={{
+                opacity: 0,
+                scale: 1.02,
+              }}
+              animate={{
+                opacity: 1,
+                scale: 1,
+              }}
+              exit={{
+                opacity: 0,
+                scale: 0.98,
+              }}
+              transition={{
+                duration: 0.28,
+              }}
               loading="lazy"
-              onError={handleImgError}
               decoding="async"
+              onError={
+                handleImgError
+              }
             />
+
           </AnimatePresence>
+
         </div>
 
-        {/* Wishlist button */}
+        {/* WISHLIST */}
+
         <button
           type="button"
-          onClick={handleWishlistToggle}
+          onClick={
+            handleWishlistToggle
+          }
           disabled={wlBusy}
-          className="absolute top-3 right-3 bg-white/95 dark:bg-black/80 rounded-full p-2 shadow-sm hover:scale-105 transform transition disabled:opacity-60"
-          aria-pressed={isWishlisted}
-          aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
-          title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
-          onMouseDown={(e) => e.stopPropagation()}
+          className="absolute top-3 right-3 bg-white/95 dark:bg-black/80 rounded-full p-2 shadow-sm"
         >
-          <FiHeart size={18} className={isWishlisted ? "text-red-500" : "text-gray-500"} />
+          <FiHeart
+            size={18}
+            className={
+              isWishlisted
+                ? "text-red-500"
+                : "text-gray-500"
+            }
+          />
         </button>
 
-        {/* Image dots compact */}
-        {images.length > 1 && (
-          <div
-            className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-2"
-            onClick={(e) => e.stopPropagation()}
-            aria-hidden
-          >
-            {images.map((_, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setCurrent(idx);
-                }}
-                className={`w-2.5 h-2.5 rounded-full transition-transform ${idx === current ? "scale-110 bg-white" : "bg-white/60"}`}
-                aria-label={`Show image ${idx + 1}`}
-              />
-            ))}
+        {/* IMAGE DOTS */}
+
+        {images.length >
+          1 && (
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-2">
+
+            {images.map(
+              (
+                _,
+                idx
+              ) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={(
+                    e
+                  ) => {
+                    e.stopPropagation();
+
+                    setCurrent(
+                      idx
+                    );
+                  }}
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    idx ===
+                    current
+                      ? "bg-white"
+                      : "bg-white/60"
+                  }`}
+                />
+              )
+            )}
+
           </div>
         )}
       </div>
 
-      {/* Info - compact on mobile */}
-      <div className="p-2.5 sm:p-4 flex flex-col gap-1">
-        <h3 className="text-xs sm:text-sm font-semibold text-gray-900 dark:text-white line-clamp-2">{product?.name}</h3>
-        <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400 truncate">{product?.category}</p>
+      {/* INFO */}
+
+      <div className="p-3 sm:p-4 flex flex-col gap-1">
+
+        <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white line-clamp-2">
+          {
+            normalized.name
+          }
+        </h3>
+
+        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+          {
+            normalized.category
+          }
+        </p>
+
+        {/* PRICE */}
 
         <div className="mt-1 flex items-center gap-2 flex-wrap">
-          <span className="text-sm sm:text-base font-bold text-gray-900 dark:text-white">₹{price.toLocaleString()}</span>
+
+          <span className="text-base font-bold text-gray-900 dark:text-white">
+            ₹
+            {normalized.price.toLocaleString()}
+          </span>
 
           {hasDiscount && (
             <>
-              <span className="text-[10px] sm:text-xs line-through text-gray-500 dark:text-gray-400">₹{originalPrice.toLocaleString()}</span>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-600 text-white">{discountPercent}% OFF</span>
+              <span className="text-xs line-through text-gray-500 dark:text-gray-400">
+                ₹
+                {normalized.originalPrice.toLocaleString()}
+              </span>
+
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-600 text-white">
+                {
+                  discountPercent
+                }
+                % OFF
+              </span>
             </>
           )}
 
-          <AiOutlineTag className="text-green-500 ml-auto sm:ml-0" aria-hidden />
+          <AiOutlineTag className="text-green-500 ml-auto" />
+
         </div>
 
-        {/* Ratings */}
-        {reviewsNum > 0 ? (
-          <div className="flex items-center mt-1 sm:mt-2 gap-2" aria-label={`Rated ${avg.toFixed(1)} out of 5`}>
+        {/* RATINGS */}
+
+        {reviewsCount >
+        0 ? (
+          <div className="flex items-center mt-2 gap-2">
+
             <div className="flex items-center gap-0.5 text-yellow-500">
-              {Array.from({ length: 5 }).map((_, idx) => (
-                <AiFillStar
-                  key={idx}
-                  className={idx < avgRounded ? "opacity-100 text-yellow-500" : "opacity-30 text-yellow-400"}
-                  style={{ fontSize: idx < 3 ? 12 : 11 }}
-                  aria-hidden
-                />
-              ))}
+
+              {Array.from({
+                length: 5,
+              }).map(
+                (
+                  _,
+                  idx
+                ) => (
+                  <AiFillStar
+                    key={
+                      idx
+                    }
+                    className={
+                      idx <
+                      Math.round(
+                        avgRating
+                      )
+                        ? "opacity-100"
+                        : "opacity-30"
+                    }
+                    style={{
+                      fontSize: 12,
+                    }}
+                  />
+                )
+              )}
+
             </div>
-            <span className="ml-2 text-[11px] sm:text-xs font-medium text-gray-800 dark:text-gray-200">{avg.toFixed(1)}</span>
-            <span className="ml-1 text-[11px] text-gray-600 dark:text-gray-400">({reviewsNum})</span>
+
+            <span className="text-xs font-medium text-gray-800 dark:text-gray-200">
+              {avgRating.toFixed(
+                1
+              )}
+            </span>
+
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              (
+              {
+                reviewsCount
+              }
+              )
+            </span>
+
           </div>
         ) : (
-          <div className="text-[11px] sm:text-xs text-gray-600 dark:text-gray-400 mt-1">No Ratings &amp; Reviews</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            No Ratings &
+            Reviews
+          </div>
         )}
 
-        {/* Stock & seller */}
-        <div className="mt-2 flex items-center justify-between text-[11px] sm:text-sm text-gray-500 dark:text-gray-400">
-          <span className="truncate">{product?.seller || "Seller"}</span>
+        {/* FOOTER */}
+
+        <div className="mt-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+
+          <span className="truncate">
+            {
+              normalized.seller
+            }
+          </span>
+
           {stockBadge && (
-            <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${stockBadge.tone}`}>{stockBadge.text}</div>
+            <div
+              className={`px-2 py-0.5 rounded-full text-xs font-medium ${stockBadge.tone}`}
+            >
+              {
+                stockBadge.text
+              }
+            </div>
           )}
+
         </div>
       </div>
     </div>
