@@ -82,11 +82,11 @@ export default function Dashboard() {
 
   const handleExportData = async () => {
     try {
-      const blob = await api.get("/api/admin/data-export", {}, true, true);
+      const blob = await api.get("/api/admin/export-db", {}, true, true);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `dripzoid-backup-${new Date().toISOString().split("T")[0]}.db`;
+      a.download = `dripzoid-backup-${new Date().toISOString().split("T")[0]}.sql`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -104,21 +104,21 @@ const handleUploadFile = async (e) => {
   if (!file) return;
 
   // Validate file type
-  if (!file.name.endsWith(".db")) {
-    alert("Please select a valid .db file");
+  if (!file.name.endsWith(".sql")) {
+    alert("Please select a valid .sql file");
     e.target.value = null;
     return;
   }
 
   const formData = new FormData();
-  formData.append("dbfile", file);
+  formData.append("sqlfile", file);
 
   try {
     console.log("Uploading database...");
 
     // Use formPost to correctly handle FormData
     const res = await api.formPost(
-      "/api/upload-db",
+      "/api/admin/import-db",
       formData,
       false, // no JWT auth needed
       { "x-upload-token": process.env.REACT_APP_UPLOAD_SECRET } // pass header
@@ -251,7 +251,7 @@ const handleUploadFile = async (e) => {
             <UploadCloud className="w-4 h-4" />
             Upload DB
           </button>
-          <input type="file" ref={fileInputRef} onChange={handleUploadFile} className="hidden" accept=".db" />
+          <input type="file" ref={fileInputRef} onChange={handleUploadFile} className="hidden" accept=".sql" />
         </div>
       </div>
     </div>
