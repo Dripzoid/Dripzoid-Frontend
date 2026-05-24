@@ -246,10 +246,7 @@ export default function ProductCard({
      EMPTY
   ========================================= */
 
-  if (!normalized) {
-    return null;
-  }
-
+  
   const pid = String(
     normalized?.id || ""
   );
@@ -538,6 +535,11 @@ export default function ProductCard({
       navigate,
       pid,
     ]);
+
+  if (!normalized) {
+    return null;
+  }
+
 
   /* =========================================
      WISHLIST TOGGLE
