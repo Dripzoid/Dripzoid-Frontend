@@ -154,12 +154,7 @@ export default function RelatedProducts({
                 }
                 className="flex-shrink-0 min-w-[60%] sm:min-w-[45%] snap-start"
               >
-                <ProductCard
-                  product={toCardShape(
-                    product,
-                    fallbackImage
-                  )}
-                />
+                TEST CARD
               </div>
             )
           )}
