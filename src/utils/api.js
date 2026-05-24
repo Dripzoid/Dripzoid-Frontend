@@ -1,43 +1,101 @@
-const API_BASE = process.env.REACT_APP_API_BASE;
+const API_BASE =
+  process.env.REACT_APP_API_BASE;
 
-// Get token from localStorage
+/* =====================================================
+   GET TOKEN
+===================================================== */
+
 function getToken() {
-  return localStorage.getItem("token");
+  return localStorage.getItem(
+    "token"
+  );
 }
 
-async function request(path, opts = {}, auth = false) {
-  const headers = { ...(opts.headers || {}) };
+/* =====================================================
+   MAIN REQUEST FUNCTION
+===================================================== */
 
-  // Attach token if auth = true
+async function request(
+  path,
+  opts = {},
+  auth = false
+) {
+  const headers = {
+    ...(opts.headers || {}),
+  };
+
+  /* =========================
+     ATTACH JWT TOKEN
+  ========================= */
+
   if (auth) {
     const token = getToken();
+
     if (token) {
-      headers.Authorization = `Bearer ${token}`;
+      headers.Authorization =
+        `Bearer ${token}`;
     }
   }
 
-  // Only set Content-Type if body is not FormData
-  if (!(opts.body instanceof FormData) && opts.body !== undefined) {
-    headers["Content-Type"] = "application/json";
+  /* =========================
+     CONTENT TYPE
+  ========================= */
+
+  if (
+    !(
+      opts.body instanceof FormData
+    ) &&
+    opts.body !== undefined
+  ) {
+    headers["Content-Type"] =
+      "application/json";
   }
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...opts,
-    headers,
-  });
+  /* =========================
+     FETCH REQUEST
+  ========================= */
+
+  const res = await fetch(
+    `${API_BASE}${path}`,
+    {
+      ...opts,
+      headers,
+
+      // Important for cookies/sessions
+      credentials: "include",
+    }
+  );
+
+  /* =========================
+     ERROR HANDLING
+  ========================= */
 
   if (!res.ok) {
     let err;
+
     try {
       err = await res.json();
     } catch {
-      err = { message: res.statusText };
+      err = {
+        message:
+          res.statusText,
+      };
     }
+
     throw err;
   }
 
-  // Return blob if requested
-  if (opts.isBlob) return await res.blob();
+  /* =========================
+     BLOB RESPONSE
+  ========================= */
+
+  if (opts.isBlob) {
+    return await res.blob();
+  }
+
+  /* =========================
+     JSON RESPONSE
+  ========================= */
 
   try {
     return await res.json();
@@ -46,26 +104,130 @@ async function request(path, opts = {}, auth = false) {
   }
 }
 
-export default {
-  get: (path, { params = {}, signal } = {}, auth = false, isBlob = false) => {
-    const qs = new URLSearchParams(params).toString();
+/* =====================================================
+   API METHODS
+===================================================== */
+
+const api = {
+  /* =========================
+     GET
+  ========================= */
+
+  get: (
+    path,
+    {
+      params = {},
+      signal,
+    } = {},
+    auth = false,
+    isBlob = false
+  ) => {
+    const qs =
+      new URLSearchParams(
+        params
+      ).toString();
+
     return request(
-      `${path}${qs ? `?${qs}` : ""}`,
-      { method: "GET", signal, isBlob },
+      `${path}${
+        qs ? `?${qs}` : ""
+      }`,
+      {
+        method: "GET",
+        signal,
+        isBlob,
+      },
       auth
     );
   },
 
-  post: (path, body, auth = false, extraHeaders = {}) =>
-    request(path, { method: "POST", body: JSON.stringify(body), headers: extraHeaders }, auth),
+  /* =========================
+     POST
+  ========================= */
 
-  put: (path, body, auth = false, extraHeaders = {}) =>
-    request(path, { method: "PUT", body: JSON.stringify(body), headers: extraHeaders }, auth),
+  post: (
+    path,
+    body,
+    auth = false,
+    extraHeaders = {}
+  ) =>
+    request(
+      path,
+      {
+        method: "POST",
 
-  delete: (path, auth = false, extraHeaders = {}) =>
-    request(path, { method: "DELETE", headers: extraHeaders }, auth),
+        body: JSON.stringify(
+          body
+        ),
 
-  // Updated formPost: supports custom headers and auth
-  formPost: (path, formData, auth = false, extraHeaders = {}) =>
-    request(path, { method: "POST", body: formData, headers: extraHeaders }, auth),
+        headers: extraHeaders,
+      },
+      auth
+    ),
+
+  /* =========================
+     PUT
+  ========================= */
+
+  put: (
+    path,
+    body,
+    auth = false,
+    extraHeaders = {}
+  ) =>
+    request(
+      path,
+      {
+        method: "PUT",
+
+        body: JSON.stringify(
+          body
+        ),
+
+        headers: extraHeaders,
+      },
+      auth
+    ),
+
+  /* =========================
+     DELETE
+  ========================= */
+
+  delete: (
+    path,
+    auth = false,
+    extraHeaders = {}
+  ) =>
+    request(
+      path,
+      {
+        method: "DELETE",
+
+        headers: extraHeaders,
+      },
+      auth
+    ),
+
+  /* =========================
+     FORM POST
+  ========================= */
+
+  formPost: (
+    path,
+    formData,
+    auth = false,
+    extraHeaders = {}
+  ) =>
+    request(
+      path,
+      {
+        method: "POST",
+
+        body: formData,
+
+        headers: extraHeaders,
+      },
+      auth
+    ),
 };
+
+export default api;
