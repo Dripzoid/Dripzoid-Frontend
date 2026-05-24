@@ -213,39 +213,150 @@ export default function ProductDetailsPage() {
         setSelectedSize(firstSize || "");
 
         // related products (lightweight fetch)
-        try {
-          let list = [];
-          const rr = await fetch(`${API_BASE}/api/products/${productId}/related`, { signal: ac.signal });
-          if (rr.ok) list = await rr.json();
-          if ((!Array.isArray(list) || list.length === 0) && pjson?.category) {
-            const fallback = await fetch(
-              `${API_BASE}/api/products?slug=${encodeURIComponent(pjson.categorySlug)}&limit=8`,
-              { signal: ac.signal }
-            );
-            if (fallback.ok) {
-              const fb = await fallback.json();
-              list = fb?.data || fb || [];
-            }
-          }
-          const filtered = Array.isArray(list)
-            ? list.filter((x) => String(x.id || x._id || x.productId) !== String(productId)).slice(0, 8)
-            : [];
-          if (mounted) setRelatedProducts(filtered);
-        } catch (err) {
-          console.warn("related fetch failed", err);
-        }
-      } catch (err) {
-        console.error("loadAll failed:", err);
-        showToast("Could not load product");
-      }
+  /* =========================================
+   RELATED PRODUCTS
+========================================= */
+
+try {
+
+  let list = [];
+
+  /* =========================
+     FETCH RELATED API
+  ========================= */
+
+  const rr = await fetch(
+    `${API_BASE}/api/products/${productId}/related`,
+    {
+      signal: ac.signal,
+    }
+  );
+
+  if (rr.ok) {
+
+    const relatedJson =
+      await rr.json();
+
+    /* =========================
+       NEW BACKEND RESPONSE
+    ========================= */
+
+    if (
+      relatedJson?.success &&
+      Array.isArray(
+        relatedJson.products
+      )
+    ) {
+      list =
+        relatedJson.products;
     }
 
-    loadAll();
-    return () => {
-      mounted = false;
-      ac.abort();
-    };
-  }, [productId]);
+    /* =========================
+       OLD BACKEND SUPPORT
+    ========================= */
+
+    else if (
+      Array.isArray(
+        relatedJson
+      )
+    ) {
+      list =
+        relatedJson;
+    }
+  }
+
+  /* =========================
+     FALLBACK FETCH
+  ========================= */
+
+  if (
+    (!Array.isArray(list) ||
+      list.length === 0) &&
+    pjson?.category
+  ) {
+
+    const fallback =
+      await fetch(
+        `${API_BASE}/api/products?category=${encodeURIComponent(
+          pjson.category
+        )}&limit=8`,
+        {
+          signal:
+            ac.signal,
+        }
+      );
+
+    if (fallback.ok) {
+
+      const fb =
+        await fallback.json();
+
+      /* =====================
+         NEW RESPONSE
+      ===================== */
+
+      if (
+        fb?.success &&
+        Array.isArray(
+          fb.products
+        )
+      ) {
+        list =
+          fb.products;
+      }
+
+      /* =====================
+         OLD RESPONSE
+      ===================== */
+
+      else if (
+        Array.isArray(
+          fb
+        )
+      ) {
+        list = fb;
+      }
+    }
+  }
+
+  /* =========================
+     REMOVE CURRENT PRODUCT
+  ========================= */
+
+  const filtered =
+    Array.isArray(list)
+      ? list
+          .filter(
+            (x) =>
+              String(
+                x?.id ||
+                  x?._id ||
+                  x?.productId
+              ) !==
+              String(
+                productId
+              )
+          )
+          .slice(0, 8)
+      : [];
+
+  /* =========================
+     UPDATE STATE
+  ========================= */
+
+  if (mounted) {
+    setRelatedProducts(
+      filtered
+    );
+  }
+
+} catch (err) {
+
+  console.warn(
+    "related fetch failed",
+    err
+  );
+}
 
   /* ---------- derived helpers (same as before) ---------- */
   const sizeStockMap = useMemo(() => {
