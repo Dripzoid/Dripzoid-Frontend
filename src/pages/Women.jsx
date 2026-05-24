@@ -77,7 +77,7 @@ export default function Women() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.append("category", "Women");
+      params.append("gender", "women");
 
       if (selectedSubcategories.length > 0) {
         const mapped = selectedSubcategories.map(
