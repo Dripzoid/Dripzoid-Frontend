@@ -6,11 +6,6 @@ import React, {
 } from "react";
 
 import {
-  motion,
-  AnimatePresence,
-} from "framer-motion";
-
-import {
   useNavigate,
 } from "react-router-dom";
 
@@ -33,9 +28,6 @@ import {
 
 const API_BASE =
   process.env.REACT_APP_API_BASE;
-
-const PLACEHOLDER =
-  "https://via.placeholder.com/400";
 
 /* =====================================================
    HELPERS
@@ -111,7 +103,87 @@ export default function ProductCard({
   const normalized =
     useMemo(() => {
       if (!product) {
-        return {};
+        return null;
+      }
+
+      /* =========================
+         NORMALIZE IMAGES
+      ========================= */
+
+      let parsedImages =
+        [];
+
+      if (
+        Array.isArray(
+          product?.images
+        )
+      ) {
+        parsedImages =
+          product.images.filter(
+            Boolean
+          );
+      }
+
+      else if (
+        typeof product?.images ===
+        "string"
+      ) {
+        try {
+
+          /* =====================
+             JSON STRING ARRAY
+          ===================== */
+
+          if (
+            product.images.startsWith(
+              "["
+            )
+          ) {
+            const parsed =
+              JSON.parse(
+                product.images
+              );
+
+            if (
+              Array.isArray(
+                parsed
+              )
+            ) {
+              parsedImages =
+                parsed.filter(
+                  Boolean
+                );
+            }
+          }
+
+          /* =====================
+             COMMA STRING
+          ===================== */
+
+          else {
+            parsedImages =
+              product.images
+                .split(",")
+                .map((v) =>
+                  v.trim()
+                )
+                .filter(
+                  Boolean
+                );
+          }
+
+        } catch {
+
+          parsedImages =
+            [];
+        }
+      }
+
+      else if (
+        product?.image
+      ) {
+        parsedImages =
+          [product.image];
       }
 
       return {
@@ -124,6 +196,10 @@ export default function ProductCard({
           product?.product_id ||
           "",
 
+        slug:
+          product?.slug ||
+          "",
+
         name:
           product?.name ||
           "Product",
@@ -132,6 +208,10 @@ export default function ProductCard({
           product?.category ||
           product?.categoryData
             ?.category ||
+          "",
+
+        subcategory:
+          product?.subcategory ||
           "",
 
         price:
@@ -158,25 +238,17 @@ export default function ProductCard({
           "Dripzoid",
 
         images:
-          Array.isArray(
-            product?.images
-          )
-            ? product.images
-            : typeof product?.images ===
-              "string"
-            ? product.images
-                .split(",")
-                .map((v) =>
-                  v.trim()
-                )
-                .filter(
-                  Boolean
-                )
-            : product?.image
-            ? [product.image]
-            : [],
+          parsedImages,
       };
     }, [product]);
+
+  /* =========================================
+     EMPTY
+  ========================================= */
+
+  if (!normalized) {
+    return null;
+  }
 
   const pid = String(
     normalized?.id || ""
@@ -216,11 +288,6 @@ export default function ProductCard({
     setReviewsList,
   ] = useState([]);
 
-  const [
-    reviewsLoading,
-    setReviewsLoading,
-  ] = useState(false);
-
   useEffect(() => {
     if (!pid) {
       setReviewsList(
@@ -235,11 +302,8 @@ export default function ProductCard({
 
     const fetchReviews =
       async () => {
-        setReviewsLoading(
-          true
-        );
-
         try {
+
           const res =
             await fetch(
               `${API_BASE}/api/reviews/product/${encodeURIComponent(
@@ -262,17 +326,11 @@ export default function ProductCard({
           if (
             !res.ok
           ) {
-            throw new Error(
-              "Failed to fetch reviews"
-            );
+            return;
           }
 
           const rows =
             await res.json();
-
-          /* =====================
-             NEW BACKEND
-          ===================== */
 
           if (
             rows?.success &&
@@ -285,10 +343,6 @@ export default function ProductCard({
             );
           }
 
-          /* =====================
-             OLD BACKEND
-          ===================== */
-
           else if (
             Array.isArray(
               rows
@@ -299,31 +353,19 @@ export default function ProductCard({
             );
           }
 
-          else {
-            setReviewsList(
-              []
-            );
-          }
-        } catch (err) {
+        } catch (
+          err
+        ) {
+
           if (
-            err.name ===
+            err.name !==
             "AbortError"
           ) {
-            return;
+            console.warn(
+              "Reviews fetch failed:",
+              err
+            );
           }
-
-          console.warn(
-            "Reviews fetch failed:",
-            err
-          );
-
-          setReviewsList(
-            []
-          );
-        } finally {
-          setReviewsLoading(
-            false
-          );
         }
       };
 
@@ -340,7 +382,6 @@ export default function ProductCard({
   const avgRating =
     useMemo(() => {
       if (
-        !reviewsList ||
         !reviewsList.length
       ) {
         return 0;
@@ -375,10 +416,13 @@ export default function ProductCard({
   ========================================= */
 
   const images =
+    Array.isArray(
+      normalized.images
+    ) &&
     normalized.images
-      ?.length
+      .length > 0
       ? normalized.images
-      : [PLACEHOLDER];
+      : [];
 
   useEffect(() => {
     setCurrent(
@@ -395,21 +439,19 @@ export default function ProductCard({
     imageSrc,
     setImageSrc,
   ] = useState(
-    images[0]
+    images[0] || ""
   );
 
   useEffect(() => {
     setImageSrc(
       images[current] ||
-        PLACEHOLDER
+        ""
     );
   }, [images, current]);
 
   const handleImgError =
     useCallback(() => {
-      setImageSrc(
-        PLACEHOLDER
-      );
+      setImageSrc("");
     }, []);
 
   /* =========================================
@@ -515,9 +557,11 @@ export default function ProductCard({
       setWlBusy(true);
 
       try {
+
         if (
           isWishlisted
         ) {
+
           if (
             typeof removeFromWishlist ===
             "function"
@@ -533,7 +577,9 @@ export default function ProductCard({
               await fetchWishlist();
             }
           }
+
         } else {
+
           if (
             typeof addToWishlist ===
             "function"
@@ -550,23 +596,21 @@ export default function ProductCard({
             }
           }
         }
-      } catch (err) {
+
+      } catch (
+        err
+      ) {
+
         console.warn(
           "Wishlist toggle failed:",
           err
         );
+
       } finally {
+
         setWlBusy(false);
       }
     };
-
-  /* =========================================
-     EMPTY
-  ========================================= */
-
-  if (!product) {
-    return null;
-  }
 
   /* =========================================
      UI
@@ -587,38 +631,24 @@ export default function ProductCard({
 
         <div className="w-full h-40 sm:h-56 md:aspect-square md:h-auto overflow-hidden">
 
-          <AnimatePresence mode="wait">
-
-            <motion.img
-              key={`${current}-${imageSrc}`}
+          {imageSrc ? (
+            <img
               src={imageSrc}
               alt={
                 normalized.name
               }
               className="w-full h-full object-cover"
-              initial={{
-                opacity: 0,
-                scale: 1.02,
-              }}
-              animate={{
-                opacity: 1,
-                scale: 1,
-              }}
-              exit={{
-                opacity: 0,
-                scale: 0.98,
-              }}
-              transition={{
-                duration: 0.28,
-              }}
               loading="lazy"
               decoding="async"
               onError={
                 handleImgError
               }
             />
-
-          </AnimatePresence>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">
+              No Image
+            </div>
+          )}
 
         </div>
 
@@ -691,6 +721,7 @@ export default function ProductCard({
 
         <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
           {
+            normalized.subcategory ||
             normalized.category
           }
         </p>
