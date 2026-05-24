@@ -344,10 +344,27 @@ const filtered =
 ========================= */
 
 if (mounted) {
-  setRelatedProducts(
-    filtered
-  );
+  setRelatedProducts(filtered);
 }
+
+      } catch (err) {
+
+        console.error(
+          "Product page load failed:",
+          err
+        );
+
+      }
+    }
+
+    loadAll();
+
+    return () => {
+      mounted = false;
+      ac.abort();
+    };
+
+  }, [productId]);
 
   /* ---------- derived helpers (same as before) ---------- */
   const sizeStockMap = useMemo(() => {
