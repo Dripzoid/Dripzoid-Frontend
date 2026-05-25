@@ -106,8 +106,6 @@ export function UserProvider({
       }
 
       try {
-        setLoading(true);
-
         const res =
           await fetch(
             buildUrl(
@@ -133,8 +131,6 @@ export function UserProvider({
         if (!res.ok) {
           setUser(null);
 
-          setLoading(false);
-
           return null;
         }
 
@@ -150,9 +146,11 @@ export function UserProvider({
             data?.user
           );
 
-        setUser(normalized);
+        /* =========================
+           INSTANT STATE UPDATE
+        ========================= */
 
-        setLoading(false);
+        setUser(normalized);
 
         return {
           user: normalized,
@@ -165,9 +163,9 @@ export function UserProvider({
 
         setUser(null);
 
-        setLoading(false);
-
         return null;
+      } finally {
+        setLoading(false);
       }
     }, [forceLoggedOut]);
 
@@ -176,8 +174,31 @@ export function UserProvider({
   ====================================================== */
 
   const login =
-    async () => {
+    async (userData = null) => {
       setForceLoggedOut(false);
+
+      /* =========================
+         INSTANT LOGIN UPDATE
+      ========================= */
+
+      if (userData) {
+        const normalized =
+          normalizeUser(
+            userData
+          );
+
+        setUser(normalized);
+
+        setLoading(false);
+
+        return {
+          user: normalized,
+        };
+      }
+
+      /* =========================
+         FALLBACK REFRESH
+      ========================= */
 
       return refresh();
     };
@@ -234,6 +255,8 @@ export function UserProvider({
       value={{
         user,
 
+        setUser,
+
         loading,
 
         isAuthenticated,
@@ -243,8 +266,6 @@ export function UserProvider({
         logout,
 
         refresh,
-
-        setUser,
       }}
     >
       {children}
