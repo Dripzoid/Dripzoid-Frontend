@@ -1158,7 +1158,7 @@ export default function OrderManagement() {
                         <td className="p-3">{userIdFrom(o)}</td>
                         <td className="p-3">{userNameFrom(o) || userNameCache.current[userIdFrom(o)] || `User ${userIdFrom(o)}`}</td>
                         <td className="p-3">{safeItemsCount(o)}</td>
-                        <td className="p-3">{formatCurrency(Number(o.total_amount ?? o.amount ?? 0))}</td>
+                        <td className="p-3">{formatCurrency(Number(o.totalAmount ?? 0))}</td>
                         <td className="p-3">{o.status}</td>
                         <td className="p-3"><button onClick={() => viewOrder(o)} className={`${btnSecondaryBase} ${btnSecondaryLight} ${btnSecondaryDark}`}><Eye className="w-4 h-4 inline mr-1" /> View</button></td>
                       </tr>
@@ -1219,7 +1219,7 @@ export default function OrderManagement() {
                 <div className="font-medium">Summary</div>
                 <div className="mt-1">
                   <div>Items: <b>{Array.isArray(selectedOrder.items) ? selectedOrder.items.length : ((Number(selectedOrder.items_count ?? selectedOrder.item_count ?? 0)) || safeItemsCount(selectedOrder))}</b></div>
-                  <div className="mt-1">Amount: <b>{formatCurrency(Number(selectedOrder.total_amount ?? selectedOrder.amount ?? 0))}</b></div>
+                  <div className="mt-1">Amount: <b>{formatCurrency(Number(selectedOrder.totalAmount ?? 0))}</b></div>
                 </div>
 
                 <div className="mt-4 font-medium">Payment / Tracking</div>
@@ -1361,7 +1361,7 @@ export default function OrderManagement() {
                         <td className="p-3">{userIdFrom(o)}</td>
                         <td className="p-3">{userNameFrom(o) || userNameCache.current[userIdFrom(o)] || `User ${userIdFrom(o)}`}</td>
                         <td className="p-3">{safeItemsCount(o)}</td>
-                        <td className="p-3">{formatCurrency(Number(o.total_amount ?? o.amount ?? 0))}</td>
+                        <td className="p-3">{formatCurrency(Number(o.totalAmount ?? 0))}</td>
                         <td className="p-3">
                           <select disabled={statusUpdatingId === o.id} value={o.status} onChange={e => updateOrderStatus(o.id, e.target.value)} className={lightSelect}>
                             {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
