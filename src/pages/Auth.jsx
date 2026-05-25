@@ -15,7 +15,7 @@ import {
   EyeOff,
   Mail,
   Lock,
- User,
+  User,
   Smartphone,
   CheckCircle,
 } from "lucide-react";
@@ -39,10 +39,15 @@ function buildUrl(path) {
 }
 
 export default function Auth() {
-  const navigate = useNavigate();
+  const navigate =
+    useNavigate();
 
-  const { refresh } =
-    useContext(UserContext);
+  const {
+    refresh,
+    login,
+  } = useContext(
+    UserContext
+  );
 
   /* ======================================================
      STATE
@@ -101,10 +106,12 @@ export default function Auth() {
     const checkAuth =
       async () => {
         try {
-          const user =
+          const result =
             await refresh();
 
-          if (user?.user) {
+          if (
+            result?.user
+          ) {
             navigate("/", {
               replace: true,
             });
@@ -292,7 +299,13 @@ export default function Auth() {
           );
         }
 
-        await refresh();
+        /* ======================================================
+           INSTANT LOGIN STATE UPDATE
+        ====================================================== */
+
+        await login(
+          data.user
+        );
 
         navigate("/", {
           replace: true,
@@ -461,7 +474,13 @@ export default function Auth() {
           "reg_email"
         );
 
-        await refresh();
+        /* ======================================================
+           INSTANT REGISTER LOGIN
+        ====================================================== */
+
+        await login(
+          data.user
+        );
 
         navigate("/", {
           replace: true,
@@ -584,10 +603,16 @@ export default function Auth() {
         try {
           setOauthLoading(true);
 
-          const user =
+          const result =
             await refresh();
 
-          if (user?.user) {
+          if (
+            result?.user
+          ) {
+            await login(
+              result.user
+            );
+
             navigate("/", {
               replace: true,
             });
@@ -603,7 +628,11 @@ export default function Auth() {
       };
 
     handleOAuth();
-  }, [navigate, refresh]);
+  }, [
+    navigate,
+    refresh,
+    login,
+  ]);
 
   /* ======================================================
      LOADING
