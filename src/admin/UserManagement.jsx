@@ -566,7 +566,7 @@ export default function UserManagementPanel() {
   function normalizeUsersList(list) {
     if (!Array.isArray(list)) return [];
     return list.map((u) => {
-      const isAdminFlag = Number(u.is_admin) === 1 || u.is_admin === true;
+      const isAdminFlag = Number(u.isAdmin) === 1 || u.iAadmin === true;
       return { ...u, role: isAdminFlag ? "admin" : (u.role || "customer") };
     });
   }
@@ -585,7 +585,11 @@ export default function UserManagementPanel() {
         }),
       ]);
 
-      setUsers(normalizeUsersList(usersData));
+     setUsers(
+  normalizeUsersList(
+    usersData?.data || []
+  )
+);
       setStats(statsData || {});
     } catch (err) {
       console.error("Error loading data", err);
