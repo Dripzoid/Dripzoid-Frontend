@@ -50,13 +50,21 @@ export default function Navbar() {
   const navigate =
     useNavigate();
 
+  /* ======================================================
+     USER CONTEXT
+  ====================================================== */
+
   const {
     user,
-    refresh,
-    setUser,
+    loading,
+    logout,
   } = useContext(
     UserContext
   );
+
+  /* ======================================================
+     CART + WISHLIST
+  ====================================================== */
 
   const {
     cart = [],
@@ -140,14 +148,6 @@ export default function Navbar() {
   }, []);
 
   /* ======================================================
-     REFRESH USER ON LOAD
-  ====================================================== */
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  /* ======================================================
      NAV LINKS
   ====================================================== */
 
@@ -169,34 +169,32 @@ export default function Navbar() {
   ];
 
   /* ======================================================
-     LOGOUT
+     HANDLE LOGOUT
   ====================================================== */
 
   const handleLogout =
     async () => {
       try {
-        await fetch(
-          buildUrl(
-            "/api/auth/logout"
-          ),
-          {
-            method: "POST",
+        await logout();
 
-            credentials:
-              "include",
-          }
-        );
-
-        setUser(null);
-
-        navigate("/login");
+        navigate("/login", {
+          replace: true,
+        });
       } catch (err) {
         console.error(
-          "Logout error:",
+          "Logout Error:",
           err
         );
       }
     };
+
+  /* ======================================================
+     GOOGLE HYDRATION FIX
+  ====================================================== */
+
+  if (loading) {
+    return null;
+  }
 
   return (
     <>
@@ -274,7 +272,6 @@ export default function Navbar() {
                   )
                 }
                 className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition"
-                aria-label="Toggle theme"
               >
                 {theme ===
                 "light" ? (
@@ -391,11 +388,10 @@ export default function Navbar() {
       ====================================================== */}
 
       {!isDesktop &&
-        mobileMenu && (
+        mobileMenu &&
+        user && (
           <div className="fixed top-[96px] left-0 right-0 z-40 bg-white dark:bg-gray-900 border-t shadow-lg">
             <div className="flex flex-col p-5 space-y-5">
-
-              {/* NAV LINKS */}
 
               {navLinks.map(
                 (link) => (
@@ -418,8 +414,6 @@ export default function Navbar() {
                 )
               )}
 
-              {/* MOBILE ACCOUNT */}
-
               <Link
                 to="/account"
                 onClick={() =>
@@ -431,8 +425,6 @@ export default function Navbar() {
               >
                 Account
               </Link>
-
-              {/* MOBILE WISHLIST */}
 
               <Link
                 to="/account/wishlist"
@@ -450,8 +442,6 @@ export default function Navbar() {
                 )
               </Link>
 
-              {/* MOBILE CART */}
-
               <Link
                 to="/cart"
                 onClick={() =>
@@ -464,8 +454,6 @@ export default function Navbar() {
                 Cart (
                 {cart.length})
               </Link>
-
-              {/* MOBILE LOGOUT */}
 
               <button
                 onClick={
