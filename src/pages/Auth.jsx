@@ -49,6 +49,14 @@ export default function Auth() {
     UserContext
   );
 
+  const params =
+  new URLSearchParams(
+    window.location.search
+  );
+
+  const returnTo =
+  params.get("returnTo");
+
   /* ======================================================
      STATE
   ====================================================== */
@@ -109,13 +117,18 @@ export default function Auth() {
           const result =
             await refresh();
 
-          if (
-            result?.user
-          ) {
-            navigate("/", {
-              replace: true,
-            });
-          }
+          if (result?.user) {
+  if (returnTo) {
+    window.location.href =
+      decodeURIComponent(
+        returnTo
+      );
+  } else {
+    navigate("/", {
+      replace: true,
+    });
+  }
+}
         } catch (err) {
           console.error(
             "Auth check failed:",
@@ -304,12 +317,19 @@ export default function Auth() {
         ====================================================== */
 
         await login(
-          data.user
-        );
+  data.user
+);
 
-        navigate("/", {
-          replace: true,
-        });
+if (returnTo) {
+  window.location.href =
+    decodeURIComponent(
+      returnTo
+    );
+} else {
+  navigate("/", {
+    replace: true,
+  });
+}
       } catch (err) {
         console.error(err);
 
@@ -479,12 +499,19 @@ export default function Auth() {
         ====================================================== */
 
         await login(
-          data.user
-        );
+  data.user
+);
 
-        navigate("/", {
-          replace: true,
-        });
+if (returnTo) {
+  window.location.href =
+    decodeURIComponent(
+      returnTo
+    );
+} else {
+  navigate("/", {
+    replace: true,
+  });
+}
       } catch (err) {
         console.error(err);
 
@@ -586,12 +613,18 @@ export default function Auth() {
   ====================================================== */
 
   const handleGoogleAuth =
-    () => {
-      window.location.href =
-        buildUrl(
-          "/api/auth/google"
-        );
-    };
+  () => {
+    const currentUrl =
+      encodeURIComponent(
+        returnTo ||
+        window.location.origin
+      );
+
+    window.location.href =
+      `${buildUrl(
+        "/api/auth/google"
+      )}?returnTo=${currentUrl}`;
+  };
 
   /* ======================================================
      OAUTH CHECK
