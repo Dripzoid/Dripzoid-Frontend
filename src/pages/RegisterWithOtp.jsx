@@ -3,7 +3,12 @@ import React, { useEffect, useState, useRef } from "react";
 
 const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/+$/, "");
 
-export default function RegisterWithOtp({ email = "", onVerified, onBack } = {}) {
+export default function RegisterWithOtp({
+  email = "",
+  mode = "register", // "register" | "forgot-password"
+  onVerified,
+  onBack,
+} = {}) {
   const [identifier, setIdentifier] = useState(email || "");
   const [otpSent, setOtpSent] = useState(false);
   const [otpValue, setOtpValue] = useState("");
@@ -17,7 +22,9 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => (mountedRef.current = false);
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -53,6 +60,16 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
     }
   };
 
+  const titleText =
+    mode === "forgot-password"
+      ? "Reset password — enter email or mobile"
+      : "Register — enter email or mobile";
+
+  const successText =
+    mode === "forgot-password"
+      ? "You can now set a new password."
+      : "You can now complete registration (enter personal details & password).";
+
   // ---- send OTP without any email check ----
   const sendOtp = async () => {
     setError("");
@@ -61,8 +78,13 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
 
     setSending(true);
     try {
-      const { ok, json, error } = await callBackend("/api/send-otp", { email: id });
+      const { ok, json, error } = await callBackend("/api/send-otp", {
+        email: id,
+        mode,
+      });
+
       if (!ok) throw new Error(json?.message || error || "Failed to send OTP");
+
       if (mountedRef.current) {
         setReqId(json?.reqId || json?.reqid || "");
         setOtpSent(true);
@@ -83,12 +105,20 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
 
     setVerifying(true);
     try {
-      const { ok, json, error } = await callBackend("/api/verify-otp", { email: id, otp });
+      const { ok, json, error } = await callBackend("/api/verify-otp", {
+        email: id,
+        otp,
+        mode,
+      });
+
       if (!ok) throw new Error(json?.message || error || "OTP verification failed");
+
       if (mountedRef.current) {
         if (json?.success) {
           setVerified(true);
-          if (typeof onVerified === "function") onVerified({ email: id });
+          if (typeof onVerified === "function") {
+            onVerified({ email: id, mode, reqId: reqId || json?.reqId || json?.reqid || "" });
+          }
         } else {
           setError(json?.message || "OTP verification failed");
         }
@@ -105,6 +135,7 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
     if (autoSentRef.current) return;
     autoSentRef.current = true;
     sendOtp();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email]);
 
   const retryOtp = async () => {
@@ -120,6 +151,7 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
       sendOtp();
     }
   };
+
   const onOtpKey = (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -134,27 +166,37 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
     focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black dark:focus:ring-white
     transition
   `;
+
   const primaryBtnClass = `
     flex-1 py-3 rounded-full font-semibold
     bg-black text-white hover:brightness-110 active:scale-[0.98] disabled:opacity-50
     dark:bg-white dark:text-black dark:hover:brightness-125
     transition
   `;
+
   const secondaryBtnClass = `
     py-3 px-4 rounded-full border border-black text-black
     dark:border-white dark:text-white
     hover:brightness-105 active:scale-[0.98] transition
   `;
+
   const errorClass = "mt-3 text-sm text-red-500";
 
   return (
-    <div className="max-w-md mx-auto my-6 p-6 bg-white dark:bg-black rounded-2xl border border-black/10 dark:border-white/10 shadow-lg">
+    <div className="w-full">
       {!otpSent && !verified && (
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-semibold text-black dark:text-white">Register — enter email or mobile</h3>
+            <h3 className="text-lg font-semibold text-black dark:text-white">
+              {titleText}
+            </h3>
+
             {typeof onBack === "function" && (
-              <button onClick={onBack} className="text-sm underline text-black/60 dark:text-white/60 underline-offset-2">
+              <button
+                type="button"
+                onClick={onBack}
+                className="text-sm underline text-black/60 dark:text-white/60 underline-offset-2"
+              >
                 Back
               </button>
             )}
@@ -171,10 +213,10 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
           />
 
           <div className="flex gap-3 mt-4">
-            <button onClick={sendOtp} disabled={sending} className={primaryBtnClass}>
+            <button type="button" onClick={sendOtp} disabled={sending} className={primaryBtnClass}>
               {sending ? "Sending…" : "Send OTP"}
             </button>
-            <button onClick={retryOtp} className={secondaryBtnClass}>
+            <button type="button" onClick={retryOtp} className={secondaryBtnClass}>
               Retry
             </button>
           </div>
@@ -186,13 +228,21 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
       {otpSent && !verified && (
         <div>
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-lg font-semibold text-black dark:text-white">Enter OTP</h3>
+            <h3 className="text-lg font-semibold text-black dark:text-white">
+              Enter OTP
+            </h3>
+
             {typeof onBack === "function" && (
-              <button onClick={onBack} className="text-sm underline text-black/60 dark:text-white/60 underline-offset-2">
+              <button
+                type="button"
+                onClick={onBack}
+                className="text-sm underline text-black/60 dark:text-white/60 underline-offset-2"
+              >
                 Back
               </button>
             )}
           </div>
+
           <div className="text-sm text-black/70 dark:text-white/70 mb-3">
             We sent an OTP to <strong>{maskIdentifier(identifier)}</strong>
           </div>
@@ -200,7 +250,9 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
           <input
             aria-label="otp"
             value={otpValue}
-            onChange={(e) => setOtpValue(e.target.value.replace(/\D/g, "").slice(0, 8))}
+            onChange={(e) =>
+              setOtpValue(e.target.value.replace(/\D/g, "").slice(0, 8))
+            }
             onKeyDown={onOtpKey}
             placeholder="Enter OTP"
             className={inputClass}
@@ -210,10 +262,15 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
           />
 
           <div className="flex gap-3 mt-4">
-            <button onClick={verifyOtp} disabled={verifying} className={primaryBtnClass}>
+            <button
+              type="button"
+              onClick={verifyOtp}
+              disabled={verifying}
+              className={primaryBtnClass}
+            >
               {verifying ? "Verifying…" : "Verify OTP"}
             </button>
-            <button onClick={retryOtp} className={secondaryBtnClass}>
+            <button type="button" onClick={retryOtp} className={secondaryBtnClass}>
               Resend
             </button>
           </div>
@@ -224,9 +281,11 @@ export default function RegisterWithOtp({ email = "", onVerified, onBack } = {})
 
       {verified && (
         <div>
-          <h3 className="text-lg font-semibold text-black dark:text-white mb-2">Verified ✅</h3>
+          <h3 className="text-lg font-semibold text-black dark:text-white mb-2">
+            Verified ✅
+          </h3>
           <p className="text-sm text-black/70 dark:text-white/70">
-            You can now complete registration (enter personal details & password).
+            {successText}
           </p>
         </div>
       )}
