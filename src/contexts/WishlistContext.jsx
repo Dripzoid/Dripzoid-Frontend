@@ -7,8 +7,9 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
+import { UserContext } from "./UserContext.js";
 
-const API_BASE = process.env.REACT_APP_API_BASE || "";
+const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/+$/, "");
 
 const WishlistContext = createContext();
 
@@ -16,52 +17,73 @@ export function useWishlist() {
   return useContext(WishlistContext);
 }
 
+function buildUrl(path) {
+  if (!path.startsWith("/")) path = `/${path}`;
+  return `${API_BASE}${path}`;
+}
+
 export function WishlistProvider({ children }) {
-  const [items, setItems] = useState([]); // renamed from wishlist
+  const {
+    user,
+    loading: authLoading,
+  } = useContext(UserContext);
+
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const getHeaders = (isJson = true) => {
     const headers = {};
-    const token =
-      localStorage.getItem("token") ||
-      localStorage.getItem("authToken") ||
-      localStorage.getItem("jwt") ||
-      localStorage.getItem("userToken");
-
-    if (token) headers["Authorization"] = `Bearer ${token}`;
     if (isJson) headers["Content-Type"] = "application/json";
     return headers;
   };
 
   /* ================= FETCH ================= */
   const fetchWishlist = useCallback(async () => {
+    if (authLoading) return;
+
+    if (!user) {
+      setItems([]);
+      return;
+    }
+
     setLoading(true);
     setError(null);
+
     try {
-      const res = await fetch(`${API_BASE}/api/wishlist`, {
+      const res = await fetch(buildUrl("/api/wishlist"), {
         method: "GET",
+        credentials: "include",
         headers: getHeaders(false),
       });
 
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        throw new Error(json?.error || `${res.status} ${res.statusText}`);
+        throw new Error(json?.error || json?.message || `${res.status} ${res.statusText}`);
       }
 
       const rows = await res.json();
-      setItems(rows || []);
+      setItems(Array.isArray(rows) ? rows : []);
     } catch (err) {
       console.error("Failed to fetch wishlist", err);
       setError(err.message || "Failed to load wishlist");
+      setItems([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authLoading, user]);
 
   /* ================= ADD ================= */
   const addToWishlist = useCallback(
     async (productId) => {
+      if (authLoading) {
+        throw new Error("Authentication still loading");
+      }
+
+      if (!user) {
+        throw new Error("Not authenticated");
+      }
+
       if (!productId) return;
 
       const idStr = String(productId);
@@ -80,17 +102,15 @@ export function WishlistProvider({ children }) {
       setItems((prev) => [placeholder, ...prev]);
 
       try {
-        const res = await fetch(
-          `${API_BASE}/api/wishlist/${encodeURIComponent(idStr)}`,
-          {
-            method: "POST",
-            headers: getHeaders(false),
-          }
-        );
+        const res = await fetch(buildUrl(`/api/wishlist/${encodeURIComponent(idStr)}`), {
+          method: "POST",
+          credentials: "include",
+          headers: getHeaders(false),
+        });
 
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));
-          throw new Error(json?.error || `${res.status} ${res.statusText}`);
+          throw new Error(json?.error || json?.message || `${res.status} ${res.statusText}`);
         }
 
         await fetchWishlist();
@@ -98,15 +118,24 @@ export function WishlistProvider({ children }) {
         setItems((prev) =>
           prev.filter((r) => !String(r.id).startsWith(`optimistic-${idStr}`))
         );
+        console.error("Failed to add wishlist item:", err);
         throw err;
       }
     },
-    [items, fetchWishlist]
+    [authLoading, user, items, fetchWishlist]
   );
 
   /* ================= REMOVE ================= */
   const removeFromWishlist = useCallback(
     async (productId) => {
+      if (authLoading) {
+        throw new Error("Authentication still loading");
+      }
+
+      if (!user) {
+        throw new Error("Not authenticated");
+      }
+
       if (!productId) return;
 
       const idStr = String(productId);
@@ -114,32 +143,30 @@ export function WishlistProvider({ children }) {
 
       setItems((prevState) =>
         prevState.filter(
-          (item) =>
-            String(item.product_id ?? item.id ?? "") !== idStr
+          (item) => String(item.product_id ?? item.id ?? "") !== idStr
         )
       );
 
       try {
-        const res = await fetch(
-          `${API_BASE}/api/wishlist/${encodeURIComponent(idStr)}`,
-          {
-            method: "DELETE",
-            headers: getHeaders(false),
-          }
-        );
+        const res = await fetch(buildUrl(`/api/wishlist/${encodeURIComponent(idStr)}`), {
+          method: "DELETE",
+          credentials: "include",
+          headers: getHeaders(false),
+        });
 
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));
-          throw new Error(json?.error || `${res.status} ${res.statusText}`);
+          throw new Error(json?.error || json?.message || `${res.status} ${res.statusText}`);
         }
 
         await fetchWishlist();
       } catch (err) {
         setItems(prev || []);
+        console.error("Failed to remove wishlist item:", err);
         throw err;
       }
     },
-    [items, fetchWishlist]
+    [authLoading, user, items, fetchWishlist]
   );
 
   /* ================= TOGGLE ================= */
@@ -177,7 +204,7 @@ export function WishlistProvider({ children }) {
   /* ================= MEMO VALUE ================= */
   const value = useMemo(
     () => ({
-      items, // <-- standardized name
+      items,
       loading,
       error,
       fetchWishlist,
