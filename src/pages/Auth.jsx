@@ -9,6 +9,8 @@ import {
   EyeOff,
   Mail,
   Lock,
+  User,
+  Smartphone,
   CheckCircle,
 } from "lucide-react";
 
@@ -16,9 +18,7 @@ import RegisterWithOtp from "./RegisterWithOtp";
 
 import { UserContext } from "../contexts/UserContext";
 
-const API_BASE = (
-  process.env.REACT_APP_API_BASE || ""
-).replace(/\/+$/, "");
+const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/+$/, "");
 
 function buildUrl(path) {
   if (!path.startsWith("/")) {
@@ -30,11 +30,9 @@ function buildUrl(path) {
 
 export default function Auth() {
   const navigate = useNavigate();
-
   const { refresh, login } = useContext(UserContext);
 
   const params = new URLSearchParams(window.location.search);
-
   const returnTo = params.get("returnTo");
 
   /* ======================================================
@@ -44,6 +42,7 @@ export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
 
   const [regStep, setRegStep] = useState("enterEmail");
+  const [regOtpVerified, setRegOtpVerified] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -57,8 +56,7 @@ export default function Auth() {
 
   const [showPassword, setShowPassword] = useState(false);
 
-  const [showConfirmPassword, setShowConfirmPassword] =
-    useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
 
@@ -66,8 +64,7 @@ export default function Auth() {
 
   const [forgotFlow, setForgotFlow] = useState(false);
 
-  const [forgotOtpVerified, setForgotOtpVerified] =
-    useState(false);
+  const [forgotOtpVerified, setForgotOtpVerified] = useState(false);
 
   /* ======================================================
      CHECK AUTH ON LOAD
@@ -119,6 +116,12 @@ export default function Auth() {
 
   const primaryClasses =
     "w-full py-3 rounded-full font-semibold shadow-sm bg-black text-white hover:brightness-110 active:scale-[0.995] disabled:opacity-60 dark:bg-white dark:text-black dark:border dark:border-white";
+
+  const secondaryClasses =
+    "w-full py-3 rounded-full font-semibold border border-black/15 text-black hover:bg-black/5 dark:border-white/15 dark:text-white dark:hover:bg-white/5";
+
+  const toggleButtonBase =
+    "flex-1 py-2.5 text-sm font-semibold rounded-full transition";
 
   const googleBtnBase =
     "w-full flex items-center justify-center gap-3 py-2 px-3 rounded-full border border-black shadow-sm transition bg-white text-black dark:bg-black dark:text-white dark:border-white";
@@ -403,9 +406,7 @@ export default function Auth() {
   ====================================================== */
 
   const handleGoogleAuth = () => {
-    const currentUrl = encodeURIComponent(
-      returnTo || window.location.origin
-    );
+    const currentUrl = encodeURIComponent(returnTo || window.location.origin);
 
     window.location.href = `${buildUrl("/api/auth/google")}?returnTo=${currentUrl}`;
   };
@@ -443,6 +444,28 @@ export default function Auth() {
   }, [navigate, refresh, login, returnTo]);
 
   /* ======================================================
+     HELPERS
+  ====================================================== */
+
+  const resetToLogin = () => {
+    setIsLogin(true);
+    setForgotFlow(false);
+    setForgotOtpVerified(false);
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+  };
+
+  const resetToRegister = () => {
+    setIsLogin(false);
+    setForgotFlow(false);
+    setForgotOtpVerified(false);
+    setRegStep("enterEmail");
+    setRegOtpVerified(false);
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+  };
+
+  /* ======================================================
      LOADING
   ====================================================== */
 
@@ -471,7 +494,7 @@ export default function Auth() {
         }}
         className="w-full max-w-md p-8 rounded-2xl bg-white dark:bg-black border border-black/10 dark:border-white/10 shadow-2xl"
       >
-        <div className="flex items-start gap-4 mb-6">
+        <div className="flex items-start gap-4 mb-5">
           <div className="p-3 rounded-lg bg-black dark:bg-white text-white dark:text-black">
             <CheckCircle size={20} />
           </div>
@@ -479,16 +502,48 @@ export default function Auth() {
           <div>
             <h2 className="text-xl font-semibold text-black dark:text-white">
               {isLogin
-                ? "Welcome back"
+                ? forgotFlow
+                  ? "Reset your password"
+                  : "Welcome back"
                 : "Create your account"}
             </h2>
 
             <p className="text-sm text-neutral-600 dark:text-neutral-400">
               {isLogin
-                ? "Sign in to continue"
+                ? forgotFlow
+                  ? "Verify your email to continue"
+                  : "Sign in to continue"
                 : "Register with email OTP or Google"}
             </p>
           </div>
+        </div>
+
+        {/* LOGIN / REGISTER TOGGLE */}
+
+        <div className="flex gap-2 p-1 rounded-full border border-black/10 dark:border-white/10 mb-5">
+          <button
+            type="button"
+            onClick={resetToLogin}
+            className={`${toggleButtonBase} ${
+              isLogin
+                ? "bg-black text-white dark:bg-white dark:text-black"
+                : "text-black/60 dark:text-white/60"
+            }`}
+          >
+            Login
+          </button>
+
+          <button
+            type="button"
+            onClick={resetToRegister}
+            className={`${toggleButtonBase} ${
+              !isLogin
+                ? "bg-black text-white dark:bg-white dark:text-black"
+                : "text-black/60 dark:text-white/60"
+            }`}
+          >
+            Register
+          </button>
         </div>
 
         {/* LOGIN */}
@@ -598,10 +653,7 @@ export default function Auth() {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setForgotFlow(false);
-                    setForgotOtpVerified(false);
-                  }}
+                  onClick={resetToLogin}
                   className="text-sm text-center text-black/70 dark:text-white/70 hover:underline"
                 >
                   Back to Login
@@ -671,17 +723,206 @@ export default function Auth() {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setForgotFlow(false);
-                    setForgotOtpVerified(false);
-                    setShowPassword(false);
-                    setShowConfirmPassword(false);
-                  }}
+                  onClick={resetToLogin}
                   className="text-sm text-center text-black/70 dark:text-white/70 hover:underline"
                 >
                   Back to Login
                 </button>
               </>
+            )}
+          </div>
+        )}
+
+        {/* REGISTER FLOW */}
+
+        {!isLogin && !forgotFlow && (
+          <div className="flex flex-col gap-4">
+            {regStep === "enterEmail" && (
+              <>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2">
+                    <Mail size={16} />
+                  </span>
+
+                  <input
+                    id="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    placeholder="Email"
+                    className={inputClass}
+                  />
+                </div>
+
+                <motion.button
+                  {...motionBtnProps}
+                  type="button"
+                  onClick={handleContinueToOtp}
+                  className={primaryClasses}
+                  disabled={loading}
+                >
+                  {loading ? "Checking..." : "Continue to OTP"}
+                </motion.button>
+
+                <button
+                  type="button"
+                  onClick={resetToLogin}
+                  className="text-sm text-center text-black/70 dark:text-white/70 hover:underline"
+                >
+                  Back to Login
+                </button>
+              </>
+            )}
+
+            {regStep === "otpSent" && !regOtpVerified && (
+              <>
+                <div className="rounded-2xl border border-black/10 dark:border-white/10 p-4">
+                  <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-3">
+                    Verify the OTP sent to{" "}
+                    <span className="font-medium text-black dark:text-white">
+                      {formData.email}
+                    </span>
+                  </p>
+
+                  <RegisterWithOtp
+                    email={formData.email}
+                    mode="register"
+                    onVerified={() => {
+                      setRegOtpVerified(true);
+                    }}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRegStep("enterEmail");
+                    setRegOtpVerified(false);
+                  }}
+                  className="text-sm text-center text-black/70 dark:text-white/70 hover:underline"
+                >
+                  Change Email
+                </button>
+              </>
+            )}
+
+            {regStep === "otpSent" && regOtpVerified && (
+              <form
+                onSubmit={handleCompleteRegistration}
+                className="flex flex-col gap-4"
+              >
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2">
+                    <User size={16} />
+                  </span>
+
+                  <input
+                    id="name"
+                    type="text"
+                    value={formData.name}
+                    onChange={handleChange}
+                    placeholder="Full Name"
+                    className={inputClass}
+                  />
+                </div>
+
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2">
+                    <Mail size={16} />
+                  </span>
+
+                  <input
+                    id="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    placeholder="Email"
+                    className={inputClass}
+                  />
+                </div>
+
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2">
+                    <Smartphone size={16} />
+                  </span>
+
+                  <input
+                    id="mobile"
+                    type="text"
+                    value={formData.mobile}
+                    onChange={handleChange}
+                    placeholder="Mobile Number"
+                    className={inputClass}
+                  />
+                </div>
+
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2">
+                    <Lock size={16} />
+                  </span>
+
+                  <input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={formData.password}
+                    onChange={handleChange}
+                    placeholder="Password"
+                    className={inputClass}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((s) => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2"
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2">
+                    <Lock size={16} />
+                  </span>
+
+                  <input
+                    id="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    placeholder="Confirm Password"
+                    className={inputClass}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((s) => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2"
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff size={16} />
+                    ) : (
+                      <Eye size={16} />
+                    )}
+                  </button>
+                </div>
+
+                <motion.button
+                  {...motionBtnProps}
+                  type="submit"
+                  className={primaryClasses}
+                  disabled={loading}
+                >
+                  {loading ? "Creating account..." : "Create Account"}
+                </motion.button>
+
+                <button
+                  type="button"
+                  onClick={resetToLogin}
+                  className="text-sm text-center text-black/70 dark:text-white/70 hover:underline"
+                >
+                  Back to Login
+                </button>
+              </form>
             )}
           </div>
         )}
