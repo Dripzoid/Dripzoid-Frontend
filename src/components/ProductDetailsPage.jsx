@@ -741,7 +741,7 @@ if (typeof wishlistCtx?.fetchWishlist === "function") {
     }
     setIsCheckingDelivery(true);
     try {
-      const url = `${API_BASE}/api/shipping/estimate/{encodeURIComponent(pin)}`;
+      const url = `${API_BASE}/api/shipping/estimate/${encodeURIComponent(pin)}`;
       const res = await fetch(url);
 
       if (!res.ok) {
