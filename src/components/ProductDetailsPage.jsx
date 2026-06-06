@@ -733,55 +733,120 @@ if (typeof wishlistCtx?.fetchWishlist === "function") {
     else setZipDisplay(digits.slice(0, 3) + " " + digits.slice(3));
   }
 
-  async function checkDelivery() {
-    const pin = zipRaw.trim();
-    if (!/^\d{6}$/.test(pin)) {
-      setDeliveryMsg({ ok: false, text: "Please enter a valid 6-digit PIN" });
+async function checkDelivery() {
+  const pin = zipRaw.trim();
+
+  if (!/^\d{6}$/.test(pin)) {
+    setDeliveryMsg({
+      ok: false,
+      text: "Please enter a valid 6-digit PIN",
+    });
+    return;
+  }
+
+  setIsCheckingDelivery(true);
+
+  try {
+    const url = `${API_BASE}/api/shipping/estimate/${encodeURIComponent(
+      pin
+    )}`;
+
+    const res = await fetch(url);
+
+    if (!res.ok) {
+      setDeliveryMsg({
+        ok: false,
+        text: "Could not fetch delivery estimate",
+      });
       return;
     }
-    setIsCheckingDelivery(true);
-    try {
-      const url = `${API_BASE}/api/shipping/estimate/${encodeURIComponent(pin)}`;
-      const res = await fetch(url);
 
-      if (!res.ok) {
-        setDeliveryMsg({ ok: false, text: "Could not fetch delivery estimate" });
+    const json = await res.json();
+
+    if (
+      json?.success &&
+      json?.serviceable &&
+      json?.estimated_delivery
+    ) {
+      const date = new Date(
+        json.estimated_delivery
+      );
+
+      if (!isNaN(date.getTime())) {
+        const days = [
+          "Sunday",
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday",
+          "Saturday",
+        ];
+
+        const months = [
+          "Jan",
+          "Feb",
+          "Mar",
+          "Apr",
+          "May",
+          "Jun",
+          "Jul",
+          "Aug",
+          "Sep",
+          "Oct",
+          "Nov",
+          "Dec",
+        ];
+
+        const dayName =
+          days[date.getDay()];
+
+        const day = String(
+          date.getDate()
+        ).padStart(2, "0");
+
+        const month =
+          months[date.getMonth()];
+
+        const year =
+          date.getFullYear();
+
+        setDeliveryMsg({
+          ok: true,
+          text: `Delivery Expected by ${dayName}, ${day}-${month}-${year}`,
+        });
+
         return;
       }
 
-      const json = await res.json();
-      const companies = json?.estimate || [];
+      setDeliveryMsg({
+        ok: true,
+        text: `Delivery Expected by ${json.estimated_delivery}`,
+      });
 
-      if (Array.isArray(companies) && companies.length > 0) {
-        const sorted = companies.filter((c) => c && c.etd).sort((a, b) => new Date(a.etd) - new Date(b.etd));
-        const best = sorted[0] || companies[0];
-        const etdRaw = best.etd || best.estimated_delivery;
-
-        if (etdRaw) {
-          const date = new Date(etdRaw);
-          const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-          const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-          const dayName = days[date.getDay()];
-          const day = String(date.getDate()).padStart(2, "0");
-          const month = months[date.getMonth()];
-          const year = date.getFullYear();
-          setDeliveryMsg({ ok: true, text: `Delivery Expected by ${dayName}, ${day}-${month}-${year}` });
-          return;
-        }
-      }
-
-      setDeliveryMsg({ ok: false, text: "Sorry, delivery is not available to this PIN" });
-    } catch (err) {
-      console.warn("shipping estimate failed", err);
-      setDeliveryMsg({ ok: false, text: "Could not fetch delivery estimate" });
-    } finally {
-      setIsCheckingDelivery(false);
+      return;
     }
-  }
 
-  if (!product) {
-    return <div className="p-8 text-center text-black dark:text-white">Loading product...</div>;
+    setDeliveryMsg({
+      ok: false,
+      text:
+        "Sorry, delivery is not available to this PIN",
+    });
+  } catch (err) {
+    console.warn(
+      "shipping estimate failed",
+      err
+    );
+
+    setDeliveryMsg({
+      ok: false,
+      text:
+        "Could not fetch delivery estimate",
+    });
+  } finally {
+    setIsCheckingDelivery(false);
   }
+}
 
   const formatINR = (val) => {
     try {
