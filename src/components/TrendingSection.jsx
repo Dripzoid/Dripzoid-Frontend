@@ -7,8 +7,12 @@ import { normalizeImages } from "../utils/images";
 const API_BASE = process.env.REACT_APP_API_BASE;
 
 export default function TrendingSection() {
-  // ✅ FIX: support both items + wishlist (safe)
-  const { items, wishlist: legacyWishlist, addToWishlist, removeFromWishlist } = useWishlist();
+  const {
+    items,
+    wishlist: legacyWishlist,
+    addToWishlist,
+    removeFromWishlist,
+  } = useWishlist();
 
   const wishlistData = items || legacyWishlist || [];
 
@@ -16,74 +20,94 @@ export default function TrendingSection() {
   const [loading, setLoading] = useState(true);
   const [wishlistUpdatingId, setWishlistUpdatingId] = useState(null);
 
-  // ✅ derive wishlist IDs
+  /* =========================
+     WISHLIST IDS
+  ========================= */
   const wishlistIds = useMemo(() => {
-    const s = new Set();
+    const ids = new Set();
 
-    if (!Array.isArray(wishlistData)) return s;
+    if (!Array.isArray(wishlistData)) return ids;
 
-    for (const it of wishlistData) {
-      if (!it) continue;
-
+    wishlistData.forEach((item) => {
       const id =
-        it.product_id ??
-        it.id ??
-        it.productId ??
-        it.product?.id;
+        item?.product_id ||
+        item?.productId ||
+        item?.id ||
+        item?.product?.id;
 
-      if (id !== undefined && id !== null) {
-        s.add(String(id));
-      }
-    }
+      if (id) ids.add(String(id));
+    });
 
-    return s;
+    return ids;
   }, [wishlistData]);
 
   const isInWishlist = (productId) => {
-    if (!productId) return false;
     return wishlistIds.has(String(productId));
   };
 
-  /* ================= FETCH PRODUCTS ================= */
+  /* =========================
+     FETCH TRENDING PRODUCTS
+  ========================= */
   useEffect(() => {
     let mounted = true;
-    setLoading(true);
 
-    axios
-      .get(`${API_BASE}/api/trending?trending=true`)
-      .then((res) => {
+    const fetchTrendingProducts = async () => {
+      try {
+        setLoading(true);
+
+        const res = await axios.get(
+          `${API_BASE}/api/trending?trending=true`
+        );
+
         if (!mounted) return;
 
-        const payload = res?.data ?? [];
-        const arr = Array.isArray(payload)
-          ? payload
-          : Array.isArray(payload.data)
-          ? payload.data
-          : [];
+        const products = res?.data?.products || [];
 
-        setProducts(arr);
-      })
-      .catch((err) => {
-        console.error("Error fetching trending products:", err);
+        setProducts(products);
+      } catch (error) {
+        console.error(
+          "Trending products fetch failed:",
+          error?.response?.data || error
+        );
+
         setProducts([]);
-      })
-      .finally(() => mounted && setLoading(false));
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchTrendingProducts();
 
     return () => {
       mounted = false;
     };
   }, []);
 
+  /* =========================
+     HELPERS
+  ========================= */
   const firstImage = (images) => {
     const arr = normalizeImages(images);
     return arr[0] || "/fallback-product.png";
   };
 
-  /* ================= TOGGLE ================= */
+  const getDiscountPercentage = (price, originalPrice) => {
+    if (!price || !originalPrice) return null;
+
+    return Math.round(
+      ((originalPrice - price) / originalPrice) * 100
+    );
+  };
+
+  /* =========================
+     WISHLIST TOGGLE
+  ========================= */
   const handleWishlistToggle = async (product) => {
     if (!product) return;
 
-    const id = product.id ?? product._id ?? product.product_id;
+    const id = product.id;
     const inWishlist = isInWishlist(id);
 
     try {
@@ -94,13 +118,23 @@ export default function TrendingSection() {
       } else {
         await addToWishlist(id);
       }
-
-      // ⚡ No manual refresh needed (context already updates)
     } catch (err) {
-      console.error("Wishlist update failed", err);
+      console.error("Wishlist update failed:", err);
     } finally {
       setWishlistUpdatingId(null);
     }
+  };
+
+  /* =========================
+     PRODUCT CLICK
+  ========================= */
+  const openProduct = (product) => {
+    if (!product?.id) return;
+
+    window.open(
+      `https://dripzoid.com/product/${product.id}`,
+      "_blank"
+    );
   };
 
   return (
@@ -108,77 +142,141 @@ export default function TrendingSection() {
       <div className="container mx-auto px-4 lg:px-8">
 
         {/* HEADER */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-5">
           <h2 className="text-2xl md:text-3xl font-bold text-black dark:text-white">
             Trending
           </h2>
-          <div className="text-sm text-slate-600 dark:text-slate-300">
+
+          <span className="text-sm text-slate-500 dark:text-slate-400">
             {products.length} items
-          </div>
+          </span>
         </div>
 
-        {/* STATES */}
+        {/* LOADING */}
         {loading ? (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-            Loading trending products…
+          <div className="py-12 text-center text-gray-500 dark:text-gray-400">
+            Loading trending products...
           </div>
         ) : products.length === 0 ? (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+          <div className="py-12 text-center text-gray-500 dark:text-gray-400">
             No trending products available.
           </div>
         ) : (
           <>
-            {/* PRODUCTS */}
-            <div className="flex gap-4 overflow-x-auto no-scrollbar snap-x snap-mandatory py-2 px-4 md:px-6">
-              {products.map((p) => {
-                const id = p.id ?? p._id ?? p.product_id;
+            <div className="flex gap-4 overflow-x-auto no-scrollbar snap-x snap-mandatory py-2 px-2">
+
+              {products.map((product) => {
+                const id = product.id;
+
                 const active = isInWishlist(id);
-                const loadingBtn = wishlistUpdatingId === id;
+
+                const loadingWishlist =
+                  wishlistUpdatingId === id;
+
+                const image = firstImage(product.images);
+
+                const discount = getDiscountPercentage(
+                  product.price,
+                  product.originalPrice
+                );
+
+                const outOfStock =
+                  Number(product.totalStock || 0) <= 0;
 
                 return (
                   <article
                     key={id}
-                    className="flex-none w-1/2 md:w-1/4 snap-start bg-white dark:bg-black border border-slate-100 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer"
                     onClick={() =>
-                      window.open(`https://dripzoid.com/product/${id}`, "_blank")
+                      !outOfStock && openProduct(product)
                     }
+                    className="relative flex-none w-[180px] md:w-[260px] bg-white dark:bg-black border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer snap-start"
                   >
                     {/* IMAGE */}
-                    <div className="aspect-[4/5] w-full overflow-hidden bg-gray-50 dark:bg-gray-900">
+                    <div className="relative aspect-[4/5] overflow-hidden bg-gray-100 dark:bg-gray-900">
+
                       <img
-                        src={firstImage(p.images)}
-                        alt={p.name}
-                        className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                        src={image}
+                        alt={product.name}
                         loading="lazy"
+                        className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
                       />
-                    </div>
 
-                    {/* CONTENT */}
-                    <div className="p-3 flex items-center justify-between">
-                      <div className="pr-2 min-w-0">
-                        <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                          {p.name}
-                        </h3>
-                        <p className="mt-1 text-base font-semibold text-black dark:text-white">
-                          ₹{p.price}
-                        </p>
-                      </div>
+                      {discount > 0 && (
+                        <div className="absolute top-2 left-2 bg-red-500 text-white text-xs px-2 py-1 rounded-md font-medium">
+                          {discount}% OFF
+                        </div>
+                      )}
 
-                      {/* ❤️ WISHLIST BUTTON */}
+                      {outOfStock && (
+                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                          <span className="text-white text-sm font-semibold">
+                            Out Of Stock
+                          </span>
+                        </div>
+                      )}
+
+                      {/* WISHLIST */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleWishlistToggle(p);
+                          handleWishlistToggle(product);
                         }}
-                        disabled={loadingBtn}
-                        className={`p-2 rounded-full transition-all duration-200 ${
+                        disabled={loadingWishlist}
+                        className={`absolute top-2 right-2 p-2 rounded-full transition-all ${
                           active
-                            ? "bg-red-500 text-white scale-105"
-                            : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:scale-105"
-                        } ${loadingBtn ? "opacity-50 cursor-not-allowed" : ""}`}
+                            ? "bg-red-500 text-white"
+                            : "bg-white/90 text-black"
+                        } ${
+                          loadingWishlist
+                            ? "opacity-50 cursor-not-allowed"
+                            : ""
+                        }`}
                       >
-                        <Heart size={16} />
+                        <Heart
+                          size={16}
+                          fill={active ? "currentColor" : "none"}
+                        />
                       </button>
+                    </div>
+
+                    {/* CONTENT */}
+                    <div className="p-3">
+
+                      <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 line-clamp-2 min-h-[40px]">
+                        {product.name}
+                      </h3>
+
+                      <div className="mt-2 flex items-center gap-2 flex-wrap">
+
+                        <span className="font-bold text-black dark:text-white">
+                          ₹{product.price}
+                        </span>
+
+                        {product.originalPrice && (
+                          <span className="text-sm text-gray-500 line-through">
+                            ₹{product.originalPrice}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="mt-2 flex items-center justify-between">
+
+                        <span className="text-xs text-slate-500">
+                          {product.category}
+                        </span>
+
+                        <span
+                          className={`text-xs font-medium ${
+                            outOfStock
+                              ? "text-red-500"
+                              : "text-green-600"
+                          }`}
+                        >
+                          {outOfStock
+                            ? "Out of Stock"
+                            : `${product.totalStock} left`}
+                        </span>
+                      </div>
                     </div>
                   </article>
                 );
@@ -186,13 +284,21 @@ export default function TrendingSection() {
             </div>
 
             {/* MOBILE HINT */}
-            <div className="mt-3 flex items-center justify-center gap-2 md:hidden">
-              <span className="text-xs text-slate-500">Swipe</span>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <div className="mt-4 flex items-center justify-center gap-2 md:hidden">
+              <span className="text-xs text-slate-500">
+                Swipe for more
+              </span>
+
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
                 <path
-                  d="M9 6l6 6-6 6"
+                  d="M9 6L15 12L9 18"
                   stroke="currentColor"
-                  strokeWidth="1.4"
+                  strokeWidth="1.5"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
