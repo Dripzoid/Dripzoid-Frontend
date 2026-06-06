@@ -47,320 +47,513 @@ function getHeaders(isJson = true) {
    PRODUCT CARD
 ===================================================== */
 
-export default function ProductCard({ product }) {
-  const navigate = useNavigate();
+export default function ProductCard({
+  product,
+}) {
+  const navigate =
+    useNavigate();
 
-  const [current, setCurrent] = useState(0);
-  const [wlBusy, setWlBusy] = useState(false);
+  const [
+    current,
+    setCurrent,
+  ] = useState(0);
+
+  const [
+    wlBusy,
+    setWlBusy,
+  ] = useState(false);
 
   const {
-    wishlist = [],
+    items: wishlist = [],
     addToWishlist,
     removeFromWishlist,
     fetchWishlist,
-  } = useWishlist() || {};
+    loading: wishlistLoading,
+  } =
+    useWishlist() || {};
 
   /* =========================================
      NORMALIZE PRODUCT
   ========================================= */
 
-  const normalized = useMemo(() => {
-    if (!product) {
-      return null;
-    }
-
-    let parsedImages = [];
-
-    /* =========================
-       ARRAY IMAGES
-    ========================= */
-
-    if (Array.isArray(product?.images)) {
-      parsedImages = product.images.filter(Boolean);
-    }
-
-    /* =========================
-       STRING IMAGES
-    ========================= */
-
-    else if (typeof product?.images === "string") {
-      try {
-        if (product.images.startsWith("[")) {
-          const parsed = JSON.parse(product.images);
-
-          if (Array.isArray(parsed)) {
-            parsedImages = parsed.filter(Boolean);
-          }
-        } else {
-          parsedImages = product.images
-            .split(",")
-            .map((v) => v.trim())
-            .filter(Boolean);
-        }
-      } catch {
-        parsedImages = [];
+  const normalized =
+    useMemo(() => {
+      if (!product) {
+        return null;
       }
-    }
 
-    /* =========================
-       SINGLE IMAGE
-    ========================= */
+      let parsedImages =
+        [];
 
-    else if (product?.image) {
-      parsedImages = [product.image];
-    }
+      /* =========================
+         ARRAY IMAGES
+      ========================= */
 
-    return {
-      ...product,
+      if (
+        Array.isArray(
+          product?.images
+        )
+      ) {
+        parsedImages =
+          product.images.filter(
+            Boolean
+          );
+      }
 
-      id:
-        product?.id ||
-        product?._id ||
-        product?.productId ||
-        product?.product_id ||
-        "",
+      /* =========================
+         STRING IMAGES
+      ========================= */
 
-      slug: product?.slug || "",
+      else if (
+        typeof product?.images ===
+        "string"
+      ) {
+        try {
+          if (
+            product.images.startsWith(
+              "["
+            )
+          ) {
+            const parsed =
+              JSON.parse(
+                product.images
+              );
 
-      name: product?.name || "Product",
+            if (
+              Array.isArray(
+                parsed
+              )
+            ) {
+              parsedImages =
+                parsed.filter(
+                  Boolean
+                );
+            }
+          } else {
+            parsedImages =
+              product.images
+                .split(",")
+                .map((v) =>
+                  v.trim()
+                )
+                .filter(
+                  Boolean
+                );
+          }
+        } catch {
+          parsedImages =
+            [];
+        }
+      }
 
-      category:
-        product?.category ||
-        product?.categoryData?.category ||
-        "",
+      /* =========================
+         SINGLE IMAGE
+      ========================= */
 
-      subcategory: product?.subcategory || "",
+      else if (
+        product?.image
+      ) {
+        parsedImages =
+          [product.image];
+      }
 
-      price: Number(product?.price || 0),
+      return {
+        ...product,
 
-      originalPrice: Number(
-        product?.originalPrice ||
-          product?.oldPrice ||
-          0
-      ),
+        id:
+          product?.id ||
+          product?._id ||
+          product?.productId ||
+          product?.product_id ||
+          "",
 
-      stock: Number(product?.stock || 0),
+        slug:
+          product?.slug ||
+          "",
 
-      seller: product?.seller || "Dripzoid",
+        name:
+          product?.name ||
+          "Product",
 
-      images: parsedImages,
-    };
-  }, [product]);
+        category:
+          product?.category ||
+          product?.categoryData
+            ?.category ||
+          "",
 
-  const pid = String(normalized?.id || "");
+        subcategory:
+          product?.subcategory ||
+          "",
+
+        price:
+          Number(
+            product?.price ||
+              0
+          ),
+
+        originalPrice:
+          Number(
+            product?.originalPrice ||
+              product?.oldPrice ||
+              0
+          ),
+
+        stock:
+          Number(
+            product?.stock ||
+              0
+          ),
+
+        seller:
+          product?.seller ||
+          "Dripzoid",
+
+        images:
+          parsedImages,
+      };
+    }, [product]);
+
+  const pid = String(
+    normalized?.id || ""
+  );
 
   /* =========================================
      WISHLIST
   ========================================= */
 
-  const isWishlisted = useMemo(() => {
-    if (!pid) {
-      return false;
-    }
+  const isWishlisted =
+    useMemo(() => {
+      if (!pid) {
+        return false;
+      }
 
-    return (wishlist || []).some(
-      (w) =>
-        String(
-          w.product_id ||
-            w.id ||
-            w.productId ||
-            w?.product?.id ||
-            ""
-        ) === pid
-    );
-  }, [wishlist, pid]);
+      return (
+        wishlist || []
+      ).some(
+        (w) =>
+          String(
+            w.product_id ||
+              w.id ||
+              w.productId ||
+              w?.product?.id ||
+              ""
+          ) === pid
+      );
+    }, [wishlist, pid]);
 
   /* =========================================
      REVIEWS
   ========================================= */
 
-  const [reviewsList, setReviewsList] = useState([]);
+  const [
+    reviewsList,
+    setReviewsList,
+  ] = useState([]);
 
   useEffect(() => {
     if (!pid) {
-      setReviewsList([]);
+      setReviewsList(
+        []
+      );
       return;
     }
 
-    const ac = new AbortController();
+    const ac =
+      new AbortController();
 
-    const fetchReviews = async () => {
-      try {
-        const res = await fetch(
-          `${API_BASE}/api/reviews/product/${encodeURIComponent(pid)}`,
-          {
-            method: "GET",
-            credentials: "include",
-            signal: ac.signal,
-            headers: getHeaders(false),
+    const fetchReviews =
+      async () => {
+        try {
+          const res =
+            await fetch(
+              `${API_BASE}/api/reviews/product/${encodeURIComponent(
+                pid
+              )}`,
+              {
+                method:
+                  "GET",
+                credentials:
+                  "include",
+                signal:
+                  ac.signal,
+                headers:
+                  getHeaders(
+                    false
+                  ),
+              }
+            );
+
+          if (
+            !res.ok
+          ) {
+            return;
           }
-        );
 
-        if (!res.ok) {
-          return;
-        }
+          const rows =
+            await res.json();
 
-        const rows = await res.json();
-
-        if (rows?.success && Array.isArray(rows.reviews)) {
-          setReviewsList(rows.reviews);
-        } else if (Array.isArray(rows)) {
-          setReviewsList(rows);
+          if (
+            rows?.success &&
+            Array.isArray(
+              rows.reviews
+            )
+          ) {
+            setReviewsList(
+              rows.reviews
+            );
+          } else if (
+            Array.isArray(
+              rows
+            )
+          ) {
+            setReviewsList(
+              rows
+            );
+          }
+        } catch (
+          err
+        ) {
+          if (
+            err.name !==
+            "AbortError"
+          ) {
+            console.warn(
+              "Reviews fetch failed:",
+              err
+            );
+          }
         }
-      } catch (err) {
-        if (err.name !== "AbortError") {
-          console.warn("Reviews fetch failed:", err);
-        }
-      }
-    };
+      };
 
     fetchReviews();
 
-    return () => ac.abort();
+    return () =>
+      ac.abort();
   }, [pid]);
 
   /* =========================================
      RATINGS
   ========================================= */
 
-  const avgRating = useMemo(() => {
-    if (!reviewsList.length) {
-      return 0;
-    }
+  const avgRating =
+    useMemo(() => {
+      if (
+        !reviewsList.length
+      ) {
+        return 0;
+      }
 
-    const sum = reviewsList.reduce(
-      (acc, review) => acc + Number(review.rating || 0),
-      0
-    );
+      const sum =
+        reviewsList.reduce(
+          (
+            acc,
+            review
+          ) =>
+            acc +
+            Number(
+              review.rating ||
+                0
+            ),
+          0
+        );
 
-    return sum / reviewsList.length;
-  }, [reviewsList]);
+      return (
+        sum /
+        reviewsList.length
+      );
+    }, [reviewsList]);
 
-  const reviewsCount = reviewsList.length;
+  const reviewsCount =
+    reviewsList.length;
 
   /* =========================================
      IMAGES
   ========================================= */
 
   const images =
-    Array.isArray(normalized?.images) && normalized.images.length > 0
+    Array.isArray(
+      normalized?.images
+    ) &&
+    normalized.images
+      .length > 0
       ? normalized.images
       : [];
 
   useEffect(() => {
-    setCurrent((idx) =>
-      images.length && idx >= images.length ? 0 : idx
+    setCurrent(
+      (idx) =>
+        images.length &&
+        idx >=
+          images.length
+          ? 0
+          : idx
     );
   }, [images]);
 
-  const [imageSrc, setImageSrc] = useState(images[0] || "");
+  const [
+    imageSrc,
+    setImageSrc,
+  ] = useState(
+    images[0] || ""
+  );
 
   useEffect(() => {
-    setImageSrc(images[current] || "");
+    setImageSrc(
+      images[current] ||
+        ""
+    );
   }, [images, current]);
 
-  const handleImgError = useCallback(() => {
-    setImageSrc("");
-  }, []);
+  const handleImgError =
+    useCallback(() => {
+      setImageSrc("");
+    }, []);
 
   /* =========================================
      PRICING
   ========================================= */
 
   const hasDiscount =
-    normalized?.originalPrice > normalized?.price &&
-    normalized?.originalPrice > 0;
+    normalized?.originalPrice >
+      normalized?.price &&
+    normalized
+      ?.originalPrice > 0;
 
-  const discountPercent = hasDiscount
-    ? Math.round(
-        ((normalized.originalPrice - normalized.price) /
-          normalized.originalPrice) *
-          100
-      )
-    : 0;
+  const discountPercent =
+    hasDiscount
+      ? Math.round(
+          ((normalized.originalPrice -
+            normalized.price) /
+            normalized.originalPrice) *
+            100
+        )
+      : 0;
 
   /* =========================================
      STOCK
   ========================================= */
 
-  const getStockBadge = useCallback(() => {
-    const stock = normalized?.stock;
+  const getStockBadge =
+    useCallback(() => {
+      const stock =
+        normalized?.stock;
 
-    if (stock === null || stock === undefined) {
-      return null;
-    }
+      if (
+        stock ===
+          null ||
+        stock ===
+          undefined
+      ) {
+        return null;
+      }
 
-    if (stock <= 0) {
+      if (stock <= 0) {
+        return {
+          text: "Out of stock",
+          tone:
+            "bg-red-600 text-white",
+        };
+      }
+
+      if (stock <= 5) {
+        return {
+          text: `Only ${stock} left`,
+          tone:
+            "bg-amber-500 text-black",
+        };
+      }
+
       return {
-        text: "Out of stock",
-        tone: "bg-red-600 text-white",
+        text: "In stock",
+        tone:
+          "bg-green-600 text-white",
       };
-    }
+    }, [normalized]);
 
-    if (stock <= 5) {
-      return {
-        text: `Only ${stock} left`,
-        tone: "bg-amber-500 text-black",
-      };
-    }
-
-    return {
-      text: "In stock",
-      tone: "bg-green-600 text-white",
-    };
-  }, [normalized]);
-
-  const stockBadge = getStockBadge();
+  const stockBadge =
+    getStockBadge();
 
   /* =========================================
      NAVIGATION
   ========================================= */
 
-  const handleNavigate = useCallback(() => {
-    if (!pid) {
-      return;
-    }
+  const handleNavigate =
+    useCallback(() => {
+      if (!pid) {
+        return;
+      }
 
-    navigate(`/product/${pid}`);
-  }, [navigate, pid]);
+      navigate(
+        `/product/${pid}`
+      );
+    }, [
+      navigate,
+      pid,
+    ]);
 
   /* =========================================
      WISHLIST TOGGLE
   ========================================= */
 
-  const handleWishlistToggle = async (e) => {
-    e.stopPropagation();
+  const handleWishlistToggle =
+    async (e) => {
+      e.stopPropagation();
 
-    if (!pid || wlBusy) {
-      return;
-    }
-
-    setWlBusy(true);
-
-    try {
-      if (isWishlisted) {
-        if (typeof removeFromWishlist === "function") {
-          await removeFromWishlist(pid);
-
-          if (typeof fetchWishlist === "function") {
-            await fetchWishlist();
-          }
-        }
-      } else {
-        if (typeof addToWishlist === "function") {
-          await addToWishlist(pid);
-
-          if (typeof fetchWishlist === "function") {
-            await fetchWishlist();
-          }
-        }
+      if (
+        !pid ||
+        wlBusy ||
+        wishlistLoading
+      ) {
+        return;
       }
-    } catch (err) {
-      console.warn("Wishlist toggle failed:", err);
-    } finally {
-      setWlBusy(false);
-    }
-  };
+
+      setWlBusy(true);
+
+      try {
+        if (isWishlisted) {
+          if (
+            typeof removeFromWishlist ===
+            "function"
+          ) {
+            await removeFromWishlist(
+              pid
+            );
+
+            if (
+              typeof fetchWishlist ===
+              "function"
+            ) {
+              await fetchWishlist();
+            }
+          }
+        } else {
+          if (
+            typeof addToWishlist ===
+            "function"
+          ) {
+            await addToWishlist(
+              pid
+            );
+
+            if (
+              typeof fetchWishlist ===
+              "function"
+            ) {
+              await fetchWishlist();
+            }
+          }
+        }
+      } catch (
+        err
+      ) {
+        console.warn(
+          "Wishlist toggle failed:",
+          err
+        );
+      } finally {
+        setWlBusy(false);
+      }
+    };
 
   /* =========================================
      EMPTY
@@ -378,7 +571,9 @@ export default function ProductCard({ product }) {
     <div
       role="button"
       tabIndex={0}
-      onClick={handleNavigate}
+      onClick={
+        handleNavigate
+      }
       className="group relative flex flex-col w-full min-w-0 min-h-[340px] bg-white dark:bg-neutral-900 border border-gray-100 dark:border-gray-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer"
     >
       {/* IMAGE */}
@@ -386,11 +581,15 @@ export default function ProductCard({ product }) {
         {imageSrc ? (
           <img
             src={imageSrc}
-            alt={normalized.name}
+            alt={
+              normalized.name
+            }
             className="w-full h-full object-cover"
             loading="lazy"
             decoding="async"
-            onError={handleImgError}
+            onError={
+              handleImgError
+            }
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">
@@ -401,32 +600,64 @@ export default function ProductCard({ product }) {
         {/* WISHLIST */}
         <button
           type="button"
-          onClick={handleWishlistToggle}
-          disabled={wlBusy}
+          onClick={
+            handleWishlistToggle
+          }
+          disabled={
+            wlBusy ||
+            wishlistLoading
+          }
           className="absolute top-3 right-3 bg-white/95 dark:bg-black/80 rounded-full p-2 shadow-sm z-10"
+          aria-label={
+            isWishlisted
+              ? "Remove from wishlist"
+              : "Add to wishlist"
+          }
+          title={
+            isWishlisted
+              ? "Remove from wishlist"
+              : "Add to wishlist"
+          }
         >
           <FiHeart
             size={18}
-            className={isWishlisted ? "text-red-500" : "text-gray-500"}
+            className={
+              isWishlisted
+                ? "text-red-500 fill-red-500"
+                : "text-gray-500"
+            }
           />
         </button>
 
         {/* IMAGE DOTS */}
-        {images.length > 1 && (
+        {images.length >
+          1 && (
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-2 z-10">
-            {images.map((_, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setCurrent(idx);
-                }}
-                className={`w-2 h-2 rounded-full ${
-                  idx === current ? "bg-white" : "bg-white/60"
-                }`}
-              />
-            ))}
+            {images.map(
+              (
+                _,
+                idx
+              ) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={(
+                    e
+                  ) => {
+                    e.stopPropagation();
+                    setCurrent(
+                      idx
+                    );
+                  }}
+                  className={`w-2 h-2 rounded-full ${
+                    idx ===
+                    current
+                      ? "bg-white"
+                      : "bg-white/60"
+                  }`}
+                />
+              )
+            )}
           </div>
         )}
       </div>
@@ -440,19 +671,22 @@ export default function ProductCard({ product }) {
 
         {/* CATEGORY */}
         <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1">
-          {normalized.subcategory || normalized.category}
+          {normalized.subcategory ||
+            normalized.category}
         </p>
 
         {/* PRICE */}
         <div className="mt-3 flex items-center gap-2 flex-wrap">
           <span className="text-base font-bold text-gray-900 dark:text-white">
-            ₹{normalized.price.toLocaleString()}
+            ₹
+            {normalized.price.toLocaleString()}
           </span>
 
           {hasDiscount && (
             <>
               <span className="text-xs line-through text-gray-500 dark:text-gray-400">
-                ₹{normalized.originalPrice.toLocaleString()}
+                ₹
+                {normalized.originalPrice.toLocaleString()}
               </span>
 
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-600 text-white">
@@ -466,26 +700,41 @@ export default function ProductCard({ product }) {
 
         {/* RATINGS */}
         <div className="mt-3">
-          {reviewsCount > 0 ? (
+          {reviewsCount >
+          0 ? (
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-0.5 text-yellow-500">
-                {Array.from({ length: 5 }).map((_, idx) => (
-                  <AiFillStar
-                    key={idx}
-                    className={
-                      idx < Math.round(avgRating)
-                        ? "opacity-100"
-                        : "opacity-30"
-                    }
-                    style={{
-                      fontSize: 12,
-                    }}
-                  />
-                ))}
+                {Array.from({
+                  length: 5,
+                }).map(
+                  (
+                    _,
+                    idx
+                  ) => (
+                    <AiFillStar
+                      key={
+                        idx
+                      }
+                      className={
+                        idx <
+                        Math.round(
+                          avgRating
+                        )
+                          ? "opacity-100"
+                          : "opacity-30"
+                      }
+                      style={{
+                        fontSize: 12,
+                      }}
+                    />
+                  )
+                )}
               </div>
 
               <span className="text-xs font-medium text-gray-800 dark:text-gray-200">
-                {avgRating.toFixed(1)}
+                {avgRating.toFixed(
+                  1
+                )}
               </span>
 
               <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -501,7 +750,9 @@ export default function ProductCard({ product }) {
 
         {/* FOOTER */}
         <div className="mt-auto pt-4 flex items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
-          <span className="truncate">{normalized.seller}</span>
+          <span className="truncate">
+            {normalized.seller}
+          </span>
 
           {stockBadge && (
             <div
