@@ -1,15 +1,23 @@
 // src/components/OrdersSection.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, X, Trash2, RefreshCw } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  X,
+  Trash2,
+  RefreshCw,
+} from "lucide-react";
 
 /**
- * OrdersSection — simplified & modernized
- * - Removed reorder and all tracking-related logic (SSE/poll/checkpoints)
- * - Keeps: status filter, invoice download (POST /api/shipping/download-invoice), cancel order, pagination
+ * OrdersSection — cookie-only auth version
+ * - Removed localStorage token and Bearer headers
+ * - Uses credentials: "include" for all protected requests
+ * - Keeps: status filter, invoice download, cancel order, pagination
  * - Modern black & white Tailwind UI supporting light/dark themes and mobile responsiveness
  */
 
-const API_BASE = process.env.REACT_APP_API_BASE || "";
+const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/+$/, "");
 
 /* ---------- small helpers ---------- */
 const fmtDate = (iso) => {
@@ -22,6 +30,7 @@ const fmtDate = (iso) => {
     return iso;
   }
 };
+
 const fmtCurrency = (n) => `₹${Number(Number(n || 0)).toLocaleString()}`;
 
 const safeParseJSON = (s) => {
@@ -36,7 +45,17 @@ const safeParseJSON = (s) => {
 const getImageFromItem = (item) => {
   if (!item) return "/placeholder.jpg";
   if (typeof item === "string" && item.startsWith("http")) return item;
-  const directFields = ["image", "image_url", "img", "picture", "photo", "thumbnail", "thumbnail_url"];
+
+  const directFields = [
+    "image",
+    "image_url",
+    "img",
+    "picture",
+    "photo",
+    "thumbnail",
+    "thumbnail_url",
+  ];
+
   for (const f of directFields) {
     const v = item[f];
     if (typeof v === "string" && v.trim()) {
@@ -45,10 +64,13 @@ const getImageFromItem = (item) => {
     }
     if (v && typeof v === "object" && v.url) return v.url;
   }
+
   if (item.images) {
     if (Array.isArray(item.images) && item.images.length > 0) {
       const first = item.images[0];
-      if (typeof first === "string") return first.split(",").map((s) => s.trim()).find(Boolean) || first;
+      if (typeof first === "string") {
+        return first.split(",").map((s) => s.trim()).find(Boolean) || first;
+      }
       if (first && first.url) return first.url;
     } else if (typeof item.images === "string") {
       return item.images.split(",").map((s) => s.trim()).find(Boolean) || item.images;
@@ -56,11 +78,13 @@ const getImageFromItem = (item) => {
       return item.images.url;
     }
   }
+
   if (item.media && Array.isArray(item.media) && item.media[0]) {
     const m = item.media[0];
     if (typeof m === "string") return m.split(",").map((s) => s.trim()).find(Boolean) || m;
     if (m.url) return m.url;
   }
+
   if (item.variant) {
     if (typeof item.variant === "string" && item.variant.startsWith("http")) return item.variant;
     if (item.variant.image) return Array.isArray(item.variant.image) ? item.variant.image[0] : item.variant.image;
@@ -70,6 +94,7 @@ const getImageFromItem = (item) => {
       if (v.url) return v.url;
     }
   }
+
   if (item.product) {
     if (item.product.image) return Array.isArray(item.product.image) ? item.product.image[0] : item.product.image;
     if (Array.isArray(item.product.images) && item.product.images[0]) {
@@ -79,11 +104,21 @@ const getImageFromItem = (item) => {
     }
     if (item.product.thumbnail) return item.product.thumbnail;
   }
+
   return "/placeholder.jpg";
 };
 
 const normalizeOrder = (o = {}) => {
-  const total = Number(o.total ?? o.total_amount ?? o.total_price ?? o.order_total ?? o.amount ?? 0) || 0;
+  const total =
+    Number(
+      o.total ??
+        o.total_amount ??
+        o.total_price ??
+        o.order_total ??
+        o.amount ??
+        0
+    ) || 0;
+
   let items = [];
   if (Array.isArray(o.items)) items = o.items;
   else if (Array.isArray(o.order_items)) items = o.order_items;
@@ -91,7 +126,12 @@ const normalizeOrder = (o = {}) => {
   else if (o.items && typeof o.items === "object") items = [o.items];
   else if (o.order_items && typeof o.order_items === "object") items = [o.order_items];
 
-  const shipping_address = o.shipping_address != null ? (typeof o.shipping_address === "string" ? safeParseJSON(o.shipping_address) : o.shipping_address) : safeParseJSON(o.address) ?? null;
+  const shipping_address =
+    o.shipping_address != null
+      ? typeof o.shipping_address === "string"
+        ? safeParseJSON(o.shipping_address)
+        : o.shipping_address
+      : safeParseJSON(o.address) ?? null;
 
   return {
     id: o.id ?? o.order_id ?? o._id ?? null,
@@ -108,6 +148,11 @@ const normalizeOrder = (o = {}) => {
   };
 };
 
+function buildUrl(path) {
+  if (!path.startsWith("/")) path = `/${path}`;
+  return `${API_BASE}${path}`;
+}
+
 export default function OrdersSection() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -122,25 +167,37 @@ export default function OrdersSection() {
   const [canceling, setCanceling] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
   const abortRef = useRef(null);
 
   const fetchOrders = async () => {
     try {
       abortRef.current?.abort?.();
     } catch {}
+
     const controller = new AbortController();
     abortRef.current = controller;
 
     setLoading(true);
+
     try {
       const params = new URLSearchParams();
       params.append("page", String(page));
       params.append("limit", String(limit));
-      if (statusFilter && statusFilter !== "All") params.append("status", String(statusFilter).toLowerCase());
+      if (statusFilter && statusFilter !== "All") {
+        params.append("status", String(statusFilter).toLowerCase());
+      }
 
-      const url = `${API_BASE}/api/user/orders${params.toString() ? `?${params.toString()}` : ""}`;
-      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: controller.signal });
+      const url = `${buildUrl("/api/user/orders")}${params.toString() ? `?${params.toString()}` : ""}`;
+
+      const res = await fetch(url, {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+      });
+
       if (!res.ok) {
         const txt = await res.text().catch(() => "");
         let msg = "Failed fetching orders";
@@ -148,15 +205,39 @@ export default function OrdersSection() {
           const j = txt ? JSON.parse(txt) : null;
           msg = j?.message || j?.error || msg;
         } catch {}
+
+        if (res.status === 401) {
+          setOrders([]);
+          setTotal(0);
+          return;
+        }
+
         throw new Error(msg);
       }
 
       const text = await res.text();
       let body = null;
-      try { body = text ? JSON.parse(text) : null; } catch { body = null; }
+      try {
+        body = text ? JSON.parse(text) : null;
+      } catch {
+        body = null;
+      }
 
-      const arr = body?.data ?? (Array.isArray(body) ? body : body?.orders ?? body?.results ?? []);
-      const meta = body?.meta ?? body?.pagination ?? { total: Number(body?.total ?? (Array.isArray(arr) ? arr.length : 0)), page, pages: Math.max(1, Math.ceil(Number(body?.total ?? (Array.isArray(arr) ? arr.length : 0)) / (limit || 12))), limit };
+      const arr =
+        body?.data ??
+        (Array.isArray(body) ? body : body?.orders ?? body?.results ?? []);
+
+      const meta =
+        body?.meta ??
+        body?.pagination ?? {
+          total: Number(body?.total ?? (Array.isArray(arr) ? arr.length : 0)),
+          page,
+          pages: Math.max(
+            1,
+            Math.ceil(Number(body?.total ?? (Array.isArray(arr) ? arr.length : 0)) / (limit || 12))
+          ),
+          limit,
+        };
 
       const normalized = Array.isArray(arr) ? arr.map(normalizeOrder) : [];
       setOrders(normalized);
@@ -174,11 +255,18 @@ export default function OrdersSection() {
   };
 
   useEffect(() => {
-    // when filter changes, reset to page 1 then fetch
     setPage(1);
-    // microtask to ensure reset applied
-    setTimeout(() => fetchOrders(), 0);
-    return () => abortRef.current?.abort?.();
+  }, [statusFilter]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchOrders();
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+      abortRef.current?.abort?.();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, refreshKey, statusFilter]);
 
@@ -186,10 +274,15 @@ export default function OrdersSection() {
 
   const visibleOrders = useMemo(() => {
     const copy = [...orders];
-    copy.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    copy.sort(
+      (a, b) =>
+        new Date(b.created_at || 0) - new Date(a.created_at || 0)
+    );
+
     if (!statusFilter || statusFilter === "All") return copy;
+
     const want = String(statusFilter).toLowerCase();
-    return copy.filter((o) => (String(o.status || "").toLowerCase() === want));
+    return copy.filter((o) => String(o.status || "").toLowerCase() === want);
   }, [orders, statusFilter]);
 
   const performCancel = async (orderId) => {
@@ -197,19 +290,33 @@ export default function OrdersSection() {
     setCanceling(true);
     setActionLoadingId(orderId);
 
-    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, cancelling: true } : o)));
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, cancelling: true } : o))
+    );
 
     try {
-      const res = await fetch(`${API_BASE}/api/user/orders/${orderId}/cancel`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      });
+      const res = await fetch(
+        buildUrl(`/api/user/orders/${encodeURIComponent(orderId)}/cancel`),
+        {
+          method: "PUT",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
 
       const text = await res.text().catch(() => "");
       let body = {};
-      try { body = text ? JSON.parse(text) : {}; } catch { body = { message: text || "" }; }
+      try {
+        body = text ? JSON.parse(text) : {};
+      } catch {
+        body = { message: text || "" };
+      }
 
-      if (!res.ok) throw new Error(body.message || body.error || `Cancel failed (status ${res.status})`);
+      if (!res.ok) {
+        throw new Error(body.message || body.error || `Cancel failed (status ${res.status})`);
+      }
 
       await fetchOrders();
       alert(body.message || "Order cancelled successfully");
@@ -227,18 +334,27 @@ export default function OrdersSection() {
   const downloadInvoice = async (order) => {
     if (!order?.id) return;
     setActionLoadingId(order.id);
+
     try {
       const payload = { orderId: order.id, order_id: order.id, id: order.id };
-      const res = await fetch(`${API_BASE}/api/shipping/download-invoice`, {
+
+      const res = await fetch(buildUrl("/api/shipping/download-invoice"), {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
         const txt = await res.text().catch(() => "");
         let body = {};
-        try { body = txt ? JSON.parse(txt) : {}; } catch { body = { message: txt || "" }; }
+        try {
+          body = txt ? JSON.parse(txt) : {};
+        } catch {
+          body = { message: txt || "" };
+        }
         throw new Error(body.message || `Invoice download failed (status ${res.status})`);
       }
 
@@ -272,15 +388,22 @@ export default function OrdersSection() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
           <div>
             <h2 className="text-2xl font-bold">My Orders</h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Professional, minimal black & white layout — click a card to view details.</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Professional, minimal black & white layout — click a card to view details.
+            </p>
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto mt-3 sm:mt-0">
-            <label htmlFor="status" className="sr-only">Status</label>
+            <label htmlFor="status" className="sr-only">
+              Status
+            </label>
             <select
               id="status"
               value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
               className="px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-black text-sm w-full sm:w-auto"
               title="Filter by status"
             >
@@ -307,13 +430,21 @@ export default function OrdersSection() {
           {loading ? (
             <div className="space-y-4">
               {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="animate-pulse border border-gray-200 dark:border-gray-800 rounded-lg p-4 bg-white dark:bg-gray-900" />
+                <div
+                  key={i}
+                  className="animate-pulse border border-gray-200 dark:border-gray-800 rounded-lg p-4 bg-white dark:bg-gray-900"
+                />
               ))}
             </div>
           ) : visibleOrders.length === 0 ? (
             <div className="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 p-8 text-center">
               <p className="text-gray-600 dark:text-gray-400 mb-3">No orders found</p>
-              <button onClick={() => setRefreshKey((k) => k + 1)} className="px-4 py-2 rounded-md bg-black text-white dark:bg-white dark:text-black">Refresh</button>
+              <button
+                onClick={() => setRefreshKey((k) => k + 1)}
+                className="px-4 py-2 rounded-md bg-black text-white dark:bg-white dark:text-black"
+              >
+                Refresh
+              </button>
             </div>
           ) : (
             <div className="flex flex-col divide-y divide-gray-100 dark:divide-gray-800">
@@ -329,7 +460,9 @@ export default function OrdersSection() {
                       src={getImageFromItem(order.items && order.items[0])}
                       alt={order.items?.[0]?.name || `order-${order.id}`}
                       className="w-full h-full object-cover"
-                      onError={(e) => { e.currentTarget.src = "/placeholder.jpg"; }}
+                      onError={(e) => {
+                        e.currentTarget.src = "/placeholder.jpg";
+                      }}
                     />
                   </div>
 
@@ -337,8 +470,18 @@ export default function OrdersSection() {
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                       <div>
                         <h3 className="font-semibold text-lg">Order #{order.id}</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">{fmtDate(order.created_at)}</p>
-                        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{order.items?.[0]?.name ? `${order.items[0].name}${order.items.length > 1 ? ` + ${order.items.length - 1} more` : ""}` : "—"}</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          {fmtDate(order.created_at)}
+                        </p>
+                        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                          {order.items?.[0]?.name
+                            ? `${order.items[0].name}${
+                                order.items.length > 1
+                                  ? ` + ${order.items.length - 1} more`
+                                  : ""
+                              }`
+                            : "—"}
+                        </p>
                       </div>
 
                       <div className="text-right">
@@ -352,7 +495,10 @@ export default function OrdersSection() {
                     <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                       <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
                         <button
-                          onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedOrder(order);
+                          }}
                           className="text-sm underline"
                           title="Details"
                         >
@@ -360,16 +506,23 @@ export default function OrdersSection() {
                         </button>
 
                         <button
-                          onClick={async (e) => { e.stopPropagation(); await downloadInvoice(order); }}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            await downloadInvoice(order);
+                          }}
                           className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
                           title="Download Invoice"
                         >
-                          <Download size={14} /> {actionLoadingId === order.id ? "Downloading..." : "Invoice"}
+                          <Download size={14} />{" "}
+                          {actionLoadingId === order.id ? "Downloading..." : "Invoice"}
                         </button>
 
-                        {!( (order.status || "").toLowerCase() === "cancelled") && (
+                        {String(order.status || "").toLowerCase() !== "cancelled" && (
                           <button
-                            onClick={(e) => { e.stopPropagation(); setOrderToCancel(order.id); }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOrderToCancel(order.id);
+                            }}
                             className="flex items-center gap-2 px-2 py-1 rounded-md text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30"
                           >
                             <Trash2 size={14} /> Cancel
@@ -378,7 +531,6 @@ export default function OrdersSection() {
                       </div>
 
                       <div className="text-sm text-gray-500 dark:text-gray-400">
-                        {/* Removed tracking details to keep UI minimal */}
                         <span>Delivery & payment details are available in the order details view.</span>
                       </div>
                     </div>
@@ -392,14 +544,31 @@ export default function OrdersSection() {
                   {total === 0 ? (
                     <>Showing 0 orders</>
                   ) : (
-                    <>Showing <strong>{(page - 1) * limit + 1}-{Math.min(page * limit, total)}</strong> of <strong>{total}</strong> orders</>
+                    <>
+                      Showing <strong>{(page - 1) * limit + 1}-{Math.min(page * limit, total)}</strong> of{" "}
+                      <strong>{total}</strong> orders
+                    </>
                   )}
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700 disabled:opacity-50"><ChevronLeft size={16} /></button>
-                  <div className="text-sm">Page <strong>{page}</strong> / {pages}</div>
-                  <button disabled={page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))} className="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700 disabled:opacity-50"><ChevronRight size={16} /></button>
+                  <button
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700 disabled:opacity-50"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <div className="text-sm">
+                    Page <strong>{page}</strong> / {pages}
+                  </div>
+                  <button
+                    disabled={page >= pages}
+                    onClick={() => setPage((p) => Math.min(pages, p + 1))}
+                    className="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700 disabled:opacity-50"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
                 </div>
               </div>
             </div>
@@ -411,12 +580,25 @@ export default function OrdersSection() {
       {orderToCancel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/50">
           <div className="w-full max-w-md bg-white dark:bg-gray-900 rounded-lg shadow-xl overflow-hidden">
-            <div className="p-4 border-b border-gray-100 dark:border-gray-800"><h3 className="font-semibold">Cancel Order</h3></div>
+            <div className="p-4 border-b border-gray-100 dark:border-gray-800">
+              <h3 className="font-semibold">Cancel Order</h3>
+            </div>
             <div className="p-4">
-              <p>Are you sure you want to cancel order <strong>#{orderToCancel}</strong>?</p>
+              <p>
+                Are you sure you want to cancel order <strong>#{orderToCancel}</strong>?
+              </p>
               <div className="mt-4 flex justify-end gap-3">
-                <button onClick={() => setOrderToCancel(null)} className="px-4 py-2 rounded-md border border-gray-300 dark:border-gray-700">No</button>
-                <button onClick={() => performCancel(orderToCancel)} disabled={canceling || actionLoadingId === orderToCancel} className="px-4 py-2 rounded-md bg-rose-600 text-white disabled:opacity-50">
+                <button
+                  onClick={() => setOrderToCancel(null)}
+                  className="px-4 py-2 rounded-md border border-gray-300 dark:border-gray-700"
+                >
+                  No
+                </button>
+                <button
+                  onClick={() => performCancel(orderToCancel)}
+                  disabled={canceling || actionLoadingId === orderToCancel}
+                  className="px-4 py-2 rounded-md bg-rose-600 text-white disabled:opacity-50"
+                >
                   {canceling || actionLoadingId === orderToCancel ? "Cancelling..." : "Yes, Cancel"}
                 </button>
               </div>
@@ -432,9 +614,27 @@ export default function OrdersSection() {
             <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800">
               <h3 className="font-semibold">Order #{selectedOrder.id}</h3>
               <div className="flex items-center gap-2">
-                <button onClick={() => downloadInvoice(selectedOrder)} className="px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-800" title="Download Invoice"><Download size={16} /></button>
-                <button onClick={() => setRefreshKey((k) => k + 1)} className="px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-800" title="Refresh"><RefreshCw size={16} /></button>
-                <button onClick={() => setSelectedOrder(null)} className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800" title="Close"><X size={18} /></button>
+                <button
+                  onClick={() => downloadInvoice(selectedOrder)}
+                  className="px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-800"
+                  title="Download Invoice"
+                >
+                  <Download size={16} />
+                </button>
+                <button
+                  onClick={() => setRefreshKey((k) => k + 1)}
+                  className="px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-800"
+                  title="Refresh"
+                >
+                  <RefreshCw size={16} />
+                </button>
+                <button
+                  onClick={() => setSelectedOrder(null)}
+                  className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
+                  title="Close"
+                >
+                  <X size={18} />
+                </button>
               </div>
             </div>
 
@@ -444,7 +644,10 @@ export default function OrdersSection() {
                 <ul className="space-y-4">
                   {(selectedOrder.items || []).map((it, idx) => {
                     const key = it?.id ?? it?.sku ?? `item-${idx}`;
-                    const img = getImageFromItem({ ...it, image: it.image ?? it.img ?? it.picture ?? it.photo });
+                    const img = getImageFromItem({
+                      ...it,
+                      image: it.image ?? it.img ?? it.picture ?? it.photo,
+                    });
                     const qty = it.quantity ?? it.qty ?? it.count ?? 1;
                     const price = Number(it.price ?? it.unit_price ?? it.price_per_unit ?? 0);
                     const totalLine = Number(price) * Number(qty);
@@ -452,12 +655,21 @@ export default function OrdersSection() {
                     return (
                       <li key={key} className="flex items-center gap-4 border-b pb-3">
                         <div className="w-16 h-16 rounded overflow-hidden bg-gray-50 dark:bg-gray-800">
-                          <img src={img} alt={it.name || "item"} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = "/placeholder.jpg"; }} />
+                          <img
+                            src={img}
+                            alt={it.name || "item"}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.src = "/placeholder.jpg";
+                            }}
+                          />
                         </div>
 
                         <div className="flex-1">
                           <div className="font-medium">{it.name || it.title || "Item"}</div>
-                          <div className="text-sm text-gray-500 dark:text-gray-400">Qty: <strong>{qty}</strong> × {fmtCurrency(price)}</div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                            Qty: <strong>{qty}</strong> × {fmtCurrency(price)}
+                          </div>
                         </div>
 
                         <div className="text-right font-semibold">{fmtCurrency(totalLine)}</div>
@@ -470,36 +682,80 @@ export default function OrdersSection() {
               <div>
                 <h4 className="text-sm font-semibold mb-2">Summary</h4>
                 <div className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
-                  <div className="flex justify-between"><span>Subtotal</span><span>{fmtCurrency(selectedOrder.subtotal ?? selectedOrder.total)}</span></div>
-                  <div className="flex justify-between"><span>Shipping</span><span>{fmtCurrency(selectedOrder.shipping ?? 0)}</span></div>
-                  <div className="flex justify-between"><span>Tax</span><span>{fmtCurrency(selectedOrder.tax ?? 0)}</span></div>
-                  {selectedOrder.discount != null && selectedOrder.discount !== 0 && (<div className="flex justify-between text-green-600"><span>Discount</span><span>-{fmtCurrency(selectedOrder.discount)}</span></div>)}
-                  <div className="border-t pt-2 flex justify-between font-semibold text-lg"><span>Total</span><span>{fmtCurrency(selectedOrder.total)}</span></div>
+                  <div className="flex justify-between">
+                    <span>Subtotal</span>
+                    <span>{fmtCurrency(selectedOrder.subtotal ?? selectedOrder.total)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Shipping</span>
+                    <span>{fmtCurrency(selectedOrder.shipping ?? 0)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Tax</span>
+                    <span>{fmtCurrency(selectedOrder.tax ?? 0)}</span>
+                  </div>
+                  {selectedOrder.discount != null && selectedOrder.discount !== 0 && (
+                    <div className="flex justify-between text-green-600">
+                      <span>Discount</span>
+                      <span>-{fmtCurrency(selectedOrder.discount)}</span>
+                    </div>
+                  )}
+                  <div className="border-t pt-2 flex justify-between font-semibold text-lg">
+                    <span>Total</span>
+                    <span>{fmtCurrency(selectedOrder.total)}</span>
+                  </div>
                 </div>
 
                 <div className="mt-6">
                   <h4 className="text-sm font-semibold mb-2">Delivery</h4>
-                  <div className="text-sm text-gray-600 dark:text-gray-300 font-medium">{selectedOrder.shipping_address?.name || "—"}</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-300 font-medium">
+                    {selectedOrder.shipping_address?.name || "—"}
+                  </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
                     {selectedOrder.shipping_address ? (
                       <>
-                        {selectedOrder.shipping_address.line1 || ""}{selectedOrder.shipping_address.line2 ? `, ${selectedOrder.shipping_address.line2}` : ""}<br />
-                        {(selectedOrder.shipping_address.city ? `${selectedOrder.shipping_address.city}, ` : "")}{selectedOrder.shipping_address.state || ""} {selectedOrder.shipping_address.pincode || selectedOrder.shipping_address.postcode || ""}<br />
-                        {selectedOrder.shipping_address.country || ""}<br />
-                        {selectedOrder.shipping_address.phone ? `Phone: ${selectedOrder.shipping_address.phone}` : ""}
+                        {selectedOrder.shipping_address.line1 || ""}
+                        {selectedOrder.shipping_address.line2
+                          ? `, ${selectedOrder.shipping_address.line2}`
+                          : ""}
+                        <br />
+                        {(selectedOrder.shipping_address.city
+                          ? `${selectedOrder.shipping_address.city}, `
+                          : "")}
+                        {selectedOrder.shipping_address.state || ""}{" "}
+                        {selectedOrder.shipping_address.pincode ||
+                          selectedOrder.shipping_address.postcode ||
+                          ""}
+                        <br />
+                        {selectedOrder.shipping_address.country || ""}
+                        <br />
+                        {selectedOrder.shipping_address.phone
+                          ? `Phone: ${selectedOrder.shipping_address.phone}`
+                          : ""}
                       </>
                     ) : (
                       selectedOrder.shipping_address?.address || "—"
                     )}
                   </div>
-
                 </div>
 
                 <div className="mt-6 flex gap-2">
-                  {!( (selectedOrder.status || "").toLowerCase() === "cancelled") && (
-                    <button onClick={() => setOrderToCancel(selectedOrder.id)} className="px-3 py-2 rounded-md bg-rose-50 text-rose-600">Cancel</button>
+                  {String(selectedOrder.status || "").toLowerCase() !== "cancelled" && (
+                    <button
+                      onClick={() => setOrderToCancel(selectedOrder.id)}
+                      className="px-3 py-2 rounded-md bg-rose-50 text-rose-600"
+                    >
+                      Cancel
+                    </button>
                   )}
-                  <button onClick={() => { window.location.href = `/checkout?reorder=${encodeURIComponent(selectedOrder.id)}`; }} className="px-3 py-2 rounded-md bg-black text-white">Buy Again</button>
+                  <button
+                    onClick={() => {
+                      window.location.href = `/checkout?reorder=${encodeURIComponent(selectedOrder.id)}`;
+                    }}
+                    className="px-3 py-2 rounded-md bg-black text-white"
+                  >
+                    Buy Again
+                  </button>
                 </div>
               </div>
             </div>
