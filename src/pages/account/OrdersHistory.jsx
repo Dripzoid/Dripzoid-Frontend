@@ -4,16 +4,17 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  X,
   Trash2,
   RefreshCw,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 /**
  * OrdersSection — cookie-only auth version
  * - Removed localStorage token and Bearer headers
  * - Uses credentials: "include" for all protected requests
  * - Removed reorder / buy again entirely
+ * - Card click now redirects to /order-details/:id
  * - Matches backend response shape:
  *   {
  *     success: true,
@@ -186,6 +187,8 @@ function buildUrl(path) {
 }
 
 export default function OrdersSection() {
+  const navigate = useNavigate();
+
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -193,7 +196,6 @@ export default function OrdersSection() {
   const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState("All");
 
-  const [selectedOrder, setSelectedOrder] = useState(null);
   const [actionLoadingId, setActionLoadingId] = useState(null);
   const [orderToCancel, setOrderToCancel] = useState(null);
   const [canceling, setCanceling] = useState(false);
@@ -308,9 +310,7 @@ export default function OrdersSection() {
 
   const visibleOrders = useMemo(() => {
     const copy = [...orders];
-    copy.sort(
-      (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)
-    );
+    copy.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
     if (!statusFilter || statusFilter === "All") return copy;
 
@@ -348,9 +348,7 @@ export default function OrdersSection() {
       }
 
       if (!res.ok) {
-        throw new Error(
-          body.message || body.error || `Cancel failed (status ${res.status})`
-        );
+        throw new Error(body.message || body.error || `Cancel failed (status ${res.status})`);
       }
 
       await fetchOrders();
@@ -394,9 +392,7 @@ export default function OrdersSection() {
         } catch {
           body = { message: txt || "" };
         }
-        throw new Error(
-          body.message || `Invoice download failed (status ${res.status})`
-        );
+        throw new Error(body.message || `Invoice download failed (status ${res.status})`);
       }
 
       const blob = await res.blob();
@@ -419,25 +415,15 @@ export default function OrdersSection() {
 
   const openOrderDetails = (order) => {
     if (!order?.id) return;
-    setSelectedOrder(order);
+    navigate(`/order-details/${encodeURIComponent(order.id)}`);
   };
-
-  const selectedShipping =
-    selectedOrder?.shippingAddress || selectedOrder?.shipping_address || null;
-
-  const selectedOrderTitle =
-    selectedOrder?.orderNumber || selectedOrder?.id || "Order";
 
   return (
     <div className="p-6 bg-white dark:bg-black min-h-screen text-gray-900 dark:text-gray-100">
       <div className="max-w-5xl mx-auto">
-        {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
           <div>
             <h2 className="text-2xl font-bold">My Orders</h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Professional, minimal black & white layout — tap a card to view details.
-            </p>
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto mt-3 sm:mt-0">
@@ -472,7 +458,6 @@ export default function OrdersSection() {
           </div>
         </div>
 
-        {/* List */}
         <div className="space-y-4">
           {loading ? (
             <div className="space-y-4">
@@ -517,7 +502,9 @@ export default function OrdersSection() {
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                       <div>
                         <h3 className="font-semibold text-lg">
-                          {order.orderNumber ? `Order ${order.orderNumber}` : `Order #${order.id}`}
+                          {order.orderNumber
+                            ? `Order ${order.orderNumber}`
+                            : `Order #${order.id}`}
                         </h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400">
                           {fmtDate(order.created_at)}
@@ -537,9 +524,7 @@ export default function OrdersSection() {
                         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-800">
                           <span className="capitalize">{order.status || "—"}</span>
                         </div>
-                        <div className="mt-2 text-lg font-bold">
-                          {fmtCurrency(order.total)}
-                        </div>
+                        <div className="mt-2 text-lg font-bold">{fmtCurrency(order.total)}</div>
                       </div>
                     </div>
 
@@ -548,10 +533,10 @@ export default function OrdersSection() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedOrder(order);
+                            navigate(`/order-details/${encodeURIComponent(order.id)}`);
                           }}
                           className="text-sm underline"
-                          title="Details"
+                          title="Open order details"
                         >
                           Details
                         </button>
@@ -582,14 +567,13 @@ export default function OrdersSection() {
                       </div>
 
                       <div className="text-sm text-gray-500 dark:text-gray-400">
-                        <span>Tap the card to view delivery and payment details.</span>
+                        <span>Tap the card to open delivery and payment details.</span>
                       </div>
                     </div>
                   </div>
                 </article>
               ))}
 
-              {/* Pagination */}
               <div className="mt-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3 px-2 py-2">
                 <div className="text-sm text-gray-600 dark:text-gray-300">
                   {total === 0 ? (
@@ -630,7 +614,6 @@ export default function OrdersSection() {
         </div>
       </div>
 
-      {/* Cancel Modal */}
       {orderToCancel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/50">
           <div className="w-full max-w-md bg-white dark:bg-gray-900 rounded-lg shadow-xl overflow-hidden">
@@ -657,179 +640,6 @@ export default function OrdersSection() {
                     ? "Cancelling..."
                     : "Yes, Cancel"}
                 </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Order Detail Modal */}
-      {selectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center p-6 bg-black/40">
-          <div className="w-full max-w-3xl bg-white dark:bg-gray-900 rounded-lg shadow-xl overflow-auto max-h-[90vh]">
-            <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800">
-              <div>
-                <h3 className="font-semibold">
-                  {selectedOrder.orderNumber
-                    ? `Order ${selectedOrder.orderNumber}`
-                    : `Order #${selectedOrder.id}`}
-                </h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Placed on {fmtDate(selectedOrder.created_at)}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => downloadInvoice(selectedOrder)}
-                  className="px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-800"
-                  title="Download Invoice"
-                >
-                  <Download size={16} />
-                </button>
-                <button
-                  onClick={() => setRefreshKey((k) => k + 1)}
-                  className="px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-800"
-                  title="Refresh"
-                >
-                  <RefreshCw size={16} />
-                </button>
-                <button
-                  onClick={() => setSelectedOrder(null)}
-                  className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
-                  title="Close"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h4 className="text-sm font-semibold mb-2">Items</h4>
-                <ul className="space-y-4">
-                  {(selectedOrder.items || []).map((it, idx) => {
-                    const key = it?.id ?? it?.sku ?? `item-${idx}`;
-                    const img = getImageFromItem({
-                      ...it,
-                      image: it.image ?? it.img ?? it.picture ?? it.photo,
-                    });
-                    const qty = it.quantity ?? it.qty ?? it.count ?? 1;
-                    const price = Number(it.price ?? it.unit_price ?? it.price_per_unit ?? 0);
-                    const totalLine = Number(price) * Number(qty);
-
-                    const options = it.options || {};
-                    const optionBits = [];
-                    if (options.color) optionBits.push(`Color: ${options.color}`);
-                    if (options.size) optionBits.push(`Size: ${options.size}`);
-
-                    return (
-                      <li key={key} className="flex items-center gap-4 border-b pb-3">
-                        <div className="w-16 h-16 rounded overflow-hidden bg-gray-50 dark:bg-gray-800">
-                          <img
-                            src={img}
-                            alt={it.name || "item"}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              e.currentTarget.src = "/placeholder.jpg";
-                            }}
-                          />
-                        </div>
-
-                        <div className="flex-1">
-                          <div className="font-medium">{it.name || it.title || "Item"}</div>
-                          {optionBits.length > 0 && (
-                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                              {optionBits.join(" • ")}
-                            </div>
-                          )}
-                          <div className="text-sm text-gray-500 dark:text-gray-400">
-                            Qty: <strong>{qty}</strong> × {fmtCurrency(price)}
-                          </div>
-                        </div>
-
-                        <div className="text-right font-semibold">
-                          {fmtCurrency(totalLine)}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-semibold mb-2">Summary</h4>
-                <div className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
-                  <div className="flex justify-between">
-                    <span>Order Number</span>
-                    <span className="font-medium text-gray-900 dark:text-gray-100">
-                      {selectedOrder.orderNumber || "—"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Status</span>
-                    <span className="capitalize">{selectedOrder.status || "—"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Payment Method</span>
-                    <span>{selectedOrder.paymentMethod || "—"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Subtotal</span>
-                    <span>{fmtCurrency(selectedOrder.subtotal ?? selectedOrder.total)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Shipping</span>
-                    <span>{fmtCurrency(selectedOrder.shipping ?? 0)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Tax</span>
-                    <span>{fmtCurrency(selectedOrder.tax ?? 0)}</span>
-                  </div>
-                  {selectedOrder.discount != null && selectedOrder.discount !== 0 && (
-                    <div className="flex justify-between text-green-600">
-                      <span>Discount</span>
-                      <span>-{fmtCurrency(selectedOrder.discount)}</span>
-                    </div>
-                  )}
-                  <div className="border-t pt-2 flex justify-between font-semibold text-lg">
-                    <span>Total</span>
-                    <span>{fmtCurrency(selectedOrder.total)}</span>
-                  </div>
-                </div>
-
-                <div className="mt-6">
-                  <h4 className="text-sm font-semibold mb-2">Delivery</h4>
-                  <div className="text-sm text-gray-600 dark:text-gray-300 font-medium">
-                    {selectedShipping?.name || "—"}
-                  </div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                    {selectedShipping ? (
-                      <>
-                        {selectedShipping.line1 || ""}
-                        {selectedShipping.line2
-                          ? `, ${selectedShipping.line2}`
-                          : ""}
-                        <br />
-                        {(selectedShipping.city ? `${selectedShipping.city}, ` : "")}
-                        {selectedShipping.state || ""}{" "}
-                        {selectedShipping.pincode || selectedShipping.postcode || ""}
-                        <br />
-                        {selectedShipping.country || ""}
-                        <br />
-                        {selectedShipping.phone
-                          ? `Phone: ${selectedShipping.phone}`
-                          : ""}
-                        <br />
-                        {selectedOrder.deliveryDate
-                          ? `Delivery date: ${fmtDate(selectedOrder.deliveryDate)}`
-                          : ""}
-                      </>
-                    ) : (
-                      "—"
-                    )}
-                  </div>
-                </div>
               </div>
             </div>
           </div>
