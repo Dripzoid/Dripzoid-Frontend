@@ -14,7 +14,6 @@ import {
   Clock,
   Info,
   Download,
-  Share2,
   XCircle,
 } from "lucide-react";
 import Reviews from "../components/Reviews";
@@ -73,6 +72,43 @@ const MARKER_INNER_OFFSET_PX = 6;
 const LEFT_6_PX = 24;
 
 /* =========================================================
+   STATUS ICON HELPERS
+========================================================= */
+
+function getStepIcon(step, done) {
+  const s = String(step || "").toLowerCase();
+
+  if (s.includes("cancel")) {
+    return XCircle;
+  }
+
+  if (s.includes("delivered")) {
+    return CheckCircle;
+  }
+
+  if (s.includes("out for delivery") || s.includes("shipped")) {
+    return Truck;
+  }
+
+  if (s.includes("packed") || s.includes("confirmed")) {
+    return PackageIcon;
+  }
+
+  return done ? CheckCircle : Clock;
+}
+
+function getOrderHeaderIcon(status) {
+  const s = String(status || "").toLowerCase();
+
+  if (s.includes("cancel")) return XCircle;
+  if (s.includes("delivered")) return CheckCircle;
+  if (s.includes("out for delivery") || s.includes("shipped")) return Truck;
+  if (s.includes("packed") || s.includes("confirmed")) return PackageIcon;
+
+  return PackageIcon;
+}
+
+/* =========================================================
    SHIPROCKET NORMALIZER
 ========================================================= */
 
@@ -108,9 +144,10 @@ function normalizeShiprocketResponse(resp) {
     : resp?.tracking_data ?? resp?.tracking ?? resp ?? {};
   const td = root || {};
 
-  const shipment = Array.isArray(td.shipment_track) && td.shipment_track.length
-    ? td.shipment_track[0]
-    : td.shipment_track || {};
+  const shipment =
+    Array.isArray(td.shipment_track) && td.shipment_track.length
+      ? td.shipment_track[0]
+      : td.shipment_track || {};
 
   const activitiesRaw = Array.isArray(td.shipment_track_activities)
     ? td.shipment_track_activities
@@ -168,7 +205,9 @@ function normalizeShiprocketResponse(resp) {
     progressIndex = 3;
   } else if (
     /arrivedatcarrierfacility|in transit/i.test(lastSrLabel.toLowerCase()) ||
-    /arrivedatcarrierfacility/i.test((latestAct.status || "").toString().toLowerCase()) ||
+    /arrivedatcarrierfacility/i.test(
+      (latestAct.status || "").toString().toLowerCase()
+    ) ||
     lastSr === 18 ||
     lastSr === 38
   ) {
@@ -230,6 +269,7 @@ function normalizeShiprocketResponse(resp) {
     { step: "Out For Delivery", idx: 3, date: ofd || null },
     { step: "Delivered", idx: 4, date: shipment.delivered_date || null },
   ];
+
   const tracking = steps.map((s) => ({
     step: s.step,
     done: s.idx <= progressIndex,
@@ -288,45 +328,47 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
   const [loading, setLoading] = useState(true);
   const [showCancel, setShowCancel] = useState(false);
   const [showReturn, setShowReturn] = useState(false);
-  const [showEditAddress, setShowEditAddress] = useState(false);
-  const [showInvoice, setShowInvoice] = useState(false);
-  const invoiceRef = useRef(null);
-  const [openReviews, setOpenReviews] = useState({});
   const [showTrackModal, setShowTrackModal] = useState(false);
   const [trackInfo, setTrackInfo] = useState(null);
+  const [openReviews, setOpenReviews] = useState({});
+
+  const invoiceRef = useRef(null);
 
   function normalizeApiOrder(payload) {
-    if (!payload) return null;
+    const source = payload?.data ?? payload;
+    if (!source) return null;
 
     const pricing = {
       total:
-        payload.totalAmount ??
-        payload.total_amount ??
-        (payload.pricing && payload.pricing.total) ??
+        source.totalAmount ??
+        source.total_amount ??
+        source.pricing?.total ??
         0,
       sellingPrice:
-        payload.totalAmount ??
-        payload.total_amount ??
-        payload.pricing?.sellingPrice ??
+        source.totalAmount ??
+        source.total_amount ??
+        source.pricing?.sellingPrice ??
         0,
-      listingPrice: payload.pricing?.listingPrice ?? payload.totalAmount ?? 0,
-      fees: payload.pricing?.fees ?? 0,
-      extraDiscount: payload.pricing?.extraDiscount ?? 0,
-      specialPrice: payload.pricing?.specialPrice ?? 0,
-      otherDiscount: payload.pricing?.otherDiscount ?? 0,
+      listingPrice: source.pricing?.listingPrice ?? source.totalAmount ?? 0,
+      fees: source.pricing?.fees ?? 0,
+      extraDiscount: source.pricing?.extraDiscount ?? 0,
+      specialPrice: source.pricing?.specialPrice ?? 0,
+      otherDiscount: source.pricing?.otherDiscount ?? 0,
       couponDiscount:
-        payload.pricing?.couponDiscount ??
-        payload.pricing?.coupon ??
-        payload.pricing?.otherDiscount ??
+        source.pricing?.couponDiscount ??
+        source.pricing?.coupon ??
+        source.pricing?.otherDiscount ??
         0,
     };
 
-    const sa = payload.shippingAddress || payload.shipping_address || payload.shipping || null;
+    const sa =
+      source.shippingAddress || source.shipping_address || source.shipping || null;
+
     const shipping = sa
       ? {
           id: sa.id ?? null,
           label: sa.label ?? null,
-          name: sa.name ?? sa.label ?? payload.user_name ?? null,
+          name: sa.name ?? sa.label ?? source.user_name ?? null,
           phone: sa.phone ?? null,
           address: [
             sa.line1 ?? sa.address_line1 ?? sa.address1 ?? null,
@@ -342,8 +384,8 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
         }
       : { address: "", name: "", phone: "" };
 
-    const items = Array.isArray(payload.items)
-      ? payload.items.map((it) => {
+    const items = Array.isArray(source.items)
+      ? source.items.map((it) => {
           const firstImg =
             (it.image || it.images || "")
               .toString()
@@ -377,18 +419,18 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       : [];
 
     return {
-      id: payload.id,
-      status: payload.status,
-      created_at: payload.created_at ?? payload.createdAt ?? payload.placedAt,
-      user_name: payload.user_name ?? payload.userName ?? null,
-      paymentMethod: payload.paymentMethod ?? payload.payment_method ?? null,
+      id: source.id,
+      orderNumber: source.orderNumber ?? null,
+      status: source.status ?? "",
+      created_at: source.createdAt ?? source.created_at ?? source.placedAt ?? null,
+      paymentMethod: source.paymentMethod ?? source.payment_method ?? null,
+      deliveryDate: source.deliveryDate ?? null,
       shipping,
       pricing,
       items,
-      tracking: payload.tracking ?? payload.tracking_info ?? [],
-      courier: payload.courier ?? null,
-      history: payload.history ?? [],
-      raw: payload,
+      courier: source.courier ?? null,
+      history: source.history ?? [],
+      raw: source,
     };
   }
 
@@ -403,15 +445,16 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
         const res = await fetch(url, {
           method: "GET",
           credentials: "include",
-          headers: {
-            Accept: "application/json",
-          },
+          headers: { Accept: "application/json" },
           signal: ac.signal,
         });
 
         const payload = await parseJsonSafe(res);
         if (!res.ok) {
-          console.error("Failed to fetch order:", payload?.message || `HTTP ${res.status}`);
+          console.error(
+            "Failed to fetch order:",
+            payload?.message || `HTTP ${res.status}`
+          );
           throw new Error(payload?.message || `Failed to fetch order: ${res.status}`);
         }
 
@@ -435,7 +478,10 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
 
             const tPayload = await parseJsonSafe(tRes);
             if (!tRes.ok) {
-              console.warn("Prefetch track failed:", tPayload?.message || `HTTP ${tRes.status}`);
+              console.warn(
+                "Prefetch track failed:",
+                tPayload?.message || `HTTP ${tRes.status}`
+              );
               return;
             }
 
@@ -517,7 +563,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       0
     );
     const fees = Number(order.pricing?.fees || 0);
-    const shippingCharge =
+    const codFee =
       (order.paymentMethod || "").toString().toLowerCase() === "cod" ? 25 : 0;
 
     let couponDiscount = Math.max(
@@ -535,29 +581,30 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
           0
       );
       if (serverTotal > 0) {
-        const inferred = productPrice + fees + shippingCharge - serverTotal;
+        const inferred = productPrice + fees + codFee - serverTotal;
         if (inferred > 0) couponDiscount = inferred;
       }
     }
 
     couponDiscount = Math.max(0, Number(couponDiscount || 0));
 
-    const total = productPrice + fees + shippingCharge - couponDiscount;
+    const total = productPrice + fees + codFee - couponDiscount;
 
     return {
       productPrice,
       fees,
+      codFee,
       couponDiscount,
-      shippingCharge,
       total,
     };
   }, [order]);
 
   async function handleCancel() {
     if (!order) return;
+
     const prevOrder = order;
     const nowIso = new Date().toISOString();
-    const optimistic = {
+    setOrder({
       ...order,
       status: "cancelled",
       history: [...(order.history || []), { title: "Cancelled", time: nowIso }],
@@ -565,8 +612,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
         ...(order.tracking || []),
         { step: "Cancelled", done: true, time: nowIso },
       ],
-    };
-    setOrder(optimistic);
+    });
     setShowCancel(false);
     setLoading(true);
 
@@ -625,44 +671,6 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       setOrder((o) => ({ ...o, ...normalized }));
     } catch (err) {
       console.error("Return error:", err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleSaveAddress(shippingObj) {
-    if (!order) return;
-    setLoading(true);
-    try {
-      const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/address`);
-      const res = await fetch(url, {
-        method: "PUT",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify(shippingObj),
-      });
-
-      const payload = await parseJsonSafe(res);
-      if (!res.ok) {
-        console.error("Address update failed:", payload?.message || `HTTP ${res.status}`);
-        throw new Error(payload?.message || `Address update failed (${res.status})`);
-      }
-
-      setOrder((o) => ({
-        ...o,
-        shipping: {
-          ...o.shipping,
-          name: shippingObj.name ?? o.shipping.name,
-          phone: shippingObj.phone ?? o.shipping.phone,
-          address: shippingObj.address ?? o.shipping.address,
-        },
-        history: payload?.history ? [...(payload.history || []), ...(o.history || [])] : o.history,
-      }));
-    } catch (err) {
-      console.error("Update address error:", err);
     } finally {
       setLoading(false);
     }
@@ -735,7 +743,9 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
         tracking: normalized.tracking ?? prev.tracking,
         status: normalized.status ?? prev.status,
         courier: { ...(prev.courier || {}), ...(normalized.courier || {}) },
-        history: normalized.history ? [...normalized.history, ...(prev.history || [])] : prev.history,
+        history: normalized.history
+          ? [...normalized.history, ...(prev.history || [])]
+          : prev.history,
         raw_tracking: normalized.raw ?? prev.raw_tracking,
       }));
 
@@ -798,38 +808,12 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
       if (e.key === "Escape") {
         setShowCancel(false);
         setShowReturn(false);
-        setShowEditAddress(false);
         setShowTrackModal(false);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-
-  function handleShare() {
-    if (!order) return;
-    const shareText = `Order ${order.id} • ${
-      order.items?.length ?? 0
-    } items • ${currency(computedPricing?.total ?? order.pricing?.total)}`;
-    if (navigator.share) {
-      navigator.share({ title: `Order ${order.id}`, text: shareText }).catch(() => {
-        console.warn("Sharing cancelled or not supported");
-      });
-    } else {
-      navigator.clipboard
-        ?.writeText(`${shareText}\nView in your orders`)
-        .then(() => console.log("Order summary copied to clipboard"))
-        .catch(() => console.warn("Share not available"));
-    }
-  }
-
-  function contactCourier() {
-    if (!order?.courier?.phone) {
-      console.warn("Courier phone not available");
-      return;
-    }
-    window.location.href = `tel:${order.courier.phone}`;
-  }
 
   async function handleDownloadInvoice() {
     if (!order?.id) {
@@ -851,8 +835,13 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
 
       if (!res.ok) {
         const payload = await parseJsonSafe(res);
-        console.error("Invoice download failed:", payload?.message || `HTTP ${res.status}`);
-        throw new Error(payload?.message || `Invoice download failed (${res.status})`);
+        console.error(
+          "Invoice download failed:",
+          payload?.message || `HTTP ${res.status}`
+        );
+        throw new Error(
+          payload?.message || `Invoice download failed (${res.status})`
+        );
       }
 
       const blob = await res.blob();
@@ -892,6 +881,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     );
   const isPacked = (order.status || "").toString().toLowerCase() === "packed";
   const isCancelled = (order.status || "").toString().toLowerCase() === "cancelled";
+  const StatusIcon = getOrderHeaderIcon(order.status);
 
   return (
     <div className="min-h-screen bg-white dark:bg-black text-neutral-900 dark:text-neutral-100 transition-colors duration-200">
@@ -935,7 +925,9 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
                       </div>
                       <div className="flex-1">
                         <div className="font-medium">{it.title}</div>
-                        <div className="text-sm text-neutral-500">{it.options || "—"}</div>
+                        <div className="text-sm text-neutral-500">
+                          {it.options || "—"}
+                        </div>
                         <div className="text-sm text-neutral-500 mt-1">
                           Seller: {it.seller || "—"}
                         </div>
@@ -1001,16 +993,6 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
                   <div className="text-sm text-neutral-500">
                     {order.shipping?.name || "—"} • {order.shipping?.phone || "—"}
                   </div>
-                  <div>
-                    {!isPacked && !isCancelled && (
-                      <button
-                        onClick={() => setShowEditAddress(true)}
-                        className={BTN + " text-sm px-3 py-1"}
-                      >
-                        Edit
-                      </button>
-                    )}
-                  </div>
                 </div>
               </div>
 
@@ -1028,12 +1010,24 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
                 <div className="text-right">
                   <div className="text-sm">{order.courier?.exec?.eta ?? ""}</div>
                   <div className="mt-2 flex flex-col gap-2">
-                    <button onClick={contactCourier} className={BTN + " text-sm px-3 py-1"}>
-                      Call
+                    <button
+                      onClick={handleTrackOrder}
+                      className={BTN + " text-sm px-3 py-1"}
+                    >
+                      Track
                     </button>
                   </div>
                 </div>
               </div>
+
+              {order.deliveryDate && (
+                <div className="bg-neutral-50 dark:bg-neutral-800 rounded p-3">
+                  <div className="text-sm text-neutral-500">Delivery date</div>
+                  <div className="text-sm font-medium">
+                    {formatDateTime(order.deliveryDate)}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1056,10 +1050,12 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
                 <div>{currency(computedPricing?.fees ?? order.pricing?.fees ?? 0)}</div>
               </div>
 
-              <div className="flex justify-between">
-                <div>Shipping</div>
-                <div>{currency(computedPricing?.shippingCharge ?? 0)}</div>
-              </div>
+              {String(order.paymentMethod || "").toLowerCase() === "cod" && (
+                <div className="flex justify-between">
+                  <div>COD Fee</div>
+                  <div>{currency(computedPricing?.codFee ?? 25)}</div>
+                </div>
+              )}
 
               {computedPricing?.couponDiscount > 0 && (
                 <div className="flex justify-between text-emerald-600">
@@ -1083,12 +1079,6 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
             <div className="mt-4">
               <div className="flex gap-2">
                 <button
-                  onClick={handleShare}
-                  className={BTN + " flex-1 py-2 flex items-center justify-center gap-2 text-sm"}
-                >
-                  <Share2 size={16} /> Share
-                </button>
-                <button
                   onClick={handleDownloadInvoice}
                   className={BTN + " flex-1 py-2 px-3 flex items-center justify-center gap-2 text-sm"}
                 >
@@ -1098,14 +1088,6 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
             </div>
           </div>
         </aside>
-
-        {showInvoice && (
-          <div className="hidden" aria-hidden>
-            <div ref={invoiceRef}>
-              <InvoiceTemplate order={order} pricing={computedPricing} />
-            </div>
-          </div>
-        )}
 
         <ConfirmModal
           open={!!showCancel}
@@ -1128,17 +1110,6 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
           onConfirm={async () => {
             setShowReturn(false);
             await handleRequestReturn();
-          }}
-        />
-
-        <InputModal
-          open={!!showEditAddress}
-          title="Edit shipping address"
-          initialShipping={order.shipping}
-          onClose={() => setShowEditAddress(false)}
-          onConfirm={async (newShipping) => {
-            setShowEditAddress(false);
-            await handleSaveAddress(newShipping);
           }}
         />
 
@@ -1186,6 +1157,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
 
   const innerSize = MARKER_SIZE_PX - MARKER_INNER_OFFSET_PX;
   const isCancelled = order.status && order.status.toLowerCase() === "cancelled";
+  const HeaderIcon = getOrderHeaderIcon(order.status);
 
   const allSteps = isCancelled
     ? ["Order Confirmed", "Cancelled"]
@@ -1231,13 +1203,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
         : null;
 
     const detail = idx === progressIndex && done ? detailRaw : "";
-
-    return {
-      step,
-      done,
-      date,
-      detail,
-    };
+    return { step, done, date, detail };
   });
 
   const lastDoneIndex = trackingToUse.map((t) => t.done).lastIndexOf(true);
@@ -1306,7 +1272,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
     <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Truck className="text-neutral-600 dark:text-neutral-300" />
+          <HeaderIcon className="text-neutral-600 dark:text-neutral-300" />
           <div>
             <div className="text-sm text-neutral-500 dark:text-neutral-400">
               Tracking status
@@ -1352,6 +1318,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
             const done = t.done;
             const nextDone = trackingToUse[idx + 1]?.done;
             const isCancelStep = t.step?.toLowerCase().includes("cancel");
+            const StepIcon = getStepIcon(t.step, done);
 
             const outerClasses = isCancelStep
               ? "rounded-full bg-red-600"
@@ -1397,24 +1364,10 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
                       background: "transparent",
                     }}
                   >
-                    {isCancelStep ? (
-                      <XCircle size={Math.max(12, innerSize - 8)} className="text-white" />
-                    ) : done ? (
-                      <CheckCircle
-                        size={Math.max(12, innerSize - 8)}
-                        className={iconColorDone}
-                      />
-                    ) : nextDone ? (
-                      <Clock
-                        size={Math.max(12, innerSize - 8)}
-                        className={iconColorDone}
-                      />
-                    ) : (
-                      <PackageIcon
-                        size={Math.max(12, innerSize - 8)}
-                        className={iconColorDone}
-                      />
-                    )}
+                    <StepIcon
+                      size={Math.max(12, innerSize - 8)}
+                      className={iconColorDone}
+                    />
                   </div>
                 </div>
 
@@ -1465,6 +1418,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
               </button>
             </>
           )}
+
           {showActions && isDelivered && (
             <button
               onClick={onRequestReturn}
@@ -1487,243 +1441,14 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
 }
 
 /* =========================================================
-   INVOICE TEMPLATE
+   TRACK MODAL
 ========================================================= */
 
-function InvoiceTemplate({ order, pricing }) {
-  const productPrice = pricing?.productPrice ?? order.pricing?.sellingPrice ?? 0;
-  const fees = pricing?.fees ?? order.pricing?.fees ?? 0;
-  const couponDiscount = pricing?.couponDiscount ?? order.pricing?.couponDiscount ?? 0;
-  const shippingCharge = pricing?.shippingCharge ?? 0;
-  const total =
-    pricing?.total ??
-    order.pricing?.total ??
-    productPrice + fees + shippingCharge - couponDiscount;
-
-  return (
-    <div className="p-6 max-w-3xl">
-      <h2 className="text-xl font-semibold">Invoice</h2>
-      <div className="mt-4 flex justify-between">
-        <div>
-          <div>
-            <strong>Order ID:</strong> {order.id}
-          </div>
-          <div>
-            <strong>Placed:</strong> {formatDateTime(order.created_at)}
-          </div>
-        </div>
-        <div>
-          <div>
-            <strong>Ship to:</strong>
-          </div>
-          <div className="font-medium">{order.shipping?.name}</div>
-          <div className="max-w-xs break-words">{order.shipping?.address}</div>
-        </div>
-      </div>
-
-      <div className="mt-6 border-t border-neutral-200 pt-4">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left">
-              <th className="pb-2">Item</th>
-              <th className="pb-2 text-right">Qty</th>
-              <th className="pb-2 text-right">Price</th>
-            </tr>
-          </thead>
-          <tbody>
-            {order.items?.map((it) => (
-              <tr key={it.id}>
-                <td className="py-2 border-t border-neutral-100">{it.title}</td>
-                <td className="py-2 border-t border-neutral-100 text-right">
-                  {it.qty}
-                </td>
-                <td className="py-2 border-t border-neutral-100 text-right">
-                  {currency(Number(it.price) * Number(it.qty || 1))}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        <div className="mt-6 flex justify-end">
-          <div className="w-64 text-sm">
-            <div className="flex justify-between">
-              <div>Subtotal</div>
-              <div>{currency(productPrice)}</div>
-            </div>
-            <div className="flex justify-between">
-              <div>Fees</div>
-              <div>{currency(fees)}</div>
-            </div>
-            <div className="flex justify-between">
-              <div>Shipping</div>
-              <div>{currency(shippingCharge)}</div>
-            </div>
-            {couponDiscount > 0 && (
-              <div className="flex justify-between text-emerald-600">
-                <div>Coupon discount</div>
-                <div>-{currency(couponDiscount)}</div>
-              </div>
-            )}
-            <div className="flex justify-between font-semibold mt-3">
-              <div>Total</div>
-              <div>{currency(total)}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* =========================================================
-   MODALS
-========================================================= */
-
-function ConfirmModal({
-  open,
-  title,
-  message,
-  confirmLabel = "Confirm",
-  onClose = () => {},
-  onConfirm = () => {},
-}) {
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.activeElement;
-    return () => prev?.focus?.();
-  }, [open]);
-
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 pointer-events-none p-4">
-      <div className="absolute inset-0 bg-black/40 pointer-events-none" />
-      <motion.div
-        initial={{ scale: 0.98, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        className="pointer-events-auto mx-auto relative top-1/4 bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-md w-full p-6"
-      >
-        <div className="flex items-start gap-4">
-          <div className="p-2 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700">
-            <Info />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-lg font-semibold">{title}</h3>
-            <p className="text-sm text-neutral-600 dark:text-neutral-300 mt-2">
-              {message}
-            </p>
-            <div className="mt-4 flex justify-end gap-3">
-              <button onClick={onClose} className={BTN + " text-sm px-3 py-1"}>
-                Cancel
-              </button>
-              <button
-                onClick={() => onConfirm()}
-                className="px-3 py-1 rounded-full bg-emerald-600 text-white text-sm"
-              >
-                {confirmLabel}
-              </button>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-function InputModal({
-  open,
-  title,
-  initialShipping = { name: "", phone: "", address: "" },
-  onClose = () => {},
-  onConfirm = (val) => {},
-}) {
-  const [name, setName] = useState(initialShipping?.name || "");
-  const [phone, setPhone] = useState(initialShipping?.phone || "");
-  const [address, setAddress] = useState(initialShipping?.address || "");
-
-  useEffect(() => {
-    setName(initialShipping?.name || "");
-    setPhone(initialShipping?.phone || "");
-    setAddress(initialShipping?.address || "");
-  }, [initialShipping, open]);
-
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 pointer-events-none p-4">
-      <div className="absolute inset-0 bg-black/40 pointer-events-none" />
-      <motion.div
-        initial={{ y: 8, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        className="pointer-events-auto mx-auto relative top-1/6 bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-lg w-full p-6"
-      >
-        <h3 className="text-lg font-semibold">{title}</h3>
-
-        <div className="mt-3 grid grid-cols-1 gap-3">
-          <label className="text-sm">
-            Full name
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Recipient full name"
-              className="mt-1 w-full p-2 border border-neutral-200 dark:border-neutral-700 rounded bg-white dark:bg-neutral-900"
-            />
-          </label>
-
-          <label className="text-sm">
-            Phone
-            <input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="Mobile number"
-              className="mt-1 w-full p-2 border border-neutral-200 dark:border-neutral-700 rounded bg-white dark:bg-neutral-900"
-            />
-          </label>
-
-          <label className="text-sm">
-            Address
-            <textarea
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="Flat / House no., Street, Area, Landmark, City, State, PIN"
-              className="mt-1 w-full p-2 border border-neutral-200 dark:border-neutral-700 rounded bg-white dark:bg-neutral-900"
-              rows={4}
-            />
-          </label>
-        </div>
-
-        <div className="mt-4 flex justify-end gap-3">
-          <button onClick={onClose} className={BTN + " text-sm px-3 py-1"}>
-            Cancel
-          </button>
-          <button
-            onClick={() =>
-              onConfirm({
-                name: name.trim(),
-                phone: phone.trim(),
-                address: address.trim(),
-              })
-            }
-            className={BTN + " text-sm px-3 py-1"}
-          >
-            Save
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-/* TrackModal */
 function TrackModal({ open, info, onClose }) {
   if (!open) return null;
 
   const shipmentTrack = info?.shipment_track ?? info?.shipmentTrack ?? [];
-  const activities =
-    info?.shipment_track_activities ??
-    info?.shipmentTrackActivities ??
-    [];
+  const activities = info?.shipment_track_activities ?? info?.shipmentTrackActivities ?? [];
   const rawError = info?.raw?.error ?? info?.error ?? "";
 
   return (
@@ -1778,28 +1503,39 @@ function TrackModal({ open, info, onClose }) {
           <h4 className="font-medium">Shipment activities</h4>
           <div className="mt-3 space-y-3">
             {Array.isArray(activities) && activities.length > 0 ? (
-              activities.map((act, i) => (
-                <div
-                  key={i}
-                  className="bg-white dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 rounded p-3"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-medium">
-                      {act.status || act.activity || "Activity"}
+              activities.map((act, i) => {
+                const ActIcon = /delivered/i.test(String(act.status || act.activity || ""))
+                  ? CheckCircle
+                  : /out for delivery|shipped|in transit/i.test(
+                      String(act.status || act.activity || "")
+                    )
+                  ? Truck
+                  : Clock;
+
+                return (
+                  <div
+                    key={i}
+                    className="bg-white dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 rounded p-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        <ActIcon size={16} className="text-neutral-500" />
+                        <span>{act.status || act.activity || "Activity"}</span>
+                      </div>
+                      <div className="text-xs text-neutral-500">
+                        {formatDateTime(
+                          act.time || act.timestamp || act.updated_time_stamp || act.date
+                        )}
+                      </div>
                     </div>
-                    <div className="text-xs text-neutral-500">
-                      {formatDateTime(
-                        act.time || act.timestamp || act.updated_time_stamp || act.date
-                      )}
-                    </div>
+                    {act.description && (
+                      <div className="text-sm text-neutral-500 mt-1">
+                        {act.description}
+                      </div>
+                    )}
                   </div>
-                  {act.description && (
-                    <div className="text-sm text-neutral-500 mt-1">
-                      {act.description}
-                    </div>
-                  )}
-                </div>
-              ))
+                );
+              })
             ) : (
               <div className="bg-white dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 rounded p-4 text-sm text-neutral-600">
                 No activities found.
@@ -1853,6 +1589,61 @@ function TrackModal({ open, info, onClose }) {
           <button onClick={onClose} className={BTN + " text-sm px-3 py-1"}>
             Close
           </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+/* =========================================================
+   CONFIRM MODAL
+========================================================= */
+
+function ConfirmModal({
+  open,
+  title,
+  message,
+  confirmLabel = "Confirm",
+  onClose = () => {},
+  onConfirm = () => {},
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.activeElement;
+    return () => prev?.focus?.();
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 pointer-events-none p-4">
+      <div className="absolute inset-0 bg-black/40 pointer-events-none" />
+      <motion.div
+        initial={{ scale: 0.98, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="pointer-events-auto mx-auto relative top-1/4 bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-md w-full p-6"
+      >
+        <div className="flex items-start gap-4">
+          <div className="p-2 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700">
+            <Info />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold">{title}</h3>
+            <p className="text-sm text-neutral-600 dark:text-neutral-300 mt-2">
+              {message}
+            </p>
+            <div className="mt-4 flex justify-end gap-3">
+              <button onClick={onClose} className={BTN + " text-sm px-3 py-1"}>
+                Cancel
+              </button>
+              <button
+                onClick={() => onConfirm()}
+                className="px-3 py-1 rounded-full bg-emerald-600 text-white text-sm"
+              >
+                {confirmLabel}
+              </button>
+            </div>
+          </div>
         </div>
       </motion.div>
     </div>
