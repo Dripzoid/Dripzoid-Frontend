@@ -13,13 +13,34 @@ import {
  * OrdersSection — cookie-only auth version
  * - Removed localStorage token and Bearer headers
  * - Uses credentials: "include" for all protected requests
- * - Keeps: status filter, invoice download, cancel order, pagination
- * - Modern black & white Tailwind UI supporting light/dark themes and mobile responsiveness
+ * - Removed reorder / buy again entirely
+ * - Matches backend response shape:
+ *   {
+ *     success: true,
+ *     data: [
+ *       {
+ *         id,
+ *         orderNumber,
+ *         userId,
+ *         addressId,
+ *         totalAmount,
+ *         paymentMethod,
+ *         status,
+ *         paymentDetails,
+ *         shippingAddress,
+ *         items,
+ *         deliveryDate,
+ *         createdAt,
+ *         updatedAt
+ *       }
+ *     ],
+ *     meta: { total, page, pages, limit }
+ *   }
  */
 
 const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/+$/, "");
 
-/* ---------- small helpers ---------- */
+/* ---------- helpers ---------- */
 const fmtDate = (iso) => {
   if (!iso) return "—";
   try {
@@ -87,7 +108,9 @@ const getImageFromItem = (item) => {
 
   if (item.variant) {
     if (typeof item.variant === "string" && item.variant.startsWith("http")) return item.variant;
-    if (item.variant.image) return Array.isArray(item.variant.image) ? item.variant.image[0] : item.variant.image;
+    if (item.variant.image) {
+      return Array.isArray(item.variant.image) ? item.variant.image[0] : item.variant.image;
+    }
     if (Array.isArray(item.variant.images) && item.variant.images[0]) {
       const v = item.variant.images[0];
       if (typeof v === "string") return v;
@@ -96,7 +119,9 @@ const getImageFromItem = (item) => {
   }
 
   if (item.product) {
-    if (item.product.image) return Array.isArray(item.product.image) ? item.product.image[0] : item.product.image;
+    if (item.product.image) {
+      return Array.isArray(item.product.image) ? item.product.image[0] : item.product.image;
+    }
     if (Array.isArray(item.product.images) && item.product.images[0]) {
       const v = item.product.images[0];
       if (typeof v === "string") return v;
@@ -111,7 +136,8 @@ const getImageFromItem = (item) => {
 const normalizeOrder = (o = {}) => {
   const total =
     Number(
-      o.total ??
+      o.totalAmount ??
+        o.total ??
         o.total_amount ??
         o.total_price ??
         o.order_total ??
@@ -119,15 +145,14 @@ const normalizeOrder = (o = {}) => {
         0
     ) || 0;
 
-  let items = [];
-  if (Array.isArray(o.items)) items = o.items;
-  else if (Array.isArray(o.order_items)) items = o.order_items;
-  else if (Array.isArray(o.products)) items = o.products;
-  else if (o.items && typeof o.items === "object") items = [o.items];
-  else if (o.order_items && typeof o.order_items === "object") items = [o.order_items];
+  const items = Array.isArray(o.items) ? o.items : [];
 
-  const shipping_address =
-    o.shipping_address != null
+  const shippingAddress =
+    o.shippingAddress != null
+      ? typeof o.shippingAddress === "string"
+        ? safeParseJSON(o.shippingAddress)
+        : o.shippingAddress
+      : o.shipping_address != null
       ? typeof o.shipping_address === "string"
         ? safeParseJSON(o.shipping_address)
         : o.shipping_address
@@ -135,11 +160,18 @@ const normalizeOrder = (o = {}) => {
 
   return {
     id: o.id ?? o.order_id ?? o._id ?? null,
+    orderNumber: o.orderNumber ?? o.order_number ?? null,
+    userId: o.userId ?? o.user_id ?? null,
+    addressId: o.addressId ?? o.address_id ?? null,
+    paymentMethod: o.paymentMethod ?? o.payment_method ?? "",
     status: (o.status ?? o.order_status ?? "").toString(),
     total,
-    created_at: o.created_at || o.date || o.createdAt || o.order_date || null,
+    created_at: o.createdAt || o.created_at || o.date || o.order_date || null,
+    updated_at: o.updatedAt || o.updated_at || null,
+    deliveryDate: o.deliveryDate ?? o.delivery_date ?? null,
     items,
-    shipping_address,
+    shipping_address: shippingAddress,
+    shippingAddress,
     subtotal: Number(o.subtotal ?? o.amount_subtotal ?? o.sub_total ?? total),
     shipping: Number(o.shipping ?? o.shipping_cost ?? 0),
     tax: Number(o.tax ?? o.tax_amount ?? 0),
@@ -168,6 +200,7 @@ export default function OrdersSection() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   const abortRef = useRef(null);
+  const prevStatusRef = useRef(statusFilter);
 
   const fetchOrders = async () => {
     try {
@@ -187,7 +220,9 @@ export default function OrdersSection() {
         params.append("status", String(statusFilter).toLowerCase());
       }
 
-      const url = `${buildUrl("/api/user/orders")}${params.toString() ? `?${params.toString()}` : ""}`;
+      const url = `${buildUrl("/api/user/orders")}${
+        params.toString() ? `?${params.toString()}` : ""
+      }`;
 
       const res = await fetch(url, {
         method: "GET",
@@ -229,12 +264,16 @@ export default function OrdersSection() {
 
       const meta =
         body?.meta ??
-        body?.pagination ?? {
+        body?.pagination ??
+        {
           total: Number(body?.total ?? (Array.isArray(arr) ? arr.length : 0)),
           page,
           pages: Math.max(
             1,
-            Math.ceil(Number(body?.total ?? (Array.isArray(arr) ? arr.length : 0)) / (limit || 12))
+            Math.ceil(
+              Number(body?.total ?? (Array.isArray(arr) ? arr.length : 0)) /
+                (limit || 12)
+            )
           ),
           limit,
         };
@@ -255,18 +294,13 @@ export default function OrdersSection() {
   };
 
   useEffect(() => {
-    setPage(1);
-  }, [statusFilter]);
+    if (prevStatusRef.current !== statusFilter) {
+      prevStatusRef.current = statusFilter;
+      setPage(1);
+      return;
+    }
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchOrders();
-    }, 0);
-
-    return () => {
-      clearTimeout(timer);
-      abortRef.current?.abort?.();
-    };
+    fetchOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, refreshKey, statusFilter]);
 
@@ -275,8 +309,7 @@ export default function OrdersSection() {
   const visibleOrders = useMemo(() => {
     const copy = [...orders];
     copy.sort(
-      (a, b) =>
-        new Date(b.created_at || 0) - new Date(a.created_at || 0)
+      (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)
     );
 
     if (!statusFilter || statusFilter === "All") return copy;
@@ -315,7 +348,9 @@ export default function OrdersSection() {
       }
 
       if (!res.ok) {
-        throw new Error(body.message || body.error || `Cancel failed (status ${res.status})`);
+        throw new Error(
+          body.message || body.error || `Cancel failed (status ${res.status})`
+        );
       }
 
       await fetchOrders();
@@ -336,7 +371,11 @@ export default function OrdersSection() {
     setActionLoadingId(order.id);
 
     try {
-      const payload = { orderId: order.id, order_id: order.id, id: order.id };
+      const payload = {
+        orderId: order.id,
+        order_id: order.id,
+        id: order.id,
+      };
 
       const res = await fetch(buildUrl("/api/shipping/download-invoice"), {
         method: "POST",
@@ -355,7 +394,9 @@ export default function OrdersSection() {
         } catch {
           body = { message: txt || "" };
         }
-        throw new Error(body.message || `Invoice download failed (status ${res.status})`);
+        throw new Error(
+          body.message || `Invoice download failed (status ${res.status})`
+        );
       }
 
       const blob = await res.blob();
@@ -376,10 +417,16 @@ export default function OrdersSection() {
     }
   };
 
-  const onCardClick = (order) => {
+  const openOrderDetails = (order) => {
     if (!order?.id) return;
-    window.location.href = `https://dripzoid.com/order-details/${encodeURIComponent(order.id)}`;
+    setSelectedOrder(order);
   };
+
+  const selectedShipping =
+    selectedOrder?.shippingAddress || selectedOrder?.shipping_address || null;
+
+  const selectedOrderTitle =
+    selectedOrder?.orderNumber || selectedOrder?.id || "Order";
 
   return (
     <div className="p-6 bg-white dark:bg-black min-h-screen text-gray-900 dark:text-gray-100">
@@ -389,7 +436,7 @@ export default function OrdersSection() {
           <div>
             <h2 className="text-2xl font-bold">My Orders</h2>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              Professional, minimal black & white layout — click a card to view details.
+              Professional, minimal black & white layout — tap a card to view details.
             </p>
           </div>
 
@@ -451,7 +498,7 @@ export default function OrdersSection() {
               {visibleOrders.map((order) => (
                 <article
                   key={order.id ?? Math.random().toString(36).slice(2, 8)}
-                  onClick={() => onCardClick(order)}
+                  onClick={() => openOrderDetails(order)}
                   role="button"
                   className="w-full flex flex-col sm:flex-row gap-4 items-start p-4 hover:shadow-lg transition-shadow bg-white dark:bg-gray-900 cursor-pointer rounded-lg"
                 >
@@ -469,7 +516,9 @@ export default function OrdersSection() {
                   <div className="flex-1 w-full">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                       <div>
-                        <h3 className="font-semibold text-lg">Order #{order.id}</h3>
+                        <h3 className="font-semibold text-lg">
+                          {order.orderNumber ? `Order ${order.orderNumber}` : `Order #${order.id}`}
+                        </h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400">
                           {fmtDate(order.created_at)}
                         </p>
@@ -488,7 +537,9 @@ export default function OrdersSection() {
                         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-800">
                           <span className="capitalize">{order.status || "—"}</span>
                         </div>
-                        <div className="mt-2 text-lg font-bold">{fmtCurrency(order.total)}</div>
+                        <div className="mt-2 text-lg font-bold">
+                          {fmtCurrency(order.total)}
+                        </div>
                       </div>
                     </div>
 
@@ -531,7 +582,7 @@ export default function OrdersSection() {
                       </div>
 
                       <div className="text-sm text-gray-500 dark:text-gray-400">
-                        <span>Delivery & payment details are available in the order details view.</span>
+                        <span>Tap the card to view delivery and payment details.</span>
                       </div>
                     </div>
                   </div>
@@ -545,8 +596,11 @@ export default function OrdersSection() {
                     <>Showing 0 orders</>
                   ) : (
                     <>
-                      Showing <strong>{(page - 1) * limit + 1}-{Math.min(page * limit, total)}</strong> of{" "}
-                      <strong>{total}</strong> orders
+                      Showing{" "}
+                      <strong>
+                        {(page - 1) * limit + 1}-{Math.min(page * limit, total)}
+                      </strong>{" "}
+                      of <strong>{total}</strong> orders
                     </>
                   )}
                 </div>
@@ -599,7 +653,9 @@ export default function OrdersSection() {
                   disabled={canceling || actionLoadingId === orderToCancel}
                   className="px-4 py-2 rounded-md bg-rose-600 text-white disabled:opacity-50"
                 >
-                  {canceling || actionLoadingId === orderToCancel ? "Cancelling..." : "Yes, Cancel"}
+                  {canceling || actionLoadingId === orderToCancel
+                    ? "Cancelling..."
+                    : "Yes, Cancel"}
                 </button>
               </div>
             </div>
@@ -612,7 +668,17 @@ export default function OrdersSection() {
         <div className="fixed inset-0 z-50 flex items-start justify-center p-6 bg-black/40">
           <div className="w-full max-w-3xl bg-white dark:bg-gray-900 rounded-lg shadow-xl overflow-auto max-h-[90vh]">
             <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800">
-              <h3 className="font-semibold">Order #{selectedOrder.id}</h3>
+              <div>
+                <h3 className="font-semibold">
+                  {selectedOrder.orderNumber
+                    ? `Order ${selectedOrder.orderNumber}`
+                    : `Order #${selectedOrder.id}`}
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Placed on {fmtDate(selectedOrder.created_at)}
+                </p>
+              </div>
+
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => downloadInvoice(selectedOrder)}
@@ -652,6 +718,11 @@ export default function OrdersSection() {
                     const price = Number(it.price ?? it.unit_price ?? it.price_per_unit ?? 0);
                     const totalLine = Number(price) * Number(qty);
 
+                    const options = it.options || {};
+                    const optionBits = [];
+                    if (options.color) optionBits.push(`Color: ${options.color}`);
+                    if (options.size) optionBits.push(`Size: ${options.size}`);
+
                     return (
                       <li key={key} className="flex items-center gap-4 border-b pb-3">
                         <div className="w-16 h-16 rounded overflow-hidden bg-gray-50 dark:bg-gray-800">
@@ -667,12 +738,19 @@ export default function OrdersSection() {
 
                         <div className="flex-1">
                           <div className="font-medium">{it.name || it.title || "Item"}</div>
+                          {optionBits.length > 0 && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              {optionBits.join(" • ")}
+                            </div>
+                          )}
                           <div className="text-sm text-gray-500 dark:text-gray-400">
                             Qty: <strong>{qty}</strong> × {fmtCurrency(price)}
                           </div>
                         </div>
 
-                        <div className="text-right font-semibold">{fmtCurrency(totalLine)}</div>
+                        <div className="text-right font-semibold">
+                          {fmtCurrency(totalLine)}
+                        </div>
                       </li>
                     );
                   })}
@@ -682,6 +760,20 @@ export default function OrdersSection() {
               <div>
                 <h4 className="text-sm font-semibold mb-2">Summary</h4>
                 <div className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                  <div className="flex justify-between">
+                    <span>Order Number</span>
+                    <span className="font-medium text-gray-900 dark:text-gray-100">
+                      {selectedOrder.orderNumber || "—"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Status</span>
+                    <span className="capitalize">{selectedOrder.status || "—"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Payment Method</span>
+                    <span>{selectedOrder.paymentMethod || "—"}</span>
+                  </div>
                   <div className="flex justify-between">
                     <span>Subtotal</span>
                     <span>{fmtCurrency(selectedOrder.subtotal ?? selectedOrder.total)}</span>
@@ -709,53 +801,34 @@ export default function OrdersSection() {
                 <div className="mt-6">
                   <h4 className="text-sm font-semibold mb-2">Delivery</h4>
                   <div className="text-sm text-gray-600 dark:text-gray-300 font-medium">
-                    {selectedOrder.shipping_address?.name || "—"}
+                    {selectedShipping?.name || "—"}
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
-                    {selectedOrder.shipping_address ? (
+                    {selectedShipping ? (
                       <>
-                        {selectedOrder.shipping_address.line1 || ""}
-                        {selectedOrder.shipping_address.line2
-                          ? `, ${selectedOrder.shipping_address.line2}`
+                        {selectedShipping.line1 || ""}
+                        {selectedShipping.line2
+                          ? `, ${selectedShipping.line2}`
                           : ""}
                         <br />
-                        {(selectedOrder.shipping_address.city
-                          ? `${selectedOrder.shipping_address.city}, `
-                          : "")}
-                        {selectedOrder.shipping_address.state || ""}{" "}
-                        {selectedOrder.shipping_address.pincode ||
-                          selectedOrder.shipping_address.postcode ||
-                          ""}
+                        {(selectedShipping.city ? `${selectedShipping.city}, ` : "")}
+                        {selectedShipping.state || ""}{" "}
+                        {selectedShipping.pincode || selectedShipping.postcode || ""}
                         <br />
-                        {selectedOrder.shipping_address.country || ""}
+                        {selectedShipping.country || ""}
                         <br />
-                        {selectedOrder.shipping_address.phone
-                          ? `Phone: ${selectedOrder.shipping_address.phone}`
+                        {selectedShipping.phone
+                          ? `Phone: ${selectedShipping.phone}`
+                          : ""}
+                        <br />
+                        {selectedOrder.deliveryDate
+                          ? `Delivery date: ${fmtDate(selectedOrder.deliveryDate)}`
                           : ""}
                       </>
                     ) : (
-                      selectedOrder.shipping_address?.address || "—"
+                      "—"
                     )}
                   </div>
-                </div>
-
-                <div className="mt-6 flex gap-2">
-                  {String(selectedOrder.status || "").toLowerCase() !== "cancelled" && (
-                    <button
-                      onClick={() => setOrderToCancel(selectedOrder.id)}
-                      className="px-3 py-2 rounded-md bg-rose-50 text-rose-600"
-                    >
-                      Cancel
-                    </button>
-                  )}
-                  <button
-                    onClick={() => {
-                      window.location.href = `/checkout?reorder=${encodeURIComponent(selectedOrder.id)}`;
-                    }}
-                    className="px-3 py-2 rounded-md bg-black text-white"
-                  >
-                    Buy Again
-                  </button>
                 </div>
               </div>
             </div>
