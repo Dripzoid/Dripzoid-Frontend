@@ -861,6 +861,14 @@ async function checkDelivery() {
     }
   };
 
+  if (!product) {
+  return (
+    <div className="p-8 text-center">
+      Loading product...
+    </div>
+  );
+}
+
   /* ---------- UI rendering (fixed description JSX and unified auth behavior) ---------- */
 
   return (
