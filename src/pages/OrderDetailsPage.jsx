@@ -831,7 +831,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     }
     setActionLoading(true);
     try {
-      const url = apiUrl(`/api/shipping/download-invoice`);
+      const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/invoice`);
       const res = await fetch(url, {
         method: "POST",
         credentials: "include",
