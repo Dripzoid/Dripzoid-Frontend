@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Barcode from "react-barcode";
 import {
@@ -26,11 +26,44 @@ function fmtINR(n) {
 }
 
 function prettyDate(d) {
-  return d.toLocaleDateString(undefined, {
+  if (!d) return "—";
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return String(d);
+
+  return dt.toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
     day: "numeric",
   });
+}
+
+function safeJsonParse(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeOrderSource(source) {
+  if (!source) return null;
+
+  const data = source.data ?? source;
+
+  return {
+    ...source,
+    ...data,
+    orderId:
+      data?.orderId ||
+      source?.orderId ||
+      data?.id ||
+      source?.id ||
+      null,
+    deliveryDate: data?.deliveryDate || source?.deliveryDate || null,
+    shiprocketOrderId:
+      data?.shiprocketOrderId || source?.shiprocketOrderId || null,
+    shipmentId: data?.shipmentId || source?.shipmentId || null,
+  };
 }
 
 /* --------------------------
@@ -108,7 +141,13 @@ function useConfetti(duration = 2500) {
 /* --------------------------
    Reusable button
    -------------------------- */
-function ActionButton({ children, onClick, className = "", disabled = false, ariaLabel }) {
+function ActionButton({
+  children,
+  onClick,
+  className = "",
+  disabled = false,
+  ariaLabel,
+}) {
   const base =
     "inline-flex items-center gap-2 px-4 py-2 rounded-full transition-transform focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed";
   const style =
@@ -135,51 +174,114 @@ export default function OrderConfirmation() {
   const confettiCanvasRef = useConfetti(3000);
 
   const state = location.state ?? {};
-  const incomingOrder = state.order ?? null;
+  const incomingOrder = normalizeOrderSource(state.order ?? null);
 
   const stored = (() => {
     try {
       const raw = localStorage.getItem("lastOrder");
-      if (raw) return JSON.parse(raw);
+      if (raw) return normalizeOrderSource(safeJsonParse(raw));
     } catch {
       /* ignore */
     }
     return null;
   })();
 
-  // Merge incoming order with stored order
+  // Merge incoming order with stored order and fallback demo values
   const baseOrder = incomingOrder ?? stored ?? {
     orderId: generateOrderId(),
-    items: [{ id: "demo-1", name: "Demo Product", price: 799, quantity: 1, images: "" }],
+    items: [
+      {
+        id: "demo-1",
+        name: "Demo Product",
+        price: 799,
+        quantity: 1,
+        images: "",
+      },
+    ],
     total: 799,
     paymentMethod: "COD",
-    shipping: { name: "John Doe", address: "Demo address, City", phone: "9999999999" },
+    shipping: {
+      name: "John Doe",
+      address: "Demo address, City",
+      phone: "9999999999",
+    },
     orderDate: new Date().toISOString(),
     deliveryDate: new Date().toISOString(),
   };
 
-  const items = Array.isArray(baseOrder.items) && baseOrder.items.length > 0 ? baseOrder.items : [];
-  const computedAmount = typeof baseOrder.total === "number"
-    ? baseOrder.total
-    : items.reduce((s, it) => s + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+  const items =
+    Array.isArray(baseOrder.items) && baseOrder.items.length > 0
+      ? baseOrder.items
+      : [];
 
-  const orderId = baseOrder.orderId ?? generateOrderId();
-  const orderDate = baseOrder.orderDate ? new Date(baseOrder.orderDate) : new Date();
-  const shipping = baseOrder.shipping ?? { name: "John Doe", address: "Demo address, City", phone: "9999999999" };
-  const paymentMethod = baseOrder.paymentMethod ?? (baseOrder.paymentDetails ? "Online" : "COD");
+  const computedAmount =
+    typeof baseOrder.total === "number"
+      ? baseOrder.total
+      : items.reduce(
+          (s, it) =>
+            s + Number(it.price || 0) * Number(it.quantity || 1),
+          0
+        );
+
+  const orderId =
+    baseOrder?.orderId ||
+    baseOrder?.data?.orderId ||
+    baseOrder?.id ||
+    generateOrderId();
+
+  const orderDate = baseOrder.orderDate
+    ? new Date(baseOrder.orderDate)
+    : new Date();
+
+  const shipping =
+    baseOrder.shipping ?? {
+      name: "John Doe",
+      address: "Demo address, City",
+      phone: "9999999999",
+    };
+
+  const paymentMethod =
+    baseOrder.paymentMethod ??
+    (baseOrder.paymentDetails ? "Online" : "COD");
 
   const [downloading, setDownloading] = useState(false);
 
-  const estimatedDelivery = baseOrder.deliveryDate ? new Date(baseOrder.deliveryDate) : null;
+  const estimatedDelivery = baseOrder.deliveryDate
+    ? new Date(baseOrder.deliveryDate)
+    : baseOrder?.data?.deliveryDate
+      ? new Date(baseOrder.data.deliveryDate)
+      : null;
 
-  const BASE = process.env.REACT_APP_API_BASE?.replace(/\/$/, "") || "";
+  const shiprocketOrderId =
+    baseOrder?.shiprocketOrderId ||
+    baseOrder?.data?.shiprocketOrderId ||
+    null;
+
+  const shipmentId =
+    baseOrder?.shipmentId ||
+    baseOrder?.data?.shipmentId ||
+    null;
 
   useEffect(() => {
     // persist last order for quick re-open
     try {
-      localStorage.setItem("lastOrder", JSON.stringify({ ...baseOrder, orderId }));
-    } catch { /* ignore */ }
-  }, [baseOrder, orderId]);
+      localStorage.setItem(
+        "lastOrder",
+        JSON.stringify({
+          ...baseOrder,
+          orderId,
+          deliveryDate:
+            baseOrder?.deliveryDate ||
+            baseOrder?.data?.deliveryDate ||
+            null,
+          shiprocketOrderId,
+          shipmentId,
+        })
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [baseOrder, orderId, shiprocketOrderId, shipmentId]);
 
   /* --------------------------
      Download Invoice
@@ -187,35 +289,58 @@ export default function OrderConfirmation() {
   const downloadInvoice = async () => {
     try {
       setDownloading(true);
-      const url = `${BASE}/api/shipping/download-invoice`;
 
-      const response = await fetch(url, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order_id: orderId }),
-      });
+      const response = await fetch(
+        `https://api.dripzoid.com/api/user/orders/${encodeURIComponent(
+          orderId
+        )}/invoice`,
+        {
+          method: "GET",
+          credentials: "include",
+          headers: {
+            Accept: "application/json",
+          },
+        }
+      );
 
-      const blob = await response.blob();
-      const link = document.createElement("a");
-      link.href = window.URL.createObjectURL(blob);
-      link.download = `invoice-${orderId}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.message || "Invoice download failed"
+        );
+      }
+
+      const invoiceUrl =
+        payload?.invoice?.invoice_url ||
+        payload?.invoiceUrl ||
+        payload?.invoice_url ||
+        payload?.url ||
+        null;
+
+      if (!invoiceUrl) {
+        throw new Error("Invoice URL not available");
+      }
+
+      window.open(invoiceUrl, "_blank", "noopener,noreferrer");
     } catch (err) {
       console.error("Invoice download failed:", err);
-      alert("Unable to download invoice. Please try again later.");
+      alert(
+        err?.message || "Unable to download invoice. Please try again later."
+      );
     } finally {
       setDownloading(false);
     }
   };
 
   const handleTrack = () => {
-    window.location.href = `https://dripzoid.com/order-details/${orderId}`;
+    navigate(`/order-details/${orderId}`);
   };
 
-  const itemCount = items.reduce((s, i) => s + Number(i.quantity || 0), 0);
+  const itemCount = items.reduce(
+    (s, i) => s + Number(i.quantity || 0),
+    0
+  );
   const amount = computedAmount;
 
   return (
@@ -239,29 +364,65 @@ export default function OrderConfirmation() {
                 </div>
 
                 <div className="flex-1">
-                  <h1 className="text-2xl sm:text-3xl font-bold">Thank you — your order is confirmed!</h1>
-                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 max-w-2xl">We’ve received your order and will send you a confirmation email & SMS with tracking updates.</p>
+                  <h1 className="text-2xl sm:text-3xl font-bold">
+                    Thank you — your order is confirmed!
+                  </h1>
+                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 max-w-2xl">
+                    We’ve received your order and will send you a confirmation
+                    email & SMS with tracking updates.
+                  </p>
 
-                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-4 gap-3">
                     <div className="p-3 rounded-lg border bg-gray-50 dark:bg-gray-900">
                       <div className="text-xs text-gray-500">Order ID</div>
-                      <div className="font-medium mt-1 break-words">{orderId}</div>
+                      <div className="font-medium mt-1 break-words">
+                        {orderId}
+                      </div>
                     </div>
 
                     <div className="p-3 rounded-lg border bg-gray-50 dark:bg-gray-900">
                       <div className="text-xs text-gray-500">Order Date</div>
-                      <div className="font-medium mt-1">{prettyDate(orderDate)}</div>
+                      <div className="font-medium mt-1">
+                        {prettyDate(orderDate)}
+                      </div>
                     </div>
 
                     <div className="p-3 rounded-lg border bg-gray-50 dark:bg-gray-900">
-                      <div className="text-xs text-gray-500">Est. Delivery</div>
-                      <div className="font-medium mt-1">{estimatedDelivery ? prettyDate(estimatedDelivery) : "—"}</div>
+                      <div className="text-xs text-gray-500">
+                        Est. Delivery
+                      </div>
+                      <div className="font-medium mt-1">
+                        {estimatedDelivery
+                          ? prettyDate(estimatedDelivery)
+                          : "—"}
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-lg border bg-gray-50 dark:bg-gray-900">
+                      <div className="text-xs text-gray-500">
+                        Shiprocket Order
+                      </div>
+                      <div className="font-medium mt-1 break-all">
+                        {shiprocketOrderId || "Pending"}
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-lg border bg-gray-50 dark:bg-gray-900 sm:col-span-2">
+                      <div className="text-xs text-gray-500">Shipment ID</div>
+                      <div className="font-medium mt-1 break-all">
+                        {shipmentId || "Pending"}
+                      </div>
                     </div>
                   </div>
 
                   <div className="mt-5 flex flex-wrap gap-3 items-center">
-                    <ActionButton onClick={downloadInvoice} disabled={downloading} ariaLabel="Download invoice">
-                      <DownloadCloud className="w-4 h-4" /> {downloading ? "Preparing..." : "Download Invoice"}
+                    <ActionButton
+                      onClick={downloadInvoice}
+                      disabled={downloading}
+                      ariaLabel="Download invoice"
+                    >
+                      <DownloadCloud className="w-4 h-4" />
+                      {downloading ? "Preparing..." : "Download Invoice"}
                     </ActionButton>
 
                     <button
@@ -291,25 +452,43 @@ export default function OrderConfirmation() {
               {/* Items list */}
               <div className="mt-8 bg-gray-50 dark:bg-gray-900 rounded-lg p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-gray-800 dark:text-gray-100">Items in your order</h3>
+                  <h3 className="font-semibold text-gray-800 dark:text-gray-100">
+                    Items in your order
+                  </h3>
                   <div className="hidden sm:block">
-                    <Barcode value={String(orderId)} format="CODE128" height={40} displayValue={false} />
+                    <Barcode
+                      value={String(orderId)}
+                      format="CODE128"
+                      height={40}
+                      displayValue={false}
+                    />
                   </div>
                 </div>
 
                 <ul className="divide-y divide-gray-200 dark:divide-gray-700">
                   {items.map((it, idx) => (
-                    <li key={it.id ?? idx} className="py-3 flex items-center gap-4">
+                    <li
+                      key={it.id ?? idx}
+                      className="py-3 flex items-center gap-4"
+                    >
                       <img
-                        src={it.images?.split?.(",")?.[0] ?? "/placeholder.jpg"}
+                        src={
+                          it.images?.split?.(",")?.[0] ?? "/placeholder.jpg"
+                        }
                         alt={it.name}
                         className="w-16 h-16 object-cover rounded-md"
                       />
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-gray-900 dark:text-white truncate">{it.name}</div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400">Qty: {it.quantity}</div>
+                        <div className="font-medium text-gray-900 dark:text-white truncate">
+                          {it.name}
+                        </div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">
+                          Qty: {it.quantity}
+                        </div>
                       </div>
-                      <div className="text-right font-semibold">₹{fmtINR(Number(it.price) * Number(it.quantity))}</div>
+                      <div className="text-right font-semibold">
+                        ₹{fmtINR(Number(it.price) * Number(it.quantity))}
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -366,8 +545,14 @@ export default function OrderConfirmation() {
           </div>
 
           <div className="p-4 text-center text-xs text-gray-500">
-            Order ID <span className="font-medium">{orderId}</span> — Need help?{' '}
-            <button onClick={() => navigate('/contact')} className="underline">Contact support</button>
+            Order ID <span className="font-medium">{orderId}</span> — Need
+            help?{" "}
+            <button
+              onClick={() => navigate("/contact")}
+              className="underline"
+            >
+              Contact support
+            </button>
           </div>
         </div>
       </div>
