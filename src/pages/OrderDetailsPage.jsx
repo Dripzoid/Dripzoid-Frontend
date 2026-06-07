@@ -128,6 +128,7 @@ function normalizeShiprocketResponse(resp) {
           shipped: 2,
           "out for delivery": 3,
           delivered: 4,
+          cancelled: 0,
         };
         return map[(resp.status || "confirmed").toLowerCase()] ?? 0;
       })(),
@@ -304,6 +305,87 @@ function normalizeShiprocketResponse(resp) {
   };
 }
 
+function normalizeTrackPayload(payload, fallbackStatus = "") {
+  if (!payload) {
+    return {
+      status: fallbackStatus || "confirmed",
+      tracking: [],
+      activities: [],
+      courier: null,
+      history: [],
+      raw: payload,
+    };
+  }
+
+  if (
+    payload.tracking_data ||
+    payload.shipment_track ||
+    payload.shipment_track_activities ||
+    Array.isArray(payload)
+  ) {
+    return normalizeShiprocketResponse(payload.tracking_data ?? payload.tracking ?? payload);
+  }
+
+  const trackingRoot = payload.tracking ?? payload.data?.tracking ?? {};
+  const firstTracking = Array.isArray(trackingRoot)
+    ? trackingRoot[0]
+    : Object.values(trackingRoot || {})[0];
+
+  const trackingData =
+    firstTracking?.tracking_data ??
+    trackingRoot?.tracking_data ??
+    payload.tracking_data ??
+    payload.data?.tracking_data ??
+    null;
+
+  if (trackingData) {
+    const shipmentTrack = trackingData.shipment_track || [];
+    const activities = trackingData.shipment_track_activities || [];
+    const currentShipment = shipmentTrack[0] || {};
+
+    return {
+      status:
+        currentShipment.current_status ||
+        trackingData.current_status ||
+        trackingData.status ||
+        payload.status ||
+        fallbackStatus ||
+        "confirmed",
+      tracking: payload.tracking ?? [],
+      activities,
+      courier: {
+        name: currentShipment.courier_name || "",
+        awb: currentShipment.awb_code || "",
+      },
+      history: payload.history ?? [],
+      raw: trackingData,
+    };
+  }
+
+  return {
+    status:
+      payload.status ??
+      payload.tracking?.current_status ??
+      payload.tracking?.shipment_status ??
+      payload.tracking?.status ??
+      fallbackStatus ??
+      "confirmed",
+    tracking: Array.isArray(payload.tracking)
+      ? payload.tracking
+      : payload.tracking ?? [],
+    activities: payload.activities ?? payload.shipment_track_activities ?? [],
+    courier:
+      payload.courier ??
+      (payload.tracking && {
+        name: payload.tracking.courier_name,
+        awb: payload.tracking.awb_code,
+      }) ??
+      null,
+    history: payload.history ?? [],
+    raw: payload,
+  };
+}
+
 /* =========================================================
    MAIN COMPONENT
 ========================================================= */
@@ -325,14 +407,13 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
   const { user: currentUser } = useContext(UserContext) || {};
 
   const [order, setOrder] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
   const [showReturn, setShowReturn] = useState(false);
   const [showTrackModal, setShowTrackModal] = useState(false);
   const [trackInfo, setTrackInfo] = useState(null);
   const [openReviews, setOpenReviews] = useState({});
-
-  const invoiceRef = useRef(null);
 
   function normalizeApiOrder(payload) {
     const source = payload?.data ?? payload;
@@ -439,7 +520,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     const ac = new AbortController();
 
     (async () => {
-      setLoading(true);
+      setInitialLoading(true);
       try {
         const url = apiUrl(`/api/user/orders/${encodeURIComponent(orderId)}`);
         const res = await fetch(url, {
@@ -464,15 +545,15 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
 
         (async function prefetchTracking() {
           try {
-            const turl = apiUrl(`/api/shipping/track-order`);
+            if (!normalized?.id) return;
+
+            const turl = apiUrl(`/api/user/orders/${encodeURIComponent(normalized.id)}/track`);
             const tRes = await fetch(turl, {
-              method: "POST",
+              method: "GET",
               credentials: "include",
               headers: {
-                "Content-Type": "application/json",
                 Accept: "application/json",
               },
-              body: JSON.stringify({ order_id: normalized.id }),
               signal: ac.signal,
             });
 
@@ -485,49 +566,19 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
               return;
             }
 
-            const looksLikeShiprocket =
-              (tPayload &&
-                (tPayload.tracking_data ||
-                  tPayload.shipment_track ||
-                  tPayload.shipment_track_activities ||
-                  tPayload.tracking ||
-                  Array.isArray(tPayload))) ||
-              false;
-
-            let trackNormalized;
-            if (looksLikeShiprocket) {
-              const inner = tPayload.tracking ?? tPayload.tracking_data ?? tPayload;
-              trackNormalized = normalizeShiprocketResponse(inner);
-            } else {
-              trackNormalized = {
-                status:
-                  tPayload.status ??
-                  tPayload.tracking?.current_status ??
-                  tPayload.tracking?.shipment_status ??
-                  tPayload.tracking?.status ??
-                  normalized.status,
-                tracking: Array.isArray(tPayload.tracking)
-                  ? tPayload.tracking
-                  : tPayload.tracking ?? normalized.tracking ?? [],
-                activities: tPayload.activities ?? tPayload.shipment_track_activities ?? [],
-                courier:
-                  tPayload.courier ??
-                  (tPayload.tracking && {
-                    name: tPayload.tracking.courier_name,
-                    awb: tPayload.tracking.awb_code,
-                  }) ??
-                  normalized.courier ??
-                  null,
-                history: tPayload.history ?? [],
-                raw: tPayload,
-              };
-            }
+            const trackNormalized = normalizeTrackPayload(
+              tPayload,
+              normalized.status
+            );
 
             setOrder((prev) => {
               if (!prev) return prev;
               return {
                 ...prev,
-                tracking: trackNormalized.tracking ?? prev.tracking,
+                tracking:
+                  trackNormalized.tracking && trackNormalized.tracking.length
+                    ? trackNormalized.tracking
+                    : prev.tracking,
                 status: trackNormalized.status ?? prev.status,
                 courier: { ...(prev.courier || {}), ...(trackNormalized.courier || {}) },
                 history: trackNormalized.history
@@ -545,7 +596,7 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
         if (err.name === "AbortError") return;
         console.error("Error loading order:", err);
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) setInitialLoading(false);
       }
     })();
 
@@ -604,17 +655,24 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
 
     const prevOrder = order;
     const nowIso = new Date().toISOString();
-    setOrder({
-      ...order,
+
+    setShowCancel(false);
+    setActionLoading(true);
+
+    // Optimistic UI update so the cancelled state appears immediately
+    setOrder((prev) => ({
+      ...prev,
       status: "cancelled",
-      history: [...(order.history || []), { title: "Cancelled", time: nowIso }],
+      history: [...(prev?.history || []), { title: "Cancelled", time: nowIso }],
       tracking: [
-        ...(order.tracking || []),
+        ...(prev?.tracking || []),
         { step: "Cancelled", done: true, time: nowIso },
       ],
-    });
-    setShowCancel(false);
-    setLoading(true);
+      raw: {
+        ...(prev?.raw || {}),
+        status: "cancelled",
+      },
+    }));
 
     try {
       const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/cancel`);
@@ -635,21 +693,27 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
 
       const normalized =
         normalizeApiOrder(payload?.order ?? payload) ?? {
-          ...order,
+          ...prevOrder,
           status: payload?.status ?? "cancelled",
         };
-      setOrder((o) => ({ ...o, ...normalized }));
+
+      setOrder((current) => ({
+        ...current,
+        ...normalized,
+        status: (normalized.status || payload?.status || "cancelled").toString().toLowerCase(),
+        history: normalized.history || current?.history || [],
+      }));
     } catch (err) {
       console.error("Cancel error:", err);
       setOrder(prevOrder);
     } finally {
-      setLoading(false);
+      setActionLoading(false);
     }
   }
 
   async function handleRequestReturn() {
     if (!order) return;
-    setLoading(true);
+    setActionLoading(true);
     try {
       const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/return`);
       const res = await fetch(url, {
@@ -672,140 +736,100 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     } catch (err) {
       console.error("Return error:", err);
     } finally {
-      setLoading(false);
+      setActionLoading(false);
     }
   }
 
-async function handleTrackOrder() {
-  if (!order?.id) {
-    console.warn(
-      "Track order: no order to track"
-    );
-    return;
-  }
+  async function handleTrackOrder() {
+    if (!order?.id) {
+      console.warn("Track order: no order to track");
+      return;
+    }
 
-  setLoading(true);
+    setActionLoading(true);
 
-  try {
-    const res = await fetch(
-      apiUrl(
-        `/api/user/orders/${order.id}/track`
-      ),
-      {
+    try {
+      const res = await fetch(apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/track`), {
         method: "GET",
         credentials: "include",
         headers: {
           Accept: "application/json",
         },
+      });
+
+      const payload = await parseJsonSafe(res);
+
+      if (!res.ok) {
+        throw new Error(payload?.message || `Track API error (${res.status})`);
       }
-    );
 
-    const payload =
-      await parseJsonSafe(res);
+      const trackNormalized = normalizeTrackPayload(payload, order.status);
 
-    if (!res.ok) {
-      throw new Error(
-        payload?.message ||
-          `Track API error (${res.status})`
-      );
+      const shipmentTrack =
+        payload?.tracking?.shipment_track ||
+        payload?.tracking_data?.shipment_track ||
+        payload?.shipment_track ||
+        trackNormalized.raw?.shipment_track ||
+        [];
+
+      const activities =
+        payload?.tracking?.shipment_track_activities ||
+        payload?.tracking_data?.shipment_track_activities ||
+        payload?.shipment_track_activities ||
+        trackNormalized.activities ||
+        [];
+
+      const currentShipment = shipmentTrack[0] || {};
+
+      const infoForModal = {
+        shipment_track: shipmentTrack,
+        shipment_track_activities: activities,
+        courier_name:
+          currentShipment.courier_name ||
+          trackNormalized.courier?.name ||
+          "",
+        awb_code:
+          currentShipment.awb_code ||
+          trackNormalized.courier?.awb ||
+          "",
+        current_status:
+          currentShipment.current_status ||
+          payload?.status ||
+          trackNormalized.status ||
+          order.status,
+        origin: currentShipment.origin || "",
+        destination: currentShipment.destination || "",
+        etd: currentShipment.edd || "",
+        raw: trackNormalized.raw || payload,
+      };
+
+      setTrackInfo(infoForModal);
+      setShowTrackModal(true);
+
+      setOrder((prev) => ({
+        ...prev,
+        status: trackNormalized.status ?? prev.status,
+        tracking: trackNormalized.tracking?.length ? trackNormalized.tracking : prev.tracking,
+        courier: { ...(prev?.courier || {}), ...(trackNormalized.courier || {}) },
+        history: trackNormalized.history
+          ? [...trackNormalized.history, ...(prev?.history || [])]
+          : prev?.history,
+        raw_tracking: trackNormalized.raw ?? prev?.raw_tracking,
+      }));
+    } catch (err) {
+      console.error("Track order failed:", err);
+      alert(err.message || "Unable to fetch tracking information");
+    } finally {
+      setActionLoading(false);
     }
-
-    const trackingRoot =
-      payload?.tracking || {};
-
-    const firstTracking =
-      Object.values(
-        trackingRoot
-      )[0];
-
-    const trackingData =
-      firstTracking?.tracking_data;
-
-    if (!trackingData) {
-      throw new Error(
-        "Tracking information unavailable"
-      );
-    }
-
-    const shipmentTrack =
-      trackingData.shipment_track ||
-      [];
-
-    const activities =
-      trackingData
-        .shipment_track_activities ||
-      [];
-
-    const currentShipment =
-      shipmentTrack[0] || {};
-
-    const infoForModal = {
-      shipment_track:
-        shipmentTrack,
-
-      shipment_track_activities:
-        activities,
-
-      courier_name:
-        currentShipment
-          .courier_name || "",
-
-      awb_code:
-        currentShipment.awb_code ||
-        "",
-
-      current_status:
-        currentShipment.current_status ||
-        trackingData.error ||
-        order.status,
-
-      origin:
-        currentShipment.origin ||
-        "",
-
-      destination:
-        currentShipment.destination ||
-        "",
-
-      etd:
-        currentShipment.edd ||
-        "",
-
-      raw: trackingData,
-    };
-
-    setTrackInfo(
-      infoForModal
-    );
-
-    setShowTrackModal(true);
-
-    setOrder((prev) => ({
-      ...prev,
-      raw_tracking:
-        trackingData,
-    }));
-  } catch (err) {
-    console.error(
-      "Track order failed:",
-      err
-    );
-
-    alert(
-      err.message ||
-        "Unable to fetch tracking information"
-    );
-  } finally {
-    setLoading(false);
   }
-}
 
   async function handleDownloadInvoice() {
     if (!order?.id) {
       console.warn("No order available to download invoice.");
       return;
     }
-    setLoading(true);
+    setActionLoading(true);
     try {
       const url = apiUrl(`/api/shipping/download-invoice`);
       const res = await fetch(url, {
@@ -843,11 +867,11 @@ async function handleTrackOrder() {
     } catch (err) {
       console.error("Download invoice failed:", err);
     } finally {
-      setLoading(false);
+      setActionLoading(false);
     }
   }
 
-  if (loading || !order) {
+  if (initialLoading || !order) {
     return (
       <div className="min-h-screen bg-white dark:bg-black text-neutral-900 dark:text-neutral-100 transition-colors duration-200">
         <div className="max-w-7xl mx-auto px-4 py-10">
@@ -864,9 +888,8 @@ async function handleTrackOrder() {
         (t.step || t.status)?.toString().toLowerCase() === "delivered" &&
         (t.done || t.status === "delivered")
     );
-  const isPacked = (order.status || "").toString().toLowerCase() === "packed";
-  const isCancelled = (order.status || "").toString().toLowerCase() === "cancelled";
-  const StatusIcon = getOrderHeaderIcon(order.status);
+  const isCancelled =
+    (order.status || "").toString().toLowerCase() === "cancelled";
 
   return (
     <div className="min-h-screen bg-white dark:bg-black text-neutral-900 dark:text-neutral-100 transition-colors duration-200">
@@ -885,6 +908,7 @@ async function handleTrackOrder() {
             onRequestReturn={() => setShowReturn(true)}
             onTrackAll={handleTrackOrder}
             isDelivered={isDelivered}
+            isBusy={actionLoading}
           />
 
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded shadow-sm p-4">
@@ -935,6 +959,7 @@ async function handleTrackOrder() {
                               }))
                             }
                             className={`${BTN} text-sm px-3 py-1`}
+                            disabled={actionLoading}
                           >
                             Submit review
                           </button>
@@ -998,6 +1023,7 @@ async function handleTrackOrder() {
                     <button
                       onClick={handleTrackOrder}
                       className={BTN + " text-sm px-3 py-1"}
+                      disabled={actionLoading}
                     >
                       Track
                     </button>
@@ -1066,6 +1092,7 @@ async function handleTrackOrder() {
                 <button
                   onClick={handleDownloadInvoice}
                   className={BTN + " flex-1 py-2 px-3 flex items-center justify-center gap-2 text-sm"}
+                  disabled={actionLoading}
                 >
                   <Download size={16} /> Download
                 </button>
@@ -1135,13 +1162,13 @@ function SkeletonPage() {
    TIMELINE CARD
 ========================================================= */
 
-function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivered }) {
+function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivered, isBusy }) {
   const timelineRef = useRef(null);
   const markersRef = useRef([]);
   const [overlayRect, setOverlayRect] = useState(null);
 
   const innerSize = MARKER_SIZE_PX - MARKER_INNER_OFFSET_PX;
-  const isCancelled = order.status && order.status.toLowerCase() === "cancelled";
+  const isCancelled = (order.status || "").toLowerCase() === "cancelled";
   const HeaderIcon = getOrderHeaderIcon(order.status);
 
   const allSteps = isCancelled
@@ -1156,7 +1183,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
     shipped: 2,
     "out for delivery": 3,
     delivered: 4,
-    cancelled: isCancelled ? 1 : 0,
+    cancelled: 1,
   };
 
   const normalizedStatus = (order.status || "").toLowerCase();
@@ -1392,12 +1419,14 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
               <button
                 onClick={onCancel}
                 className={BTN + " flex-1 py-2 flex items-center justify-center gap-2 text-sm"}
+                disabled={isBusy}
               >
                 Cancel
               </button>
               <button
                 onClick={onTrackAll}
                 className={BTN + " flex-1 py-2 flex items-center justify-center gap-2 text-sm"}
+                disabled={isBusy}
               >
                 <Truck size={16} /> Track order
               </button>
@@ -1408,6 +1437,7 @@ function TimelineCard({ order, onCancel, onRequestReturn, onTrackAll, isDelivere
             <button
               onClick={onRequestReturn}
               className={BTN + " flex-1 py-2 flex items-center justify-center gap-2 text-sm"}
+              disabled={isBusy}
             >
               Return
             </button>
