@@ -1106,7 +1106,7 @@ async function handleDownloadInvoice() {
                   className={BTN + " flex-1 py-2 px-3 flex items-center justify-center gap-2 text-sm"}
                   disabled={actionLoading}
                 >
-                  <Download size={16} /> Download
+                  <Download size={16} /> Download Invoice
                 </button>
               </div>
             </div>
