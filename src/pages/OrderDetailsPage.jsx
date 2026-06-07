@@ -841,13 +841,13 @@ async function handleDownloadInvoice() {
       method: "GET",
       credentials: "include",
       headers: {
-        Accept: "application/pdf,application/json",
+        Accept: "application/json",
       },
     });
 
-    if (!res.ok) {
-      const payload = await parseJsonSafe(res);
+    const payload = await parseJsonSafe(res);
 
+    if (!res.ok) {
       console.error(
         "Invoice download failed:",
         payload?.message || `HTTP ${res.status}`
@@ -858,23 +858,24 @@ async function handleDownloadInvoice() {
       );
     }
 
-    const blob = await res.blob();
+    const invoiceUrl = payload?.invoice?.invoice_url;
 
-    const filename = `invoice-${order.id}.pdf`;
+    if (!invoiceUrl) {
+      throw new Error("Invoice URL not available");
+    }
 
-    const blobUrl = window.URL.createObjectURL(blob);
-
+    // Download invoice
     const a = document.createElement("a");
-    a.href = blobUrl;
-    a.download = filename;
+    a.href = invoiceUrl;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.download = `invoice-${order.id}.pdf`;
 
     document.body.appendChild(a);
     a.click();
     a.remove();
 
-    window.URL.revokeObjectURL(blobUrl);
-
-    console.log("Invoice downloaded.");
+    console.log("Invoice download started.");
   } catch (err) {
     console.error("Download invoice failed:", err);
   } finally {
