@@ -824,52 +824,63 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     }
   }
 
-  async function handleDownloadInvoice() {
-    if (!order?.id) {
-      console.warn("No order available to download invoice.");
-      return;
-    }
-    setActionLoading(true);
-    try {
-      const url = apiUrl(`/api/user/orders/${encodeURIComponent(order.id)}/invoice`);
-      const res = await fetch(url, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ order_id: order.id }),
-      });
-
-      if (!res.ok) {
-        const payload = await parseJsonSafe(res);
-        console.error(
-          "Invoice download failed:",
-          payload?.message || `HTTP ${res.status}`
-        );
-        throw new Error(
-          payload?.message || `Invoice download failed (${res.status})`
-        );
-      }
-
-      const blob = await res.blob();
-      const filename = `invoice-${order.id}.pdf`;
-      const blobUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(blobUrl);
-      console.log("Invoice downloaded.");
-    } catch (err) {
-      console.error("Download invoice failed:", err);
-    } finally {
-      setActionLoading(false);
-    }
+async function handleDownloadInvoice() {
+  if (!order?.id) {
+    console.warn("No order available to download invoice.");
+    return;
   }
+
+  setActionLoading(true);
+
+  try {
+    const url = apiUrl(
+      `/api/user/orders/${encodeURIComponent(order.id)}/invoice`
+    );
+
+    const res = await fetch(url, {
+      method: "GET",
+      credentials: "include",
+      headers: {
+        Accept: "application/pdf,application/json",
+      },
+    });
+
+    if (!res.ok) {
+      const payload = await parseJsonSafe(res);
+
+      console.error(
+        "Invoice download failed:",
+        payload?.message || `HTTP ${res.status}`
+      );
+
+      throw new Error(
+        payload?.message || `Invoice download failed (${res.status})`
+      );
+    }
+
+    const blob = await res.blob();
+
+    const filename = `invoice-${order.id}.pdf`;
+
+    const blobUrl = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    window.URL.revokeObjectURL(blobUrl);
+
+    console.log("Invoice downloaded.");
+  } catch (err) {
+    console.error("Download invoice failed:", err);
+  } finally {
+    setActionLoading(false);
+  }
+}
 
   if (initialLoading || !order) {
     return (
