@@ -364,54 +364,57 @@ export default function OrdersSection() {
     }
   };
 
-  const downloadInvoice = async (order) => {
-    if (!order?.id) return;
-    setActionLoadingId(order.id);
+const downloadInvoice = async (order) => {
+  if (!order?.id) return;
 
-    try {
-      const payload = {
-        orderId: order.id,
-        order_id: order.id,
-        id: order.id,
-      };
+  setActionLoadingId(order.id);
 
-      const res = await fetch(buildUrl("/api/shipping/download-invoice"), {
-        method: "POST",
+  try {
+    const res = await fetch(
+      buildUrl(`/api/user/orders/${order.id}/invoice`),
+      {
+        method: "GET",
         credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        let body = {};
-        try {
-          body = txt ? JSON.parse(txt) : {};
-        } catch {
-          body = { message: txt || "" };
-        }
-        throw new Error(body.message || `Invoice download failed (status ${res.status})`);
       }
+    );
 
-      const blob = await res.blob();
-      const filename = `invoice-${order.id}.pdf`;
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("Invoice download error:", err);
-      alert(err.message || "Unable to download invoice. See console.");
-    } finally {
-      setActionLoadingId(null);
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      throw new Error(
+        data.message || "Invoice download failed"
+      );
     }
-  };
+
+    const invoiceUrl =
+      data?.invoice?.invoice_url ||
+      data?.invoice_url;
+
+    if (!invoiceUrl) {
+      throw new Error(
+        "Invoice URL not available"
+      );
+    }
+
+    window.open(
+      invoiceUrl,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  } catch (err) {
+    console.error(
+      "Invoice download error:",
+      err
+    );
+
+    alert(
+      err.message ||
+        "Unable to download invoice"
+    );
+  } finally {
+    setActionLoadingId(null);
+  }
+};
 
   const openOrderDetails = (order) => {
     if (!order?.id) return;
