@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Barcode from "react-barcode";
 import {
@@ -67,19 +67,13 @@ function normalizeOrderSource(source) {
       data?.shiprocketOrderId || source?.shiprocketOrderId || null,
     shipmentId: data?.shipmentId || source?.shipmentId || null,
     shipping: {
-      name:
-        shippingSource?.name ||
-        shippingSource?.fullName ||
-        "—",
+      name: shippingSource?.name || shippingSource?.fullName || "—",
       address:
         shippingSource?.address ||
         shippingSource?.line1 ||
         shippingSource?.addressLine1 ||
         "—",
-      phone:
-        shippingSource?.phone ||
-        shippingSource?.mobile ||
-        "—",
+      phone: shippingSource?.phone || shippingSource?.mobile || "—",
     },
   };
 }
@@ -144,6 +138,7 @@ function useConfetti(duration = 2500) {
       w = canvas.width = canvas.offsetWidth;
       h = canvas.height = canvas.offsetHeight;
     };
+
     window.addEventListener("resize", onResize);
 
     return () => {
@@ -177,6 +172,7 @@ function ActionButton({
       onClick={onClick}
       disabled={disabled}
       className={`${base} ${style} ${className}`}
+      type="button"
     >
       {children}
     </button>
@@ -204,28 +200,22 @@ export default function OrderConfirmation() {
     return null;
   })();
 
-  // Merge incoming order with stored order and fallback demo values
-  const baseOrder = incomingOrder ?? stored ?? {
-    orderId: null,
-    items: [
-      {
-        id: "demo-1",
-        name: "Demo Product",
-        price: 799,
-        quantity: 1,
-        images: "",
+  // Merge incoming order with stored order and fallback to empty state
+  const baseOrder =
+    incomingOrder ??
+    stored ?? {
+      orderId: null,
+      items: [],
+      total: 0,
+      paymentMethod: "",
+      shipping: {
+        name: "",
+        address: "",
+        phone: "",
       },
-    ],
-    total: 799,
-    paymentMethod: "COD",
-    shipping: {
-      name: "John Doe",
-      address: "Demo address, City",
-      phone: "9999999999",
-    },
-    orderDate: new Date().toISOString(),
-    deliveryDate: new Date().toISOString(),
-  };
+      orderDate: null,
+      deliveryDate: null,
+    };
 
   const items =
     Array.isArray(baseOrder.items) && baseOrder.items.length > 0
@@ -246,20 +236,16 @@ export default function OrderConfirmation() {
     baseOrder?.id ||
     null;
 
-  const orderDate = baseOrder.orderDate
-    ? new Date(baseOrder.orderDate)
-    : new Date();
+  const orderDate = baseOrder.orderDate ? new Date(baseOrder.orderDate) : null;
 
-  const shipping =
-    baseOrder.shipping ?? {
-      name: "John Doe",
-      address: "Demo address, City",
-      phone: "9999999999",
-    };
+  const shipping = baseOrder.shipping ?? {
+    name: "",
+    address: "",
+    phone: "",
+  };
 
   const paymentMethod =
-    baseOrder.paymentMethod ??
-    (baseOrder.paymentDetails ? "Online" : "COD");
+    baseOrder.paymentMethod ?? (baseOrder.paymentDetails ? "Online" : "COD");
 
   const [downloading, setDownloading] = useState(false);
 
@@ -282,6 +268,8 @@ export default function OrderConfirmation() {
   useEffect(() => {
     // persist last order for quick re-open
     try {
+      if (!orderId && items.length === 0) return;
+
       localStorage.setItem(
         "lastOrder",
         JSON.stringify({
@@ -298,7 +286,7 @@ export default function OrderConfirmation() {
     } catch {
       /* ignore */
     }
-  }, [baseOrder, orderId, shiprocketOrderId, shipmentId]);
+  }, [baseOrder, orderId, shiprocketOrderId, shipmentId, items.length]);
 
   /* --------------------------
      Download Invoice
@@ -313,7 +301,9 @@ export default function OrderConfirmation() {
       setDownloading(true);
 
       const response = await fetch(
-        `https://api.dripzoid.com/api/user/order/${encodeURIComponent(orderId)}/invoice`,
+        `https://api.dripzoid.com/api/user/order/${encodeURIComponent(
+          orderId
+        )}/invoice`,
         {
           method: "GET",
           credentials: "include",
@@ -343,9 +333,7 @@ export default function OrderConfirmation() {
       window.open(invoiceUrl, "_blank", "noopener,noreferrer");
     } catch (err) {
       console.error("Invoice download failed:", err);
-      alert(
-        err?.message || "Unable to download invoice. Please try again later."
-      );
+      alert(err?.message || "Unable to download invoice. Please try again later.");
     } finally {
       setDownloading(false);
     }
@@ -398,7 +386,9 @@ export default function OrderConfirmation() {
 
                     <div className="p-3 rounded-lg border bg-gray-50 dark:bg-gray-900">
                       <div className="text-xs text-gray-500">Order Date</div>
-                      <div className="font-medium mt-1">{prettyDate(orderDate)}</div>
+                      <div className="font-medium mt-1">
+                        {prettyDate(orderDate)}
+                      </div>
                     </div>
 
                     <div className="p-3 rounded-lg border bg-gray-50 dark:bg-gray-900">
@@ -437,6 +427,7 @@ export default function OrderConfirmation() {
                       onClick={handleTrack}
                       disabled={!orderId}
                       className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 dark:border-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-900 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                      type="button"
                     >
                       <MapPin className="w-4 h-4" /> Track Order
                     </button>
@@ -444,6 +435,7 @@ export default function OrderConfirmation() {
                     <button
                       onClick={() => window.print()}
                       className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 dark:border-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-900 transition"
+                      type="button"
                     >
                       <Printer className="w-4 h-4" /> Print
                     </button>
@@ -451,6 +443,7 @@ export default function OrderConfirmation() {
                     <button
                       onClick={() => navigate("/shop")}
                       className="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-black to-gray-800 text-white dark:bg-gradient-to-r dark:from-white dark:to-gray-200 dark:text-black shadow-md"
+                      type="button"
                     >
                       Continue shopping <ArrowRight className="w-4 h-4" />
                     </button>
@@ -478,7 +471,10 @@ export default function OrderConfirmation() {
 
                 <ul className="divide-y divide-gray-200 dark:divide-gray-700">
                   {items.map((it, idx) => (
-                    <li key={it.id ?? idx} className="py-3 flex items-center gap-4">
+                    <li
+                      key={it.id ?? idx}
+                      className="py-3 flex items-center gap-4"
+                    >
                       <img
                         src={it.images?.split?.(",")?.[0] ?? "/placeholder.jpg"}
                         alt={it.name}
@@ -504,9 +500,9 @@ export default function OrderConfirmation() {
               <div className="mt-6 bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
                 <h4 className="font-medium mb-2">Shipping Address</h4>
                 <div className="text-sm text-gray-700 dark:text-gray-200">
-                  <div className="font-medium">{shipping.name}</div>
-                  <div className="break-words">{shipping.address}</div>
-                  <div>{shipping.phone}</div>
+                  <div className="font-medium">{shipping.name || "—"}</div>
+                  <div className="break-words">{shipping.address || "—"}</div>
+                  <div>{shipping.phone || "—"}</div>
                 </div>
               </div>
             </div>
@@ -533,7 +529,7 @@ export default function OrderConfirmation() {
                     <span>Payment method</span>
                     <span className="flex items-center gap-2">
                       <CreditCard className="w-4 h-4" />
-                      <span>{paymentMethod}</span>
+                      <span>{paymentMethod || "—"}</span>
                     </span>
                   </div>
 
@@ -551,8 +547,10 @@ export default function OrderConfirmation() {
           </div>
 
           <div className="p-4 text-center text-xs text-gray-500">
-            Order ID <span className="font-medium">{orderId || "Processing..."}</span> — Need help?{" "}
-            <button onClick={() => navigate("/contact")} className="underline">
+            Order ID{" "}
+            <span className="font-medium">{orderId || "Processing..."}</span> —
+            Need help?{" "}
+            <button onClick={() => navigate("/contact")} className="underline" type="button">
               Contact support
             </button>
           </div>
