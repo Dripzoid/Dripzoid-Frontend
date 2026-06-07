@@ -31,12 +31,44 @@ function buildUrl(path) {
   return `${API_BASE}${path}`;
 }
 
+function safeJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function extractBackendOrder(payload) {
+  return payload?.data ?? payload?.order ?? payload ?? null;
+}
+
+function extractDeliveryDate(payload) {
+  if (!payload) return null;
+  const order = extractBackendOrder(payload);
+  return (
+    order?.deliveryDate ??
+    order?.delivery_date ??
+    payload?.deliveryDate ??
+    payload?.delivery_date ??
+    null
+  );
+}
+
+function extractOrderId(payload) {
+  const order = extractBackendOrder(payload);
+  return (
+    order?.orderId ??
+    order?.id ??
+    payload?.orderId ??
+    payload?.id ??
+    null
+  );
+}
+
 export default function CheckoutPage() {
   const { cart = [], fetchCart, clearCart } = useCart();
-  const {
-    user,
-    loading: authLoading,
-  } = useContext(UserContext) || {};
+  const { user, loading: authLoading } = useContext(UserContext) || {};
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -161,8 +193,8 @@ export default function CheckoutPage() {
       const uniqueId = productId
         ? `p-${productId}`
         : cartRowId
-        ? `c-${cartRowId}`
-        : `itm-${idx}`;
+          ? `c-${cartRowId}`
+          : `itm-${idx}`;
       const name = prod.name ?? it.name ?? it.product_name ?? "Unnamed";
       const price = Number(prod.price ?? it.price ?? it.unit_price ?? 0);
       const quantity = Number(it.quantity ?? it.qty ?? 1);
@@ -190,7 +222,8 @@ export default function CheckoutPage() {
         (it.variant && (it.variant.id || it.variant._id)) ??
         null;
 
-      const sku = (prod && (prod.sku || prod.SKU)) || it.sku || `SKU-${productId ?? idx}`;
+      const sku =
+        (prod && (prod.sku || prod.SKU)) || it.sku || `SKU-${productId ?? idx}`;
       const original = prod;
 
       return {
@@ -216,7 +249,10 @@ export default function CheckoutPage() {
       ? n.toLocaleString("en-IN", { maximumFractionDigits: 2 })
       : n;
 
-  const itemsTotal = checkoutItems.reduce((s, it) => s + it.price * it.quantity, 0);
+  const itemsTotal = checkoutItems.reduce(
+    (s, it) => s + it.price * it.quantity,
+    0
+  );
   const shippingCost = 0;
   const codCharge = paymentType === "cod" ? 25 : 0;
   const discount = promoApplied?.amount ?? 0;
@@ -310,7 +346,9 @@ export default function CheckoutPage() {
         alert("Address saved to your account.");
       } else {
         const err = await res.json().catch(() => null);
-        alert(err?.message || err?.error || `Failed to save address (status ${res.status})`);
+        alert(
+          err?.message || err?.error || `Failed to save address (status ${res.status})`
+        );
       }
     } catch (e) {
       console.error(e);
@@ -403,7 +441,9 @@ export default function CheckoutPage() {
         if (err === "invalid_coupon") alert("Coupon not found or inactive.");
         else if (err === "usage_limit_reached") alert("Coupon usage limit reached.");
         else if (err === "min_purchase_not_met")
-          alert(`This coupon requires a minimum purchase of ₹${data?.coupon?.min_purchase ?? "?"}.`);
+          alert(
+            `This coupon requires a minimum purchase of ₹${data?.coupon?.min_purchase ?? "?"}.`
+          );
         else alert(err);
         return;
       }
@@ -467,7 +507,9 @@ export default function CheckoutPage() {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => null);
-      throw new Error(err?.message || `Payment verification failed (status ${res.status})`);
+      throw new Error(
+        err?.message || `Payment verification failed (status ${res.status})`
+      );
     }
     return res.json();
   };
@@ -480,16 +522,6 @@ export default function CheckoutPage() {
     } catch (e) {
       console.warn("Failed to clear/refresh cart after order:", e);
     }
-  };
-
-  const extractDeliveryDate = (resp) => {
-    if (!resp) return null;
-    return (
-      resp.deliveryDate ??
-      resp.delivery_date ??
-      (resp.order && (resp.order.delivery_date ?? resp.order.deliveryDate)) ??
-      null
-    );
   };
 
   const handlePayment = async ({ fromCart = fromCartDefault } = {}) => {
@@ -572,7 +604,9 @@ export default function CheckoutPage() {
         coupon: promoApplied?.coupon
           ? { id: promoApplied.coupon.id, code: promoApplied.code }
           : undefined,
-        coupon_discount: promoApplied?.amount ? Number(promoApplied.amount) : undefined,
+        coupon_discount: promoApplied?.amount
+          ? Number(promoApplied.amount)
+          : undefined,
       };
 
       const createOrderPayloadForRazor = {
@@ -601,7 +635,9 @@ export default function CheckoutPage() {
         coupon: promoApplied?.coupon
           ? { id: promoApplied.coupon.id, code: promoApplied.code }
           : undefined,
-        coupon_discount: promoApplied?.amount ? Number(promoApplied.amount) : undefined,
+        coupon_discount: promoApplied?.amount
+          ? Number(promoApplied.amount)
+          : undefined,
       };
 
       if (paymentType === "cod") {
@@ -614,27 +650,36 @@ export default function CheckoutPage() {
           body: JSON.stringify(placeOrderPayload),
         });
 
-        const data = await res.json().catch(() => null);
+        const payload = await res.json().catch(() => null);
+
         if (!res.ok) {
           alert(
-            (data && (data.error || data.message)) ||
+            (payload && (payload.error || payload.message)) ||
               `Failed to place order (status ${res.status})`
           );
           return;
         }
 
-        const deliveryDate = extractDeliveryDate(data);
+        const backendOrder = extractBackendOrder(payload);
 
         const order = {
-          orderId: data?.orderId ?? data?.order?.id ?? null,
+          orderId: backendOrder?.orderId ?? backendOrder?.id ?? null,
           items: checkoutItems,
           total: grandTotal,
           paymentMethod: "cod",
           customerName: shippingNormalized.customerName || user?.name || "Guest",
           shipping: shippingNormalized,
           orderDate: new Date().toISOString(),
-          deliveryDate: deliveryDate ?? null,
+          deliveryDate: extractDeliveryDate(payload),
+          shiprocketOrderId: backendOrder?.shiprocketOrderId ?? null,
+          shipmentId: backendOrder?.shipmentId ?? null,
+          raw: payload,
         };
+
+        if (!order.orderId) {
+          alert("Order placed, but backend order id was not returned.");
+          return;
+        }
 
         try {
           localStorage.setItem("lastOrder", JSON.stringify(order));
@@ -647,7 +692,10 @@ export default function CheckoutPage() {
         return;
       }
 
-      const serverResp = await createRazorpayOrderOnServer(createOrderPayloadForRazor);
+      const serverResp = await createRazorpayOrderOnServer(
+        createOrderPayloadForRazor
+      );
+
       const ok = await loadRazorpayScript();
       if (!ok) throw new Error("Failed to load Razorpay SDK");
 
@@ -655,9 +703,12 @@ export default function CheckoutPage() {
         serverResp?.razorpayOrderId ||
         serverResp?.orderId ||
         serverResp?.order?.razorpayOrderId;
+
       const amount =
         serverResp?.amount ?? serverResp?.razorpayAmount ?? Math.round(grandTotal);
+
       const currency = serverResp?.currency ?? "INR";
+
       const internalOrderId =
         serverResp?.internalOrderId ??
         serverResp?.orderId ??
@@ -685,13 +736,17 @@ export default function CheckoutPage() {
               internalOrderId,
               orderPayload: createOrderPayloadForRazor,
             });
-            const orderInfo = verifyResp?.order || { orderId: internalOrderId };
 
+            const backendOrder = extractBackendOrder(verifyResp?.order || verifyResp);
             const deliveryDate =
               extractDeliveryDate(verifyResp) || extractDeliveryDate(serverResp) || null;
 
             const order = {
-              orderId: orderInfo?.id ?? orderInfo?.orderId ?? internalOrderId,
+              orderId:
+                backendOrder?.orderId ??
+                backendOrder?.id ??
+                internalOrderId ??
+                null,
               items: checkoutItems,
               total: grandTotal,
               paymentMethod: "razorpay",
@@ -699,7 +754,15 @@ export default function CheckoutPage() {
               shipping: shippingNormalized,
               orderDate: new Date().toISOString(),
               deliveryDate,
+              shiprocketOrderId: backendOrder?.shiprocketOrderId ?? null,
+              shipmentId: backendOrder?.shipmentId ?? null,
+              raw: verifyResp,
             };
+
+            if (!order.orderId) {
+              alert("Payment verified, but backend order id was not returned.");
+              return;
+            }
 
             try {
               localStorage.setItem("lastOrder", JSON.stringify(order));
@@ -711,7 +774,9 @@ export default function CheckoutPage() {
             navigate("/order-confirmation", { state: { order } });
           } catch (err) {
             console.error("Verification failed", err);
-            alert("Payment was processed but verification failed. Please contact support.");
+            alert(
+              "Payment was processed but verification failed. Please contact support."
+            );
           }
         },
         modal: {
@@ -756,8 +821,8 @@ export default function CheckoutPage() {
             done
               ? "bg-emerald-500 text-white"
               : active
-              ? "bg-neutral-900 text-white dark:bg-white dark:text-black"
-              : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-500"
+                ? "bg-neutral-900 text-white dark:bg-white dark:text-black"
+                : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-500"
           }`}
         >
           {done ? <Check size={16} /> : i}
@@ -802,7 +867,9 @@ export default function CheckoutPage() {
           </div>
           <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
             <UserIcon size={16} />{" "}
-            <span className="ml-1 font-medium">{user?.name ?? user?.email ?? "Guest"}</span>
+            <span className="ml-1 font-medium">
+              {user?.name ?? user?.email ?? "Guest"}
+            </span>
           </div>
         </div>
       </div>
@@ -829,7 +896,9 @@ export default function CheckoutPage() {
             <div className={`${cardBase} ${cardLight} ${cardDark} p-6`}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold">Order summary</h3>
-                <div className="text-sm text-gray-500">Items: {checkoutItems.length}</div>
+                <div className="text-sm text-gray-500">
+                  Items: {checkoutItems.length}
+                </div>
               </div>
 
               <div className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -864,8 +933,12 @@ export default function CheckoutPage() {
                         <div className="flex-1">
                           <div className="flex justify-between items-start gap-4">
                             <div>
-                              <div className="font-medium text-neutral-900 dark:text-white">{it.name}</div>
-                              <div className="text-xs text-gray-500 mt-1">{it.original?.category ?? ""}</div>
+                              <div className="font-medium text-neutral-900 dark:text-white">
+                                {it.name}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {it.original?.category ?? ""}
+                              </div>
                               {(colorName || sizeName) && (
                                 <div className="mt-2 text-xs text-gray-600 dark:text-gray-300 flex items-center gap-3">
                                   {colorName && (
@@ -882,7 +955,9 @@ export default function CheckoutPage() {
                                   {sizeName && <span>Size: {sizeName}</span>}
                                 </div>
                               )}
-                              <div className="mt-3 text-sm font-semibold">₹{fmt(it.price)}</div>
+                              <div className="mt-3 text-sm font-semibold">
+                                ₹{fmt(it.price)}
+                              </div>
                             </div>
                             <div className="text-sm text-gray-600">Qty {it.quantity}</div>
                           </div>
@@ -908,6 +983,7 @@ export default function CheckoutPage() {
                       onClick={() => redeemCoupon(promoCode)}
                       className="px-4 py-2 rounded bg-gradient-to-r from-neutral-900 to-neutral-700 text-white hover:opacity-95 transition flex items-center gap-2"
                       disabled={redeeming || !promoCode}
+                      type="button"
                     >
                       {redeeming ? "Applying..." : (
                         <>
@@ -922,7 +998,11 @@ export default function CheckoutPage() {
                       <div className="text-sm text-emerald-600 flex items-center gap-2">
                         <Check size={14} /> Applied: {promoApplied.code} — ₹{fmt(promoApplied.amount)} off
                       </div>
-                      <button onClick={removeAppliedCoupon} className="text-xs text-red-600 flex items-center gap-1">
+                      <button
+                        onClick={removeAppliedCoupon}
+                        className="text-xs text-red-600 flex items-center gap-1"
+                        type="button"
+                      >
                         <X size={14} /> Remove
                       </button>
                     </div>
@@ -977,27 +1057,36 @@ export default function CheckoutPage() {
                       } flex justify-between`}
                     >
                       <div>
-                        <div className="text-sm font-medium">{addr.label || addr.name || "Address"}</div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          {addr.line1 ? `${addr.line1}${addr.line2 ? ", " + addr.line2 : ""}` : addr.address}
+                        <div className="text-sm font-medium">
+                          {addr.label || addr.name || "Address"}
                         </div>
                         <div className="text-xs text-gray-500 mt-1">
-                          {addr.city ? `${addr.city}, ${addr.state}` : addr.state} • {addr.pincode ?? ""}
+                          {addr.line1
+                            ? `${addr.line1}${addr.line2 ? ", " + addr.line2 : ""}`
+                            : addr.address}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {addr.city ? `${addr.city}, ${addr.state}` : addr.state} •{" "}
+                          {addr.pincode ?? ""}
                         </div>
                         <div className="text-xs text-gray-500 mt-1">{addr.phone}</div>
                       </div>
                       <div className="flex flex-col gap-2 items-end">
-                        {addr.is_default && <div className="text-xs text-emerald-600">Default</div>}
+                        {addr.is_default && (
+                          <div className="text-xs text-emerald-600">Default</div>
+                        )}
                         <div className="flex gap-2">
                           <button
                             onClick={() => handleSelectSavedAddress(addr)}
                             className="px-3 py-1 rounded text-sm bg-neutral-900 text-white"
+                            type="button"
                           >
                             Use
                           </button>
                           <button
                             onClick={() => handleDeleteAddress(addr.id)}
                             className="px-3 py-1 rounded text-sm border text-red-600"
+                            type="button"
                           >
                             Remove
                           </button>
@@ -1010,7 +1099,9 @@ export default function CheckoutPage() {
 
               <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-gray-600 dark:text-gray-300">Full name</label>
+                  <label className="text-xs text-gray-600 dark:text-gray-300">
+                    Full name
+                  </label>
                   <input
                     aria-label="Name"
                     placeholder="Full name"
@@ -1021,89 +1112,121 @@ export default function CheckoutPage() {
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-600 dark:text-gray-300">Label</label>
+                  <label className="text-xs text-gray-600 dark:text-gray-300">
+                    Label
+                  </label>
                   <input
                     aria-label="Label"
                     placeholder="Home / Office"
                     value={shipping.label}
-                    onChange={(e) => setShipping({ ...shipping, label: e.target.value })}
+                    onChange={(e) =>
+                      setShipping({ ...shipping, label: e.target.value })
+                    }
                     className={`${inputBase} ${inputLight} ${inputDark} mt-1`}
                   />
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="text-xs text-gray-600 dark:text-gray-300">Address line 1</label>
+                  <label className="text-xs text-gray-600 dark:text-gray-300">
+                    Address line 1
+                  </label>
                   <input
                     aria-label="Line1"
                     placeholder="Flat, building, street"
                     value={shipping.line1}
-                    onChange={(e) => setShipping({ ...shipping, line1: e.target.value })}
+                    onChange={(e) =>
+                      setShipping({ ...shipping, line1: e.target.value })
+                    }
                     className={`${inputBase} ${inputLight} ${inputDark} mt-1`}
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-600 dark:text-gray-300">Address line 2</label>
+                  <label className="text-xs text-gray-600 dark:text-gray-300">
+                    Address line 2
+                  </label>
                   <input
                     aria-label="Line2"
                     placeholder="Area, landmark (optional)"
                     value={shipping.line2}
-                    onChange={(e) => setShipping({ ...shipping, line2: e.target.value })}
+                    onChange={(e) =>
+                      setShipping({ ...shipping, line2: e.target.value })
+                    }
                     className={`${inputBase} ${inputLight} ${inputDark} mt-1`}
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-600 dark:text-gray-300">City</label>
+                  <label className="text-xs text-gray-600 dark:text-gray-300">
+                    City
+                  </label>
                   <input
                     aria-label="City"
                     placeholder="City"
                     value={shipping.city}
-                    onChange={(e) => setShipping({ ...shipping, city: e.target.value })}
+                    onChange={(e) =>
+                      setShipping({ ...shipping, city: e.target.value })
+                    }
                     className={`${inputBase} ${inputLight} ${inputDark} mt-1`}
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-600 dark:text-gray-300">State</label>
+                  <label className="text-xs text-gray-600 dark:text-gray-300">
+                    State
+                  </label>
                   <input
                     aria-label="State"
                     placeholder="State"
                     value={shipping.state}
-                    onChange={(e) => setShipping({ ...shipping, state: e.target.value })}
+                    onChange={(e) =>
+                      setShipping({ ...shipping, state: e.target.value })
+                    }
                     className={`${inputBase} ${inputLight} ${inputDark} mt-1`}
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-600 dark:text-gray-300">Pincode</label>
+                  <label className="text-xs text-gray-600 dark:text-gray-300">
+                    Pincode
+                  </label>
                   <input
                     aria-label="Pincode"
                     placeholder="Pincode"
                     value={shipping.pincode}
-                    onChange={(e) => setShipping({ ...shipping, pincode: e.target.value })}
+                    onChange={(e) =>
+                      setShipping({ ...shipping, pincode: e.target.value })
+                    }
                     className={`${inputBase} ${inputLight} ${inputDark} mt-1`}
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-600 dark:text-gray-300">Phone</label>
+                  <label className="text-xs text-gray-600 dark:text-gray-300">
+                    Phone
+                  </label>
                   <input
                     aria-label="Phone"
                     placeholder="Phone"
                     value={shipping.phone}
-                    onChange={(e) => setShipping({ ...shipping, phone: e.target.value })}
+                    onChange={(e) =>
+                      setShipping({ ...shipping, phone: e.target.value })
+                    }
                     className={`${inputBase} ${inputLight} ${inputDark} mt-1`}
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-600 dark:text-gray-300">Country</label>
+                  <label className="text-xs text-gray-600 dark:text-gray-300">
+                    Country
+                  </label>
                   <input
                     aria-label="Country"
                     placeholder="Country"
                     value={shipping.country}
-                    onChange={(e) => setShipping({ ...shipping, country: e.target.value })}
+                    onChange={(e) =>
+                      setShipping({ ...shipping, country: e.target.value })
+                    }
                     className={`${inputBase} ${inputLight} ${inputDark} mt-1`}
                   />
                 </div>
@@ -1126,6 +1249,7 @@ export default function CheckoutPage() {
                   <button
                     onClick={handleSaveAddress}
                     className="ml-2 px-3 py-1 rounded bg-neutral-900 text-white"
+                    type="button"
                   >
                     Save
                   </button>
@@ -1152,6 +1276,7 @@ export default function CheckoutPage() {
                       ? `${selectedCommon} ${selectedBtnClass}`
                       : `${unselectedBtnClass}`
                   }`}
+                  type="button"
                 >
                   <div className="p-2 rounded bg-white dark:bg-gray-800 border">
                     <Wallet size={20} />
@@ -1162,7 +1287,9 @@ export default function CheckoutPage() {
                       Cards, UPI, Netbanking and more. Fast and secure.
                     </div>
                   </div>
-                  {paymentType === "razorpay" && <div className="text-xs font-semibold">Selected</div>}
+                  {paymentType === "razorpay" && (
+                    <div className="text-xs font-semibold">Selected</div>
+                  )}
                 </button>
 
                 <button
@@ -1175,6 +1302,7 @@ export default function CheckoutPage() {
                       ? `${selectedCommon} ${selectedBtnClass}`
                       : `${unselectedBtnClass}`
                   }`}
+                  type="button"
                 >
                   <div className="p-2 rounded bg-white dark:bg-gray-800 border">
                     <Clock size={20} />
@@ -1185,7 +1313,9 @@ export default function CheckoutPage() {
                       Pay in cash when your order is delivered. ₹25 COD fee applies.
                     </div>
                   </div>
-                  {paymentType === "cod" && <div className="text-xs font-semibold">Selected</div>}
+                  {paymentType === "cod" && (
+                    <div className="text-xs font-semibold">Selected</div>
+                  )}
                 </button>
               </div>
 
@@ -1246,6 +1376,7 @@ export default function CheckoutPage() {
                       <button
                         onClick={() => setStep((s) => Math.max(1, s - 1))}
                         className="flex-1 px-4 py-2 rounded border bg-gray-100 dark:bg-gray-800 text-sm"
+                        type="button"
                       >
                         Back
                       </button>
@@ -1257,6 +1388,7 @@ export default function CheckoutPage() {
                       <button
                         onClick={goNext}
                         className="flex-1 px-4 py-2 rounded bg-neutral-900 text-white text-sm hover:opacity-95 transition"
+                        type="button"
                       >
                         Continue
                       </button>
@@ -1266,7 +1398,7 @@ export default function CheckoutPage() {
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
                         className={`flex-1 py-3 px-6 rounded-full flex items-center justify-center gap-2 text-sm font-semibold ${
-                          (!isPaymentValid() || loading)
+                          !isPaymentValid() || loading
                             ? "opacity-60 pointer-events-none bg-gray-400"
                             : "bg-gradient-to-r from-neutral-900 to-neutral-700 text-white shadow-lg"
                         }`}
