@@ -14,10 +14,6 @@ import {
 /* --------------------------
    Helpers
    -------------------------- */
-function generateOrderId() {
-  const t = Date.now().toString(36).toUpperCase();
-  return `ORD-${t.slice(-8)}`;
-}
 
 function fmtINR(n) {
   return typeof n === "number"
@@ -50,6 +46,13 @@ function normalizeOrderSource(source) {
 
   const data = source.data ?? source;
 
+  const shippingSource =
+    data?.shipping ??
+    data?.shippingAddress ??
+    source?.shipping ??
+    source?.shippingAddress ??
+    {};
+
   return {
     ...source,
     ...data,
@@ -63,6 +66,21 @@ function normalizeOrderSource(source) {
     shiprocketOrderId:
       data?.shiprocketOrderId || source?.shiprocketOrderId || null,
     shipmentId: data?.shipmentId || source?.shipmentId || null,
+    shipping: {
+      name:
+        shippingSource?.name ||
+        shippingSource?.fullName ||
+        "—",
+      address:
+        shippingSource?.address ||
+        shippingSource?.line1 ||
+        shippingSource?.addressLine1 ||
+        "—",
+      phone:
+        shippingSource?.phone ||
+        shippingSource?.mobile ||
+        "—",
+    },
   };
 }
 
@@ -188,7 +206,7 @@ export default function OrderConfirmation() {
 
   // Merge incoming order with stored order and fallback demo values
   const baseOrder = incomingOrder ?? stored ?? {
-    orderId: generateOrderId(),
+    orderId: null,
     items: [
       {
         id: "demo-1",
@@ -218,8 +236,7 @@ export default function OrderConfirmation() {
     typeof baseOrder.total === "number"
       ? baseOrder.total
       : items.reduce(
-          (s, it) =>
-            s + Number(it.price || 0) * Number(it.quantity || 1),
+          (s, it) => s + Number(it.price || 0) * Number(it.quantity || 1),
           0
         );
 
@@ -227,7 +244,7 @@ export default function OrderConfirmation() {
     baseOrder?.orderId ||
     baseOrder?.data?.orderId ||
     baseOrder?.id ||
-    generateOrderId();
+    null;
 
   const orderDate = baseOrder.orderDate
     ? new Date(baseOrder.orderDate)
@@ -287,13 +304,16 @@ export default function OrderConfirmation() {
      Download Invoice
      -------------------------- */
   const downloadInvoice = async () => {
+    if (!orderId) {
+      alert("Order ID unavailable.");
+      return;
+    }
+
     try {
       setDownloading(true);
 
       const response = await fetch(
-        `https://api.dripzoid.com/api/user/orders/${encodeURIComponent(
-          orderId
-        )}/invoice`,
+        `https://api.dripzoid.com/api/user/order/${encodeURIComponent(orderId)}/invoice`,
         {
           method: "GET",
           credentials: "include",
@@ -306,9 +326,7 @@ export default function OrderConfirmation() {
       const payload = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(
-          payload?.message || "Invoice download failed"
-        );
+        throw new Error(payload?.message || "Invoice download failed");
       }
 
       const invoiceUrl =
@@ -334,13 +352,11 @@ export default function OrderConfirmation() {
   };
 
   const handleTrack = () => {
+    if (!orderId) return;
     navigate(`/order-details/${orderId}`);
   };
 
-  const itemCount = items.reduce(
-    (s, i) => s + Number(i.quantity || 0),
-    0
-  );
+  const itemCount = items.reduce((s, i) => s + Number(i.quantity || 0), 0);
   const amount = computedAmount;
 
   return (
@@ -376,32 +392,24 @@ export default function OrderConfirmation() {
                     <div className="p-3 rounded-lg border bg-gray-50 dark:bg-gray-900">
                       <div className="text-xs text-gray-500">Order ID</div>
                       <div className="font-medium mt-1 break-words">
-                        {orderId}
+                        {orderId || "Processing..."}
                       </div>
                     </div>
 
                     <div className="p-3 rounded-lg border bg-gray-50 dark:bg-gray-900">
                       <div className="text-xs text-gray-500">Order Date</div>
+                      <div className="font-medium mt-1">{prettyDate(orderDate)}</div>
+                    </div>
+
+                    <div className="p-3 rounded-lg border bg-gray-50 dark:bg-gray-900">
+                      <div className="text-xs text-gray-500">Est. Delivery</div>
                       <div className="font-medium mt-1">
-                        {prettyDate(orderDate)}
+                        {estimatedDelivery ? prettyDate(estimatedDelivery) : "—"}
                       </div>
                     </div>
 
                     <div className="p-3 rounded-lg border bg-gray-50 dark:bg-gray-900">
-                      <div className="text-xs text-gray-500">
-                        Est. Delivery
-                      </div>
-                      <div className="font-medium mt-1">
-                        {estimatedDelivery
-                          ? prettyDate(estimatedDelivery)
-                          : "—"}
-                      </div>
-                    </div>
-
-                    <div className="p-3 rounded-lg border bg-gray-50 dark:bg-gray-900">
-                      <div className="text-xs text-gray-500">
-                        Shiprocket Order
-                      </div>
+                      <div className="text-xs text-gray-500">Shiprocket Order</div>
                       <div className="font-medium mt-1 break-all">
                         {shiprocketOrderId || "Pending"}
                       </div>
@@ -418,7 +426,7 @@ export default function OrderConfirmation() {
                   <div className="mt-5 flex flex-wrap gap-3 items-center">
                     <ActionButton
                       onClick={downloadInvoice}
-                      disabled={downloading}
+                      disabled={downloading || !orderId}
                       ariaLabel="Download invoice"
                     >
                       <DownloadCloud className="w-4 h-4" />
@@ -427,7 +435,8 @@ export default function OrderConfirmation() {
 
                     <button
                       onClick={handleTrack}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 dark:border-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-900 transition"
+                      disabled={!orderId}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-gray-300 dark:border-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-900 transition disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       <MapPin className="w-4 h-4" /> Track Order
                     </button>
@@ -456,25 +465,22 @@ export default function OrderConfirmation() {
                     Items in your order
                   </h3>
                   <div className="hidden sm:block">
-                    <Barcode
-                      value={String(orderId)}
-                      format="CODE128"
-                      height={40}
-                      displayValue={false}
-                    />
+                    {orderId ? (
+                      <Barcode
+                        value={String(orderId)}
+                        format="CODE128"
+                        height={40}
+                        displayValue={false}
+                      />
+                    ) : null}
                   </div>
                 </div>
 
                 <ul className="divide-y divide-gray-200 dark:divide-gray-700">
                   {items.map((it, idx) => (
-                    <li
-                      key={it.id ?? idx}
-                      className="py-3 flex items-center gap-4"
-                    >
+                    <li key={it.id ?? idx} className="py-3 flex items-center gap-4">
                       <img
-                        src={
-                          it.images?.split?.(",")?.[0] ?? "/placeholder.jpg"
-                        }
+                        src={it.images?.split?.(",")?.[0] ?? "/placeholder.jpg"}
                         alt={it.name}
                         className="w-16 h-16 object-cover rounded-md"
                       />
@@ -545,12 +551,8 @@ export default function OrderConfirmation() {
           </div>
 
           <div className="p-4 text-center text-xs text-gray-500">
-            Order ID <span className="font-medium">{orderId}</span> — Need
-            help?{" "}
-            <button
-              onClick={() => navigate("/contact")}
-              className="underline"
-            >
+            Order ID <span className="font-medium">{orderId || "Processing..."}</span> — Need help?{" "}
+            <button onClick={() => navigate("/contact")} className="underline">
               Contact support
             </button>
           </div>
