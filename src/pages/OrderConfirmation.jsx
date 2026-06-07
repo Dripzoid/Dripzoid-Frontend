@@ -301,7 +301,7 @@ export default function OrderConfirmation() {
       setDownloading(true);
 
       const response = await fetch(
-        `https://api.dripzoid.com/api/user/order/${encodeURIComponent(
+        `https://api.dripzoid.com/api/user/orders/${encodeURIComponent(
           orderId
         )}/invoice`,
         {
