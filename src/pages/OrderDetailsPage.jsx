@@ -676,144 +676,129 @@ export default function OrderDetailsPage({ orderId: propOrderId }) {
     }
   }
 
-  async function handleTrackOrder() {
-    if (!order?.id) {
-      console.warn("Track order: no order to track");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const url = apiUrl(`/api/shipping/track-order`);
-      const res = await fetch(url, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ order_id: order.id }),
-      });
-
-      const payload = await parseJsonSafe(res);
-      if (!res.ok) {
-        console.error("Track API error:", payload?.message || `HTTP ${res.status}`);
-        throw new Error(payload?.message || `Track API error (${res.status})`);
-      }
-
-      const isShiprocketRaw =
-        payload &&
-        (payload.tracking_data ||
-          payload.shipment_track ||
-          payload.shipment_track_activities ||
-          payload.tracking ||
-          Array.isArray(payload));
-
-      let normalized;
-      if (isShiprocketRaw) {
-        const inner = payload.tracking ?? payload.tracking_data ?? payload;
-        normalized = normalizeShiprocketResponse(inner);
-      } else {
-        normalized = {
-          status:
-            payload.status ??
-            payload.tracking?.current_status ??
-            payload.tracking?.shipment_status ??
-            payload.tracking?.status ??
-            order.status,
-          tracking: Array.isArray(payload.tracking)
-            ? payload.tracking
-            : payload.tracking ?? order.tracking ?? [],
-          activities: payload.activities ?? payload.shipment_track_activities ?? [],
-          courier:
-            payload.courier ??
-            (payload.tracking && {
-              name: payload.tracking.courier_name ?? "",
-              awb: payload.tracking.awb_code ?? "",
-            }) ??
-            order.courier ??
-            null,
-          history: payload.history ?? [],
-          raw: payload,
-        };
-      }
-
-      setOrder((prev) => ({
-        ...prev,
-        tracking: normalized.tracking ?? prev.tracking,
-        status: normalized.status ?? prev.status,
-        courier: { ...(prev.courier || {}), ...(normalized.courier || {}) },
-        history: normalized.history
-          ? [...normalized.history, ...(prev.history || [])]
-          : prev.history,
-        raw_tracking: normalized.raw ?? prev.raw_tracking,
-      }));
-
-      const rawRoot = normalized.raw ?? payload;
-      const shipmentTrack =
-        rawRoot?.shipment_track ??
-        rawRoot?.tracking?.shipment_track ??
-        (Array.isArray(rawRoot) ? rawRoot[0]?.shipment_track : undefined) ??
-        [];
-      const shipmentTrackActivities =
-        rawRoot?.shipment_track_activities ??
-        rawRoot?.tracking?.shipment_track_activities ??
-        normalized.activities ??
-        [];
-
-      const infoForModal = {
-        shipment_track: shipmentTrack,
-        shipment_track_activities: shipmentTrackActivities,
-        courier_name: normalized.courier?.name || rawRoot?.courier_name || "",
-        awb_code: normalized.courier?.awb || rawRoot?.awb_code || "",
-        current_status: normalized.status || rawRoot?.current_status || "",
-        origin: shipmentTrack?.[0]?.origin || rawRoot?.origin || "",
-        destination: shipmentTrack?.[0]?.destination || rawRoot?.destination || "",
-        etd: rawRoot?.etd || shipmentTrack?.[0]?.edd || "",
-        raw: rawRoot || payload,
-        status: normalized.status,
-      };
-
-      setTrackInfo(infoForModal);
-      setShowTrackModal(true);
-    } catch (err) {
-      console.error("Track order failed:", err);
-      if (order?.raw?.shipment_track || order?.raw_tracking || order?.raw?.tracking) {
-        const raw = order.raw_tracking || order.raw;
-        const shipmentTrack =
-          raw?.shipment_track ??
-          raw?.tracking?.shipment_track ??
-          (Array.isArray(raw) ? raw[0]?.shipment_track : undefined) ??
-          [];
-        const activities =
-          raw?.shipment_track_activities ?? raw?.tracking?.shipment_track_activities ?? [];
-        const fallback = {
-          shipment_track: shipmentTrack,
-          shipment_track_activities: activities,
-          courier_name: raw?.courier_name || order.courier?.name || "",
-          awb_code: shipmentTrack?.[0]?.awb_code || order.courier?.awb || "",
-          current_status: order.status || "",
-          raw,
-        };
-        setTrackInfo(fallback);
-        setShowTrackModal(true);
-      }
-    } finally {
-      setLoading(false);
-    }
+async function handleTrackOrder() {
+  if (!order?.id) {
+    console.warn(
+      "Track order: no order to track"
+    );
+    return;
   }
 
-  useEffect(() => {
-    function onKey(e) {
-      if (e.key === "Escape") {
-        setShowCancel(false);
-        setShowReturn(false);
-        setShowTrackModal(false);
+  setLoading(true);
+
+  try {
+    const res = await fetch(
+      apiUrl(
+        `/api/user/orders/${order.id}/track`
+      ),
+      {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          Accept: "application/json",
+        },
       }
+    );
+
+    const payload =
+      await parseJsonSafe(res);
+
+    if (!res.ok) {
+      throw new Error(
+        payload?.message ||
+          `Track API error (${res.status})`
+      );
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+
+    const trackingRoot =
+      payload?.tracking || {};
+
+    const firstTracking =
+      Object.values(
+        trackingRoot
+      )[0];
+
+    const trackingData =
+      firstTracking?.tracking_data;
+
+    if (!trackingData) {
+      throw new Error(
+        "Tracking information unavailable"
+      );
+    }
+
+    const shipmentTrack =
+      trackingData.shipment_track ||
+      [];
+
+    const activities =
+      trackingData
+        .shipment_track_activities ||
+      [];
+
+    const currentShipment =
+      shipmentTrack[0] || {};
+
+    const infoForModal = {
+      shipment_track:
+        shipmentTrack,
+
+      shipment_track_activities:
+        activities,
+
+      courier_name:
+        currentShipment
+          .courier_name || "",
+
+      awb_code:
+        currentShipment.awb_code ||
+        "",
+
+      current_status:
+        currentShipment.current_status ||
+        trackingData.error ||
+        order.status,
+
+      origin:
+        currentShipment.origin ||
+        "",
+
+      destination:
+        currentShipment.destination ||
+        "",
+
+      etd:
+        currentShipment.edd ||
+        "",
+
+      raw: trackingData,
+    };
+
+    setTrackInfo(
+      infoForModal
+    );
+
+    setShowTrackModal(true);
+
+    setOrder((prev) => ({
+      ...prev,
+      raw_tracking:
+        trackingData,
+    }));
+  } catch (err) {
+    console.error(
+      "Track order failed:",
+      err
+    );
+
+    alert(
+      err.message ||
+        "Unable to fetch tracking information"
+    );
+  } finally {
+    setLoading(false);
+  }
+}
 
   async function handleDownloadInvoice() {
     if (!order?.id) {
