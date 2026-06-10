@@ -539,17 +539,10 @@ export default function AdminShipping() {
           <div className="p-3 sm:p-5">
             <AnimatePresence mode="wait">
               {filteredShipments.length > 0 ? (
-                <motion.div
-                  key="table"
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                >
-                  <ShippingTable
-                    shipments={filteredShipments}
-                    onView={(shipment) => setSelectedShipment(shipment)}
-                  />
-                </motion.div>
+               <ShippingTable
+  shipments={filteredShipments}
+  onView={(shipment) => setSelectedShipment(shipment)}
+/>
               ) : (
                 <motion.div
                   key="empty"
