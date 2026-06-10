@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -15,165 +15,214 @@ import {
 
 export default function AdminLayout() {
   const location = useLocation();
+  const [expanded, setExpanded] = useState(false);
 
-const navItems = [
-  {
-    label: "Dashboard",
-    path: "/admin/dashboard",
-    icon: <LayoutDashboard className="w-5 h-5" />,
-  },
-
-  {
-    label: "Products",
-    path: "/admin/products",
-    icon: <Package className="w-5 h-5" />,
-  },
-
-  {
-    label: "Orders",
-    path: "/admin/orders",
-    icon: <ShoppingBag className="w-5 h-5" />,
-  },
-
-  {
-    label: "Shipping",
-    path: "/admin/shipping",
-    icon: <Truck className="w-5 h-5" />,
-  },
-
-  {
-    label: "Users",
-    path: "/admin/users",
-    icon: <Users className="w-5 h-5" />,
-  },
-
-  {
-    label: "Certificates",
-    path: "/admin/certificates",
-    icon: <ShieldCheck className="w-5 h-5" />,
-  },
-
-  {
-    label: "Image Upload",
-    path: "/admin/upload",
-    icon: <ImageIcon className="w-5 h-5" />,
-  },
-
-  {
-    label: "Labels Download",
-    path: "/admin/labels",
-    icon: <Download className="w-5 h-5" />,
-  },
-
-  {
-    label: "Coupons",
-    path: "/admin/coupons",
-    icon: <Tag className="w-5 h-5" />,
-  },
-
-  {
-    label: "Sales & Slides",
-    path: "/admin/salesandslides",
-    icon: <Megaphone className="w-5 h-5" />,
-  },
-];
+  const navItems = [
+    {
+      label: "Dashboard",
+      path: "/admin/dashboard",
+      icon: <LayoutDashboard size={20} />,
+    },
+    {
+      label: "Products",
+      path: "/admin/products",
+      icon: <Package size={20} />,
+    },
+    {
+      label: "Orders",
+      path: "/admin/orders",
+      icon: <ShoppingBag size={20} />,
+    },
+    {
+      label: "Shipping",
+      path: "/admin/shipping",
+      icon: <Truck size={20} />,
+    },
+    {
+      label: "Users",
+      path: "/admin/users",
+      icon: <Users size={20} />,
+    },
+    {
+      label: "Certificates",
+      path: "/admin/certificates",
+      icon: <ShieldCheck size={20} />,
+    },
+    {
+      label: "Image Upload",
+      path: "/admin/upload",
+      icon: <ImageIcon size={20} />,
+    },
+    {
+      label: "Labels Download",
+      path: "/admin/labels",
+      icon: <Download size={20} />,
+    },
+    {
+      label: "Coupons",
+      path: "/admin/coupons",
+      icon: <Tag size={20} />,
+    },
+    {
+      label: "Sales & Slides",
+      path: "/admin/salesandslides",
+      icon: <Megaphone size={20} />,
+    },
+  ];
 
   const isActive = (path) => {
     if (path === "/admin/dashboard") {
-      return location.pathname === "/admin" || location.pathname === "/admin/dashboard";
+      return (
+        location.pathname === "/admin" ||
+        location.pathname === "/admin/dashboard"
+      );
     }
+
     return location.pathname === path;
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    <div className="flex h-screen overflow-hidden bg-slate-100 dark:bg-slate-950">
       {/* Sidebar */}
       <aside
-        className="w-64 border-r border-gray-200 dark:border-gray-800 p-5 flex flex-col gap-6
-                   bg-white dark:bg-gray-950 transition-colors duration-200"
-        aria-label="Admin sidebar"
+        onMouseEnter={() => setExpanded(true)}
+        onMouseLeave={() => setExpanded(false)}
+        className={`
+          relative flex flex-col border-r border-slate-200
+          bg-white dark:bg-slate-950 dark:border-slate-800
+          transition-all duration-300 ease-in-out
+          ${expanded ? "w-64" : "w-[72px]"}
+        `}
       >
-        <div>
-          <h2 className="text-2xl font-extrabold tracking-tight">Admin Panel</h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Manage products, users & orders
-          </p>
+        {/* Logo */}
+        <div className="h-20 flex items-center px-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-black text-white dark:bg-white dark:text-black font-bold">
+              D
+            </div>
+
+            <div
+              className={`
+                transition-all duration-300 whitespace-nowrap
+                ${
+                  expanded
+                    ? "opacity-100 translate-x-0"
+                    : "opacity-0 -translate-x-3"
+                }
+              `}
+            >
+              <h2 className="font-bold text-lg">Dripzoid</h2>
+              <p className="text-xs text-slate-500">
+                Admin Panel
+              </p>
+            </div>
+          </div>
         </div>
 
-        <nav className="flex-1 mt-4 space-y-2" role="navigation" aria-labelledby="admin-nav">
+        {/* Navigation */}
+        <nav className="flex-1 p-3 space-y-2 overflow-y-auto">
           {navItems.map((item) => {
             const active = isActive(item.path);
+
             return (
               <Link
                 key={item.path}
                 to={item.path}
-                aria-current={active ? "page" : undefined}
-                onClick={(e) => active && e.preventDefault()}
                 className={`
-                  group flex items-center gap-3 px-4 py-2 rounded-lg font-medium transition-all duration-150 transform
-                  hover:-translate-y-0.5 active:scale-[0.99]
-                  focus:outline-none
-                  focus-visible:ring-2 focus-visible:ring-black/40 dark:focus-visible:ring-white/40
-                  focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-black
-                  ${active
-                    ? "bg-black text-white dark:bg-white dark:text-black pointer-events-none shadow-lg"
-                    : "text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800/60"
+                  group flex items-center gap-3 rounded-2xl
+                  px-3 py-3 transition-all duration-200
+
+                  ${
+                    active
+                      ? "bg-black text-white dark:bg-white dark:text-black shadow-md"
+                      : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
                   }
                 `}
               >
-                <span
+                <div
                   className={`
-                    flex items-center justify-center w-9 h-9 rounded-md transition
-                    ${active
-                      ? "bg-white/20 text-white dark:bg-black/20 dark:text-black"
-                      : "text-gray-600 dark:text-gray-300"
-                    }
+                    flex items-center justify-center
+                    min-w-[24px]
                   `}
                 >
                   {item.icon}
+                </div>
+
+                <span
+                  className={`
+                    whitespace-nowrap font-medium transition-all duration-300
+                    ${
+                      expanded
+                        ? "opacity-100 translate-x-0"
+                        : "opacity-0 -translate-x-3 pointer-events-none"
+                    }
+                  `}
+                >
+                  {item.label}
                 </span>
-
-                <span className="truncate">{item.label}</span>
-
-                {active && (
-                  <span
-                    className={`
-                      ml-auto px-2 py-0.5 text-xs rounded-full font-semibold
-                      ${active
-                        ? "bg-white/20 text-white dark:bg-black/20 dark:text-black"
-                        : ""
-                      }
-                    `}
-                    aria-hidden
-                  >
-                    Active
-                  </span>
-                )}
               </Link>
             );
           })}
         </nav>
 
-        <div className="pt-4">
-          <p className="text-xs text-gray-500 dark:text-gray-400">Logged in as admin</p>
+        {/* Footer */}
+        <div className="border-t border-slate-200 dark:border-slate-800 p-3">
+          <div
+            className={`
+              flex items-center gap-3 rounded-2xl
+              bg-slate-100 dark:bg-slate-900
+              p-3 overflow-hidden
+            `}
+          >
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600" />
+
+            <div
+              className={`
+                transition-all duration-300 whitespace-nowrap
+                ${
+                  expanded
+                    ? "opacity-100 translate-x-0"
+                    : "opacity-0 -translate-x-3"
+                }
+              `}
+            >
+              <p className="text-sm font-semibold">
+                Administrator
+              </p>
+              <p className="text-xs text-slate-500">
+                Logged In
+              </p>
+            </div>
+          </div>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      {/* Content Area */}
+      <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
         <header
-          className="flex items-center justify-between gap-4 p-4 border-b border-gray-200 dark:border-gray-800
-                           bg-white dark:bg-gray-950 transition-colors duration-150"
+          className="
+            h-20 shrink-0
+            border-b border-slate-200
+            bg-white dark:bg-slate-950
+            dark:border-slate-800
+            px-6
+            flex items-center justify-between
+          "
         >
           <div>
-            <h1 className="text-lg font-semibold">Admin Dashboard</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Overview & quick actions</p>
+            <h1 className="text-xl font-bold">
+              Admin Dashboard
+            </h1>
+
+            <p className="text-sm text-slate-500">
+              Manage products, orders, users & shipping
+            </p>
           </div>
-          <div className="flex items-center gap-3" />
         </header>
 
-        <main className="p-6 overflow-y-auto">
+        {/* Page Content */}
+        <main className="flex-1 overflow-y-auto p-6">
           <Outlet />
         </main>
       </div>
