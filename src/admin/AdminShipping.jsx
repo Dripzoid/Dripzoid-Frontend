@@ -1,39 +1,39 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  Truck,
+  ArrowUpDown,
+  BadgeCheck,
+  Clock3,
+  Eye,
+  FileText,
+  Filter,
+  MapPinned,
+  MoreHorizontal,
   Package,
   PackageCheck,
-  MapPinned,
-  Search,
   RefreshCw,
-  Filter,
-  CircleAlert,
-  TrendingUp,
-  Clock3,
-  SlidersHorizontal,
-  ArrowUpDown,
-  Sparkles,
-  ShieldCheck,
   Route,
-  BadgeCheck,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Truck,
   X,
-  Orbit,
+  ArrowUpRight,
 } from "lucide-react";
 
 import ShippingTable from "../components/ShippingTable";
 import ShipmentDetailsModal from "../components/ShipmentDetailsModal";
 
-const mockShipments = [
+const initialShipments = [
   {
     id: "1",
     orderNumber: "DRIP-20260610-001",
     customer: "Sainadh Chowdary",
     phone: "9390942546",
     courier: "Delhivery",
-    awbCode: "AWB123456789",
-    shipmentStatus: "Shipped",
-    orderStatus: "Shipped",
+    awbCode: "",
+    shipmentStatus: "Confirmed",
+    orderStatus: "Confirmed",
     createdAt: "2026-06-10",
     city: "Guntur",
     state: "Andhra Pradesh",
@@ -78,28 +78,42 @@ const statusOptions = [
 const courierOptions = ["All", "Delhivery", "Blue Dart", "DTDC"];
 
 const sortOptions = [
-  { value: "latest", label: "Newest first" },
-  { value: "oldest", label: "Oldest first" },
+  { value: "latest", label: "Newest" },
+  { value: "oldest", label: "Oldest" },
   { value: "customer", label: "Customer A–Z" },
-  { value: "order", label: "Order number" },
+  { value: "order", label: "Order No." },
 ];
 
-function statusTone(status) {
-  switch (status) {
-    case "Delivered":
-      return "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300";
-    case "Shipped":
-      return "bg-sky-500/10 text-sky-700 ring-sky-500/20 dark:text-sky-300";
-    case "Out For Delivery":
-      return "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300";
-    case "Confirmed":
-      return "bg-violet-500/10 text-violet-700 ring-violet-500/20 dark:text-violet-300";
-    case "Cancelled":
-      return "bg-rose-500/10 text-rose-700 ring-rose-500/20 dark:text-rose-300";
-    default:
-      return "bg-gray-500/10 text-gray-700 ring-gray-500/20 dark:text-gray-300";
-  }
-}
+const courierDirectory = [
+  {
+    name: "Delhivery",
+    speed: "Fast",
+    pickup: "Same day pickup",
+    coverage: "Pan India",
+    active: true,
+  },
+  {
+    name: "Blue Dart",
+    speed: "Fast",
+    pickup: "Next day pickup",
+    coverage: "Metro focus",
+    active: true,
+  },
+  {
+    name: "DTDC",
+    speed: "Standard",
+    pickup: "Scheduled pickup",
+    coverage: "Wide coverage",
+    active: true,
+  },
+  {
+    name: "Shiprocket",
+    speed: "Aggregator",
+    pickup: "On demand",
+    coverage: "Multiple couriers",
+    active: true,
+  },
+];
 
 function formatDate(dateString) {
   if (!dateString) return "-";
@@ -112,115 +126,194 @@ function formatDate(dateString) {
   }).format(date);
 }
 
+function MetricCard({ title, value, icon: Icon, gradient }) {
+  return (
+    <motion.div
+      whileHover={{ y: -4 }}
+      className="overflow-hidden rounded-3xl border border-white/70 bg-white shadow-[0_18px_60px_-24px_rgba(15,23,42,0.16)] dark:border-white/10 dark:bg-slate-900"
+    >
+      <div className={`bg-gradient-to-br ${gradient} p-5 text-white`}>
+        <div className="flex items-center justify-between">
+          <div className="rounded-2xl bg-white/15 p-3 backdrop-blur">
+            <Icon size={22} />
+          </div>
+          <ArrowUpRight size={18} className="opacity-90" />
+        </div>
+
+        <div className="mt-6">
+          <h3 className="text-3xl font-black">{value}</h3>
+          <p className="mt-1 text-sm/6 text-white/90">{title}</p>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function QuickActionCard({ title, description, icon: Icon, onClick }) {
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      whileHover={{ y: -3 }}
+      className="group w-full rounded-3xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
+    >
+      <div className="flex items-start gap-3">
+        <div className="rounded-2xl bg-slate-950 p-3 text-white dark:bg-white dark:text-slate-950">
+          <Icon size={18} />
+        </div>
+        <div className="min-w-0">
+          <h3 className="font-semibold text-slate-950 dark:text-white">{title}</h3>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{description}</p>
+        </div>
+      </div>
+    </motion.button>
+  );
+}
+
+function ModalShell({ title, icon: Icon, onClose, children, widthClass = "max-w-2xl" }) {
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <button
+        type="button"
+        aria-label="Close modal"
+        className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <motion.div
+        initial={{ opacity: 0, y: 16, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 12, scale: 0.98 }}
+        className={`relative w-full ${widthClass} overflow-hidden rounded-3xl border border-white/70 bg-white shadow-[0_24px_100px_-30px_rgba(15,23,42,0.35)] dark:border-white/10 dark:bg-slate-900`}
+      >
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-slate-950 p-3 text-white dark:bg-white dark:text-slate-950">
+              <Icon size={18} />
+            </div>
+            <h2 className="text-lg font-bold text-slate-950 dark:text-white">{title}</h2>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 bg-slate-50 p-2 text-slate-600 transition hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="max-h-[80vh] overflow-y-auto p-5">{children}</div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 export default function AdminShipping() {
+  const [shipments, setShipments] = useState(initialShipments);
+
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("All");
   const [courier, setCourier] = useState("All");
   const [sortBy, setSortBy] = useState("latest");
+
   const [selectedShipment, setSelectedShipment] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(new Date());
+  const [notice, setNotice] = useState("");
+
+  const [showAwbModal, setShowAwbModal] = useState(false);
+  const [showCouriersModal, setShowCouriersModal] = useState(false);
+  const [showServiceabilityModal, setShowServiceabilityModal] = useState(false);
+  const [showPickupModal, setShowPickupModal] = useState(false);
+
+  const [awbShipmentId, setAwbShipmentId] = useState("");
+  const [awbCourier, setAwbCourier] = useState("");
+  const [awbPrefix, setAwbPrefix] = useState("AWB");
+  const [awbNote, setAwbNote] = useState("");
+
+  const [serviceabilityCourier, setServiceabilityCourier] = useState("All");
+  const [serviceabilityPincode, setServiceabilityPincode] = useState("");
+  const [serviceabilityResult, setServiceabilityResult] = useState(null);
+
+  const [pickupShipmentId, setPickupShipmentId] = useState("");
+  const [pickupDate, setPickupDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [pickupTime, setPickupTime] = useState("10:00");
+  const [pickupComment, setPickupComment] = useState("");
 
   const filteredShipments = useMemo(() => {
     const q = search.trim().toLowerCase();
 
-    const list = mockShipments.filter((shipment) => {
+    const list = shipments.filter((item) => {
       const matchesSearch =
-        shipment.orderNumber.toLowerCase().includes(q) ||
-        shipment.customer.toLowerCase().includes(q) ||
-        shipment.awbCode.toLowerCase().includes(q) ||
-        shipment.city.toLowerCase().includes(q) ||
-        shipment.state.toLowerCase().includes(q);
+        item.orderNumber.toLowerCase().includes(q) ||
+        item.customer.toLowerCase().includes(q) ||
+        item.awbCode.toLowerCase().includes(q) ||
+        item.city.toLowerCase().includes(q) ||
+        item.state.toLowerCase().includes(q);
 
-      const matchesStatus = status === "All" || shipment.shipmentStatus === status;
-      const matchesCourier = courier === "All" || shipment.courier === courier;
+      const matchesStatus = status === "All" || item.shipmentStatus === status;
+      const matchesCourier = courier === "All" || item.courier === courier;
 
       return matchesSearch && matchesStatus && matchesCourier;
     });
 
-    const sorted = [...list].sort((a, b) => {
-      if (sortBy === "latest") {
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      }
-      if (sortBy === "oldest") {
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      }
-      if (sortBy === "customer") {
-        return a.customer.localeCompare(b.customer);
-      }
+    return [...list].sort((a, b) => {
+      if (sortBy === "latest") return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      if (sortBy === "oldest") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      if (sortBy === "customer") return a.customer.localeCompare(b.customer);
       return a.orderNumber.localeCompare(b.orderNumber);
     });
-
-    return sorted;
-  }, [search, status, courier, sortBy]);
+  }, [shipments, search, status, courier, sortBy]);
 
   const stats = useMemo(() => {
-    const total = mockShipments.length;
-    const shipped = mockShipments.filter((s) => s.shipmentStatus === "Shipped").length;
-    const delivered = mockShipments.filter((s) => s.shipmentStatus === "Delivered").length;
-    const ofd = mockShipments.filter((s) => s.shipmentStatus === "Out For Delivery").length;
-    const confirmed = mockShipments.filter((s) => s.shipmentStatus === "Confirmed").length;
-    const cancelled = mockShipments.filter((s) => s.shipmentStatus === "Cancelled").length;
-    const activeCarriers = new Set(mockShipments.map((s) => s.courier)).size;
-    const deliveryRate = total ? Math.round((delivered / total) * 100) : 0;
+    const total = shipments.length;
+    const shipped = shipments.filter((s) => s.shipmentStatus === "Shipped").length;
+    const delivered = shipments.filter((s) => s.shipmentStatus === "Delivered").length;
+    const ofd = shipments.filter((s) => s.shipmentStatus === "Out For Delivery").length;
+    const activeCouriers = new Set(shipments.map((s) => s.courier)).size;
 
-    return {
-      total,
-      shipped,
-      delivered,
-      ofd,
-      confirmed,
-      cancelled,
-      activeCarriers,
-      deliveryRate,
-    };
-  }, []);
+    return { total, shipped, delivered, ofd, activeCouriers };
+  }, [shipments]);
 
-  const statCards = [
-    {
-      title: "Total Shipments",
-      value: stats.total,
-      subtitle: "All orders in the pipeline",
-      icon: Package,
-      gradient: "from-violet-500 to-purple-600",
-    },
-    {
-      title: "Shipped",
-      value: stats.shipped,
-      subtitle: "Ready and in transit",
-      icon: Truck,
-      gradient: "from-sky-500 to-cyan-600",
-    },
-    {
-      title: "Out For Delivery",
-      value: stats.ofd,
-      subtitle: "Last-mile delivery stage",
-      icon: MapPinned,
-      gradient: "from-amber-500 to-orange-600",
-    },
-    {
-      title: "Delivered",
-      value: stats.delivered,
-      subtitle: "Successfully completed",
-      icon: PackageCheck,
-      gradient: "from-emerald-500 to-green-600",
-    },
-  ];
+  const activeFiltersCount =
+    (search ? 1 : 0) + (status !== "All" ? 1 : 0) + (courier !== "All" ? 1 : 0) + (sortBy !== "latest" ? 1 : 0);
+
+  const openGenerateAwb = (shipment = null) => {
+    const base = shipment || shipments[0];
+    setAwbShipmentId(base?.id || "");
+    setAwbCourier(base?.courier || "Delhivery");
+    setAwbPrefix("AWB");
+    setAwbNote("");
+    setShowAwbModal(true);
+  };
+
+  const openPickupRequest = (shipment = null) => {
+    const base = shipment || shipments[0];
+    setPickupShipmentId(base?.id || "");
+    setPickupDate(new Date().toISOString().slice(0, 10));
+    setPickupTime("10:00");
+    setPickupComment("");
+    setShowPickupModal(true);
+  };
+
+  const refreshData = () => {
+    setIsRefreshing(true);
+    setLastSyncedAt(new Date());
+    setNotice("Tracking data refreshed.");
+    window.setTimeout(() => setIsRefreshing(false), 900);
+    window.setTimeout(() => setNotice(""), 2500);
+  };
 
   const clearFilters = () => {
     setSearch("");
     setStatus("All");
     setCourier("All");
     setSortBy("latest");
-  };
-
-  const refreshData = () => {
-    setIsRefreshing(true);
-    setLastSyncedAt(new Date());
-
-    window.setTimeout(() => {
-      setIsRefreshing(false);
-    }, 900);
   };
 
   useEffect(() => {
@@ -231,48 +324,97 @@ export default function AdminShipping() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const activeFiltersCount =
-    (search ? 1 : 0) + (status !== "All" ? 1 : 0) + (courier !== "All" ? 1 : 0) + (sortBy !== "latest" ? 1 : 0);
+  const handleGenerateAwb = () => {
+    if (!awbShipmentId) return;
+
+    const generatedAwb = `${awbPrefix || "AWB"}${Date.now().toString().slice(-9)}`;
+
+    setShipments((prev) =>
+      prev.map((item) =>
+        item.id === awbShipmentId
+          ? {
+              ...item,
+              courier: awbCourier,
+              awbCode: generatedAwb,
+              shipmentStatus: "Shipped",
+              orderStatus: "Shipped",
+            }
+          : item
+      )
+    );
+
+    const matched = shipments.find((item) => item.id === awbShipmentId);
+    if (selectedShipment?.id === awbShipmentId) {
+      setSelectedShipment((prev) =>
+        prev
+          ? {
+              ...prev,
+              courier: awbCourier,
+              awbCode: generatedAwb,
+              shipmentStatus: "Shipped",
+              orderStatus: "Shipped",
+            }
+          : prev
+      );
+    }
+
+    setShowAwbModal(false);
+    setNotice(`AWB generated for ${matched?.orderNumber || "shipment"}.`);
+    setAwbNote(generatedAwb);
+    window.setTimeout(() => setNotice(""), 2500);
+  };
+
+  const handleServiceabilityCheck = () => {
+    const pin = serviceabilityPincode.trim();
+    const isValid = /^\d{6}$/.test(pin) && !pin.startsWith("0");
+
+    const courierLabel = serviceabilityCourier === "All" ? "selected couriers" : serviceabilityCourier;
+    if (isValid) {
+      setServiceabilityResult({
+        ok: true,
+        message: `${pin} is serviceable for ${courierLabel}.`,
+      });
+    } else {
+      setServiceabilityResult({
+        ok: false,
+        message: `${pin || "Pincode"} is not serviceable.`,
+      });
+    }
+  };
+
+  const handlePickupRequest = () => {
+    const shipment = shipments.find((item) => item.id === pickupShipmentId);
+    setShowPickupModal(false);
+    setNotice(
+      `Pickup requested for ${shipment?.orderNumber || "shipment"} on ${pickupDate} at ${pickupTime}.`
+    );
+    window.setTimeout(() => setNotice(""), 3000);
+  };
+
+  const handleQuickNotice = (message) => {
+    setNotice(message);
+    window.setTimeout(() => setNotice(""), 2500);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 p-4 text-slate-900 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:text-white sm:p-6">
-      <div className="w-full space-y-6">
+      <div className="w-full space-y-5">
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="relative overflow-hidden rounded-3xl border border-white/60 bg-white/80 p-5 shadow-[0_20px_80px_-20px_rgba(15,23,42,0.15)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/70 sm:p-6"
+          className="overflow-hidden rounded-3xl border border-white/60 bg-white/80 p-5 shadow-[0_20px_80px_-20px_rgba(15,23,42,0.15)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/70 sm:p-6"
         >
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.12),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(168,85,247,0.12),transparent_28%)]" />
-          <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-            <div className="space-y-3">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-2">
               <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
                 <Sparkles size={14} />
-                Advanced Shipping Control Center
+                Shipping Control
               </div>
-
               <div>
-                <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-                  Shipping Management
-                </h1>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400 sm:text-base">
-                  Monitor shipment lifecycles, filter by courier and status, inspect individual
-                  orders, and keep fulfillment operations clean and fast.
+                <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Shipping</h1>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  AWB, couriers, serviceability, pickup requests.
                 </p>
-              </div>
-
-              <div className="flex flex-wrap gap-3 text-sm">
-                <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
-                  <ShieldCheck size={16} className="text-emerald-500" />
-                  Webhook-ready workflow
-                </div>
-                <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
-                  <Route size={16} className="text-violet-500" />
-                  Courier-aware tracking
-                </div>
-                <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
-                  <BadgeCheck size={16} className="text-sky-500" />
-                  Live operational visibility
-                </div>
               </div>
             </div>
 
@@ -280,7 +422,7 @@ export default function AdminShipping() {
               <button
                 onClick={refreshData}
                 disabled={isRefreshing}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:scale-[1.01] hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
               >
                 <RefreshCw size={16} className={isRefreshing ? "animate-spin" : ""} />
                 {isRefreshing ? "Refreshing..." : "Refresh"}
@@ -295,291 +437,163 @@ export default function AdminShipping() {
               </button>
             </div>
           </div>
-        </motion.div>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {statCards.map((card, index) => {
-            const Icon = card.icon;
-
-            return (
+          <AnimatePresence>
+            {notice ? (
               <motion.div
-                key={card.title}
-                initial={{ opacity: 0, y: 18 }}
+                initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.08 }}
-                whileHover={{ y: -4 }}
-                className="group overflow-hidden rounded-3xl border border-white/70 bg-white shadow-[0_18px_60px_-20px_rgba(15,23,42,0.16)] dark:border-white/10 dark:bg-slate-900"
+                exit={{ opacity: 0, y: -8 }}
+                className="mt-5 inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
               >
-                <div className={`bg-gradient-to-br ${card.gradient} p-5 text-white`}>
-                  <div className="flex items-center justify-between">
-                    <div className="rounded-2xl bg-white/15 p-3 backdrop-blur">
-                      <Icon size={22} />
-                    </div>
-                    <TrendingUp size={18} className="opacity-90" />
-                  </div>
-
-                  <div className="mt-6">
-                    <h3 className="text-3xl font-black">{card.value}</h3>
-                    <p className="mt-1 text-sm/6 text-white/90">{card.title}</p>
-                    <p className="mt-2 text-xs text-white/80">{card.subtitle}</p>
-                  </div>
-                </div>
+                <BadgeCheck size={16} />
+                {notice}
               </motion.div>
-            );
-          })}
-        </div>
-
-        <div className="grid gap-4 xl:grid-cols-[1.7fr_1fr]">
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900 sm:p-6"
-          >
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h2 className="text-lg font-bold">Operations overview</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Monitor shipment health and filter the queue in seconds.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950">
-                  <Clock3 size={14} className="text-slate-500" />
-                  Synced {formatDate(lastSyncedAt)}
-                </div>
-                <div className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
-                  <Orbit size={14} />
-                  Auto monitoring active
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-4 lg:grid-cols-4">
-              <div className="relative lg:col-span-2">
-                <Search
-                  size={18}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search orders, customer, AWB, city, or state..."
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3.5 pl-11 pr-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:bg-white dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
-                />
-              </div>
-
-              <div className="relative">
-                <Filter
-                  size={16}
-                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 py-3.5 pl-11 pr-4 text-sm outline-none transition focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
-                >
-                  {statusOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="relative">
-                <ArrowUpDown
-                  size={16}
-                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 py-3.5 pl-11 pr-4 text-sm outline-none transition focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
-                >
-                  {sortOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              {courierOptions.map((option) => {
-                const active = courier === option;
-                return (
-                  <button
-                    key={option}
-                    onClick={() => setCourier(option)}
-                    className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                      active
-                        ? "bg-slate-950 text-white dark:bg-white dark:text-slate-950"
-                        : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800"
-                    }`}
-                  >
-                    {option}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-                <SlidersHorizontal size={16} />
-                <span>
-                  Showing <span className="font-bold text-slate-950 dark:text-white">{filteredShipments.length}</span>{" "}
-                  shipment{filteredShipments.length === 1 ? "" : "s"}
-                  {activeFiltersCount > 0 ? ` across ${activeFiltersCount} active filter${activeFiltersCount === 1 ? "" : "s"}` : ""}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="h-2.5 w-40 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-sky-500 via-violet-500 to-emerald-500 transition-all"
-                    style={{ width: `${stats.deliveryRate}%` }}
-                  />
-                </div>
-                <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">
-                  {stats.deliveryRate}% delivered
-                </span>
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-4 rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900 sm:p-6"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-bold">Courier health</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Quick operational signals for the shipping desk.
-                </p>
-              </div>
-              <div className="rounded-2xl bg-violet-500/10 p-3 text-violet-600 dark:text-violet-300">
-                <TrendingUp size={18} />
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                  <Truck size={14} />
-                  Active couriers
-                </div>
-                <p className="mt-2 text-2xl font-black">{stats.activeCarriers}</p>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                  <PackageCheck size={14} />
-                  Delivered
-                </div>
-                <p className="mt-2 text-2xl font-black">{stats.delivered}</p>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                  <CircleAlert size={14} />
-                  Need attention
-                </div>
-                <p className="mt-2 text-2xl font-black">{stats.cancelled}</p>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                  <BadgeCheck size={14} />
-                  Fulfillment rate
-                </div>
-                <p className="mt-2 text-2xl font-black">{stats.deliveryRate}%</p>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
-              <div className="flex items-start gap-3">
-                <CircleAlert size={18} className="mt-0.5 shrink-0" />
-                <div>
-                  <p className="font-semibold">Webhook integration pending</p>
-                  <p className="mt-1 text-sm leading-6 opacity-90">
-                    Shipment updates are still refreshed manually. Once your courier webhooks are
-                    connected, this panel can become fully live.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="overflow-hidden rounded-3xl border border-white/70 bg-white shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900"
-        >
-          <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800 sm:px-6">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-lg font-bold">Shipment queue</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  Tap a shipment to inspect tracking, order context, and delivery status.
-                </p>
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
-                <Sparkles size={13} />
-                Modern Tailwind UI
-              </div>
-            </div>
-          </div>
-
-          <div className="p-3 sm:p-5">
-            <AnimatePresence mode="wait">
-              {filteredShipments.length > 0 ? (
-               <ShippingTable
-  shipments={filteredShipments}
-  onView={(shipment) => setSelectedShipment(shipment)}
-/>
-              ) : (
-                <motion.div
-                  key="empty"
-                  initial={{ opacity: 0, scale: 0.98 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="flex min-h-[280px] flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center dark:border-slate-800 dark:bg-slate-950"
-                >
-                  <div className="rounded-2xl bg-slate-900 p-4 text-white dark:bg-white dark:text-slate-950">
-                    <Search size={22} />
-                  </div>
-                  <h3 className="mt-4 text-xl font-bold">No shipments found</h3>
-                  <p className="mt-2 max-w-md text-sm leading-6 text-slate-500 dark:text-slate-400">
-                    Try changing the search text, status, courier, or sorting to reveal shipments
-                    again.
-                  </p>
-                  <button
-                    onClick={clearFilters}
-                    className="mt-5 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
-                  >
-                    Reset filters
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+            ) : null}
+          </AnimatePresence>
         </motion.div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-sm text-slate-500 dark:text-slate-400">
-          <div className="flex items-center gap-2">
-            <Clock3 size={14} />
-            Last synced {formatDate(lastSyncedAt)}
+        <div className="grid gap-4 sm:grid-cols-3 xl:grid-cols-4">
+          <MetricCard title="Total Shipments" value={stats.total} icon={Package} gradient="from-violet-500 to-purple-600" />
+          <MetricCard title="Shipped / ODF" value={stats.shipped + stats.ofd} icon={Truck} gradient="from-sky-500 to-cyan-600" />
+          <MetricCard title="Delivered" value={stats.delivered} icon={PackageCheck} gradient="from-emerald-500 to-green-600" />
+          <MetricCard title="Couriers" value={stats.activeCouriers} icon={Route} gradient="from-amber-500 to-orange-600" />
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-4">
+          <QuickActionCard
+            title="Generate AWB"
+            description="Create AWB for a shipment"
+            icon={PackageCheck}
+            onClick={() => openGenerateAwb()}
+          />
+          <QuickActionCard
+            title="List Couriers"
+            description="See active courier options"
+            icon={Truck}
+            onClick={() => setShowCouriersModal(true)}
+          />
+          <QuickActionCard
+            title="Check Serviceability"
+            description="Test pincode and courier"
+            icon={Route}
+            onClick={() => setShowServiceabilityModal(true)}
+          />
+          <QuickActionCard
+            title="Request Pickup"
+            description="Schedule shipment pickup"
+            icon={ShieldCheck}
+            onClick={() => openPickupRequest()}
+          />
+        </div>
+
+        <div className="rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900 sm:p-6">
+          <div className="grid gap-4 lg:grid-cols-4">
+            <div className="relative lg:col-span-2">
+              <Search
+                size={18}
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search order, customer, AWB, city, state..."
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3.5 pl-11 pr-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:bg-white dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
+              />
+            </div>
+
+            <div className="relative">
+              <Filter
+                size={16}
+                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 py-3.5 pl-11 pr-4 text-sm outline-none transition focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
+              >
+                {statusOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="relative">
+              <ArrowUpDown
+                size={16}
+                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 py-3.5 pl-11 pr-4 text-sm outline-none transition focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
+              >
+                {sortOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Package size={14} />
-            Fulfillment dashboard optimized for quick decision-making
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {courierOptions.map((option) => {
+              const active = courier === option;
+              return (
+                <button
+                  key={option}
+                  onClick={() => setCourier(option)}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                    active
+                      ? "bg-slate-950 text-white dark:bg-white dark:text-slate-950"
+                      : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800"
+                  }`}
+                >
+                  {option}
+                </button>
+              );
+            })}
           </div>
+
+          <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
+              <SlidersHorizontal size={16} />
+              <span>
+                Showing{" "}
+                <span className="font-bold text-slate-950 dark:text-white">
+                  {filteredShipments.length}
+                </span>{" "}
+                shipment{filteredShipments.length === 1 ? "" : "s"}
+                {activeFiltersCount > 0
+                  ? ` across ${activeFiltersCount} filter${activeFiltersCount === 1 ? "" : "s"}`
+                  : ""}
+              </span>
+            </div>
+
+            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+              <Clock3 size={14} />
+              Synced {formatDate(lastSyncedAt)}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-white/70 bg-white shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900">
+          <ShippingTable
+            shipments={filteredShipments}
+            onView={(shipment) => setSelectedShipment(shipment)}
+            onRefresh={(shipment) => {
+              setLastSyncedAt(new Date());
+              handleQuickNotice(`Tracking refreshed for ${shipment.orderNumber}.`);
+            }}
+            onDocument={(shipment) => {
+              handleQuickNotice(`Shipment document opened for ${shipment.orderNumber}.`);
+            }}
+            onMore={(shipment) => openPickupRequest(shipment)}
+          />
         </div>
       </div>
 
@@ -588,6 +602,254 @@ export default function AdminShipping() {
         open={!!selectedShipment}
         onClose={() => setSelectedShipment(null)}
       />
+
+      <AnimatePresence>
+        {showAwbModal ? (
+          <ModalShell title="Generate AWB" icon={PackageCheck} onClose={() => setShowAwbModal(false)}>
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Shipment
+                  </label>
+                  <select
+                    value={awbShipmentId}
+                    onChange={(e) => setAwbShipmentId(e.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
+                  >
+                    {shipments.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.orderNumber} • {item.customer}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Courier
+                  </label>
+                  <select
+                    value={awbCourier}
+                    onChange={(e) => setAwbCourier(e.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
+                  >
+                    {courierDirectory.map((item) => (
+                      <option key={item.name} value={item.name}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  AWB prefix
+                </label>
+                <input
+                  value={awbPrefix}
+                  onChange={(e) => setAwbPrefix(e.target.value.toUpperCase())}
+                  placeholder="AWB"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
+                />
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                Generates a mock AWB number and marks the shipment as shipped.
+              </div>
+
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAwbModal(false)}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGenerateAwb}
+                  className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white dark:bg-white dark:text-slate-950"
+                >
+                  Generate AWB
+                </button>
+              </div>
+            </div>
+          </ModalShell>
+        ) : null}
+
+        {showCouriersModal ? (
+          <ModalShell title="List of Couriers" icon={Truck} onClose={() => setShowCouriersModal(false)} widthClass="max-w-3xl">
+            <div className="grid gap-4 md:grid-cols-2">
+              {courierDirectory.map((item) => (
+                <div
+                  key={item.name}
+                  className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-950 dark:text-white">{item.name}</h3>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.coverage}</p>
+                    </div>
+                    <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                      {item.active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 grid gap-2 text-sm text-slate-600 dark:text-slate-300">
+                    <div className="flex items-center justify-between">
+                      <span>Speed</span>
+                      <span className="font-semibold">{item.speed}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Pickup</span>
+                      <span className="font-semibold">{item.pickup}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ModalShell>
+        ) : null}
+
+        {showServiceabilityModal ? (
+          <ModalShell title="Check Courier Serviceability" icon={Route} onClose={() => setShowServiceabilityModal(false)}>
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Courier
+                  </label>
+                  <select
+                    value={serviceabilityCourier}
+                    onChange={(e) => setServiceabilityCourier(e.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
+                  >
+                    {courierOptions.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Pincode
+                  </label>
+                  <input
+                    value={serviceabilityPincode}
+                    onChange={(e) => setServiceabilityPincode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    maxLength={6}
+                    placeholder="Enter 6 digit pincode"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleServiceabilityCheck}
+                className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white dark:bg-white dark:text-slate-950"
+              >
+                Check Serviceability
+              </button>
+
+              {serviceabilityResult ? (
+                <div
+                  className={`rounded-2xl border p-4 text-sm ${
+                    serviceabilityResult.ok
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                      : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300"
+                  }`}
+                >
+                  {serviceabilityResult.message}
+                </div>
+              ) : null}
+            </div>
+          </ModalShell>
+        ) : null}
+
+        {showPickupModal ? (
+          <ModalShell title="Request Shipment Pickup" icon={ShieldCheck} onClose={() => setShowPickupModal(false)}>
+            <div className="space-y-4">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Shipment
+                </label>
+                <select
+                  value={pickupShipmentId}
+                  onChange={(e) => setPickupShipmentId(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
+                >
+                  {shipments.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.orderNumber} • {item.customer}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Pickup date
+                  </label>
+                  <input
+                    type="date"
+                    value={pickupDate}
+                    onChange={(e) => setPickupDate(e.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Pickup time
+                  </label>
+                  <input
+                    type="time"
+                    value={pickupTime}
+                    onChange={(e) => setPickupTime(e.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Note
+                </label>
+                <textarea
+                  value={pickupComment}
+                  onChange={(e) => setPickupComment(e.target.value)}
+                  rows={3}
+                  placeholder="Optional pickup notes"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowPickupModal(false)}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePickupRequest}
+                  className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white dark:bg-white dark:text-slate-950"
+                >
+                  Request Pickup
+                </button>
+              </div>
+            </div>
+          </ModalShell>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
