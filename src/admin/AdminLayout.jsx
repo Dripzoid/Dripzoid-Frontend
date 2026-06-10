@@ -8,22 +8,75 @@ import {
   Image as ImageIcon,
   Download,
   Tag,
-  Megaphone
-} from "lucide-react"; // Added icons for new sections
+  Megaphone,
+  ShieldCheck,
+  Truck,
+} from "lucide-react";
 
 export default function AdminLayout() {
   const location = useLocation();
 
-  const navItems = [
-    { label: "Dashboard", path: "/admin/dashboard", icon: <LayoutDashboard className="w-5 h-5" /> },
-    { label: "Products", path: "/admin/products", icon: <Package className="w-5 h-5" /> },
-    { label: "Orders", path: "/admin/orders", icon: <ShoppingBag className="w-5 h-5" /> },
-    { label: "Users", path: "/admin/users", icon: <Users className="w-5 h-5" /> },
-    { label: "Image Upload", path: "/admin/upload", icon: <ImageIcon className="w-5 h-5" /> },
-    { label: "Labels Download", path: "/admin/labels", icon: <Download className="w-5 h-5" /> },
-    { label: "Coupons ", path: "/admin/coupons", icon: <Tag className="w-5 h-5" /> },
-    { label: "Sales & Slides", path: "/admin/salesandslides", icon: <Megaphone className="w-5 h-5" /> },
-  ];
+const navItems = [
+  {
+    label: "Dashboard",
+    path: "/admin/dashboard",
+    icon: <LayoutDashboard className="w-5 h-5" />,
+  },
+
+  {
+    label: "Products",
+    path: "/admin/products",
+    icon: <Package className="w-5 h-5" />,
+  },
+
+  {
+    label: "Orders",
+    path: "/admin/orders",
+    icon: <ShoppingBag className="w-5 h-5" />,
+  },
+
+  {
+    label: "Shipping",
+    path: "/admin/shipping",
+    icon: <Truck className="w-5 h-5" />,
+  },
+
+  {
+    label: "Users",
+    path: "/admin/users",
+    icon: <Users className="w-5 h-5" />,
+  },
+
+  {
+    label: "Certificates",
+    path: "/admin/certificates",
+    icon: <ShieldCheck className="w-5 h-5" />,
+  },
+
+  {
+    label: "Image Upload",
+    path: "/admin/upload",
+    icon: <ImageIcon className="w-5 h-5" />,
+  },
+
+  {
+    label: "Labels Download",
+    path: "/admin/labels",
+    icon: <Download className="w-5 h-5" />,
+  },
+
+  {
+    label: "Coupons",
+    path: "/admin/coupons",
+    icon: <Tag className="w-5 h-5" />,
+  },
+
+  {
+    label: "Sales & Slides",
+    path: "/admin/salesandslides",
+    icon: <Megaphone className="w-5 h-5" />,
+  },
+];
 
   const isActive = (path) => {
     if (path === "/admin/dashboard") {
