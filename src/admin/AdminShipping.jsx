@@ -2,23 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowUpDown,
+  ArrowUpRight,
   BadgeCheck,
   Clock3,
-  Eye,
-  FileText,
   Filter,
-  MapPinned,
-  MoreHorizontal,
   Package,
   PackageCheck,
   RefreshCw,
   Route,
   Search,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Truck,
   X,
-  ArrowUpRight,
 } from "lucide-react";
 
 import ShippingTable from "../components/ShippingTable";
@@ -119,6 +116,7 @@ function formatDate(dateString) {
   if (!dateString) return "-";
   const date = new Date(dateString);
   if (Number.isNaN(date.getTime())) return dateString;
+
   return new Intl.DateTimeFormat("en-IN", {
     day: "2-digit",
     month: "short",
@@ -184,6 +182,7 @@ function ModalShell({ title, icon: Icon, onClose, children, widthClass = "max-w-
         className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
         onClick={onClose}
       />
+
       <motion.div
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -234,14 +233,15 @@ export default function AdminShipping() {
   const [awbShipmentId, setAwbShipmentId] = useState("");
   const [awbCourier, setAwbCourier] = useState("");
   const [awbPrefix, setAwbPrefix] = useState("AWB");
-  const [awbNote, setAwbNote] = useState("");
 
   const [serviceabilityCourier, setServiceabilityCourier] = useState("All");
   const [serviceabilityPincode, setServiceabilityPincode] = useState("");
   const [serviceabilityResult, setServiceabilityResult] = useState(null);
 
   const [pickupShipmentId, setPickupShipmentId] = useState("");
-  const [pickupDate, setPickupDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [pickupDate, setPickupDate] = useState(() =>
+    new Date().toISOString().slice(0, 10)
+  );
   const [pickupTime, setPickupTime] = useState("10:00");
   const [pickupComment, setPickupComment] = useState("");
 
@@ -263,9 +263,15 @@ export default function AdminShipping() {
     });
 
     return [...list].sort((a, b) => {
-      if (sortBy === "latest") return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      if (sortBy === "oldest") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      if (sortBy === "customer") return a.customer.localeCompare(b.customer);
+      if (sortBy === "latest") {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+      if (sortBy === "oldest") {
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      }
+      if (sortBy === "customer") {
+        return a.customer.localeCompare(b.customer);
+      }
       return a.orderNumber.localeCompare(b.orderNumber);
     });
   }, [shipments, search, status, courier, sortBy]);
@@ -281,14 +287,16 @@ export default function AdminShipping() {
   }, [shipments]);
 
   const activeFiltersCount =
-    (search ? 1 : 0) + (status !== "All" ? 1 : 0) + (courier !== "All" ? 1 : 0) + (sortBy !== "latest" ? 1 : 0);
+    (search ? 1 : 0) +
+    (status !== "All" ? 1 : 0) +
+    (courier !== "All" ? 1 : 0) +
+    (sortBy !== "latest" ? 1 : 0);
 
   const openGenerateAwb = (shipment = null) => {
     const base = shipment || shipments[0];
     setAwbShipmentId(base?.id || "");
     setAwbCourier(base?.courier || "Delhivery");
     setAwbPrefix("AWB");
-    setAwbNote("");
     setShowAwbModal(true);
   };
 
@@ -343,32 +351,29 @@ export default function AdminShipping() {
       )
     );
 
-    const matched = shipments.find((item) => item.id === awbShipmentId);
-    if (selectedShipment?.id === awbShipmentId) {
-      setSelectedShipment((prev) =>
-        prev
-          ? {
-              ...prev,
-              courier: awbCourier,
-              awbCode: generatedAwb,
-              shipmentStatus: "Shipped",
-              orderStatus: "Shipped",
-            }
-          : prev
-      );
-    }
+    setSelectedShipment((prev) =>
+      prev && prev.id === awbShipmentId
+        ? {
+            ...prev,
+            courier: awbCourier,
+            awbCode: generatedAwb,
+            shipmentStatus: "Shipped",
+            orderStatus: "Shipped",
+          }
+        : prev
+    );
 
     setShowAwbModal(false);
-    setNotice(`AWB generated for ${matched?.orderNumber || "shipment"}.`);
-    setAwbNote(generatedAwb);
+    setNotice("AWB generated.");
     window.setTimeout(() => setNotice(""), 2500);
   };
 
   const handleServiceabilityCheck = () => {
     const pin = serviceabilityPincode.trim();
     const isValid = /^\d{6}$/.test(pin) && !pin.startsWith("0");
+    const courierLabel =
+      serviceabilityCourier === "All" ? "selected couriers" : serviceabilityCourier;
 
-    const courierLabel = serviceabilityCourier === "All" ? "selected couriers" : serviceabilityCourier;
     if (isValid) {
       setServiceabilityResult({
         ok: true,
@@ -384,6 +389,7 @@ export default function AdminShipping() {
 
   const handlePickupRequest = () => {
     const shipment = shipments.find((item) => item.id === pickupShipmentId);
+
     setShowPickupModal(false);
     setNotice(
       `Pickup requested for ${shipment?.orderNumber || "shipment"} on ${pickupDate} at ${pickupTime}.`
@@ -411,7 +417,9 @@ export default function AdminShipping() {
                 Shipping Control
               </div>
               <div>
-                <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Shipping</h1>
+                <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
+                  Shipping
+                </h1>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   AWB, couriers, serviceability, pickup requests.
                 </p>
@@ -453,11 +461,31 @@ export default function AdminShipping() {
           </AnimatePresence>
         </motion.div>
 
-        <div className="grid gap-4 sm:grid-cols-3 xl:grid-cols-4">
-          <MetricCard title="Total Shipments" value={stats.total} icon={Package} gradient="from-violet-500 to-purple-600" />
-          <MetricCard title="Shipped / ODF" value={stats.shipped + stats.ofd} icon={Truck} gradient="from-sky-500 to-cyan-600" />
-          <MetricCard title="Delivered" value={stats.delivered} icon={PackageCheck} gradient="from-emerald-500 to-green-600" />
-          <MetricCard title="Couriers" value={stats.activeCouriers} icon={Route} gradient="from-amber-500 to-orange-600" />
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard
+            title="Total"
+            value={stats.total}
+            icon={Package}
+            gradient="from-violet-500 to-purple-600"
+          />
+          <MetricCard
+            title="In Transit"
+            value={stats.shipped + stats.ofd}
+            icon={Truck}
+            gradient="from-sky-500 to-cyan-600"
+          />
+          <MetricCard
+            title="Delivered"
+            value={stats.delivered}
+            icon={PackageCheck}
+            gradient="from-emerald-500 to-green-600"
+          />
+          <MetricCard
+            title="Couriers"
+            value={stats.activeCouriers}
+            icon={Route}
+            gradient="from-amber-500 to-orange-600"
+          />
         </div>
 
         <div className="grid gap-4 xl:grid-cols-4">
@@ -592,7 +620,9 @@ export default function AdminShipping() {
             onDocument={(shipment) => {
               handleQuickNotice(`Shipment document opened for ${shipment.orderNumber}.`);
             }}
-            onMore={(shipment) => openPickupRequest(shipment)}
+            onMore={(shipment) => setSelectedShipment(shipment)}
+            onGenerateAwb={(shipment) => openGenerateAwb(shipment)}
+            onPickup={(shipment) => openPickupRequest(shipment)}
           />
         </div>
       </div>
@@ -601,11 +631,19 @@ export default function AdminShipping() {
         shipment={selectedShipment}
         open={!!selectedShipment}
         onClose={() => setSelectedShipment(null)}
+        onRefresh={(shipment) => handleQuickNotice(`Tracking refreshed for ${shipment.orderNumber}.`)}
+        onGenerateAwb={(shipment) => openGenerateAwb(shipment)}
+        onTrackLive={(shipment) => handleQuickNotice(`Live tracking opened for ${shipment.orderNumber}.`)}
+        onRequestPickup={(shipment) => openPickupRequest(shipment)}
       />
 
       <AnimatePresence>
         {showAwbModal ? (
-          <ModalShell title="Generate AWB" icon={PackageCheck} onClose={() => setShowAwbModal(false)}>
+          <ModalShell
+            title="Generate AWB"
+            icon={PackageCheck}
+            onClose={() => setShowAwbModal(false)}
+          >
             <div className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -680,7 +718,12 @@ export default function AdminShipping() {
         ) : null}
 
         {showCouriersModal ? (
-          <ModalShell title="List of Couriers" icon={Truck} onClose={() => setShowCouriersModal(false)} widthClass="max-w-3xl">
+          <ModalShell
+            title="List of Couriers"
+            icon={Truck}
+            onClose={() => setShowCouriersModal(false)}
+            widthClass="max-w-3xl"
+          >
             <div className="grid gap-4 md:grid-cols-2">
               {courierDirectory.map((item) => (
                 <div
@@ -689,8 +732,12 @@ export default function AdminShipping() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="text-lg font-bold text-slate-950 dark:text-white">{item.name}</h3>
-                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.coverage}</p>
+                      <h3 className="text-lg font-bold text-slate-950 dark:text-white">
+                        {item.name}
+                      </h3>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        {item.coverage}
+                      </p>
                     </div>
                     <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
                       {item.active ? "Active" : "Inactive"}
@@ -714,7 +761,11 @@ export default function AdminShipping() {
         ) : null}
 
         {showServiceabilityModal ? (
-          <ModalShell title="Check Courier Serviceability" icon={Route} onClose={() => setShowServiceabilityModal(false)}>
+          <ModalShell
+            title="Check Courier Serviceability"
+            icon={Route}
+            onClose={() => setShowServiceabilityModal(false)}
+          >
             <div className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -740,7 +791,11 @@ export default function AdminShipping() {
                   </label>
                   <input
                     value={serviceabilityPincode}
-                    onChange={(e) => setServiceabilityPincode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    onChange={(e) =>
+                      setServiceabilityPincode(
+                        e.target.value.replace(/\D/g, "").slice(0, 6)
+                      )
+                    }
                     maxLength={6}
                     placeholder="Enter 6 digit pincode"
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
@@ -772,7 +827,11 @@ export default function AdminShipping() {
         ) : null}
 
         {showPickupModal ? (
-          <ModalShell title="Request Shipment Pickup" icon={ShieldCheck} onClose={() => setShowPickupModal(false)}>
+          <ModalShell
+            title="Request Shipment Pickup"
+            icon={ShieldCheck}
+            onClose={() => setShowPickupModal(false)}
+          >
             <div className="space-y-4">
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
