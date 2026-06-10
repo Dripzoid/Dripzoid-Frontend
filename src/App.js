@@ -64,6 +64,7 @@ import CouponManagement from "./admin/CouponManagement.jsx";
 import LabelsManager from "./admin/LabelsDownload.jsx";
 import SlidesAndSalesManagement from "./admin/SlidesAndSalesAdmin.jsx";
 import AdminCertificates from "./admin/AdminCertificates.jsx";
+import AdminShipping from "./admin/AdminShipping.jsx";
 
 function App() {
   const [maintenance, setMaintenance] =
@@ -183,6 +184,7 @@ if (maintenance) {
                   <Route path="coupons" element={<CouponManagement />} />
                   <Route path="salesandslides" element={<SlidesAndSalesManagement />} />
                   <Route path="certificates" element={<AdminCertificates />} />
+                  <Route path="shipping" element={<AdminShipping />} />
                   <Route
                     path="ads"
                     element={<div className="p-6">Ads Management Coming Soon...</div>}
