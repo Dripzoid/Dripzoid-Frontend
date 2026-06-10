@@ -1,9 +1,6 @@
 import { useState, useEffect, useContext } from "react";
-
 import { motion } from "framer-motion";
-
 import { useNavigate } from "react-router-dom";
-
 import {
   Eye,
   EyeOff,
@@ -11,22 +8,30 @@ import {
   Lock,
   User,
   Smartphone,
+  Calendar,
   CheckCircle,
 } from "lucide-react";
 
 import RegisterWithOtp from "./RegisterWithOtp";
-
 import { UserContext } from "../contexts/UserContext";
 
 const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/+$/, "");
 
 function buildUrl(path) {
-  if (!path.startsWith("/")) {
-    path = `/${path}`;
-  }
-
+  if (!path.startsWith("/")) path = `/${path}`;
   return `${API_BASE}${path}`;
 }
+
+const INITIAL_FORM = {
+  name: "",
+  email: "",
+  phone: "",
+  mobile: "",
+  gender: "",
+  dob: "",
+  password: "",
+  confirmPassword: "",
+};
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -35,61 +40,52 @@ export default function Auth() {
   const params = new URLSearchParams(window.location.search);
   const returnTo = params.get("returnTo");
 
-  /* ======================================================
-     STATE
-  ====================================================== */
-
   const [isLogin, setIsLogin] = useState(true);
-
   const [regStep, setRegStep] = useState("enterEmail");
   const [regOtpVerified, setRegOtpVerified] = useState(false);
+  const [forgotFlow, setForgotFlow] = useState(false);
+  const [forgotOtpVerified, setForgotOtpVerified] = useState(false);
 
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-    mobile: "",
-    gender: "",
-    dob: "",
-  });
+  const [formData, setFormData] = useState(INITIAL_FORM);
 
   const [showPassword, setShowPassword] = useState(false);
-
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
-
-  const [oauthLoading, setOauthLoading] = useState(false);
-
-  const [forgotFlow, setForgotFlow] = useState(false);
-
-  const [forgotOtpVerified, setForgotOtpVerified] = useState(false);
+  const [sessionChecking, setSessionChecking] = useState(true);
 
   /* ======================================================
      CHECK AUTH ON LOAD
   ====================================================== */
 
   useEffect(() => {
+    let mounted = true;
+
     const checkAuth = async () => {
       try {
         const result = await refresh();
+
+        if (!mounted) return;
 
         if (result?.user) {
           if (returnTo) {
             window.location.href = decodeURIComponent(returnTo);
           } else {
-            navigate("/", {
-              replace: true,
-            });
+            navigate("/", { replace: true });
           }
         }
       } catch (err) {
         console.error("Auth check failed:", err);
+      } finally {
+        if (mounted) setSessionChecking(false);
       }
     };
 
     checkAuth();
+
+    return () => {
+      mounted = false;
+    };
   }, [navigate, refresh, returnTo]);
 
   /* ======================================================
@@ -117,9 +113,6 @@ export default function Auth() {
   const primaryClasses =
     "w-full py-3 rounded-full font-semibold shadow-sm bg-black text-white hover:brightness-110 active:scale-[0.995] disabled:opacity-60 dark:bg-white dark:text-black dark:border dark:border-white";
 
-  const secondaryClasses =
-    "w-full py-3 rounded-full font-semibold border border-black/15 text-black hover:bg-black/5 dark:border-white/15 dark:text-white dark:hover:bg-white/5";
-
   const toggleButtonBase =
     "flex-1 py-2.5 text-sm font-semibold rounded-full transition";
 
@@ -127,17 +120,9 @@ export default function Auth() {
     "w-full flex items-center justify-center gap-3 py-2 px-3 rounded-full border border-black shadow-sm transition bg-white text-black dark:bg-black dark:text-white dark:border-white";
 
   const motionBtnProps = {
-    whileHover: {
-      scale: 1.02,
-    },
-    whileTap: {
-      scale: 0.985,
-    },
-    transition: {
-      type: "spring",
-      stiffness: 400,
-      damping: 28,
-    },
+    whileHover: { scale: 1.02 },
+    whileTap: { scale: 0.985 },
+    transition: { type: "spring", stiffness: 400, damping: 28 },
   };
 
   /* ======================================================
@@ -170,10 +155,6 @@ export default function Auth() {
     </svg>
   );
 
-  /* ======================================================
-     GOOGLE BUTTON
-  ====================================================== */
-
   const GoogleButton = ({ children, onClick }) => (
     <motion.button
       {...motionBtnProps}
@@ -187,7 +168,7 @@ export default function Auth() {
   );
 
   /* ======================================================
-     HANDLE INPUT
+     INPUT HANDLER
   ====================================================== */
 
   const handleChange = (e) => {
@@ -232,9 +213,7 @@ export default function Auth() {
       if (returnTo) {
         window.location.href = decodeURIComponent(returnTo);
       } else {
-        navigate("/", {
-          replace: true,
-        });
+        navigate("/", { replace: true });
       }
     } catch (err) {
       console.error(err);
@@ -266,9 +245,7 @@ export default function Auth() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          email,
-        }),
+        body: JSON.stringify({ email }),
       });
 
       const json = await res.json();
@@ -296,6 +273,27 @@ export default function Auth() {
   const handleCompleteRegistration = async (e) => {
     e.preventDefault();
 
+    const email = formData.email.trim().toLowerCase();
+    const phoneValue = (formData.phone || formData.mobile || "").trim();
+    const genderValue = (formData.gender || "").trim();
+    const dobValue = formData.dob ? formData.dob : null;
+
+    if (!formData.name.trim()) {
+      return alert("Full name is required");
+    }
+
+    if (!email) {
+      return alert("Email is required");
+    }
+
+    if (!phoneValue) {
+      return alert("Phone number is required");
+    }
+
+    if (!formData.password) {
+      return alert("Password is required");
+    }
+
     if (formData.password !== formData.confirmPassword) {
       return alert("Passwords do not match");
     }
@@ -310,12 +308,13 @@ export default function Auth() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          name: formData.name,
-          email: formData.email,
+          name: formData.name.trim(),
+          email,
+          phone: phoneValue,
+          mobile: phoneValue,
+          gender: genderValue || null,
+          dob: dobValue,
           password: formData.password,
-          mobile: formData.mobile,
-          gender: formData.gender,
-          dob: formData.dob,
         }),
       });
 
@@ -332,9 +331,7 @@ export default function Auth() {
       if (returnTo) {
         window.location.href = decodeURIComponent(returnTo);
       } else {
-        navigate("/", {
-          replace: true,
-        });
+        navigate("/", { replace: true });
       }
     } catch (err) {
       console.error(err);
@@ -407,41 +404,8 @@ export default function Auth() {
 
   const handleGoogleAuth = () => {
     const currentUrl = encodeURIComponent(returnTo || window.location.origin);
-
     window.location.href = `${buildUrl("/api/auth/google")}?returnTo=${currentUrl}`;
   };
-
-  /* ======================================================
-     OAUTH CHECK
-  ====================================================== */
-
-  useEffect(() => {
-    const handleOAuth = async () => {
-      try {
-        setOauthLoading(true);
-
-        const result = await refresh();
-
-        if (result?.user) {
-          await login(result.user);
-
-          if (returnTo) {
-            window.location.href = decodeURIComponent(returnTo);
-          } else {
-            navigate("/", {
-              replace: true,
-            });
-          }
-        }
-      } catch (err) {
-        console.error("OAuth failed:", err);
-      } finally {
-        setOauthLoading(false);
-      }
-    };
-
-    handleOAuth();
-  }, [navigate, refresh, login, returnTo]);
 
   /* ======================================================
      HELPERS
@@ -453,6 +417,8 @@ export default function Auth() {
     setForgotOtpVerified(false);
     setShowPassword(false);
     setShowConfirmPassword(false);
+    setRegStep("enterEmail");
+    setRegOtpVerified(false);
   };
 
   const resetToRegister = () => {
@@ -469,7 +435,7 @@ export default function Auth() {
      LOADING
   ====================================================== */
 
-  if (oauthLoading) {
+  if (sessionChecking) {
     return (
       <div className="flex items-center justify-center h-screen">
         Loading...
@@ -484,14 +450,8 @@ export default function Auth() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-white dark:bg-black p-6">
       <motion.div
-        initial={{
-          opacity: 0,
-          y: 20,
-        }}
-        animate={{
-          opacity: 1,
-          y: 0,
-        }}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md p-8 rounded-2xl bg-white dark:bg-black border border-black/10 dark:border-white/10 shadow-2xl"
       >
         <div className="flex items-start gap-4 mb-5">
@@ -554,7 +514,6 @@ export default function Auth() {
               <span className="absolute left-4 top-1/2 -translate-y-1/2">
                 <Mail size={16} />
               </span>
-
               <input
                 id="email"
                 type="email"
@@ -562,6 +521,7 @@ export default function Auth() {
                 onChange={handleChange}
                 placeholder="Email"
                 className={inputClass}
+                autoComplete="email"
               />
             </div>
 
@@ -577,6 +537,7 @@ export default function Auth() {
                 onChange={handleChange}
                 placeholder="Password"
                 className={inputClass}
+                autoComplete="current-password"
               />
 
               <button
@@ -612,9 +573,7 @@ export default function Auth() {
 
             <div className="flex items-center gap-3 my-2">
               <div className="flex-1 h-px bg-black/10 dark:bg-white/10" />
-              <div className="text-sm text-black/50 dark:text-white/50">
-                or
-              </div>
+              <div className="text-sm text-black/50 dark:text-white/50">or</div>
               <div className="flex-1 h-px bg-black/10 dark:bg-white/10" />
             </div>
 
@@ -642,6 +601,7 @@ export default function Auth() {
                     onChange={handleChange}
                     placeholder="Enter your email"
                     className={inputClass}
+                    autoComplete="email"
                   />
                 </div>
 
@@ -673,6 +633,7 @@ export default function Auth() {
                     onChange={handleChange}
                     placeholder="New Password"
                     className={inputClass}
+                    autoComplete="new-password"
                   />
 
                   <button
@@ -696,6 +657,7 @@ export default function Auth() {
                     onChange={handleChange}
                     placeholder="Confirm New Password"
                     className={inputClass}
+                    autoComplete="new-password"
                   />
 
                   <button
@@ -751,6 +713,7 @@ export default function Auth() {
                     onChange={handleChange}
                     placeholder="Email"
                     className={inputClass}
+                    autoComplete="email"
                   />
                 </div>
 
@@ -787,9 +750,7 @@ export default function Auth() {
                   <RegisterWithOtp
                     email={formData.email}
                     mode="register"
-                    onVerified={() => {
-                      setRegOtpVerified(true);
-                    }}
+                    onVerified={() => setRegOtpVerified(true)}
                   />
                 </div>
 
@@ -823,6 +784,7 @@ export default function Auth() {
                     onChange={handleChange}
                     placeholder="Full Name"
                     className={inputClass}
+                    autoComplete="name"
                   />
                 </div>
 
@@ -838,6 +800,7 @@ export default function Auth() {
                     onChange={handleChange}
                     placeholder="Email"
                     className={inputClass}
+                    autoComplete="email"
                   />
                 </div>
 
@@ -847,12 +810,47 @@ export default function Auth() {
                   </span>
 
                   <input
-                    id="mobile"
+                    id="phone"
                     type="text"
-                    value={formData.mobile}
+                    value={formData.phone}
                     onChange={handleChange}
-                    placeholder="Mobile Number"
+                    placeholder="Phone Number"
                     className={inputClass}
+                    autoComplete="tel"
+                  />
+                </div>
+
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2">
+                    <User size={16} />
+                  </span>
+
+                  <select
+                    id="gender"
+                    value={formData.gender}
+                    onChange={handleChange}
+                    className={inputClass}
+                  >
+                    <option value="">Select Gender (optional)</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                    <option value="prefer_not_to_say">Prefer not to say</option>
+                  </select>
+                </div>
+
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2">
+                    <Calendar size={16} />
+                  </span>
+
+                  <input
+                    id="dob"
+                    type="date"
+                    value={formData.dob}
+                    onChange={handleChange}
+                    className={inputClass}
+                    placeholder="Date of Birth"
                   />
                 </div>
 
@@ -868,6 +866,7 @@ export default function Auth() {
                     onChange={handleChange}
                     placeholder="Password"
                     className={inputClass}
+                    autoComplete="new-password"
                   />
 
                   <button
@@ -891,6 +890,7 @@ export default function Auth() {
                     onChange={handleChange}
                     placeholder="Confirm Password"
                     className={inputClass}
+                    autoComplete="new-password"
                   />
 
                   <button
