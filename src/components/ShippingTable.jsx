@@ -6,441 +6,295 @@ import {
   Truck,
   PackageCheck,
   MapPinned,
+  MoreHorizontal,
+  ArrowUpRight,
 } from "lucide-react";
 
 const statusStyles = {
   Confirmed:
-    "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300",
-
+    "bg-violet-500/10 text-violet-700 ring-violet-500/20 dark:text-violet-300",
   Shipped:
-    "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-
+    "bg-sky-500/10 text-sky-700 ring-sky-500/20 dark:text-sky-300",
   "Out For Delivery":
-    "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
-
+    "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300",
   Delivered:
-    "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
-
+    "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300",
   Cancelled:
-    "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
-
+    "bg-rose-500/10 text-rose-700 ring-rose-500/20 dark:text-rose-300",
   RTO:
-    "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300",
+    "bg-yellow-500/10 text-yellow-700 ring-yellow-500/20 dark:text-yellow-300",
+  Pending:
+    "bg-slate-500/10 text-slate-700 ring-slate-500/20 dark:text-slate-300",
 };
 
-function StatusBadge({
-  status,
-}) {
+function StatusBadge({ status }) {
   return (
     <span
       className={`
-        inline-flex items-center
-        rounded-full
-        px-3 py-1
-        text-xs font-medium
-        ${
-          statusStyles[
-            status
-          ] ||
-          "bg-gray-100 text-gray-700"
-        }
+        inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset
+        ${statusStyles[status] || "bg-slate-500/10 text-slate-700 ring-slate-500/20 dark:text-slate-300"}
       `}
     >
+      <span className="h-1.5 w-1.5 rounded-full bg-current opacity-80" />
       {status}
     </span>
   );
 }
 
-export default function ShippingTable({
-  shipments = [],
-  onView,
-}) {
+function ActionButton({ children, title, onClick, className = "" }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={`
+        inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white
+        text-slate-600 transition hover:-translate-y-0.5 hover:bg-slate-50 hover:text-slate-950
+        dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white
+        ${className}
+      `}
+    >
+      {children}
+    </button>
+  );
+}
+
+export default function ShippingTable({ shipments = [], onView }) {
   return (
     <motion.div
-      initial={{
-        opacity: 0,
-        y: 10,
-      }}
-      animate={{
-        opacity: 1,
-        y: 0,
-      }}
-      className="
-        overflow-hidden
-        rounded-2xl
-        border
-        border-gray-200
-        bg-white
-        shadow-sm
-        dark:border-gray-800
-        dark:bg-gray-900
-      "
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="overflow-hidden rounded-3xl border border-white/70 bg-white shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900"
     >
-      {/* Header */}
+      <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800 sm:px-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-slate-950 dark:text-white">
+              Shipment queue
+            </h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Review shipment progress, courier data, and order context.
+            </p>
+          </div>
 
-      <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Shipments
-          </h2>
-
-          <p className="text-sm text-gray-500">
-            Monitor and
-            manage all
-            shipment
-            activity
-          </p>
-        </div>
-
-        <div className="text-sm text-gray-500">
-          {shipments.length}{" "}
-          Records
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+            <PackageCheck size={13} />
+            {shipments.length} record{shipments.length === 1 ? "" : "s"}
+          </div>
         </div>
       </div>
 
       {/* Desktop Table */}
-
-      <div className="hidden overflow-x-auto lg:block">
-        <table className="w-full">
+      <div className="hidden overflow-x-auto xl:block">
+        <table className="w-full border-separate border-spacing-0">
           <thead>
-            <tr className="border-b border-gray-200 text-left dark:border-gray-800">
-              <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-gray-500">
+            <tr className="bg-slate-50/80 text-left dark:bg-slate-950/50">
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Order
               </th>
-
-              <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Customer
               </th>
-
-              <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Courier
               </th>
-
-              <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 AWB
               </th>
-
-              <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Shipment
               </th>
-
-              <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Order Status
               </th>
-
-              <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Date
               </th>
-
-              <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Actions
               </th>
             </tr>
           </thead>
 
           <tbody>
-            {shipments.map(
-              (
-                shipment,
-                index
-              ) => (
-                <motion.tr
-                  key={
-                    shipment.id
-                  }
-                  initial={{
-                    opacity: 0,
-                  }}
-                  animate={{
-                    opacity: 1,
-                  }}
-                  transition={{
-                    delay:
-                      index *
-                      0.05,
-                  }}
-                  whileHover={{
-                    backgroundColor:
-                      "rgba(0,0,0,0.02)",
-                  }}
-                  className="border-b border-gray-100 dark:border-gray-800"
-                >
-                  <td className="px-6 py-4">
-                    <div>
-                      <p className="font-medium text-gray-900 dark:text-white">
-                        {
-                          shipment.orderNumber
-                        }
-                      </p>
+            {shipments.map((shipment, index) => (
+              <motion.tr
+                key={shipment.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.04 }}
+                whileHover={{ backgroundColor: "rgba(148,163,184,0.06)" }}
+                className="border-t border-slate-200/70 transition-colors dark:border-slate-800"
+              >
+                <td className="px-6 py-4">
+                  <div>
+                    <p className="font-semibold text-slate-950 dark:text-white">
+                      {shipment.orderNumber}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      #{shipment.id}
+                    </p>
+                  </div>
+                </td>
 
-                      <p className="text-xs text-gray-500">
-                        #
-                        {
-                          shipment.id
-                        }
-                      </p>
-                    </div>
-                  </td>
+                <td className="px-6 py-4">
+                  <div>
+                    <p className="font-semibold text-slate-950 dark:text-white">
+                      {shipment.customer}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {shipment.phone}
+                    </p>
+                  </div>
+                </td>
 
-                  <td className="px-6 py-4">
-                    <div>
-                      <p className="font-medium text-gray-900 dark:text-white">
-                        {
-                          shipment.customer
-                        }
-                      </p>
+                <td className="px-6 py-4">
+                  <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                    <Truck size={15} className="text-sky-500" />
+                    {shipment.courier}
+                  </div>
+                </td>
 
-                      <p className="text-xs text-gray-500">
-                        {
-                          shipment.phone
-                        }
-                      </p>
-                    </div>
-                  </td>
+                <td className="px-6 py-4">
+                  <code className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                    {shipment.awbCode}
+                  </code>
+                </td>
 
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <Truck
-                        size={
-                          16
-                        }
-                        className="text-blue-500"
-                      />
+                <td className="px-6 py-4">
+                  <StatusBadge status={shipment.shipmentStatus} />
+                </td>
 
-                      <span className="text-gray-700 dark:text-gray-300">
-                        {
-                          shipment.courier
-                        }
-                      </span>
-                    </div>
-                  </td>
+                <td className="px-6 py-4">
+                  <StatusBadge status={shipment.orderStatus} />
+                </td>
 
-                  <td className="px-6 py-4">
-                    <code className="rounded-lg bg-gray-100 px-2 py-1 text-xs dark:bg-gray-800">
-                      {
-                        shipment.awbCode
-                      }
-                    </code>
-                  </td>
+                <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">
+                  {shipment.createdAt}
+                </td>
 
-                  <td className="px-6 py-4">
-                    <StatusBadge
-                      status={
-                        shipment.shipmentStatus
-                      }
-                    />
-                  </td>
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-2">
+                    <ActionButton title="View shipment details" onClick={() => onView?.(shipment)}>
+                      <Eye size={16} />
+                    </ActionButton>
 
-                  <td className="px-6 py-4">
-                    <StatusBadge
-                      status={
-                        shipment.orderStatus
-                      }
-                    />
-                  </td>
+                    <ActionButton title="Refresh tracking">
+                      <RefreshCw size={16} />
+                    </ActionButton>
 
-                  <td className="px-6 py-4 text-sm text-gray-500">
-                    {
-                      shipment.createdAt
-                    }
-                  </td>
+                    <ActionButton title="Open shipment document">
+                      <FileText size={16} />
+                    </ActionButton>
 
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() =>
-                          onView?.(
-                            shipment
-                          )
-                        }
-                        className="
-                          rounded-lg
-                          border
-                          border-gray-200
-                          p-2
-                          transition
-                          hover:bg-gray-100
-                          dark:border-gray-700
-                          dark:hover:bg-gray-800
-                        "
-                      >
-                        <Eye
-                          size={
-                            16
-                          }
-                        />
-                      </button>
-
-                      <button
-                        className="
-                          rounded-lg
-                          border
-                          border-gray-200
-                          p-2
-                          transition
-                          hover:bg-gray-100
-                          dark:border-gray-700
-                          dark:hover:bg-gray-800
-                        "
-                      >
-                        <RefreshCw
-                          size={
-                            16
-                          }
-                        />
-                      </button>
-
-                      <button
-                        className="
-                          rounded-lg
-                          border
-                          border-gray-200
-                          p-2
-                          transition
-                          hover:bg-gray-100
-                          dark:border-gray-700
-                          dark:hover:bg-gray-800
-                        "
-                      >
-                        <FileText
-                          size={
-                            16
-                          }
-                        />
-                      </button>
-                    </div>
-                  </td>
-                </motion.tr>
-              )
-            )}
+                    <ActionButton title="More actions">
+                      <MoreHorizontal size={16} />
+                    </ActionButton>
+                  </div>
+                </td>
+              </motion.tr>
+            ))}
           </tbody>
         </table>
       </div>
 
-      {/* Mobile Cards */}
-
-      <div className="space-y-4 p-4 lg:hidden">
-        {shipments.map(
-          (
-            shipment
-          ) => (
-            <motion.div
-              key={
-                shipment.id
-              }
-              whileHover={{
-                y: -2,
-              }}
-              className="
-                rounded-xl
-                border
-                border-gray-200
-                p-4
-                dark:border-gray-800
-              "
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-semibold text-gray-900 dark:text-white">
-                    {
-                      shipment.orderNumber
-                    }
-                  </h3>
-
-                  <p className="text-sm text-gray-500">
-                    {
-                      shipment.customer
-                    }
-                  </p>
-                </div>
-
-                <StatusBadge
-                  status={
-                    shipment.shipmentStatus
-                  }
-                />
+      {/* Tablet / Mobile Cards */}
+      <div className="grid gap-4 p-4 sm:p-5 xl:hidden">
+        {shipments.map((shipment, index) => (
+          <motion.div
+            key={shipment.id}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.04 }}
+            whileHover={{ y: -2 }}
+            className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm transition dark:border-slate-800 dark:bg-slate-950"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-950 dark:text-white">
+                  {shipment.orderNumber}
+                </h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  {shipment.customer}
+                </p>
               </div>
 
-              <div className="mt-4 space-y-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <Truck
-                    size={
-                      15
-                    }
-                  />
-                  {
-                    shipment.courier
-                  }
-                </div>
+              <StatusBadge status={shipment.shipmentStatus} />
+            </div>
 
-                <div className="flex items-center gap-2">
-                  <PackageCheck
-                    size={
-                      15
-                    }
-                  />
-                  {
-                    shipment.awbCode
-                  }
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <MapPinned
-                    size={
-                      15
-                    }
-                  />
-                  {
-                    shipment.city
-                  }
-                  ,
-                  {
-                    shipment.state
-                  }
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Courier
+                </p>
+                <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  <Truck size={15} className="text-sky-500" />
+                  {shipment.courier}
                 </div>
               </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  AWB
+                </p>
+                <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  <PackageCheck size={15} className="text-emerald-500" />
+                  {shipment.awbCode}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Location
+                </p>
+                <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  <MapPinned size={15} className="text-violet-500" />
+                  {shipment.city}, {shipment.state}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Date
+                </p>
+                <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  {shipment.createdAt}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => onView?.(shipment)}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
+              >
+                <Eye size={16} />
+                View Details
+                <ArrowUpRight size={14} />
+              </button>
 
               <button
-                onClick={() =>
-                  onView?.(
-                    shipment
-                  )
-                }
-                className="
-                  mt-4
-                  w-full
-                  rounded-xl
-                  bg-black
-                  py-2
-                  text-white
-                  dark:bg-white
-                  dark:text-black
-                "
+                type="button"
+                className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                title="More actions"
               >
-                View Details
+                <MoreHorizontal size={16} />
               </button>
-            </motion.div>
-          )
-        )}
+            </div>
+          </motion.div>
+        ))}
       </div>
 
-      {shipments.length ===
-        0 && (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <PackageCheck
-            size={50}
-            className="mb-4 text-gray-300"
-          />
-
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            No Shipments
-            Found
+      {shipments.length === 0 && (
+        <div className="flex min-h-[280px] flex-col items-center justify-center px-6 py-16 text-center">
+          <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-5 text-slate-400 dark:border-slate-800 dark:bg-slate-950">
+            <PackageCheck size={40} />
+          </div>
+          <h3 className="mt-5 text-xl font-bold text-slate-950 dark:text-white">
+            No Shipments Found
           </h3>
-
-          <p className="mt-2 text-sm text-gray-500">
-            Try adjusting
-            your filters or
-            search criteria.
+          <p className="mt-2 max-w-md text-sm leading-6 text-slate-500 dark:text-slate-400">
+            Try adjusting your search, filters, or sort settings to reveal shipments.
           </p>
         </div>
       )}
