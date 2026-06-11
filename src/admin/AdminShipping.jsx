@@ -30,13 +30,13 @@ import {
 } from "lucide-react";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_SHIPPING_API_BASE_URL || "/api/shipping",
+  baseURL:"https://api.dripzoid.com/api/shipping",
 });
 
 const DEFAULT_PICKUP_LOCATION_ID = "5723898";
 const DEFAULT_RETURN_WAREHOUSE_ID = "1072";
-const DEFAULT_RETURN_PINCODE = "500001";
-const DEFAULT_PICKUP_PINCODE = "110045";
+const DEFAULT_RETURN_PINCODE = "533450";
+const DEFAULT_PICKUP_PINCODE = "533450";
 
 function safeArray(value) {
   if (Array.isArray(value)) return value;
