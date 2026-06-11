@@ -9,13 +9,12 @@ import {
   BadgeCheck,
   Clock3,
   Copy,
-  ExternalLink,
   Eye,
+  ExternalLink,
   FileText,
   Filter,
   LayoutDashboard,
   Loader2,
-  MapPinned,
   Package,
   PackageCheck,
   RefreshCw,
@@ -25,18 +24,13 @@ import {
   ShoppingBag,
   Truck,
   Undo2,
-  Upload,
   X,
 } from "lucide-react";
 
+const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/$/, "");
 const api = axios.create({
-  baseURL:"https://api.dripzoid.com/api/shipping",
+  baseURL: API_BASE ? `${API_BASE}/api/shipping` : "/api/shipping",
 });
-
-const DEFAULT_PICKUP_LOCATION_ID = "5723898";
-const DEFAULT_RETURN_WAREHOUSE_ID = "1072";
-const DEFAULT_RETURN_PINCODE = "533450";
-const DEFAULT_PICKUP_PINCODE = "533450";
 
 function safeArray(value) {
   if (Array.isArray(value)) return value;
@@ -119,6 +113,7 @@ function normalizeShiprocketOrder(order) {
     channelOrderId: String(
       pickFirst(order?.channel_order_id, order?.channelOrderId, order?.id) ?? ""
     ),
+    channelId: order?.channel_id ?? "",
     channelName: order?.channel_name || "-",
     customerName: pickFirst(
       order?.customer_name,
@@ -157,7 +152,7 @@ function normalizeReturnOrder(item) {
   return {
     raw: item,
     orderId: pickFirst(item?.order_id, item?.return_order_id, item?.id, "-"),
-    shipmentId: pickFirst(item?.shipment_id, "-",),
+    shipmentId: pickFirst(item?.shipment_id, item?.shipmentId, "-"),
     status: item?.status || item?.return_status || item?.state || "-",
     companyName: item?.company_name || "-",
     createdAt: item?.created_at || item?.createdAt || "-",
@@ -166,10 +161,33 @@ function normalizeReturnOrder(item) {
 
 function normalizeTrackingEvent(evt) {
   return {
-    status: pickFirst(evt?.status, evt?.current_status, evt?.shipment_status, "Update"),
-    activity: pickFirst(evt?.activity, evt?.note, evt?.description, evt?.current_status, "Tracking update"),
-    location: pickFirst(evt?.location, evt?.city, evt?.hub_name, evt?.scanned_location, null),
-    scanTimestamp: pickFirst(evt?.scan_timestamp, evt?.scanTimestamp, evt?.date, evt?.created_at, null),
+    status: pickFirst(
+      evt?.status,
+      evt?.current_status,
+      evt?.shipment_status,
+      "Update"
+    ),
+    activity: pickFirst(
+      evt?.activity,
+      evt?.note,
+      evt?.description,
+      evt?.current_status,
+      "Tracking update"
+    ),
+    location: pickFirst(
+      evt?.location,
+      evt?.city,
+      evt?.hub_name,
+      evt?.scanned_location,
+      null
+    ),
+    scanTimestamp: pickFirst(
+      evt?.scan_timestamp,
+      evt?.scanTimestamp,
+      evt?.date,
+      evt?.created_at,
+      null
+    ),
     raw: evt,
   };
 }
@@ -207,151 +225,22 @@ function extractTrackingEvents(payload) {
     .filter(Boolean);
 }
 
-function buildReturnCreateTemplate(order) {
-  const selected = order?.raw || order || {};
-  const product = selected?.products?.[0] || {};
-
-  return JSON.stringify(
-    {
-      order_id: String(pickFirst(selected?.channel_order_id, selected?.id, "")),
-      order_date: String(selected?.channel_created_at || new Date().toISOString()).split(",")[0].trim(),
-      channel_id: String(selected?.channel_id || ""),
-      pickup_customer_name: selected?.customer_name || "",
-      pickup_last_name: "",
-      pickup_address: selected?.pickup_location || "",
-      pickup_address_2: "",
-      pickup_city: "Delhi",
-      pickup_state: "Delhi",
-      pickup_country: "India",
-      pickup_pincode: Number(DEFAULT_PICKUP_PINCODE),
-      pickup_email: selected?.customer_email || "",
-      pickup_phone: selected?.customer_phone || "",
-      pickup_isd_code: "91",
-      shipping_customer_name: "Dripzoid",
-      shipping_last_name: "",
-      shipping_address: "Return Warehouse",
-      shipping_address_2: "",
-      shipping_city: "Hyderabad",
-      shipping_country: "India",
-      shipping_pincode: Number(DEFAULT_RETURN_PINCODE),
-      shipping_state: "Telangana",
-      shipping_email: "",
-      shipping_isd_code: "91",
-      shipping_phone: "9999999999",
-      order_items: [
-        {
-          name: product?.name || "Product",
-          sku: product?.channel_sku || product?.sku || "SKU",
-          units: Number(product?.quantity || 1),
-          selling_price: Number(selected?.total || 0) || 0,
-          discount: 0,
-          hsn: product?.hsn || "",
-        },
-      ],
-      payment_method: "PREPAID",
-      total_discount: "0",
-      sub_total: Number(selected?.total || 0) || 0,
-      length: 10,
-      breadth: 10,
-      height: 10,
-      weight: 0.5,
-      return_reason: "29",
-    },
-    null,
-    2
-  );
-}
-
-function buildReturnUpdateTemplate(returnRow) {
-  const item = returnRow?.raw || returnRow || {};
-  return JSON.stringify(
-    {
-      order_id: String(pickFirst(item?.order_id, item?.id, "")),
-      action: ["product_details"],
-      length: 11,
-      breadth: 10,
-      height: 10,
-      return_warehouse_id: Number(DEFAULT_RETURN_WAREHOUSE_ID),
-      weight: 1.5,
-    },
-    null,
-    2
-  );
-}
-
-function splitName(name = "") {
-  const parts = String(name).trim().split(/\s+/).filter(Boolean);
-  return {
-    first: parts[0] || "Customer",
-    last: parts.slice(1).join(" "),
-  };
-}
-
-function buildExchangeTemplate(order) {
-  const selected = order?.raw || order || {};
-  const product = selected?.products?.[0] || {};
-  const { first, last } = splitName(selected?.customer_name || "Customer");
-
-  return JSON.stringify(
-    {
-      exchange_order_id: `EX_${selected?.channel_order_id || selected?.id || "ORDER"}`,
-      seller_pickup_location_id: String(DEFAULT_PICKUP_LOCATION_ID),
-      seller_shipping_location_id: String(DEFAULT_PICKUP_LOCATION_ID),
-      return_order_id: `R_${selected?.channel_order_id || selected?.id || "ORDER"}`,
-      order_date: new Date().toISOString().slice(0, 10),
-      payment_method: "prepaid",
-      buyer_shipping_first_name: first,
-      buyer_shipping_last_name: last,
-      buyer_shipping_email: selected?.customer_email || "",
-      buyer_shipping_address: selected?.pickup_location || "",
-      buyer_shipping_address_2: "",
-      buyer_shipping_city: "Hyderabad",
-      buyer_shipping_state: "Telangana",
-      buyer_shipping_country: "India",
-      buyer_shipping_pincode: "500001",
-      buyer_shipping_phone: selected?.customer_phone || "",
-      buyer_pickup_first_name: "Dripzoid",
-      buyer_pickup_last_name: "",
-      buyer_pickup_email: "",
-      buyer_pickup_address: "Return Warehouse",
-      buyer_pickup_address_2: "",
-      buyer_pickup_city: "Hyderabad",
-      buyer_pickup_state: "Telangana",
-      buyer_pickup_country: "India",
-      buyer_pickup_pincode: "500001",
-      buyer_pickup_phone: "9999999999",
-      order_items: [
-        {
-          name: product?.name || "Product",
-          selling_price: Number(selected?.total || 0) || 0,
-          units: 1,
-          hsn: product?.hsn || "",
-          sku: product?.channel_sku || product?.sku || "SKU",
-          tax: "",
-          discount: "",
-          exchange_item_id: "",
-          exchange_item_name: product?.name || "Product",
-          exchange_item_sku: product?.channel_sku || product?.sku || "SKU",
-        },
-      ],
-      sub_total: Number(selected?.total || 0) || 0,
-      shipping_charges: "",
-      giftwrap_charges: "",
-      total_discount: "0",
-      transaction_charges: "",
-      return_length: 10,
-      return_breadth: 10,
-      return_height: 10,
-      return_weight: 0.5,
-      exchange_length: 10,
-      exchange_breadth: 10,
-      exchange_height: 10,
-      exchange_weight: 0.5,
-      return_reason: "29",
-    },
-    null,
-    2
-  );
+function statusBadgeClass(status) {
+  switch (String(status || "").toUpperCase()) {
+    case "DELIVERED":
+      return "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300";
+    case "SHIPPED":
+      return "bg-sky-500/10 text-sky-700 ring-sky-500/20 dark:text-sky-300";
+    case "OUT FOR DELIVERY":
+      return "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300";
+    case "CONFIRMED":
+      return "bg-violet-500/10 text-violet-700 ring-violet-500/20 dark:text-violet-300";
+    case "CANCELLED":
+    case "CANCELED":
+      return "bg-rose-500/10 text-rose-700 ring-rose-500/20 dark:text-rose-300";
+    default:
+      return "bg-slate-500/10 text-slate-700 ring-slate-500/20 dark:text-slate-300";
+  }
 }
 
 function Badge({ children, tone = "slate" }) {
@@ -405,296 +294,13 @@ function SectionShell({ title, description, children }) {
   );
 }
 
-function OrderInspectionView({ data }) {
-  const order = data || {};
-  const shipment = Array.isArray(order?.shipments) ? order.shipments[0] : null;
-  const products = Array.isArray(order?.products) ? order.products : [];
-  const activities = Array.isArray(order?.activities) ? order.activities : [];
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <DetailCard label="Shiprocket Order ID" value={order?.id ?? order?.shiprocketOrderId} mono />
-        <DetailCard label="Channel Order ID" value={order?.channel_order_id || order?.channelOrderId || "-"} mono />
-        <DetailCard label="Status" value={order?.status || "-"} />
-        <DetailCard label="Payment" value={order?.payment_method || order?.paymentMethod || "-"} />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <SectionShell title="Customer" description="Essential customer and order metadata">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <DetailCard label="Customer" value={order?.customer_name || "-"} />
-            <DetailCard label="Email" value={order?.customer_email || "-"} />
-            <DetailCard label="Phone" value={order?.customer_phone || "-"} />
-            <DetailCard label="Pickup Location" value={order?.pickup_location || "-"} />
-            <DetailCard label="Shipping Method" value={order?.shipping_method || "-"} />
-            <DetailCard label="Created At" value={formatDateTime(order?.created_at || order?.channel_created_at)} />
-          </div>
-        </SectionShell>
-
-        <SectionShell title="Shipment" description="Shipment snapshot inside Shiprocket order response">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <DetailCard label="Shipment ID" value={shipment?.id || "-"} mono />
-            <DetailCard label="Courier" value={shipment?.courier || "-"} />
-            <DetailCard label="AWB" value={shipment?.awb || "-"} mono />
-            <DetailCard label="Return AWB" value={shipment?.return_awb || "-"} mono />
-            <DetailCard label="Pickup Token" value={shipment?.pickup_token_number || "-"} mono />
-            <DetailCard label="ETD" value={shipment?.etd || "-"} />
-          </div>
-        </SectionShell>
-      </div>
-
-      <SectionShell
-        title="Products"
-        description={`Items in this order (${products.length} total)`}
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] border-separate border-spacing-0">
-            <thead>
-              <tr className="bg-slate-50 text-left dark:bg-slate-950">
-                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Name</th>
-                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">SKU</th>
-                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Qty</th>
-                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Status</th>
-                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">HSN</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.length ? (
-                products.map((product, index) => (
-                  <tr
-                    key={`${product?.id || index}-${product?.name || index}`}
-                    className="border-t border-slate-200 dark:border-slate-800"
-                  >
-                    <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
-                      {product?.name || "-"}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
-                      {product?.channel_sku || product?.sku || "-"}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
-                      {product?.quantity ?? "-"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge tone={statusTone(product?.status)}>{product?.status || "-"}</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
-                      {product?.hsn || "-"}
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                    No product rows returned.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </SectionShell>
-
-      <SectionShell
-        title="Activities"
-        description="Activity stream returned by Shiprocket"
-      >
-        <div className="flex flex-wrap gap-2">
-          {activities.length ? (
-            activities.map((item, index) => (
-              <Badge key={`${item}-${index}`} tone="violet">
-                {String(item)}
-              </Badge>
-            ))
-          ) : (
-            <p className="text-sm text-slate-500 dark:text-slate-400">No activities available.</p>
-          )}
-        </div>
-      </SectionShell>
-    </div>
-  );
-}
-
-function ShipmentInspectionView({ data }) {
-  const shipment = data || {};
-  const order = shipment?.order || {};
-  const trackingEvents = Array.isArray(shipment?.trackingEvents) ? shipment.trackingEvents : [];
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <DetailCard label="Shipment DB ID" value={shipment?.id || "-"} mono />
-        <DetailCard label="Order ID" value={shipment?.orderId || "-"} mono />
-        <DetailCard label="AWB" value={shipment?.awbCode || "-"} mono />
-        <DetailCard label="Courier" value={shipment?.courierName || "-"} />
-        <DetailCard label="Shipment Status" value={shipment?.shipmentStatus || "-"} />
-        <DetailCard label="Pickup Token" value={shipment?.pickupTokenNumber || "-"} mono />
-        <DetailCard label="Assigned At" value={formatDateTime(shipment?.assignedAt)} />
-        <DetailCard label="Pickup Scheduled" value={formatDateTime(shipment?.pickupScheduledAt)} />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <SectionShell title="Linked Order" description="Dripzoid order attached to this shipment">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <DetailCard label="Order Number" value={order?.orderNumber || "-"} mono />
-            <DetailCard label="Order Status" value={order?.status || "-"} />
-            <DetailCard label="User ID" value={order?.userId || "-"} mono />
-            <DetailCard label="Total Amount" value={formatMoney(order?.totalAmount)} />
-          </div>
-        </SectionShell>
-
-        <SectionShell title="Shipment Metadata" description="Carrier and return flags">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <DetailCard label="Shiprocket Order ID" value={shipment?.shiprocketOrderId || "-"} mono />
-            <DetailCard label="Shiprocket Shipment ID" value={shipment?.shipmentId || "-"} mono />
-            <DetailCard label="Is Return" value={shipment?.isReturn ? "Yes" : "No"} />
-            <DetailCard label="Updated At" value={formatDateTime(shipment?.updatedAt)} />
-          </div>
-        </SectionShell>
-      </div>
-
-      <SectionShell title="Tracking Events" description={`Stored events in ShipmentTracking (${trackingEvents.length} total)`}>
-        <div className="space-y-4">
-          {trackingEvents.length ? (
-            trackingEvents.map((evt, index) => (
-              <div key={`${evt?.id || index}-${index}`} className="flex gap-4">
-                <div className="flex flex-col items-center">
-                  <div className="mt-0.5 h-3 w-3 rounded-full bg-slate-900 dark:bg-white" />
-                  {index !== trackingEvents.length - 1 ? (
-                    <div className="mt-1 h-12 w-px bg-slate-200 dark:bg-slate-800" />
-                  ) : null}
-                </div>
-                <div className="pb-1">
-                  <p className="font-semibold text-slate-950 dark:text-white">
-                    {evt?.status || "Update"}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    {evt?.activity || "-"}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                    {evt?.location || "-"} {evt?.scanTimestamp ? `• ${formatDateTime(evt?.scanTimestamp)}` : ""}
-                  </p>
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              No tracking events have been synced yet.
-            </p>
-          )}
-        </div>
-      </SectionShell>
-    </div>
-  );
-}
-
-function TrackingInspectionView({ data }) {
-  const events = extractTrackingEvents(data);
-  const summary = data?.tracking_data || data?.data?.tracking_data || data?.track_data || data || {};
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <DetailCard label="AWB" value={pickFirst(summary?.awb_code, summary?.awbCode, "-")} mono />
-        <DetailCard label="Shipment ID" value={pickFirst(summary?.shipment_id, summary?.shipmentId, "-")} mono />
-        <DetailCard label="Current Status" value={pickFirst(summary?.current_status, summary?.status, "-")} />
-        <DetailCard label="Courier" value={pickFirst(summary?.courier_name, summary?.courierName, "-")} />
-      </div>
-
-      <SectionShell title="Timeline" description={`Parsed from Shiprocket response (${events.length} events)`}>
-        <div className="space-y-4">
-          {events.length ? (
-            events.map((evt, index) => (
-              <div key={`${evt?.status || index}-${index}`} className="flex gap-4">
-                <div className="flex flex-col items-center">
-                  <div className="mt-0.5 h-3 w-3 rounded-full bg-slate-900 dark:bg-white" />
-                  {index !== events.length - 1 ? (
-                    <div className="mt-1 h-12 w-px bg-slate-200 dark:bg-slate-800" />
-                  ) : null}
-                </div>
-                <div className="pb-1">
-                  <p className="font-semibold text-slate-950 dark:text-white">{evt?.status || "Update"}</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    {evt?.activity || "-"}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                    {evt?.location || "-"} {evt?.scanTimestamp ? `• ${formatDateTime(evt?.scanTimestamp)}` : ""}
-                  </p>
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              No structured timeline events were found in the live response.
-            </p>
-          )}
-        </div>
-      </SectionShell>
-    </div>
-  );
-}
-
-function ReturnInspectionView({ data }) {
-  const row = data || {};
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <DetailCard label="Order ID" value={row?.orderId || row?.order_id || "-"} mono />
-        <DetailCard label="Shipment ID" value={row?.shipmentId || row?.shipment_id || "-"} mono />
-        <DetailCard label="Status" value={row?.status || "-"} />
-        <DetailCard label="Company" value={row?.companyName || row?.company_name || "-"} />
-      </div>
-
-      <SectionShell title="Return Snapshot" description="Essential fields returned by the backend">
-        <div className="grid gap-3 sm:grid-cols-2">
-          {Object.entries(row || {}).slice(0, 8).map(([key, value]) => (
-            <DetailCard key={key} label={key} value={typeof value === "object" ? JSON.stringify(value) : String(value ?? "-")} mono />
-          ))}
-        </div>
-      </SectionShell>
-    </div>
-  );
-}
-
-function SectionTitle({ title, description, icon: Icon }) {
-  return (
-    <div>
-      <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
-        <Icon size={13} />
-        Dripzoid Shipping
-      </div>
-      <h2 className="mt-3 text-xl font-black tracking-tight text-slate-950 dark:text-white">
-        {title}
-      </h2>
-      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{description}</p>
-    </div>
-  );
-}
-
-function StatCard({ title, value, subtitle, icon: Icon, gradient }) {
-  return (
-    <motion.div
-      whileHover={{ y: -4 }}
-      className="overflow-hidden rounded-3xl border border-white/70 bg-white shadow-[0_18px_60px_-24px_rgba(15,23,42,0.16)] dark:border-white/10 dark:bg-slate-900"
-    >
-      <div className={`bg-gradient-to-br ${gradient} p-5 text-white`}>
-        <div className="flex items-center justify-between">
-          <div className="rounded-2xl bg-white/15 p-3 backdrop-blur">
-            <Icon size={22} />
-          </div>
-          <ArrowUpRight size={18} className="opacity-90" />
-        </div>
-        <div className="mt-6">
-          <h3 className="text-3xl font-black">{value}</h3>
-          <p className="mt-1 text-sm/6 text-white/90">{title}</p>
-          {subtitle ? <p className="mt-2 text-xs text-white/80">{subtitle}</p> : null}
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-function ActionButton({ children, onClick, title, variant = "light", disabled = false }) {
+function ActionButton({
+  children,
+  onClick,
+  title,
+  variant = "light",
+  disabled = false,
+}) {
   const classes =
     variant === "dark"
       ? "bg-slate-950 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
@@ -803,7 +409,7 @@ function InspectionModal({
       <div className="flex h-full max-h-[90vh] flex-col overflow-hidden">
         <div className="border-b border-slate-200 bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
                 <BadgeCheck size={13} />
                 {kind === "order"
@@ -816,7 +422,10 @@ function InspectionModal({
                         ? "Return View"
                         : "Details"}
               </div>
-              <h3 className="mt-3 truncate text-xl font-black tracking-tight text-slate-950 dark:text-white">
+              <h3
+                className="mt-3 break-all text-xl font-black tracking-tight text-slate-950 dark:text-white"
+                title={title}
+              >
                 {title}
               </h3>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -825,26 +434,17 @@ function InspectionModal({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <ActionButton
-                onClick={onToggleRaw}
-                title="Toggle raw response"
-              >
+              <ActionButton onClick={onToggleRaw} title="Toggle raw response">
                 <FileText size={16} />
                 {showRaw ? "Show Essential Info" : "Show Raw Response"}
               </ActionButton>
 
-              <ActionButton
-                onClick={onCopy}
-                title="Copy JSON"
-              >
+              <ActionButton onClick={onCopy} title="Copy JSON">
                 <Copy size={16} />
                 Copy JSON
               </ActionButton>
 
-              <IconButton
-                onClick={onClose}
-                title="Close"
-              >
+              <IconButton onClick={onClose} title="Close">
                 <X size={16} />
               </IconButton>
             </div>
@@ -857,62 +457,270 @@ function InspectionModal({
   );
 }
 
-function JsonEditorModal({
-  open,
-  title,
-  value,
-  onClose,
-  onSubmit,
-  setValue,
-  submitLabel = "Submit",
-}) {
+function OrderInspectionView({ data }) {
+  const order = data || {};
+  const shipment = Array.isArray(order?.shipments) ? order.shipments[0] : null;
+  const products = Array.isArray(order?.products) ? order.products : [];
+  const activities = Array.isArray(order?.activities) ? order.activities : [];
+
   return (
-    <ModalShell open={open} onClose={onClose} widthClass="max-w-5xl">
-      <div className="flex h-full max-h-[90vh] flex-col overflow-hidden">
-        <div className="border-b border-slate-200 bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
-                <Upload size={13} />
-                Payload Editor
-              </div>
-              <h3 className="mt-3 text-xl font-black tracking-tight text-slate-950 dark:text-white">
-                {title}
-              </h3>
-            </div>
-
-            <IconButton onClick={onClose} title="Close">
-              <X size={16} />
-            </IconButton>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-5">
-          <textarea
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            className="min-h-[460px] w-full rounded-3xl border border-slate-200 bg-slate-50 p-4 font-mono text-sm text-slate-800 outline-none focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:focus:border-white"
-          />
-
-          <div className="mt-4 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={onSubmit}
-              className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white dark:bg-white dark:text-slate-950"
-            >
-              {submitLabel}
-            </button>
-          </div>
-        </div>
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <DetailCard label="Shiprocket Order ID" value={order?.id ?? order?.shiprocketOrderId} mono />
+        <DetailCard label="Channel Order ID" value={order?.channel_order_id || order?.channelOrderId || "-"} mono />
+        <DetailCard label="Status" value={order?.status || "-"} />
+        <DetailCard label="Payment" value={order?.payment_method || order?.paymentMethod || "-"} />
       </div>
-    </ModalShell>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionShell title="Customer" description="Essential customer and order metadata">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <DetailCard label="Customer" value={order?.customer_name || "-"} />
+            <DetailCard label="Email" value={order?.customer_email || "-"} />
+            <DetailCard label="Phone" value={order?.customer_phone || "-"} />
+            <DetailCard label="Pickup Location" value={order?.pickup_location || "-"} />
+            <DetailCard label="Shipping Method" value={order?.shipping_method || "-"} />
+            <DetailCard label="Created At" value={formatDateTime(order?.created_at || order?.channel_created_at)} />
+          </div>
+        </SectionShell>
+
+        <SectionShell title="Shipment" description="Shipment snapshot inside Shiprocket order response">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <DetailCard label="Shipment ID" value={shipment?.id || "-"} mono />
+            <DetailCard label="Courier" value={shipment?.courier || "-"} />
+            <DetailCard label="AWB" value={shipment?.awb || "-"} mono />
+            <DetailCard label="Return AWB" value={shipment?.return_awb || "-"} mono />
+            <DetailCard label="Pickup Token" value={shipment?.pickup_token_number || "-"} mono />
+            <DetailCard label="ETD" value={shipment?.etd || "-"} />
+          </div>
+        </SectionShell>
+      </div>
+
+      <SectionShell title="Products" description={`Items in this order (${products.length} total)`}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] border-separate border-spacing-0">
+            <thead>
+              <tr className="bg-slate-50 text-left dark:bg-slate-950">
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Name
+                </th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  SKU
+                </th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Qty
+                </th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Status
+                </th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  HSN
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {products.length ? (
+                products.map((product, index) => (
+                  <tr
+                    key={`${product?.id || index}-${product?.name || index}`}
+                    className="border-t border-slate-200 dark:border-slate-800"
+                  >
+                    <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
+                      {product?.name || "-"}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
+                      {product?.channel_sku || product?.sku || "-"}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
+                      {product?.quantity ?? "-"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge tone={statusTone(product?.status)}>{product?.status || "-"}</Badge>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
+                      {product?.hsn || "-"}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                    No product rows returned.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </SectionShell>
+
+      <SectionShell title="Activities" description="Activity stream returned by Shiprocket">
+        <div className="flex flex-wrap gap-2">
+          {activities.length ? (
+            activities.map((item, index) => (
+              <Badge key={`${item}-${index}`} tone="violet">
+                {String(item)}
+              </Badge>
+            ))
+          ) : (
+            <p className="text-sm text-slate-500 dark:text-slate-400">No activities available.</p>
+          )}
+        </div>
+      </SectionShell>
+    </div>
+  );
+}
+
+function ShipmentInspectionView({ data }) {
+  const shipment = data || {};
+  const order = shipment?.order || {};
+  const trackingEvents = Array.isArray(shipment?.trackingEvents) ? shipment.trackingEvents : [];
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <DetailCard label="Shipment DB ID" value={shipment?.id || "-"} mono />
+        <DetailCard label="Order ID" value={shipment?.orderId || "-"} mono />
+        <DetailCard label="AWB" value={shipment?.awbCode || "-"} mono />
+        <DetailCard label="Courier" value={shipment?.courierName || "-"} />
+        <DetailCard label="Shipment Status" value={shipment?.shipmentStatus || "-"} />
+        <DetailCard label="Pickup Token" value={shipment?.pickupTokenNumber || "-"} mono />
+        <DetailCard label="Assigned At" value={formatDateTime(shipment?.assignedAt)} />
+        <DetailCard label="Pickup Scheduled" value={formatDateTime(shipment?.pickupScheduledAt)} />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionShell title="Linked Order" description="Dripzoid order attached to this shipment">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <DetailCard label="Order Number" value={order?.orderNumber || "-"} mono />
+            <DetailCard label="Order Status" value={order?.status || "-"} />
+            <DetailCard label="User ID" value={order?.userId || "-"} mono />
+            <DetailCard label="Total Amount" value={formatMoney(order?.totalAmount)} />
+          </div>
+        </SectionShell>
+
+        <SectionShell title="Shipment Metadata" description="Carrier and return flags">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <DetailCard label="Shiprocket Order ID" value={shipment?.shiprocketOrderId || "-"} mono />
+            <DetailCard label="Shiprocket Shipment ID" value={shipment?.shipmentId || "-"} mono />
+            <DetailCard label="Is Return" value={shipment?.isReturn ? "Yes" : "No"} />
+            <DetailCard label="Updated At" value={formatDateTime(shipment?.updatedAt)} />
+          </div>
+        </SectionShell>
+      </div>
+
+      <SectionShell
+        title="Tracking Events"
+        description={`Stored events in ShipmentTracking (${trackingEvents.length} total)`}
+      >
+        <div className="space-y-4">
+          {trackingEvents.length ? (
+            trackingEvents.map((evt, index) => (
+              <div key={`${evt?.id || index}-${index}`} className="flex gap-4">
+                <div className="flex flex-col items-center">
+                  <div className="mt-0.5 h-3 w-3 rounded-full bg-slate-900 dark:bg-white" />
+                  {index !== trackingEvents.length - 1 ? (
+                    <div className="mt-1 h-12 w-px bg-slate-200 dark:bg-slate-800" />
+                  ) : null}
+                </div>
+                <div className="pb-1">
+                  <p className="font-semibold text-slate-950 dark:text-white">
+                    {evt?.status || "Update"}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    {evt?.activity || "-"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                    {evt?.location || "-"}{" "}
+                    {evt?.scanTimestamp ? `• ${formatDateTime(evt?.scanTimestamp)}` : ""}
+                  </p>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              No tracking events have been synced yet.
+            </p>
+          )}
+        </div>
+      </SectionShell>
+    </div>
+  );
+}
+
+function TrackingInspectionView({ data }) {
+  const events = extractTrackingEvents(data);
+  const summary = data?.tracking_data || data?.data?.tracking_data || data?.track_data || data || {};
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <DetailCard label="AWB" value={pickFirst(summary?.awb_code, summary?.awbCode, "-")} mono />
+        <DetailCard label="Shipment ID" value={pickFirst(summary?.shipment_id, summary?.shipmentId, "-")} mono />
+        <DetailCard label="Current Status" value={pickFirst(summary?.current_status, summary?.status, "-")} />
+        <DetailCard label="Courier" value={pickFirst(summary?.courier_name, summary?.courierName, "-")} />
+      </div>
+
+      <SectionShell title="Timeline" description={`Parsed from Shiprocket response (${events.length} events)`}>
+        <div className="space-y-4">
+          {events.length ? (
+            events.map((evt, index) => (
+              <div key={`${evt?.status || index}-${index}`} className="flex gap-4">
+                <div className="flex flex-col items-center">
+                  <div className="mt-0.5 h-3 w-3 rounded-full bg-slate-900 dark:bg-white" />
+                  {index !== events.length - 1 ? (
+                    <div className="mt-1 h-12 w-px bg-slate-200 dark:bg-slate-800" />
+                  ) : null}
+                </div>
+                <div className="pb-1">
+                  <p className="font-semibold text-slate-950 dark:text-white">{evt?.status || "Update"}</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    {evt?.activity || "-"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                    {evt?.location || "-"}{" "}
+                    {evt?.scanTimestamp ? `• ${formatDateTime(evt?.scanTimestamp)}` : ""}
+                  </p>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              No structured timeline events were found in the live response.
+            </p>
+          )}
+        </div>
+      </SectionShell>
+    </div>
+  );
+}
+
+function ReturnInspectionView({ data }) {
+  const row = data || {};
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <DetailCard label="Order ID" value={row?.orderId || row?.order_id || "-"} mono />
+        <DetailCard label="Shipment ID" value={row?.shipmentId || row?.shipment_id || "-"} mono />
+        <DetailCard label="Status" value={row?.status || "-"} />
+        <DetailCard label="Company" value={row?.companyName || row?.company_name || "-"} />
+      </div>
+
+      <SectionShell title="Return Snapshot" description="Essential fields returned by the backend">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {Object.entries(row || {})
+            .slice(0, 8)
+            .map(([key, value]) => (
+              <DetailCard
+                key={key}
+                label={key}
+                value={typeof value === "object" ? JSON.stringify(value) : String(value ?? "-")}
+                mono
+              />
+            ))}
+        </div>
+      </SectionShell>
+    </div>
   );
 }
 
@@ -941,21 +749,13 @@ export default function AdminShipping() {
     showRaw: false,
   });
 
-  const [payloadModal, setPayloadModal] = useState({
-    open: false,
-    kind: "",
-    title: "",
-    payload: "",
-    submitLabel: "Submit",
-  });
-
   const [shipmentForm, setShipmentForm] = useState({
     shipmentDbId: "",
     courierId: "",
   });
 
   const [serviceabilityForm, setServiceabilityForm] = useState({
-    pincode: "",
+    pincode: process.env.REACT_APP_WAREHOUSE_PINCODE || "",
     weight: 0.5,
     cod: false,
     length: 10,
@@ -971,59 +771,25 @@ export default function AdminShipping() {
   const [serviceabilityLoading, setServiceabilityLoading] = useState(false);
   const [shipmentActionLoading, setShipmentActionLoading] = useState(false);
 
-  const statCards = useMemo(() => {
+  const activeCouriers = useMemo(
+    () => couriers.filter((courier) => courier?.isActive !== false),
+    [couriers]
+  );
+
+  const defaultCourierId = activeCouriers[0]?.id ? String(activeCouriers[0].id) : "";
+
+  const stats = useMemo(() => {
     const total = orders.length;
     const shipped = orders.filter((o) => String(o.status).toUpperCase() === "SHIPPED").length;
     const delivered = orders.filter((o) => String(o.status).toUpperCase() === "DELIVERED").length;
-    const pending = orders.filter((o) => !["SHIPPED", "DELIVERED", "CANCELED", "CANCELLED"].includes(String(o.status).toUpperCase())).length;
+    const pending = orders.filter(
+      (o) => !["SHIPPED", "DELIVERED", "CANCELED", "CANCELLED"].includes(String(o.status).toUpperCase())
+    ).length;
     const couriersCount = couriers.filter((c) => c?.isActive !== false).length;
     const returnsCount = returnsList.length;
 
-    return [
-      {
-        title: "Total Orders",
-        value: total,
-        subtitle: ordersMeta?.total ? `Shiprocket total: ${ordersMeta.total}` : "Live from Shiprocket",
-        icon: ShoppingBag,
-        gradient: "from-violet-500 to-purple-600",
-      },
-      {
-        title: "Shipped",
-        value: shipped,
-        subtitle: "Orders in transit",
-        icon: Truck,
-        gradient: "from-sky-500 to-cyan-600",
-      },
-      {
-        title: "Delivered",
-        value: delivered,
-        subtitle: "Completed orders",
-        icon: PackageCheck,
-        gradient: "from-emerald-500 to-green-600",
-      },
-      {
-        title: "Pending",
-        value: pending,
-        subtitle: "New / processing / others",
-        icon: Clock3,
-        gradient: "from-amber-500 to-orange-600",
-      },
-      {
-        title: "Couriers",
-        value: couriersCount,
-        subtitle: "Active DB couriers",
-        icon: Route,
-        gradient: "from-fuchsia-500 to-pink-600",
-      },
-      {
-        title: "Returns",
-        value: returnsCount,
-        subtitle: "Return orders synced",
-        icon: Undo2,
-        gradient: "from-rose-500 to-red-600",
-      },
-    ];
-  }, [orders, couriers, returnsList, ordersMeta]);
+    return { total, shipped, delivered, pending, couriersCount, returnsCount };
+  }, [orders, couriers, returnsList]);
 
   const statusOptions = useMemo(() => {
     const known = [
@@ -1041,8 +807,10 @@ export default function AdminShipping() {
       "RETURNED",
       "NDR",
     ];
+    const fromOrders = orders
+      .map((o) => String(o.status || "").toUpperCase())
+      .filter(Boolean);
 
-    const fromOrders = orders.map((o) => String(o.status || "").toUpperCase()).filter(Boolean);
     return ["All", ...Array.from(new Set([...known, ...fromOrders]))];
   }, [orders]);
 
@@ -1066,25 +834,14 @@ export default function AdminShipping() {
     });
 
     return [...list].sort((a, b) => {
-      if (sortBy === "latest") {
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      }
-      if (sortBy === "oldest") {
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      }
-      if (sortBy === "customer") {
-        return String(a.customerName).localeCompare(String(b.customerName));
-      }
+      if (sortBy === "latest") return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      if (sortBy === "oldest") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      if (sortBy === "customer") return String(a.customerName).localeCompare(String(b.customerName));
       return String(a.channelOrderId).localeCompare(String(b.channelOrderId));
     });
   }, [orders, search, statusFilter, sortBy]);
 
-  const activeCouriers = useMemo(
-    () => couriers.filter((courier) => courier?.isActive !== false),
-    [couriers]
-  );
-
-  const loadDashboard = async () => {
+  async function loadDashboard() {
     setLoading(true);
     setError("");
 
@@ -1126,7 +883,7 @@ export default function AdminShipping() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }
 
   useEffect(() => {
     loadDashboard();
@@ -1183,125 +940,39 @@ export default function AdminShipping() {
     });
   };
 
-  const openPayloadEditor = (kind, title, payload, submitLabel) => {
-    setPayloadModal({
-      open: true,
-      kind,
-      title,
-      payload,
-      submitLabel,
-    });
-  };
+  const closeNotice = () => setNotice("");
 
-  const closePayloadEditor = () => {
-    setPayloadModal({
-      open: false,
-      kind: "",
-      title: "",
-      payload: "",
-      submitLabel: "Submit",
-    });
-  };
+  const getLinkedShipmentDbId = (row) =>
+    pickFirst(
+      row?.shipmentDbId,
+      row?.localShipmentId,
+      row?.shipment_uuid,
+      row?.shipment_id,
+      row?.shipmentId,
+      ""
+    );
 
-  const inspectOrder = async (row) => {
-    try {
-      setLoading(true);
-      const res = await api.get(`/orders/${row.shiprocketOrderId}`);
-      const body = res.data?.data ?? res.data;
-      const payload = body?.data && !Array.isArray(body.data) ? body.data : body;
-      openInspection(
-        "order",
-        `Shiprocket Order · ${row.channelOrderId}`,
-        payload
-      );
-    } catch (err) {
-      setError(readApiError(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const inspectTracking = async (row) => {
-    try {
-      setLoading(true);
-      const res = await api.get(`/track/${row.shiprocketOrderId}`);
-      const body = res.data?.data ?? res.data;
-      openInspection(
-        "tracking",
-        `Tracking · ${row.channelOrderId}`,
-        body
-      );
-    } catch (err) {
-      setError(readApiError(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const inspectReturn = (row) => {
-    openInspection("return", `Return Order · ${row.orderId}`, row.raw || row);
-  };
-
-  const inspectShipment = async () => {
-    if (!shipmentForm.shipmentDbId.trim()) {
+  const runAssignAwb = async (shipmentDbId, courierId) => {
+    if (!shipmentDbId) {
       setError("Shipment DB ID is required");
       return;
     }
-
-    try {
-      setShipmentActionLoading(true);
-      const res = await api.get(`/shipment/${shipmentForm.shipmentDbId.trim()}`);
-      const body = res.data?.data ?? res.data;
-      setShipmentLookupResult(body);
-      openInspection("shipment", `Shipment · ${shipmentForm.shipmentDbId.trim()}`, body);
-    } catch (err) {
-      setError(readApiError(err));
-    } finally {
-      setShipmentActionLoading(false);
-    }
-  };
-
-  const syncShipmentTracking = async () => {
-    if (!shipmentForm.shipmentDbId.trim()) {
-      setError("Shipment DB ID is required");
-      return;
-    }
-
-    try {
-      setShipmentActionLoading(true);
-      const res = await api.post(`/shipment/${shipmentForm.shipmentDbId.trim()}/sync`);
-      const body = res.data?.data ?? res.data;
-      setShipmentLookupResult(body);
-      openInspection("shipment", `Synced Shipment · ${shipmentForm.shipmentDbId.trim()}`, body);
-      showToast("Shipment tracking synced");
-      await loadDashboard();
-    } catch (err) {
-      setError(readApiError(err));
-    } finally {
-      setShipmentActionLoading(false);
-    }
-  };
-
-  const assignAwb = async () => {
-    if (!shipmentForm.shipmentDbId.trim()) {
-      setError("Shipment DB ID is required");
-      return;
-    }
-    if (!shipmentForm.courierId) {
+    if (!courierId) {
       setError("Courier ID is required");
       return;
     }
 
+    setShipmentActionLoading(true);
     try {
-      setShipmentActionLoading(true);
       const res = await api.post("/assign-awb", {
-        shipmentDbId: shipmentForm.shipmentDbId.trim(),
-        courierId: Number(shipmentForm.courierId),
+        shipmentDbId,
+        courierId: Number(courierId),
       });
-      const body = res.data?.data ?? res.data;
-      setShipmentLookupResult(body);
-      openInspection("shipment", `AWB Assigned · ${shipmentForm.shipmentDbId.trim()}`, body);
+
+      const payload = res.data?.data || res.data;
+      setShipmentLookupResult(payload);
       showToast("AWB assigned");
+      setViewMode("shipment");
       await loadDashboard();
     } catch (err) {
       setError(readApiError(err));
@@ -1310,21 +981,19 @@ export default function AdminShipping() {
     }
   };
 
-  const requestPickup = async () => {
-    if (!shipmentForm.shipmentDbId.trim()) {
+  const runRequestPickup = async (shipmentDbId) => {
+    if (!shipmentDbId) {
       setError("Shipment DB ID is required");
       return;
     }
 
+    setShipmentActionLoading(true);
     try {
-      setShipmentActionLoading(true);
-      const res = await api.post("/pickup", {
-        shipmentDbId: shipmentForm.shipmentDbId.trim(),
-      });
-      const body = res.data?.data ?? res.data;
-      setShipmentLookupResult(body);
-      openInspection("shipment", `Pickup Requested · ${shipmentForm.shipmentDbId.trim()}`, body);
+      const res = await api.post("/pickup", { shipmentDbId });
+      const payload = res.data?.data || res.data;
+      setShipmentLookupResult(payload);
       showToast("Pickup requested");
+      setViewMode("shipment");
       await loadDashboard();
     } catch (err) {
       setError(readApiError(err));
@@ -1333,59 +1002,47 @@ export default function AdminShipping() {
     }
   };
 
-  const cancelShipment = async () => {
-    if (!shipmentForm.shipmentDbId.trim()) {
-      setError("Shipment DB ID is required");
-      return;
-    }
-
-    if (!window.confirm(`Cancel shipment ${shipmentForm.shipmentDbId.trim()}?`)) return;
-
+  const openOrderDetail = async (row) => {
     try {
-      setShipmentActionLoading(true);
-      const res = await api.post("/cancel", {
-        shipmentDbId: shipmentForm.shipmentDbId.trim(),
-      });
-      const body = res.data?.data ?? res.data;
-      setShipmentLookupResult(body);
-      openInspection("shipment", `Cancelled Shipment · ${shipmentForm.shipmentDbId.trim()}`, body);
-      showToast("Shipment cancelled");
-      await loadDashboard();
+      setLoading(true);
+      const res = await api.get(`/orders/${row.shiprocketOrderId}`);
+      const payload = res.data?.data || res.data;
+      openInspection("order", `Shiprocket Order · ${row.channelOrderId}`, payload);
     } catch (err) {
       setError(readApiError(err));
     } finally {
-      setShipmentActionLoading(false);
+      setLoading(false);
     }
   };
 
-  const downloadShipmentInvoice = () => {
-    if (!shipmentForm.shipmentDbId.trim()) {
+  const openTrackingDetail = async (row) => {
+    try {
+      setLoading(true);
+      const res = await api.get(`/track/${row.shiprocketOrderId}`);
+      const payload = res.data?.data || res.data;
+      openInspection("tracking", `Tracking · ${row.channelOrderId}`, payload);
+    } catch (err) {
+      setError(readApiError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openShipmentInvoice = (shipmentDbId) => {
+    if (!shipmentDbId) {
       setError("Shipment DB ID is required");
       return;
     }
     window.open(
-      `/api/shipping/invoice/shipment/${shipmentForm.shipmentDbId.trim()}`,
+      `${api.defaults.baseURL}/invoice/shipment/${shipmentDbId}`,
       "_blank",
       "noopener,noreferrer"
     );
   };
 
-  const trackOrder = async (row) => {
-    try {
-      setLoading(true);
-      const res = await api.get(`/track/${row.shiprocketOrderId}`);
-      const body = res.data?.data ?? res.data;
-      openInspection("tracking", `Tracking · ${row.channelOrderId}`, body);
-    } catch (err) {
-      setError(readApiError(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const openOrderInvoice = (row) => {
     window.open(
-      `/api/shipping/invoice/order/${row.shiprocketOrderId}`,
+      `${api.defaults.baseURL}/invoice/order/${row.shiprocketOrderId}`,
       "_blank",
       "noopener,noreferrer"
     );
@@ -1405,60 +1062,97 @@ export default function AdminShipping() {
     }
   };
 
-  const openReturnCreate = (row) => {
-    openPayloadEditor(
-      "return-create",
-      `Create Return Order · ${row.channelOrderId}`,
-      buildReturnCreateTemplate(row),
-      "Create Return"
-    );
-  };
+  const loadShipmentByDbId = async () => {
+    if (!shipmentForm.shipmentDbId.trim()) {
+      setError("Shipment DB ID is required");
+      return;
+    }
 
-  const openReturnUpdate = (row) => {
-    openPayloadEditor(
-      "return-update",
-      `Update Return Order · ${row.orderId}`,
-      buildReturnUpdateTemplate(row),
-      "Update Return"
-    );
-  };
-
-  const openExchangeCreate = (row) => {
-    openPayloadEditor(
-      "exchange-create",
-      `Create Exchange Order · ${row.channelOrderId}`,
-      buildExchangeTemplate(row),
-      "Create Exchange"
-    );
-  };
-
-  const submitPayload = async () => {
     try {
-      const parsed = JSON.parse(payloadModal.payload);
-
-      setLoading(true);
-
-      if (payloadModal.kind === "return-create") {
-        await api.post("/returns", parsed);
-        showToast("Return order created");
-      } else if (payloadModal.kind === "return-update") {
-        await api.put("/returns", parsed);
-        showToast("Return order updated");
-      } else if (payloadModal.kind === "exchange-create") {
-        await api.post("/exchange", parsed);
-        showToast("Exchange order created");
-      }
-
-      closePayloadEditor();
-      await loadDashboard();
+      setShipmentActionLoading(true);
+      const res = await api.get(`/shipment/${shipmentForm.shipmentDbId.trim()}`);
+      const payload = res.data?.data || res.data;
+      setShipmentLookupResult(payload);
+      openInspection("shipment", `Shipment · ${shipmentForm.shipmentDbId.trim()}`, payload);
     } catch (err) {
-      setError(err instanceof SyntaxError ? "Invalid JSON payload" : readApiError(err));
+      setError(readApiError(err));
     } finally {
-      setLoading(false);
+      setShipmentActionLoading(false);
     }
   };
 
-  const runEstimate = async () => {
+  const syncShipment = async () => {
+    if (!shipmentForm.shipmentDbId.trim()) {
+      setError("Shipment DB ID is required");
+      return;
+    }
+
+    try {
+      setShipmentActionLoading(true);
+      const res = await api.post(`/shipment/${shipmentForm.shipmentDbId.trim()}/sync`);
+      const payload = res.data?.data || res.data;
+      setShipmentLookupResult(payload);
+      showToast("Shipment tracking synced");
+      openInspection("shipment", `Synced Shipment · ${shipmentForm.shipmentDbId.trim()}`, payload);
+      await loadDashboard();
+    } catch (err) {
+      setError(readApiError(err));
+    } finally {
+      setShipmentActionLoading(false);
+    }
+  };
+
+  const handleOrderAssignAwb = (row) => {
+    const linkedShipmentId = getLinkedShipmentDbId(row);
+
+    if (linkedShipmentId) {
+      setShipmentForm({
+        shipmentDbId: linkedShipmentId,
+        courierId: defaultCourierId,
+      });
+      setViewMode("shipment");
+      runAssignAwb(linkedShipmentId, defaultCourierId);
+      return;
+    }
+
+    setShipmentForm((prev) => ({
+      ...prev,
+      shipmentDbId: "",
+      courierId: prev.courierId || defaultCourierId,
+    }));
+    setViewMode("shipment");
+    setShipmentLookupResult(null);
+    showToast(
+      "This order does not yet expose a linked internal shipment UUID. Load the shipment first, then assign AWB."
+    );
+  };
+
+  const handleOrderRequestPickup = (row) => {
+    const linkedShipmentId = getLinkedShipmentDbId(row);
+
+    if (linkedShipmentId) {
+      setShipmentForm({
+        shipmentDbId: linkedShipmentId,
+        courierId: defaultCourierId,
+      });
+      setViewMode("shipment");
+      runRequestPickup(linkedShipmentId);
+      return;
+    }
+
+    setShipmentForm((prev) => ({
+      ...prev,
+      shipmentDbId: "",
+      courierId: prev.courierId || defaultCourierId,
+    }));
+    setViewMode("shipment");
+    setShipmentLookupResult(null);
+    showToast(
+      "This order does not yet expose a linked internal shipment UUID. Load the shipment first, then request pickup."
+    );
+  };
+
+  const runServiceabilityEstimate = async () => {
     if (!serviceabilityForm.pincode.trim()) {
       setError("Pincode is required");
       return;
@@ -1517,7 +1211,7 @@ export default function AdminShipping() {
     try {
       setLoading(true);
       const res = await api.get("/couriers/list");
-      const body = res.data?.data ?? res.data;
+      const body = res.data?.data || res.data;
       setCouriers(safeArray(body));
       showToast("Couriers refreshed");
     } catch (err) {
@@ -1527,12 +1221,25 @@ export default function AdminShipping() {
     }
   };
 
+  const assignAwbFromShipmentPanel = async () => {
+    const id = shipmentForm.shipmentDbId.trim();
+    const courierId = shipmentForm.courierId || defaultCourierId;
+    if (!id) return setError("Shipment DB ID is required");
+    await runAssignAwb(id, courierId);
+  };
+
+  const requestPickupFromShipmentPanel = async () => {
+    const id = shipmentForm.shipmentDbId.trim();
+    if (!id) return setError("Shipment DB ID is required");
+    await runRequestPickup(id);
+  };
+
   const tabs = [
     { key: "orders", label: "Orders", icon: ShoppingBag },
     { key: "shipment", label: "Shipment Lookup", icon: Package },
     { key: "serviceability", label: "Serviceability", icon: Route },
     { key: "couriers", label: "Couriers", icon: Truck },
-    { key: "returns", label: "Returns & Exchange", icon: Undo2 },
+    { key: "returns", label: "Returns", icon: Undo2 },
   ];
 
   return (
@@ -1544,43 +1251,54 @@ export default function AdminShipping() {
           className="overflow-hidden rounded-3xl border border-white/60 bg-white/80 p-5 shadow-[0_20px_80px_-20px_rgba(15,23,42,0.15)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/70 sm:p-6"
         >
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <SectionTitle
-              title="Shipping Control"
-              description="Live Shiprocket orders, shipments, tracking, couriers, returns, exchanges, and backend actions."
-              icon={LayoutDashboard}
-            />
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
+                <LayoutDashboard size={14} />
+                Shipping Control
+              </div>
+              <div>
+                <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
+                  Shipping
+                </h1>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  AWB, couriers, serviceability, pickup requests, and live Shiprocket orders.
+                </p>
+              </div>
+            </div>
 
             <div className="flex flex-col gap-3 sm:flex-row">
-              <ActionButton
+              <button
                 onClick={refreshAll}
-                title="Refresh dashboard"
-                variant="dark"
                 disabled={refreshing || loading}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
               >
                 <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
-                Refresh
-              </ActionButton>
+                {refreshing ? "Refreshing..." : "Refresh"}
+              </button>
 
-              <ActionButton
-                onClick={() => setViewMode("serviceability")}
-                title="Jump to serviceability"
+              <button
+                onClick={() => setViewMode("shipment")}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               >
-                <Route size={16} />
-                Serviceability
-              </ActionButton>
+                <Package size={16} />
+                Shipment Panel
+              </button>
             </div>
           </div>
 
           <AnimatePresence>
             {notice ? (
               <motion.div
-                initial={{ opacity: 0, y: 6 }}
+                initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
+                exit={{ opacity: 0, y: -8 }}
                 className="mt-5 inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
               >
                 <BadgeCheck size={16} />
                 {notice}
+                <button onClick={closeNotice} className="ml-2 rounded-md p-1 hover:bg-emerald-100/70 dark:hover:bg-emerald-500/20">
+                  <X size={14} />
+                </button>
               </motion.div>
             ) : null}
           </AnimatePresence>
@@ -1592,10 +1310,12 @@ export default function AdminShipping() {
           ) : null}
         </motion.div>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-          {statCards.map((card) => (
-            <StatCard key={card.title} {...card} />
-          ))}
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <StatCard title="Total Orders" value={stats.total} subtitle={ordersMeta?.total ? `Shiprocket total: ${ordersMeta.total}` : "Live from Shiprocket"} icon={ShoppingBag} gradient="from-violet-500 to-purple-600" />
+          <StatCard title="Shipped" value={stats.shipped} subtitle="Orders in transit" icon={Truck} gradient="from-sky-500 to-cyan-600" />
+          <StatCard title="Delivered" value={stats.delivered} subtitle="Completed orders" icon={PackageCheck} gradient="from-emerald-500 to-green-600" />
+          <StatCard title="Pending" value={stats.pending} subtitle="New / processing / others" icon={Clock3} gradient="from-amber-500 to-orange-600" />
+          <StatCard title="Couriers" value={stats.couriersCount} subtitle="Active DB couriers" icon={Route} gradient="from-fuchsia-500 to-pink-600" />
         </div>
 
         <div className="flex flex-wrap gap-2 rounded-3xl border border-white/70 bg-white p-3 shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900">
@@ -1626,11 +1346,12 @@ export default function AdminShipping() {
             className="rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900 sm:p-6"
           >
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-              <SectionTitle
+              <SectionShell
                 title="Shiprocket Orders"
-                description="Essential order info first, raw response on demand, and quick backend actions."
-                icon={ShoppingBag}
-              />
+                description="Essential order information first. Raw response is one click away."
+              >
+                <div className="mt-0" />
+              </SectionShell>
 
               <div className="flex flex-col gap-3 lg:flex-row">
                 <div className="relative">
@@ -1684,16 +1405,30 @@ export default function AdminShipping() {
             </div>
 
             <div className="mt-5 overflow-x-auto">
-              <table className="w-full min-w-[1240px] border-separate border-spacing-0">
+              <table className="w-full min-w-[1280px] border-separate border-spacing-0">
                 <thead>
                   <tr className="bg-slate-50 text-left dark:bg-slate-950">
-                    <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Order</th>
-                    <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Customer</th>
-                    <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Status</th>
-                    <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Payment</th>
-                    <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Shipment</th>
-                    <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Created</th>
-                    <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Actions</th>
+                    <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Order
+                    </th>
+                    <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Customer
+                    </th>
+                    <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Status
+                    </th>
+                    <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Payment
+                    </th>
+                    <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Shipment
+                    </th>
+                    <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Created
+                    </th>
+                    <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
 
@@ -1760,23 +1495,28 @@ export default function AdminShipping() {
 
                         <td className="px-4 py-4 align-top">
                           <div className="flex flex-wrap items-center gap-2">
-                            <IconButton onClick={() => inspectOrder(row)} title="View order details">
+                            <IconButton onClick={() => openOrderDetail(row)} title="View order details">
                               <Eye size={16} />
                             </IconButton>
-                            <IconButton onClick={() => inspectTracking(row)} title="Track order">
+
+                            <IconButton onClick={() => openTrackingDetail(row)} title="Track order">
                               <Route size={16} />
                             </IconButton>
+
+                            <IconButton onClick={() => handleOrderAssignAwb(row)} title="Assign AWB">
+                              <PackageCheck size={16} />
+                            </IconButton>
+
+                            <IconButton onClick={() => handleOrderRequestPickup(row)} title="Request Pickup">
+                              <ShieldCheck size={16} />
+                            </IconButton>
+
                             <IconButton onClick={() => openOrderInvoice(row)} title="Invoice">
                               <ExternalLink size={16} />
                             </IconButton>
+
                             <IconButton onClick={() => cancelOrder(row)} title="Cancel order">
                               <X size={16} />
-                            </IconButton>
-                            <IconButton onClick={() => openReturnCreate(row)} title="Create return">
-                              <Undo2 size={16} />
-                            </IconButton>
-                            <IconButton onClick={() => openExchangeCreate(row)} title="Create exchange">
-                              <Upload size={16} />
                             </IconButton>
                           </div>
                         </td>
@@ -1804,80 +1544,71 @@ export default function AdminShipping() {
             className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]"
           >
             <div className="rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900 sm:p-6">
-              <SectionTitle
+              <SectionShell
                 title="Shipment Lookup"
-                description="Use your internal shipment DB ID to wire AWB, pickup, sync tracking, invoice, cancel, and shipment detail actions."
-                icon={Package}
-              />
+                description="Use your internal shipment DB ID to assign AWB, request pickup, sync tracking, open invoice, or cancel."
+              >
+                <div className="mt-0 grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      Shipment DB ID
+                    </label>
+                    <input
+                      value={shipmentForm.shipmentDbId}
+                      onChange={(e) =>
+                        setShipmentForm((prev) => ({
+                          ...prev,
+                          shipmentDbId: e.target.value,
+                        }))
+                      }
+                      placeholder="shipment uuid"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
+                    />
+                  </div>
 
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
-                    Shipment DB ID
-                  </label>
-                  <input
-                    value={shipmentForm.shipmentDbId}
-                    onChange={(e) =>
-                      setShipmentForm((prev) => ({
-                        ...prev,
-                        shipmentDbId: e.target.value,
-                      }))
-                    }
-                    placeholder="shipment uuid"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
-                  />
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      Courier ID for AWB
+                    </label>
+                    <select
+                      value={shipmentForm.courierId}
+                      onChange={(e) =>
+                        setShipmentForm((prev) => ({
+                          ...prev,
+                          courierId: e.target.value,
+                        }))
+                      }
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
+                    >
+                      <option value="">Select courier</option>
+                      {activeCouriers.map((courier) => (
+                        <option key={courier.id} value={courier.id}>
+                          {courier.id} • {courier.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
-                    Courier ID for AWB
-                  </label>
-                  <select
-                    value={shipmentForm.courierId}
-                    onChange={(e) =>
-                      setShipmentForm((prev) => ({
-                        ...prev,
-                        courierId: e.target.value,
-                      }))
-                    }
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
-                  >
-                    <option value="">Select courier</option>
-                    {activeCouriers.map((courier) => (
-                      <option key={courier.id} value={courier.id}>
-                        {courier.id} • {courier.name}
-                      </option>
-                    ))}
-                  </select>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <ActionButton onClick={loadShipmentByDbId} title="Load shipment" disabled={shipmentActionLoading}>
+                    {shipmentActionLoading ? <Loader2 className="animate-spin" size={16} /> : <FileText size={16} />}
+                    Load Shipment
+                  </ActionButton>
+                  <ActionButton onClick={syncShipment} title="Sync tracking" disabled={shipmentActionLoading}>
+                    <RefreshCw size={16} />
+                    Sync Tracking
+                  </ActionButton>
+                  <ActionButton onClick={assignAwbFromShipmentPanel} title="Assign AWB" disabled={shipmentActionLoading}>
+                    <PackageCheck size={16} />
+                    Assign AWB
+                  </ActionButton>
+                  <ActionButton onClick={requestPickupFromShipmentPanel} title="Request pickup" disabled={shipmentActionLoading}>
+                    <ShieldCheck size={16} />
+                    Request Pickup
+                  </ActionButton>
                 </div>
-              </div>
-
-              <div className="mt-5 flex flex-wrap gap-2">
-                <ActionButton onClick={inspectShipment} title="Load shipment" disabled={shipmentActionLoading}>
-                  {shipmentActionLoading ? <Loader2 className="animate-spin" size={16} /> : <FileText size={16} />}
-                  Load Shipment
-                </ActionButton>
-                <ActionButton onClick={syncShipmentTracking} title="Sync tracking" disabled={shipmentActionLoading}>
-                  <RefreshCw size={16} />
-                  Sync Tracking
-                </ActionButton>
-                <ActionButton onClick={assignAwb} title="Assign AWB" disabled={shipmentActionLoading}>
-                  <PackageCheck size={16} />
-                  Assign AWB
-                </ActionButton>
-                <ActionButton onClick={requestPickup} title="Request pickup" disabled={shipmentActionLoading}>
-                  <ShieldCheck size={16} />
-                  Request Pickup
-                </ActionButton>
-                <ActionButton onClick={downloadShipmentInvoice} title="Download invoice" disabled={shipmentActionLoading}>
-                  <ExternalLink size={16} />
-                  Invoice
-                </ActionButton>
-                <ActionButton onClick={cancelShipment} title="Cancel shipment" disabled={shipmentActionLoading}>
-                  <X size={16} />
-                  Cancel
-                </ActionButton>
-              </div>
+              </SectionShell>
 
               <div className="mt-6 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
                 <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
@@ -1890,13 +1621,11 @@ export default function AdminShipping() {
             </div>
 
             <div className="space-y-4">
-              <div className="rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900 sm:p-6">
-                <SectionTitle
-                  title="Shipment Actions"
-                  description="One-click backend wiring for shipment routes."
-                  icon={BadgeCheck}
-                />
-                <div className="mt-4 grid gap-3">
+              <SectionShell
+                title="Shipment Actions"
+                description="Quick backend wiring for shipment routes."
+              >
+                <div className="grid gap-3">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
                     <p className="text-sm font-semibold">Required before AWB</p>
                     <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -1910,15 +1639,13 @@ export default function AdminShipping() {
                     </p>
                   </div>
                 </div>
-              </div>
+              </SectionShell>
 
-              <div className="rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900 sm:p-6">
-                <SectionTitle
-                  title="Courier Master Data"
-                  description="The shipment workflow uses the active courier list from /couriers/list."
-                  icon={Truck}
-                />
-                <div className="mt-4 max-h-[300px] overflow-auto space-y-3">
+              <SectionShell
+                title="Courier Master Data"
+                description="Loaded from /couriers/list"
+              >
+                <div className="max-h-[300px] space-y-3 overflow-auto">
                   {activeCouriers.length ? (
                     activeCouriers.map((courier) => (
                       <div
@@ -1946,7 +1673,7 @@ export default function AdminShipping() {
                     </p>
                   )}
                 </div>
-              </div>
+              </SectionShell>
             </div>
           </motion.div>
         ) : null}
@@ -1957,14 +1684,11 @@ export default function AdminShipping() {
             animate={{ opacity: 1, y: 0 }}
             className="grid gap-4 xl:grid-cols-[1fr_1fr]"
           >
-            <div className="rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900 sm:p-6">
-              <SectionTitle
-                title="Serviceability"
-                description="Uses /estimate/:pincode and /serviceability to check and store courier serviceability."
-                icon={Route}
-              />
-
-              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <SectionShell
+              title="Serviceability"
+              description="Check and store courier serviceability using your pickup pincode and destination pincode."
+            >
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
                     Pincode
@@ -1977,7 +1701,7 @@ export default function AdminShipping() {
                         pincode: e.target.value.replace(/\D/g, "").slice(0, 6),
                       }))
                     }
-                    placeholder="600001"
+                    placeholder="533450"
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:focus:border-white"
                   />
                 </div>
@@ -2104,16 +1828,16 @@ export default function AdminShipping() {
               </div>
 
               <div className="mt-5 flex flex-wrap gap-2">
-                <ActionButton onClick={runEstimate} title="Get estimate" disabled={serviceabilityLoading}>
+                <ActionButton onClick={runServiceabilityEstimate} title="Get estimate" disabled={serviceabilityLoading}>
                   {serviceabilityLoading ? <Loader2 className="animate-spin" size={16} /> : <Clock3 size={16} />}
                   Estimate
                 </ActionButton>
                 <ActionButton onClick={runServiceabilityCheck} title="Check and store" disabled={serviceabilityLoading}>
-                  <Upload size={16} />
+                  <BadgeCheck size={16} />
                   Check & Store
                 </ActionButton>
               </div>
-            </div>
+            </SectionShell>
 
             <div className="space-y-4">
               <SectionShell title="Estimate Result" description="Fastest courier, COD availability, and courier list">
@@ -2137,20 +1861,15 @@ export default function AdminShipping() {
             animate={{ opacity: 1, y: 0 }}
             className="grid gap-4 xl:grid-cols-[1fr_1fr]"
           >
-            <div className="rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900 sm:p-6">
-              <div className="flex items-center justify-between gap-3">
-                <SectionTitle
-                  title="Active Couriers"
-                  description="Loaded from /couriers/list"
-                  icon={Truck}
-                />
+            <SectionShell title="Active Couriers" description="Loaded from /couriers/list">
+              <div className="mb-4 flex justify-end">
                 <ActionButton onClick={refreshCouriers} title="Refresh couriers">
                   <RefreshCw size={16} />
                   Refresh
                 </ActionButton>
               </div>
 
-              <div className="mt-5 grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-2">
                 {activeCouriers.length ? (
                   activeCouriers.map((courier) => (
                     <div
@@ -2200,29 +1919,19 @@ export default function AdminShipping() {
                     </div>
                   ))
                 ) : (
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
-                    No active couriers found.
-                  </p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">No active couriers found.</p>
                 )}
               </div>
-            </div>
+            </SectionShell>
 
-            <div className="rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900 sm:p-6">
-              <SectionTitle
-                title="Courier Master / Serviceability"
-                description="DB couriers are used by shipment actions. Serviceability checks live in the separate tab."
-                icon={Route}
-              />
-              <div className="mt-5 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Routes in use</p>
-                <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                  <div>/api/shipping/couriers/list</div>
-                  <div>/api/shipping/couriers</div>
-                  <div>/api/shipping/estimate/:pincode</div>
-                  <div>/api/shipping/serviceability</div>
-                </div>
+            <SectionShell title="Courier Master / Serviceability" description="DB couriers are used by shipment actions.">
+              <div className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                <div>/api/shipping/couriers/list</div>
+                <div>/api/shipping/couriers</div>
+                <div>/api/shipping/estimate/:pincode</div>
+                <div>/api/shipping/serviceability</div>
               </div>
-            </div>
+            </SectionShell>
           </motion.div>
         ) : null}
 
@@ -2232,48 +1941,49 @@ export default function AdminShipping() {
             animate={{ opacity: 1, y: 0 }}
             className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]"
           >
-            <div className="rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900 sm:p-6">
-              <SectionTitle
-                title="Return Orders"
-                description="GET /returns, POST /returns, PUT /returns"
-                icon={Undo2}
-              />
-
-              <div className="mt-5 overflow-auto rounded-3xl border border-slate-200 dark:border-slate-800">
+            <SectionShell
+              title="Return Orders"
+              description="GET /returns. The list is live; create/update forms can be added once the exact Shiprocket return payload schema is finalized."
+            >
+              <div className="overflow-auto rounded-3xl border border-slate-200 dark:border-slate-800">
                 <table className="w-full min-w-[760px] border-separate border-spacing-0">
                   <thead>
                     <tr className="bg-slate-50 text-left dark:bg-slate-950">
-                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Order</th>
-                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Shipment</th>
-                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Status</th>
-                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Action</th>
+                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Order
+                      </th>
+                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Shipment
+                      </th>
+                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Status
+                      </th>
+                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Action
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {returnsList.length ? (
-                      returnsList.map((row) => (
+                      returnsList.map((item) => (
                         <tr
-                          key={`${row.orderId}-${row.shipmentId}`}
+                          key={`${item.orderId}-${item.shipmentId}`}
                           className="border-t border-slate-200 dark:border-slate-800"
                         >
                           <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
-                            {row.orderId}
+                            {item.orderId}
                           </td>
                           <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
-                            {row.shipmentId}
+                            {item.shipmentId}
                           </td>
                           <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
-                            {row.status}
+                            {item.status}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex flex-wrap gap-2">
-                              <ActionButton onClick={() => inspectReturn(row)} title="View return">
+                              <ActionButton onClick={() => openInspection("return", `Return Order · ${item.orderId}`, item.raw)} title="View return">
                                 <Eye size={16} />
                                 View
-                              </ActionButton>
-                              <ActionButton onClick={() => openReturnUpdate(row)} title="Update return">
-                                <RefreshCw size={16} />
-                                Update
                               </ActionButton>
                             </div>
                           </td>
@@ -2289,51 +1999,19 @@ export default function AdminShipping() {
                   </tbody>
                 </table>
               </div>
-            </div>
+            </SectionShell>
 
-            <div className="space-y-4">
-              <SectionShell
-                title="Create Return / Exchange"
-                description="Use row actions in Orders, or seed the payload here from the first loaded order."
-              >
-                <div className="flex flex-wrap gap-2">
-                  <ActionButton
-                    onClick={() => {
-                      const first = filteredOrders[0];
-                      if (!first) return setError("No order available to seed return payload");
-                      openReturnCreate(first);
-                    }}
-                    title="Create return"
-                  >
-                    <Undo2 size={16} />
-                    Create Return
-                  </ActionButton>
-                  <ActionButton
-                    onClick={() => {
-                      const first = filteredOrders[0];
-                      if (!first) return setError("No order available to seed exchange payload");
-                      openExchangeCreate(first);
-                    }}
-                    title="Create exchange"
-                  >
-                    <Upload size={16} />
-                    Create Exchange
-                  </ActionButton>
-                </div>
-              </SectionShell>
-
-              <SectionShell
-                title="Route Reference"
-                description="These routes are mounted at /api/shipping"
-              >
-                <div className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                  <div>POST /api/shipping/returns</div>
-                  <div>PUT /api/shipping/returns</div>
-                  <div>GET /api/shipping/returns</div>
-                  <div>POST /api/shipping/exchange</div>
-                </div>
-              </SectionShell>
-            </div>
+            <SectionShell
+              title="Route Reference"
+              description="These routes are mounted at /api/shipping"
+            >
+              <div className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                <div>POST /api/shipping/returns</div>
+                <div>PUT /api/shipping/returns</div>
+                <div>GET /api/shipping/returns</div>
+                <div>POST /api/shipping/exchange</div>
+              </div>
+            </SectionShell>
           </motion.div>
         ) : null}
 
@@ -2344,7 +2022,7 @@ export default function AdminShipping() {
           </div>
           <div className="flex items-center gap-2">
             <BadgeCheck size={14} />
-            All admin actions are wired to /api/shipping
+            All admin actions are now wired to /api/shipping
           </div>
         </div>
       </div>
@@ -2363,26 +2041,9 @@ export default function AdminShipping() {
         }
         onClose={closeInspection}
         onCopy={async () => {
-          const ok = await copyToClipboard(
-            JSON.stringify(inspection.data ?? {}, null, 2)
-          );
+          const ok = await copyToClipboard(JSON.stringify(inspection.data ?? {}, null, 2));
           if (ok) showToast("JSON copied");
         }}
-      />
-
-      <JsonEditorModal
-        open={payloadModal.open}
-        title={payloadModal.title}
-        value={payloadModal.payload}
-        setValue={(value) =>
-          setPayloadModal((prev) => ({
-            ...prev,
-            payload: value,
-          }))
-        }
-        onClose={closePayloadEditor}
-        onSubmit={submitPayload}
-        submitLabel={payloadModal.submitLabel}
       />
     </div>
   );
