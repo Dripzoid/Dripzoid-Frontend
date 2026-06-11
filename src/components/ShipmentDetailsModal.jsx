@@ -40,6 +40,18 @@ function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function safeText(value) {
+  if (value === undefined || value === null || value === "") return "-";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "[]";
+    return JSON.stringify(value, null, 2);
+  }
+  if (isObject(value)) return JSON.stringify(value, null, 2);
+  return String(value);
+}
+
 function unwrapShiprocketPayload(input) {
   if (!isObject(input)) return input;
 
@@ -52,15 +64,13 @@ function unwrapShiprocketPayload(input) {
     const onlyValue = current[Object.keys(current)[0]];
     if (
       isObject(onlyValue) &&
-      (
-        onlyValue.tracking_data ||
+      (onlyValue.tracking_data ||
         onlyValue.products ||
         onlyValue.shipments ||
         onlyValue.status ||
         onlyValue.customer_name ||
         onlyValue.channel_order_id ||
-        onlyValue.shipment_status
-      )
+        onlyValue.shipment_status)
     ) {
       return onlyValue;
     }
@@ -180,17 +190,19 @@ function Badge({ children, tone = "slate" }) {
 }
 
 function DetailCard({ label, value, mono = false }) {
+  const display = safeText(value);
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
         {label}
       </p>
       <p
-        className={`mt-2 break-words text-sm font-semibold text-slate-950 dark:text-white ${
+        className={`mt-2 whitespace-pre-wrap break-words text-sm font-semibold text-slate-950 dark:text-white ${
           mono ? "font-mono text-xs" : ""
         }`}
       >
-        {value ?? "-"}
+        {display}
       </p>
     </div>
   );
@@ -276,6 +288,7 @@ function OrderView({ data }) {
   const activities = Array.isArray(order?.activities) ? order.activities : [];
   const extraInfo = isObject(order?.extra_info) ? order.extra_info : {};
   const shippingExtras = isObject(order?.others) ? order.others : {};
+  const pickupAddress = isObject(order?.pickup_address) ? order.pickup_address : null;
   const orderRisks = {
     order: order?.order_risk,
     address: order?.address_risk,
@@ -378,19 +391,19 @@ function OrderView({ data }) {
                     className="border-t border-slate-200 dark:border-slate-800"
                   >
                     <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
-                      {product?.name || "-"}
+                      {safeText(product?.name)}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
-                      {product?.channel_sku || product?.sku || "-"}
+                      {safeText(product?.channel_sku || product?.sku)}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
-                      {product?.quantity ?? "-"}
+                      {safeText(product?.quantity)}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
                       {formatMoney(product?.selling_price || product?.price || product?.mrp)}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge tone="slate">{String(product?.status ?? "-")}</Badge>
+                      <Badge tone="slate">{safeText(product?.status)}</Badge>
                     </td>
                   </tr>
                 ))
@@ -411,7 +424,7 @@ function OrderView({ data }) {
           {activities.length ? (
             activities.map((item, index) => (
               <Badge key={`${item}-${index}`} tone="violet">
-                {String(item)}
+                {safeText(item)}
               </Badge>
             ))
           ) : (
@@ -422,7 +435,7 @@ function OrderView({ data }) {
 
       <SectionShell title="Additional Fields" description="Useful order metadata from the Shiprocket response">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <DetailCard label="Pickup Address" value={order?.pickup_address || "-"} />
+          <DetailCard label="Pickup Address" value={pickupAddress ? `${pickupAddress.name || "-"}\n${pickupAddress.address || ""}\n${pickupAddress.city || ""}, ${pickupAddress.state || ""}\n${pickupAddress.pin_code || ""}` : "-"} />
           <DetailCard label="Pickup Address 2" value={order?.customer_address_2 || order?.pickup_address_2 || "-"} />
           <DetailCard label="Country" value={order?.customer_country || "-"} />
           <DetailCard label="Shipping Is Billing" value={shippingExtras?.shipping_is_billing ? "Yes" : "No"} />
@@ -488,13 +501,13 @@ function ShipmentView({ data }) {
                 </div>
                 <div className="pb-1">
                   <p className="font-semibold text-slate-950 dark:text-white">
-                    {evt?.status || "Update"}
+                    {safeText(evt?.status) || "Update"}
                   </p>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    {evt?.activity || "-"}
+                    {safeText(evt?.activity)}
                   </p>
                   <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                    {evt?.location || "-"}{" "}
+                    {safeText(evt?.location)}{" "}
                     {evt?.scanTimestamp ? `• ${formatDateTime(evt?.scanTimestamp)}` : ""}
                   </p>
                 </div>
@@ -527,7 +540,7 @@ function TrackingView({ data }) {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <DetailCard label="AWB" value={pickFirst(firstTrack?.awb_code, summary?.awb_code, "-")} mono />
         <DetailCard label="Shipment ID" value={pickFirst(firstTrack?.shipment_id, summary?.shipment_id, "-")} mono />
-        <DetailCard label="Current Status" value={pickFirst(firstTrack?.current_status, summary?.current_status, "-")} />
+        <DetailCard label="Current Status" value={pickFirst(firstTrack?.current_status, summary?.status, "-")} />
         <DetailCard label="Courier" value={pickFirst(firstTrack?.courier_name, summary?.courier_name, "-")} />
       </div>
 
@@ -568,13 +581,13 @@ function TrackingView({ data }) {
                 </div>
                 <div className="pb-1">
                   <p className="font-semibold text-slate-950 dark:text-white">
-                    {evt?.status || "Update"}
+                    {safeText(evt?.status) || "Update"}
                   </p>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    {evt?.activity || "-"}
+                    {safeText(evt?.activity)}
                   </p>
                   <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                    {evt?.location || "-"}{" "}
+                    {safeText(evt?.location)}{" "}
                     {evt?.scanTimestamp ? `• ${formatDateTime(evt?.scanTimestamp)}` : ""}
                   </p>
                 </div>
@@ -582,8 +595,7 @@ function TrackingView({ data }) {
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
-              No tracking activities were found in the response. The response still includes the
-              latest shipment snapshot and error message, if any.
+              No tracking activities were found in the response. The response still includes the latest shipment snapshot and error message, if any.
             </div>
           )}
         </div>
@@ -607,12 +619,12 @@ function ReturnView({ data }) {
       <SectionShell title="Return Snapshot" description="Essential fields returned by the backend">
         <div className="grid gap-3 sm:grid-cols-2">
           {Object.entries(row || {})
-            .slice(0, 10)
+            .slice(0, 8)
             .map(([key, value]) => (
               <DetailCard
                 key={key}
                 label={key}
-                value={typeof value === "object" ? JSON.stringify(value) : String(value ?? "-")}
+                value={safeText(value)}
                 mono
               />
             ))}
@@ -630,7 +642,7 @@ function TrackingNote({ data }) {
 
   return (
     <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
-      {errorMessage}
+      {safeText(errorMessage)}
     </div>
   );
 }
@@ -646,6 +658,7 @@ export default function ShipmentDetailsModal({
   onCopy,
 }) {
   const safeTitle = title || "Details";
+
   const body = useMemo(() => {
     if (showRaw) {
       return (
