@@ -22,8 +22,8 @@ import {
   X,
 } from "lucide-react";
 
-import ShippingTable from "./components/ShippingTable";
-import ShipmentDetailsModal from "./components/ShipmentDetailsModal";
+import ShippingTable from "../components/ShippingTable";
+import ShipmentDetailsModal from "../components/ShipmentDetailsModal";
 
 const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/$/, "");
 const api = axios.create({
