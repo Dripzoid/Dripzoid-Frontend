@@ -222,7 +222,7 @@ export default function ImageUpload() {
       formData.append("image", fileToUpload, fileToUpload.name);
 
       const { data } = await axios.post(
-        `${API_BASE}/api/upload`, // ✅ use env
+        `${API_BASE}/api/admin/upload/image`, // ✅ use env
         formData,
         {
           onUploadProgress: (progressEvent) => {
