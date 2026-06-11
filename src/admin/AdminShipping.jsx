@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 
 const api = axios.create({
-  baseURL: "/api/shipping",
+  baseURL: "https://api.drpzoid.com/api/shipping",
 });
 
 const EMPTY_JSON = `{
