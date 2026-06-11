@@ -1,3 +1,4 @@
+// src/admin/AdminShipping.jsx
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { AnimatePresence, motion } from "framer-motion";
@@ -21,8 +22,8 @@ import {
   X,
 } from "lucide-react";
 
-import ShippingTable from "../components/ShippingTable";
-import ShipmentDetailsModal from "../components/ShipmentDetailsModal";
+import ShippingTable from "./components/ShippingTable";
+import ShipmentDetailsModal from "./components/ShipmentDetailsModal";
 
 const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/$/, "");
 const api = axios.create({
@@ -384,6 +385,13 @@ export default function AdminShipping() {
     }
   }
 
+  // FIX: this was missing and caused the build error.
+  const refreshAll = async () => {
+    setRefreshing(true);
+    await loadDashboard();
+    showToast("Dashboard refreshed");
+  };
+
   useEffect(() => {
     loadDashboard();
   }, []);
@@ -414,7 +422,14 @@ export default function AdminShipping() {
   };
 
   const getLinkedShipmentDbId = (row) =>
-    pickFirst(row?.shipmentDbId, row?.localShipmentId, row?.shipment_uuid, row?.shipment_id, row?.shipmentId, "");
+    pickFirst(
+      row?.shipmentDbId,
+      row?.localShipmentId,
+      row?.shipment_uuid,
+      row?.shipment_id,
+      row?.shipmentId,
+      ""
+    );
 
   const runAssignAwb = async (shipmentDbId, courierId) => {
     if (!shipmentDbId) {
@@ -761,11 +776,41 @@ export default function AdminShipping() {
         </motion.div>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <StatCard title="Total Orders" value={stats.total} subtitle={ordersMeta?.total ? `Shiprocket total: ${ordersMeta.total}` : "Live from Shiprocket"} icon={ShoppingBag} gradient="from-violet-500 to-purple-600" />
-          <StatCard title="Shipped" value={stats.shipped} subtitle="Orders in transit" icon={Truck} gradient="from-sky-500 to-cyan-600" />
-          <StatCard title="Delivered" value={stats.delivered} subtitle="Completed orders" icon={PackageCheck} gradient="from-emerald-500 to-green-600" />
-          <StatCard title="Pending" value={stats.pending} subtitle="New / processing / others" icon={Clock3} gradient="from-amber-500 to-orange-600" />
-          <StatCard title="Couriers" value={stats.couriersCount} subtitle="Active DB couriers" icon={Route} gradient="from-fuchsia-500 to-pink-600" />
+          <StatCard
+            title="Total Orders"
+            value={stats.total}
+            subtitle={ordersMeta?.total ? `Shiprocket total: ${ordersMeta.total}` : "Live from Shiprocket"}
+            icon={ShoppingBag}
+            gradient="from-violet-500 to-purple-600"
+          />
+          <StatCard
+            title="Shipped"
+            value={stats.shipped}
+            subtitle="Orders in transit"
+            icon={Truck}
+            gradient="from-sky-500 to-cyan-600"
+          />
+          <StatCard
+            title="Delivered"
+            value={stats.delivered}
+            subtitle="Completed orders"
+            icon={PackageCheck}
+            gradient="from-emerald-500 to-green-600"
+          />
+          <StatCard
+            title="Pending"
+            value={stats.pending}
+            subtitle="New / processing / others"
+            icon={Clock3}
+            gradient="from-amber-500 to-orange-600"
+          />
+          <StatCard
+            title="Couriers"
+            value={stats.couriersCount}
+            subtitle="Active DB couriers"
+            icon={Route}
+            gradient="from-fuchsia-500 to-pink-600"
+          />
         </div>
 
         <div className="flex flex-wrap gap-2 rounded-3xl border border-white/70 bg-white p-3 shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900">
@@ -796,7 +841,10 @@ export default function AdminShipping() {
             className="rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900 sm:p-6"
           >
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-              <SectionShell title="Shiprocket Orders" description="Essential order information first. Raw response is one click away.">
+              <SectionShell
+                title="Shiprocket Orders"
+                description="Essential order information first. Raw response is one click away."
+              >
                 <div className="mt-0" />
               </SectionShell>
 
