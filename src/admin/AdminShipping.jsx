@@ -56,17 +56,6 @@ function readApiError(error) {
   );
 }
 
-function formatDate(value) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value);
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(d);
-}
-
 function formatDateTime(value) {
   if (!value) return "-";
   const d = new Date(value);
@@ -225,24 +214,6 @@ function extractTrackingEvents(payload) {
     .filter(Boolean);
 }
 
-function statusBadgeClass(status) {
-  switch (String(status || "").toUpperCase()) {
-    case "DELIVERED":
-      return "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300";
-    case "SHIPPED":
-      return "bg-sky-500/10 text-sky-700 ring-sky-500/20 dark:text-sky-300";
-    case "OUT FOR DELIVERY":
-      return "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300";
-    case "CONFIRMED":
-      return "bg-violet-500/10 text-violet-700 ring-violet-500/20 dark:text-violet-300";
-    case "CANCELLED":
-    case "CANCELED":
-      return "bg-rose-500/10 text-rose-700 ring-rose-500/20 dark:text-rose-300";
-    default:
-      return "bg-slate-500/10 text-slate-700 ring-slate-500/20 dark:text-slate-300";
-  }
-}
-
 function Badge({ children, tone = "slate" }) {
   const tones = {
     slate: "bg-slate-500/10 text-slate-700 ring-slate-500/20 dark:text-slate-300",
@@ -294,13 +265,30 @@ function SectionShell({ title, description, children }) {
   );
 }
 
-function ActionButton({
-  children,
-  onClick,
-  title,
-  variant = "light",
-  disabled = false,
-}) {
+function StatCard({ title, value, subtitle, icon: Icon, gradient }) {
+  return (
+    <motion.div
+      whileHover={{ y: -4 }}
+      className="overflow-hidden rounded-3xl border border-white/70 bg-white shadow-[0_18px_60px_-24px_rgba(15,23,42,0.16)] dark:border-white/10 dark:bg-slate-900"
+    >
+      <div className={`bg-gradient-to-br ${gradient} p-5 text-white`}>
+        <div className="flex items-center justify-between">
+          <div className="rounded-2xl bg-white/15 p-3 backdrop-blur">
+            <Icon size={22} />
+          </div>
+          <ArrowUpRight size={18} className="opacity-90" />
+        </div>
+        <div className="mt-6">
+          <h3 className="text-3xl font-black">{value}</h3>
+          <p className="mt-1 text-sm/6 text-white/90">{title}</p>
+          {subtitle ? <p className="mt-2 text-xs text-white/80">{subtitle}</p> : null}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function ActionButton({ children, onClick, title, variant = "light", disabled = false }) {
   const classes =
     variant === "dark"
       ? "bg-slate-950 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
@@ -319,18 +307,14 @@ function ActionButton({
   );
 }
 
-function IconButton({ children, onClick, title, disabled = false, active = false }) {
+function IconButton({ children, onClick, title, disabled = false }) {
   return (
     <button
       type="button"
       title={title}
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border transition ${
-        active
-          ? "border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950"
-          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800"
-      } disabled:cursor-not-allowed disabled:opacity-60`}
+      className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800"
     >
       {children}
     </button>
@@ -673,7 +657,9 @@ function TrackingInspectionView({ data }) {
                   ) : null}
                 </div>
                 <div className="pb-1">
-                  <p className="font-semibold text-slate-950 dark:text-white">{evt?.status || "Update"}</p>
+                  <p className="font-semibold text-slate-950 dark:text-white">
+                    {evt?.status || "Update"}
+                  </p>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                     {evt?.activity || "-"}
                   </p>
@@ -783,7 +769,10 @@ export default function AdminShipping() {
     const shipped = orders.filter((o) => String(o.status).toUpperCase() === "SHIPPED").length;
     const delivered = orders.filter((o) => String(o.status).toUpperCase() === "DELIVERED").length;
     const pending = orders.filter(
-      (o) => !["SHIPPED", "DELIVERED", "CANCELED", "CANCELLED"].includes(String(o.status).toUpperCase())
+      (o) =>
+        !["SHIPPED", "DELIVERED", "CANCELED", "CANCELLED"].includes(
+          String(o.status).toUpperCase()
+        )
     ).length;
     const couriersCount = couriers.filter((c) => c?.isActive !== false).length;
     const returnsCount = returnsList.length;
@@ -1028,18 +1017,6 @@ export default function AdminShipping() {
     }
   };
 
-  const openShipmentInvoice = (shipmentDbId) => {
-    if (!shipmentDbId) {
-      setError("Shipment DB ID is required");
-      return;
-    }
-    window.open(
-      `${api.defaults.baseURL}/invoice/shipment/${shipmentDbId}`,
-      "_blank",
-      "noopener,noreferrer"
-    );
-  };
-
   const openOrderInvoice = (row) => {
     window.open(
       `${api.defaults.baseURL}/invoice/order/${row.shiprocketOrderId}`,
@@ -1106,12 +1083,13 @@ export default function AdminShipping() {
     const linkedShipmentId = getLinkedShipmentDbId(row);
 
     if (linkedShipmentId) {
+      const courierId = defaultCourierId || shipmentForm.courierId;
       setShipmentForm({
         shipmentDbId: linkedShipmentId,
-        courierId: defaultCourierId,
+        courierId,
       });
       setViewMode("shipment");
-      runAssignAwb(linkedShipmentId, defaultCourierId);
+      runAssignAwb(linkedShipmentId, courierId);
       return;
     }
 
@@ -1257,9 +1235,7 @@ export default function AdminShipping() {
                 Shipping Control
               </div>
               <div>
-                <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-                  Shipping
-                </h1>
+                <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Shipping</h1>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   AWB, couriers, serviceability, pickup requests, and live Shiprocket orders.
                 </p>
@@ -1296,7 +1272,10 @@ export default function AdminShipping() {
               >
                 <BadgeCheck size={16} />
                 {notice}
-                <button onClick={closeNotice} className="ml-2 rounded-md p-1 hover:bg-emerald-100/70 dark:hover:bg-emerald-500/20">
+                <button
+                  onClick={closeNotice}
+                  className="ml-2 rounded-md p-1 hover:bg-emerald-100/70 dark:hover:bg-emerald-500/20"
+                >
                   <X size={14} />
                 </button>
               </motion.div>
@@ -1311,11 +1290,41 @@ export default function AdminShipping() {
         </motion.div>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <StatCard title="Total Orders" value={stats.total} subtitle={ordersMeta?.total ? `Shiprocket total: ${ordersMeta.total}` : "Live from Shiprocket"} icon={ShoppingBag} gradient="from-violet-500 to-purple-600" />
-          <StatCard title="Shipped" value={stats.shipped} subtitle="Orders in transit" icon={Truck} gradient="from-sky-500 to-cyan-600" />
-          <StatCard title="Delivered" value={stats.delivered} subtitle="Completed orders" icon={PackageCheck} gradient="from-emerald-500 to-green-600" />
-          <StatCard title="Pending" value={stats.pending} subtitle="New / processing / others" icon={Clock3} gradient="from-amber-500 to-orange-600" />
-          <StatCard title="Couriers" value={stats.couriersCount} subtitle="Active DB couriers" icon={Route} gradient="from-fuchsia-500 to-pink-600" />
+          <StatCard
+            title="Total Orders"
+            value={stats.total}
+            subtitle={ordersMeta?.total ? `Shiprocket total: ${ordersMeta.total}` : "Live from Shiprocket"}
+            icon={ShoppingBag}
+            gradient="from-violet-500 to-purple-600"
+          />
+          <StatCard
+            title="Shipped"
+            value={stats.shipped}
+            subtitle="Orders in transit"
+            icon={Truck}
+            gradient="from-sky-500 to-cyan-600"
+          />
+          <StatCard
+            title="Delivered"
+            value={stats.delivered}
+            subtitle="Completed orders"
+            icon={PackageCheck}
+            gradient="from-emerald-500 to-green-600"
+          />
+          <StatCard
+            title="Pending"
+            value={stats.pending}
+            subtitle="New / processing / others"
+            icon={Clock3}
+            gradient="from-amber-500 to-orange-600"
+          />
+          <StatCard
+            title="Couriers"
+            value={stats.couriersCount}
+            subtitle="Active DB couriers"
+            icon={Route}
+            gradient="from-fuchsia-500 to-pink-600"
+          />
         </div>
 
         <div className="flex flex-wrap gap-2 rounded-3xl border border-white/70 bg-white p-3 shadow-[0_18px_60px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900">
@@ -1462,7 +1471,9 @@ export default function AdminShipping() {
                         <td className="px-4 py-4 align-top">
                           <div>
                             <p className="font-semibold text-slate-950 dark:text-white">{row.customerName}</p>
-                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{row.customerPhone}</p>
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                              {row.customerPhone}
+                            </p>
                           </div>
                         </td>
 
@@ -1621,10 +1632,7 @@ export default function AdminShipping() {
             </div>
 
             <div className="space-y-4">
-              <SectionShell
-                title="Shipment Actions"
-                description="Quick backend wiring for shipment routes."
-              >
+              <SectionShell title="Shipment Actions" description="Quick backend wiring for shipment routes.">
                 <div className="grid gap-3">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
                     <p className="text-sm font-semibold">Required before AWB</p>
@@ -1641,10 +1649,7 @@ export default function AdminShipping() {
                 </div>
               </SectionShell>
 
-              <SectionShell
-                title="Courier Master Data"
-                description="Loaded from /couriers/list"
-              >
+              <SectionShell title="Courier Master Data" description="Loaded from /couriers/list">
                 <div className="max-h-[300px] space-y-3 overflow-auto">
                   {activeCouriers.length ? (
                     activeCouriers.map((courier) => (
@@ -1908,7 +1913,7 @@ export default function AdminShipping() {
                           <span className="font-semibold">{courier.realtimeTracking ?? "-"}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span>Pod Available</span>
+                          <span>POD Available</span>
                           <span className="font-semibold">{courier.podAvailable ?? "-"}</span>
                         </div>
                         <div className="flex items-center justify-between">
@@ -1943,7 +1948,7 @@ export default function AdminShipping() {
           >
             <SectionShell
               title="Return Orders"
-              description="GET /returns. The list is live; create/update forms can be added once the exact Shiprocket return payload schema is finalized."
+              description="GET /returns. The list is live and raw details can be viewed in the modal."
             >
               <div className="overflow-auto rounded-3xl border border-slate-200 dark:border-slate-800">
                 <table className="w-full min-w-[760px] border-separate border-spacing-0">
@@ -1981,7 +1986,10 @@ export default function AdminShipping() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex flex-wrap gap-2">
-                              <ActionButton onClick={() => openInspection("return", `Return Order · ${item.orderId}`, item.raw)} title="View return">
+                              <ActionButton
+                                onClick={() => openInspection("return", `Return Order · ${item.orderId}`, item.raw)}
+                                title="View return"
+                              >
                                 <Eye size={16} />
                                 View
                               </ActionButton>
@@ -2022,7 +2030,7 @@ export default function AdminShipping() {
           </div>
           <div className="flex items-center gap-2">
             <BadgeCheck size={14} />
-            All admin actions are now wired to /api/shipping
+            All admin actions are wired to /api/shipping
           </div>
         </div>
       </div>
